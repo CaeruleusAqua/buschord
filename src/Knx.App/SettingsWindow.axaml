@@ -3,7 +3,7 @@
         xmlns:loc="using:Knx.App.Localization"
         x:Class="Knx.App.SettingsWindow"
         Title="{loc:Tr OptionsTitle}" Width="620" Height="560" MinWidth="480" MinHeight="420"
-        Icon="/Assets/brand/buschord-icon-256.png">
+        Icon="/Assets/brand/buschord-house-icon-256.png">
   <DockPanel Margin="14">
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
                 Spacing="8" Margin="0,12,0,0">
