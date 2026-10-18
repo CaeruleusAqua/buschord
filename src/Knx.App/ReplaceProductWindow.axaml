@@ -3,7 +3,7 @@
         xmlns:loc="using:Knx.App.Localization"
         x:Class="Knx.App.ReplaceProductWindow"
         Title="{loc:Tr ReplaceProductTitle}" Width="720" Height="560" MinWidth="560" MinHeight="420"
-        Icon="/Assets/brand/buschord-house-icon-256.png">
+        Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
   <DockPanel Margin="14">
     <StackPanel DockPanel.Dock="Top" Spacing="8">
       <TextBlock Classes="muted" TextWrapping="Wrap"

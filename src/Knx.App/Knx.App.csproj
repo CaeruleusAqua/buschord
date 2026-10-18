@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>Assets\brand\buschord-house-icon.ico</ApplicationIcon>
+    <ApplicationIcon>Assets\brand\buschord-house-transparent-tile.ico</ApplicationIcon>
     <AssemblyName>BusChord</AssemblyName>
     <Product>BusChord</Product>
     <Description>Open-source building automation engineering</Description>
@@ -15,12 +15,12 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Only the runtime sizes are embedded; vector/source artwork stays in the repo. -->
-    <AvaloniaResource Include="Assets\brand\buschord-house-icon.ico" />
-    <AvaloniaResource Include="Assets\brand\buschord-house-icon-256.png" />
+    <AvaloniaResource Include="Assets\brand\buschord-house-transparent-tile.ico" />
+    <AvaloniaResource Include="Assets\brand\buschord-house-transparent-tile-256.png" />
     <AvaloniaResource Include="Assets\brand\buschord-mark.png" />
-    <None Include="Assets\brand\buschord-house-icon.svg" />
-    <None Include="Assets\brand\buschord-house-icon-1024.png" />
-    <None Include="Assets\brand\buschord-house-preview.png" />
+    <None Include="Assets\brand\buschord-house-transparent-tile.svg" />
+    <None Include="Assets\brand\buschord-house-transparent-tile-1024.png" />
+    <None Include="Assets\brand\buschord-house-transparent-tile-preview.png" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.12" />
