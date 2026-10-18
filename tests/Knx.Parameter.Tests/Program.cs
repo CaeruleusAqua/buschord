@@ -114,6 +114,42 @@ Check(dynRows["R4"].Value == "1" && dynRows["R4"].DefaultValue == "1" && !dynRow
 DynamicParameters.Apply(DynamicParameters.Evaluate(dynRoot), parsedDyn.Instances, parsedDyn.Blocks);
 Check(dynRows["R4"].IsVisible && dynRows["R4"].Value == "9"
     && parsedDyn.Blocks.Single(b => b.Id == "B-ON").IsVisible, "re-apply restores dynamic visibility");
+// Re-evaluation seeds only explicit user edits, never effective row values.
+Check(!dynRows["R2"].IsVisible && !dynRows["R2"].IsEnabled && !dynRows["R3"].IsEnabled,
+    "hidden refs stay non-editable");
+var editedAgain = DynamicParameters.Evaluate(dynRoot, new Dictionary<string, string?> { ["R1"] = "5" });
+DynamicParameters.Apply(editedAgain, parsedDyn.Instances, parsedDyn.Blocks);
+Check(dynRows["R4"].Value == "1" && dynRows["R3"].Value is null && !dynRows["R4"].IsVisible
+    && !dynRows["R3"].IsVisible, "deactivated branch restores declared values");
+Check(editedAgain.Parameters["R4"].Value == "1" && editedAgain.Parameters["R3"].Value is null
+    && editedAgain.Parameters["R3"].DeclaredValue is null, "deactivated assignment does not linger");
+var repeated = DynamicParameters.Evaluate(dynRoot, new Dictionary<string, string?> { ["R1"] = "5" });
+DynamicParameters.Apply(repeated, parsedDyn.Instances, parsedDyn.Blocks);
+Check(repeated.Parameters.Count == editedAgain.Parameters.Count
+    && repeated.Parameters.All(kv => editedAgain.Parameters.TryGetValue(kv.Key, out var prior)
+        && prior.Value == kv.Value.Value && prior.IsVisible == kv.Value.IsVisible
+        && prior.IsEnabled == kv.Value.IsEnabled)
+    && dynRows["R4"].Value == "1" && dynRows["R3"].Value is null,
+    "repeated evaluation with explicit edits is idempotent");
+// Invalid assignments keep the declared value and are reported instead of written.
+var invalidDyn = DynamicParameters.Evaluate(XElement.Parse("""
+<ApplicationProgram><Static><ParameterTypes>
+<ParameterType Id="n" Name="number"><TypeNumber Type="unsignedInt" SizeInBit="8" minInclusive="0" maxInclusive="255"/></ParameterType>
+</ParameterTypes><Parameters><Parameter Id="P" ParameterType="n" Value="3"/></Parameters>
+<ParameterRefs><ParameterRef Id="R" RefId="P"/></ParameterRefs></Static>
+<Dynamic><ParameterBlock Id="B"><Assign TargetParamRefRef="R" Value="999"/></ParameterBlock></Dynamic></ApplicationProgram>
+"""));
+Check(invalidDyn.Parameters["R"].Value == "999" && invalidDyn.Parameters["R"].DeclaredValue == "3",
+    "invalid assignment is computed but not yet applied");
+var invalidRows = Ksxml.Parse(new XDocument(XElement.Parse("""
+<ApplicationProgram><Static><ParameterTypes>
+<ParameterType Id="n" Name="number"><TypeNumber Type="unsignedInt" SizeInBit="8" minInclusive="0" maxInclusive="255"/></ParameterType>
+</ParameterTypes><Parameters><Parameter Id="P" ParameterType="n" Value="3"/></Parameters>
+<ParameterRefs><ParameterRef Id="R" RefId="P"/></ParameterRefs></Static>
+<Dynamic><ParameterBlock Id="B"><Assign TargetParamRefRef="R" Value="999"/></ParameterBlock></Dynamic></ApplicationProgram>
+""")), out var invalidEval);
+Check(invalidRows.Instances.Single(i => i.Id == "R").Value == "3"
+    && invalidEval.InvalidAssignments.SequenceEqual(["R"]), "invalid assignment rejected and reported");
 
 string ConditionProgram(string test, string value)
 {
@@ -264,6 +300,7 @@ if (Directory.Exists(samples))
     var archives = Directory.EnumerateFiles(samples, "*.knxprod").Count();
     var opened = 0; var dynamicPrograms = 0; var dynamicChooses = 0; var dynamicSelected = 0;
     var dynamicAssignments = 0; var dynamicVisible = 0; var maxPasses = 0; var nonConverged = 0;
+    var dynamicRefs = 0; var dynamicHidden = 0; var dynamicUnplaced = 0; var allHiddenPrograms = 0;
     var dynamicKinds = new HashSet<string>(StringComparer.Ordinal);
     foreach (var file in Directory.EnumerateFiles(samples, "*.knxprod"))
     {
@@ -274,12 +311,28 @@ if (Directory.Exists(samples))
                      e.FullName.Contains("_A-", StringComparison.OrdinalIgnoreCase)))
         {
             using var stream = part.Open();
-            var evaluation = DynamicParameters.Evaluate(XDocument.Load(stream).Root!);
+            var document = XDocument.Load(stream);
+            var programRoot = document.Root!;
+            var evaluation = DynamicParameters.Evaluate(programRoot);
+            bool InModule(XElement e) => e.AncestorsAndSelf().Any(a => a.Name.LocalName == "ModuleDef");
+            var declaredRefs = programRoot.DescendantsAndSelf()
+                .Where(e => e.Name.LocalName == "ParameterRef" && !InModule(e))
+                .Select(e => (string?)e.Attribute("Id")).OfType<string>().ToHashSet(StringComparer.Ordinal);
+            // Only Dynamic placements count; ParameterRefRef aliases inside parameter calculations do not.
+            var placedRefs = programRoot.DescendantsAndSelf()
+                .Where(e => e.Name.LocalName == "ParameterRefRef" && !InModule(e) &&
+                    e.Ancestors().Any(a => a.Name.LocalName == "Dynamic"))
+                .Select(e => (string?)e.Attribute("RefId")).OfType<string>().ToHashSet(StringComparer.Ordinal);
+            dynamicUnplaced += declaredRefs.Count(id => !placedRefs.Contains(id));
             dynamicPrograms++;
             dynamicChooses += evaluation.EvaluatedChooses;
             dynamicSelected += evaluation.SelectedBranches;
             dynamicAssignments += evaluation.Assignments;
             dynamicVisible += evaluation.Parameters.Values.Count(p => p.IsVisible);
+            var hidden = evaluation.Parameters.Values.Count(p => !p.IsVisible);
+            dynamicRefs += evaluation.Parameters.Count;
+            dynamicHidden += hidden;
+            if (evaluation.Parameters.Count > 0 && hidden == evaluation.Parameters.Count) allHiddenPrograms++;
             maxPasses = Math.Max(maxPasses, evaluation.Passes);
             if (!evaluation.Converged) nonConverged++;
             foreach (var issue in evaluation.Unsupported) dynamicKinds.Add(issue);
@@ -290,8 +343,20 @@ if (Directory.Exists(samples))
     Check(dynamicChooses > 0 && dynamicSelected > 0 && dynamicAssignments > 0 && dynamicVisible > 0,
         "dynamic corpus exercised");
     Check(nonConverged == 0 && maxPasses <= DynamicParameters.MaxPasses, "dynamic corpus converges within limit");
+    Check(dynamicRefs > 0 && dynamicHidden >= 0 && dynamicHidden <= dynamicRefs
+        && dynamicVisible + dynamicHidden == dynamicRefs, "hidden-ref census consistent");
+    Check(dynamicUnplaced >= 0 && dynamicUnplaced <= dynamicRefs, "unplaced-ref census consistent");
+    var hiddenShare = (double)dynamicHidden / dynamicRefs;
+    var unplacedShare = (double)dynamicUnplaced / dynamicRefs;
+    // Branch-hidden refs are expected (only one choose branch is active). Unplaced refs indicate
+    // over-hiding: a declared ParameterRef that no ParameterRefRef ever places.
+    if (allHiddenPrograms > 0 || unplacedShare > 0.5)
+        Console.WriteLine($"WARNING: possible over-hiding: {allHiddenPrograms} all-hidden programs, " +
+            $"{dynamicUnplaced}/{dynamicRefs} refs never placed");
     Console.WriteLine($"Dynamic MDT: {opened} archives, {dynamicPrograms} programs; {dynamicChooses} chooses, " +
-        $"{dynamicSelected} selected, {dynamicAssignments} assignments, {dynamicVisible} visible refs; " +
+        $"{dynamicSelected} selected, {dynamicAssignments} assignments, {dynamicVisible} visible refs, " +
+        $"{dynamicHidden} branch-hidden refs ({hiddenShare:P2}), {dynamicUnplaced} unplaced refs " +
+        $"({unplacedShare:P2}) in {allHiddenPrograms} all-hidden programs; " +
         $"{dynamicKinds.Count} unsupported kinds, max {maxPasses} passes");
     foreach (var kind in dynamicKinds.Order(StringComparer.Ordinal)) Console.WriteLine("  unsupported: " + kind);
     Console.WriteLine($"MDT: {files} files, {programs} programs, {instances} instances; types: {numbers} number, {enums} enum, {texts} text");

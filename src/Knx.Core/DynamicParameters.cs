@@ -35,6 +35,16 @@ public sealed class DynamicEvaluation
     /// <summary>Constructs the evaluator saw and did not implement (deterministic, sorted, deduplicated).</summary>
     public IReadOnlyList<string> Unsupported { get; internal set; } = [];
 
+    /// <summary>RefIds whose effective value came from an <c>Assign</c> in the final pass.</summary>
+    internal IReadOnlySet<string> AssignedParameters { get; set; } =
+        new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// RefIds whose assigned value failed type/range validation during the last
+    /// <see cref="DynamicParameters.Apply"/>; their rows keep the declared value.
+    /// </summary>
+    public IReadOnlyList<string> InvalidAssignments { get; internal set; } = [];
+
     /// <summary>False when the program has no ParameterRefRef at all, so static visibility stays authoritative.</summary>
     public bool TracksVisibility { get; internal set; }
     public bool Converged { get; internal set; } = true;
@@ -61,9 +71,11 @@ public sealed class DynamicEvaluation
 /// No script is executed: ParameterCalculation JavaScript, Module/ModuleDef instantiation, Repeat,
 /// Button and load procedures are rejected and reported.
 ///
-/// Re-evaluation after a UI edit: pass the edited values and apply the result again.
+/// Re-evaluation after a UI edit: pass only the caller-known user edits and apply the result again.
+/// Never seed from effective row values, because they already contain earlier assignment results.
 /// <code>
-/// var state = DynamicParameters.Evaluate(programRoot, instances.ToDictionary(i => i.Id, i => i.Value));
+/// var state = DynamicParameters.Evaluate(programRoot,
+///     new Dictionary&lt;string, string?&gt; { ["R1"] = "5" });
 /// DynamicParameters.Apply(state, instances, blocks);
 /// </code>
 /// </summary>
@@ -74,12 +86,18 @@ public static class DynamicParameters
     /// <summary>Maximum element nesting inside Dynamic before evaluation stops descending.</summary>
     public const int MaxDepth = 64;
 
-    public static DynamicEvaluation Evaluate(XElement root, IReadOnlyDictionary<string, string?>? currentValues = null)
+    /// <summary>
+    /// Evaluates the program. <paramref name="userValues"/> must contain explicit user edits only,
+    /// keyed by ParameterRef id; derived values from a previous evaluation or Apply must not be fed back.
+    /// Unknown keys are ignored. Each pass starts from the declarations plus these edits.
+    /// </summary>
+    public static DynamicEvaluation Evaluate(XElement root,
+        IReadOnlyDictionary<string, string?>? userValues = null)
     {
         var declared = ReadDeclaredValues(root, out var unresolved);
         var initial = new Dictionary<string, string?>(declared, StringComparer.Ordinal);
-        if (currentValues is not null)
-            foreach (var (id, value) in currentValues)
+        if (userValues is not null)
+            foreach (var (id, value) in userValues)
                 if (initial.ContainsKey(id)) initial[id] = value;
 
         var dynamicRoots = root.DescendantsAndSelf()
@@ -141,6 +159,7 @@ public static class DynamicParameters
             KnownBlocks = knownBlocks,
             VisibleBlocks = tracksVisibility ? pass.Blocks : knownBlocks,
             Unsupported = unsupported.Order(StringComparer.Ordinal).ToList(),
+            AssignedParameters = new HashSet<string>(pass.Assigned, StringComparer.Ordinal),
             TracksVisibility = tracksVisibility,
             Converged = converged,
             DepthLimitReached = pass.DepthLimit,
@@ -152,22 +171,32 @@ public static class DynamicParameters
         };
     }
 
-    /// <summary>Convenience overload that uses the current values of already parsed rows.</summary>
-    public static DynamicEvaluation Evaluate(XElement root, IEnumerable<ParameterInstance> instances) =>
-        Evaluate(root, instances.GroupBy(i => i.Id, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First().Value, StringComparer.Ordinal));
-
-    /// <summary>Writes an evaluation onto parsed rows; static declarations stay in DefaultValue.</summary>
+    /// <summary>
+    /// Writes an evaluation onto parsed rows; static declarations stay in DefaultValue.
+    /// Assigned values are validated against the declared parameter type/range. An invalid
+    /// assignment keeps the declared value and its refId is reported in
+    /// <see cref="DynamicEvaluation.InvalidAssignments"/>.
+    /// </summary>
     public static void Apply(DynamicEvaluation evaluation, IEnumerable<ParameterInstance> instances,
         IEnumerable<ParameterBlock>? blocks = null)
     {
+        var invalid = new List<string>();
         foreach (var instance in instances)
             if (evaluation.Parameters.TryGetValue(instance.Id, out var state))
             {
-                instance.Value = state.Value;
+                var value = state.Value;
+                if (evaluation.AssignedParameters.Contains(instance.Id) && instance.ParameterType is not null &&
+                    !ParameterValidation.TryValidate(instance.ParameterType, value, out _))
+                {
+                    value = state.DeclaredValue;
+                    invalid.Add(instance.Id);
+                }
+                instance.Value = value;
                 instance.IsVisible = instance.IsStaticallyVisible && state.IsVisible;
                 instance.IsEnabled = instance.IsStaticallyEnabled && state.IsEnabled;
             }
+        evaluation.InvalidAssignments = invalid.Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal).ToList();
 
         if (blocks is null) return;
         foreach (var block in blocks)
