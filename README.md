@@ -96,6 +96,10 @@ version control and are the property of their manufacturers.
 Build steps, branch model, test commands and PR rules: [CONTRIBUTING.md](CONTRIBUTING.md).
 Everyone participating follows the [Code of Conduct](CODE_OF_CONDUCT.md); report
 vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+Pull requests require accepting the [Contributor License Agreement](CLA.md)
+(a one-line comment, checked automatically).
 
 Source code: [Apache License 2.0](LICENSE), copyright 2026 BusChord contributors.
+The CLA grants the project the right to relicense future distributed versions;
+published releases stay under the licence they shipped with.
 *KNX* and *ETS* remain trademarks of the KNX Association; see the trademark note above.
