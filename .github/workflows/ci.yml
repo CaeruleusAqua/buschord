@@ -1,4 +1,4 @@
-name: ci
+name: CI
 
 on:
   push:
@@ -10,9 +10,30 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  # Run from the repository root, exactly like the README test commands.
+  TEST_PROJECTS: |
+    tests/Knx.Core.Tests
+    tests/Knx.Bus.Tests
+    tests/Knx.Owl.Tests
+    tests/Knx.Catalog.Tests
+    tests/Knx.Mcp.Tests
+    tests/Knx.Address.Tests
+    tests/Knx.Linking.Tests
+    tests/Knx.SmartLink.Tests
+    tests/Knx.CatalogUi.Tests
+    tests/Knx.Archive.Tests
+    tests/Knx.Icon.Tests
+    tests/Knx.Monitor.Tests
+    tests/Knx.Diagnostics.Tests
+    tests/Knx.Search.Tests
+    tests/Knx.Buildings.Tests
+    tests/Knx.Encryption.Tests
+    tests/Knx.Parameter.Tests
+    tests/Knx.ParameterUi.Tests
+    src/Knx.App.Tests
 
 jobs:
   build:
@@ -23,96 +44,85 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
-      - name: Cache NuGet
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
-          restore-keys: nuget-${{ runner.os }}-
-      - run: dotnet restore ets6.sln
-      - run: dotnet build ets6.sln -c Release --no-restore --nologo
-      - run: dotnet run --project src/Knx.Mcp -c Release --no-build -- --selftest
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+      - name: Show SDK
+        run: dotnet --info
+      - name: Restore
+        run: dotnet restore ets6.sln
+      - name: Build
+        run: dotnet build ets6.sln -c Release --no-restore --nologo
 
-  test:
-    name: test (${{ matrix.os }})
-    needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  test-linux:
+    name: test-linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
-      - name: Cache NuGet
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
-          restore-keys: nuget-${{ runner.os }}-
-      - run: dotnet restore ets6.sln
-      - run: dotnet build ets6.sln -c Release --no-restore --nologo
-
-      - name: Core, archive, format checks
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+      - name: Show SDK
+        run: dotnet --info
+      - name: Restore
+        run: dotnet restore ets6.sln
+      - name: Build
+        run: dotnet build ets6.sln -c Release --no-restore --nologo
+      - name: Console checks
         shell: bash
         run: |
-          set -e
-          for project in \
-            tests/Knx.Core.Tests \
-            tests/Knx.Archive.Tests \
-            tests/Knx.Encryption.Tests \
-            tests/Knx.Buildings.Tests \
-            tests/Knx.Search.Tests \
-            tests/Knx.Address.Tests; do
-            echo "== $project"
+          for project in $(echo "$TEST_PROJECTS" | tr -d '\r'); do
+            if [ "$project" = "tests/Knx.Icon.Tests" ]; then
+              echo "::notice::skipping $project on Linux: it starts Avalonia with UsePlatformDetect and needs a display"
+              continue
+            fi
+            echo "::group::$project"
             dotnet run --project "$project" -c Release --no-build
+            echo "::endgroup::"
           done
-
-      - name: Bus and diagnostics checks
-        shell: bash
-        run: |
-          set -e
-          for project in \
-            tests/Knx.Bus.Tests \
-            tests/Knx.Diagnostics.Tests \
-            tests/Knx.Monitor.Tests \
-            tests/Knx.Linking.Tests \
-            tests/Knx.SmartLink.Tests; do
-            echo "== $project"
-            dotnet run --project "$project" -c Release --no-build
-          done
-
-      - name: Catalogue and parameter checks
-        shell: bash
-        run: |
-          set -e
-          for project in \
-            tests/Knx.Catalog.Tests \
-            tests/Knx.CatalogUi.Tests \
-            tests/Knx.Parameter.Tests \
-            tests/Knx.ParameterUi.Tests \
-            tests/Knx.Icon.Tests; do
-            echo "== $project"
-            dotnet run --project "$project" -c Release --no-build
-          done
-
-      - name: MCP checks
-        shell: bash
-        run: |
-          set -e
-          dotnet run --project tests/Knx.Mcp.Tests -c Release --no-build
+          echo "::group::src/Knx.Mcp --selftest"
           dotnet run --project src/Knx.Mcp -c Release --no-build -- --selftest
+          echo "::endgroup::"
 
-      - name: Reports checks
-        shell: bash
-        run: dotnet run --project src/Knx.App.Tests -c Release --no-build
-
-      - name: Desktop smoke (Windows only)
-        if: runner.os == 'Windows'
+  test-windows:
+    name: test-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+      - name: Show SDK
+        run: dotnet --info
+      - name: Restore
+        run: dotnet restore ets6.sln
+      - name: Build
+        run: dotnet build ets6.sln -c Release --no-restore --nologo
+      - name: Console checks
         shell: bash
         run: |
-          set -e
-          dotnet run --project src/Knx.App -c Release --no-build -- --smoke
-          dotnet run --project src/Knx.App -c Release --no-build -- --screenshot-selftest
+          for project in $(echo "$TEST_PROJECTS" | tr -d '\r'); do
+            echo "::group::$project"
+            dotnet run --project "$project" -c Release --no-build
+            echo "::endgroup::"
+          done
+          echo "::group::src/Knx.Mcp --selftest"
+          dotnet run --project src/Knx.Mcp -c Release --no-build -- --selftest
+          echo "::endgroup::"
+      - name: App smoke (Windows only)
+        run: dotnet run --project src/Knx.App -c Release --no-build -- --smoke
+      - name: App screenshot selftest (Windows only)
+        run: dotnet run --project src/Knx.App -c Release --no-build -- --screenshot-selftest
+
+  ci:
+    name: ci
+    needs: [build, test-linux, test-windows]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unless every job passed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

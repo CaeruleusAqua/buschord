@@ -1,0 +1,36 @@
+﻿name: CodeQL
+
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+    branches: [development, main]
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  packages: read
+  actions: read
+
+jobs:
+  analyze:
+    name: analyze-csharp
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: csharp
+      - name: Restore
+        run: dotnet restore ets6.sln
+      - name: Build
+        run: dotnet build ets6.sln -c Release --no-restore --nologo
+      - uses: github/codeql-action/analyze@v4
