@@ -21,7 +21,7 @@ internal static class Screenshot
     public const int Height = 900;
 
     internal static readonly string[] Screens =
-        ["main", "catalog", "parameters", "links", "settings", "new-project"];
+        ["main", "catalog", "parameters", "links", "settings", "new-project", "splash"];
 
     /// <summary>PNG path from --screenshot=&lt;path&gt;; null keeps the normal start.</summary>
     public static string? TargetPath { get; set; }
@@ -61,10 +61,16 @@ internal static class Screenshot
             case "new-project":
                 window = new NewProjectWindow();
                 break;
+            case "splash":
+                window = new SplashWindow();
+                break;
         }
 
-        window.Width = Width;
-        window.Height = Height;
+        var captureSize = screen.Equals("splash", StringComparison.OrdinalIgnoreCase)
+            ? new PixelSize(380, 420)
+            : new PixelSize(Width, Height);
+        window.Width = captureSize.Width;
+        window.Height = captureSize.Height;
 
         // The frame is only complete after opening and one layout/render cycle; the short
         // delay also lets the initial theme transitions settle.
@@ -81,7 +87,7 @@ internal static class Screenshot
                 timer.Stop();
                 try
                 {
-                    Write(window, path);
+                    Write(window, path, captureSize);
                     desktop.Shutdown(0);
                 }
                 catch (Exception ex)
@@ -97,12 +103,11 @@ internal static class Screenshot
         window.Show();
     }
 
-    private static void Write(Window window, string path)
+    private static void Write(Window window, string path, PixelSize size)
     {
         var full = System.IO.Path.GetFullPath(path);
         System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
 
-        var size = new PixelSize(Width, Height);
         using var bitmap = new RenderTargetBitmap(size, new Vector(96, 96));
         bitmap.Render(window);
         bitmap.Save(full);

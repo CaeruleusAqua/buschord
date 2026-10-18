@@ -17,6 +17,7 @@
     <!-- Only the runtime sizes are embedded; vector/source artwork stays in the repo. -->
     <AvaloniaResource Include="Assets\brand\buschord-house-icon.ico" />
     <AvaloniaResource Include="Assets\brand\buschord-house-icon-256.png" />
+    <AvaloniaResource Include="Assets\brand\buschord-mark.png" />
     <None Include="Assets\brand\buschord-house-icon.svg" />
     <None Include="Assets\brand\buschord-house-icon-1024.png" />
     <None Include="Assets\brand\buschord-house-preview.png" />

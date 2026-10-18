@@ -220,7 +220,7 @@
         <StackPanel Width="680" MaxWidth="680" Margin="40" Spacing="22"
                     HorizontalAlignment="Left" VerticalAlignment="Top">
           <StackPanel Orientation="Horizontal" Spacing="12">
-            <Image Source="/Assets/brand/buschord-house-icon-256.png" Width="40" Height="40"
+            <Image Source="/Assets/brand/buschord-house-icon-256.png" Width="44" Height="44"
                    VerticalAlignment="Center" />
             <TextBlock Text="{loc:Tr UxStart}" FontSize="24" FontWeight="SemiBold"
                        VerticalAlignment="Center" />
