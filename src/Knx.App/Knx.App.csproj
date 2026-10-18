@@ -1,16 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- WinExe: no console window when the desktop app is launched. -->
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\brand\buschord-icon.ico</ApplicationIcon>
     <AssemblyName>BusChord</AssemblyName>
     <Product>BusChord</Product>
     <Description>Open-source building automation engineering</Description>
     <Company>BusChord</Company>
   </PropertyGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\brand\**" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.2.0" />
     <PackageReference Include="Avalonia.Desktop" Version="11.2.0" />

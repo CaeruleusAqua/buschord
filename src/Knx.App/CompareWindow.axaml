@@ -2,7 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="using:Knx.App.Localization"
         x:Class="Knx.App.CompareWindow"
-        Title="{loc:Tr TitleCompare}" Width="900" Height="640">
+        Title="{loc:Tr TitleCompare}" Width="900" Height="640"
+        Icon="/Assets/brand/buschord-icon-256.png">
   <DockPanel Margin="12">
     <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,8">
       <TextBlock x:Name="SummaryText" FontWeight="Bold" />
