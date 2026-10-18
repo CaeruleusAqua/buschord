@@ -10,7 +10,7 @@
         dockIds:DockProperties.IsDragEnabled="True"
         dockIds:DockProperties.IsDropEnabled="True"
         Title="{Binding Title}" Width="1440" Height="900" MinWidth="1000" MinHeight="640"
-        Icon="/Assets/brand/buschord-icon-256.png">
+        Icon="/Assets/brand/buschord-house-icon-256.png">
 
   <Window.Styles>
     <!-- Command bar buttons: no minimum width so the bar fits 1440 px and wraps as whole
@@ -220,7 +220,7 @@
         <StackPanel Width="680" MaxWidth="680" Margin="40" Spacing="22"
                     HorizontalAlignment="Left" VerticalAlignment="Top">
           <StackPanel Orientation="Horizontal" Spacing="12">
-            <Image Source="/Assets/brand/buschord-icon-256.png" Width="40" Height="40"
+            <Image Source="/Assets/brand/buschord-house-icon-256.png" Width="40" Height="40"
                    VerticalAlignment="Center" />
             <TextBlock Text="{loc:Tr UxStart}" FontSize="24" FontWeight="SemiBold"
                        VerticalAlignment="Center" />
