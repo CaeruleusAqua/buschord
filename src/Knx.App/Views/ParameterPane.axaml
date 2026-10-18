@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Knx.App.Views"
+             xmlns:loc="using:Knx.App.Localization"
+             x:Class="Knx.App.Views.ParameterPane">
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,12,0,0">
+      <Button x:Name="ApplyButton" Content="{loc:Tr BtnApply}" Click="OnApply" IsVisible="False" />
+      <Button x:Name="CloseButton" Content="{loc:Tr BtnClose}" Click="OnClose" IsVisible="False" />
+    </StackPanel>
+    <TextBlock x:Name="MessageText" DockPanel.Dock="Bottom" TextWrapping="Wrap" Margin="0,8,0,0" />
+    <Expander x:Name="NoticeExpander" DockPanel.Dock="Top" Padding="0" Margin="0,0,0,8"
+              HorizontalAlignment="Stretch">
+      <Expander.Header>
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="{loc:Tr ParameterNoticeShort}" VerticalAlignment="Center" />
+          <TextBlock Text="?" FontWeight="Bold" VerticalAlignment="Center" />
+        </StackPanel>
+      </Expander.Header>
+      <StackPanel Spacing="4">
+        <TextBlock Text="{loc:Tr ParameterStaticNotice}" TextWrapping="Wrap" />
+        <TextBlock x:Name="WarningDetail" IsVisible="False" TextWrapping="Wrap" Classes="muted" />
+      </StackPanel>
+    </Expander>
+    <TextBlock x:Name="WarningText" DockPanel.Dock="Top" IsVisible="False" TextWrapping="Wrap"
+               Text="{loc:Tr ParameterNoticeMore}" Classes="muted" Margin="0,0,0,12" />
+    <TextBlock x:Name="EmptyText" DockPanel.Dock="Top" IsVisible="False" TextWrapping="Wrap"
+               Classes="muted" Margin="0,0,0,8" />
+    <TextBlock x:Name="HeaderText" DockPanel.Dock="Top" FontWeight="Bold" FontSize="15"
+               Margin="0,0,0,8" Text="{loc:Tr ParameterTitle}" TextWrapping="Wrap" />
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+      <ItemsControl x:Name="ParameterList">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid ColumnDefinitions="220,*" Margin="0,3" IsVisible="{Binding IsVisible}">
+              <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Name}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding Description}" FontSize="10" Foreground="Gray"
+                           TextWrapping="Wrap" IsVisible="{Binding Description, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              </StackPanel>
+              <ContentControl Grid.Column="1" Content="{Binding}"
+                              ContentTemplate="{x:Static views:ParameterTemplateSelector.Instance}" />
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

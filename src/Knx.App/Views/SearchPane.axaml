@@ -1,0 +1,105 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:Knx.App.Localization"
+             xmlns:views="using:Knx.App.Views"
+             x:Class="Knx.App.Views.SearchPane">
+  <Grid>
+    <TextBlock x:Name="EmptyText" Classes="muted" Text="{loc:Tr UxNeedsProject}"
+               TextWrapping="Wrap" Margin="12" IsVisible="False" />
+
+    <Grid x:Name="Body" RowDefinitions="Auto,*">
+      <Border Classes="panel">
+        <StackPanel Margin="8" Spacing="6">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBox x:Name="QueryBox" Watermark="{loc:Tr SearchWatermark}" KeyDown="OnQueryKeyDown" />
+            <Button x:Name="SearchButton" Grid.Column="1" Classes="primary" Margin="6,0,0,0"
+                    Click="OnSearch">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <views:Icon Symbol="Search" />
+                <TextBlock Text="{loc:Tr BtnSearch}" />
+              </StackPanel>
+            </Button>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <TextBlock Text="{loc:Tr SearchScope}" Classes="muted" VerticalAlignment="Center" />
+            <ComboBox x:Name="ScopeBox" MinWidth="180" />
+            <CheckBox x:Name="RegexCheck" Content="{loc:Tr SearchRegex}" />
+            <CheckBox x:Name="CaseCheck" Content="{loc:Tr SearchCase}"
+                      ToolTip.Tip="{loc:Tr SearchCaseTip}" />
+          </StackPanel>
+          <TextBlock x:Name="SearchStatus" Classes="muted" TextWrapping="Wrap" IsVisible="False" />
+        </StackPanel>
+      </Border>
+
+      <Grid Grid.Row="1" RowDefinitions="3*,2*" Margin="0,8,0,0">
+        <Border Classes="panel">
+          <DockPanel>
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
+              <TextBlock Classes="panelHeader" Text="{loc:Tr SearchResults}" />
+              <TextBlock x:Name="ResultsCount" Grid.Column="1" Classes="muted"
+                         VerticalAlignment="Center" Margin="0,0,8,0" />
+            </Grid>
+            <Grid>
+              <ListBox x:Name="ResultList" SelectionChanged="OnResultSelected">
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Margin="6,2" Spacing="1">
+                      <Grid ColumnDefinitions="110,*,Auto">
+                        <TextBlock Grid.Column="0" Text="{Binding KindText}" Classes="muted" />
+                        <TextBlock Grid.Column="1" Text="{Binding Path}" FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Column="2" Text="{Binding Field}" Classes="muted" />
+                      </Grid>
+                      <TextBlock Text="{Binding Snippet}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+              <TextBlock x:Name="ResultsEmpty" Classes="muted" Text="{loc:Tr SearchNoResults}"
+                         TextWrapping="Wrap" TextAlignment="Center" Margin="12"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="False" />
+            </Grid>
+          </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1" Classes="panel" Margin="0,8,0,0">
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="4"
+                        Background="{DynamicResource EtsHeaderRow}">
+              <views:Icon Symbol="NoteAdd" Margin="8,0,0,0" VerticalAlignment="Center" />
+              <TextBlock Classes="panelHeader" Text="{loc:Tr SearchReplace}" />
+            </StackPanel>
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="8,6">
+              <TextBox x:Name="ReplaceBox" Watermark="{loc:Tr SearchReplaceWatermark}" />
+              <Button x:Name="PreviewButton" Grid.Column="1" Margin="6,0,0,0" Content="{loc:Tr BtnPreview}"
+                      Click="OnPreview" />
+              <Button x:Name="ApplyButton" Grid.Column="2" Margin="6,0,0,0" Content="{loc:Tr BtnApply}"
+                      IsEnabled="False" Click="OnApply" />
+            </Grid>
+            <TextBlock x:Name="PreviewStatus" DockPanel.Dock="Bottom" Margin="8,0,8,8"
+                       TextWrapping="Wrap" IsVisible="False" />
+            <TextBlock x:Name="PreviewCounts" DockPanel.Dock="Top" Classes="muted"
+                       Margin="8,0,8,4" HorizontalAlignment="Right" />
+            <Grid>
+              <ListBox x:Name="PreviewList">
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="*,70,150,150" Margin="6,1">
+                      <TextBlock Grid.Column="0" Text="{Binding Path}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="1" Text="{Binding Field}" Classes="muted" />
+                      <TextBlock Grid.Column="2" Text="{Binding Before}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="3" Text="{Binding After}" TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+              <TextBlock x:Name="PreviewEmpty" Classes="muted" Text="{loc:Tr SearchPreviewNothing}"
+                         TextWrapping="Wrap" TextAlignment="Center" Margin="12"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="True" />
+            </Grid>
+          </DockPanel>
+        </Border>
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

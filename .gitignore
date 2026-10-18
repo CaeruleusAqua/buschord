@@ -1,0 +1,18 @@
+bin/
+obj/
+*.user
+*.log
+sample/
+sample2/
+schema/
+ui_screenshot*.png
+
+# Manufacturer catalogue data and vendor binaries stay local; never commit them.
+*.knxprod
+*.knxprod.zip
+*.vd4
+*.vd5
+sample-catalogs/
+catalogs/
+catalogue-library/
+artifacts/

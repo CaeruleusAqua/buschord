@@ -1,0 +1,546 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Knx.App.Services"
+        xmlns:loc="using:Knx.App.Localization"
+        xmlns:views="using:Knx.App.Views"
+        xmlns:dockCtl="using:Dock.Avalonia.Controls"
+        xmlns:dockIds="using:Dock.Settings"
+        x:Class="Knx.App.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        dockIds:DockProperties.IsDragEnabled="True"
+        dockIds:DockProperties.IsDropEnabled="True"
+        Title="{Binding Title}" Width="1440" Height="900" MinWidth="1000" MinHeight="640">
+
+  <Window.Styles>
+    <!-- Command bar buttons: no minimum width so the bar fits 1440 px and wraps as whole
+         groups instead of clipping or scrolling at 1000 px. -->
+    <Style Selector="Button.tool">
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="6,4" />
+    </Style>
+    <Style Selector="Button.tool views|Icon">
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel>
+    <!-- ===== menu ===== -->
+    <Menu DockPanel.Dock="Top" Background="{DynamicResource EtsChrome}">
+      <MenuItem Header="{loc:Tr MenuFile}">
+        <MenuItem Header="{loc:Tr MenuFileNew}" Click="OnNewProject" InputGesture="Ctrl+N" />
+        <MenuItem Header="{loc:Tr MenuFileOpen}" Click="OnOpenProject" InputGesture="Ctrl+O" />
+        <MenuItem Header="{loc:Tr MenuFileSave}" Click="OnSaveProject" InputGesture="Ctrl+S" />
+        <MenuItem Header="{loc:Tr MenuFileSaveAs}" Click="OnSaveProjectAs" />
+        <Separator />
+        <MenuItem Header="{loc:Tr MenuFileExport}">
+          <MenuItem Header="{loc:Tr MenuFileExportGroupAddresses}" Click="OnExportGroupAddresses" />
+          <MenuItem Header="{loc:Tr MenuFileExportDevices}" Click="OnExportDevices" />
+          <MenuItem Header="{loc:Tr MenuFileExportTopology}" Click="OnExportTopology" />
+          <Separator />
+          <MenuItem Header="{loc:Tr MenuFileExportTurtle}" Click="OnExportSemanticTtl" />
+          <MenuItem Header="{loc:Tr MenuFileExportJsonLd}" Click="OnExportSemanticJsonLd" />
+          <MenuItem Header="{loc:Tr MenuFileExportLabels}" Click="OnExportLabels" />
+          <MenuItem Header="{loc:Tr MenuFileExportLabelsCsv}" Click="OnExportLabelsCsv" />
+          <MenuItem Header="{loc:Tr MenuFileExportMerge}" Click="OnExportMergeDataSource" />
+        </MenuItem>
+        <MenuItem Header="{loc:Tr MenuFileImport}" Click="OnImportGroupAddresses" />
+        <Separator />
+        <MenuItem Header="{loc:Tr MenuFileExit}" Click="OnExit" />
+      </MenuItem>
+      <MenuItem Header="{loc:Tr MenuEdit}">
+        <MenuItem Header="{loc:Tr MenuEditUndo}" Click="OnUndo" InputGesture="Ctrl+Z" />
+        <MenuItem Header="{loc:Tr MenuEditRedo}" Click="OnRedo" InputGesture="Ctrl+Y" />
+        <Separator />
+        <MenuItem Header="{loc:Tr MenuEditAddGroupAddress}" Click="OnAddGroupAddress" InputGesture="Ctrl+G" />
+        <MenuItem Header="{loc:Tr MenuEditDeleteGroupAddress}" Click="OnDeleteGroupAddress" />
+        <Separator />
+        <MenuItem Header="{loc:Tr MenuEditCompare}" Click="OnCompareProjects" />
+      </MenuItem>
+      <MenuItem Header="{loc:Tr MenuBus}">
+        <MenuItem Header="{loc:Tr MenuBusDiscover}" Command="{Binding DiscoverCommand}" />
+        <MenuItem Header="{loc:Tr MenuBusConnect}" Command="{Binding ConnectCommand}" />
+        <MenuItem Header="{loc:Tr MenuBusDisconnect}" Command="{Binding DisconnectCommand}" />
+        <Separator />
+        <MenuItem Header="{loc:Tr MenuBusRecordStart}" Click="OnStartRecording" />
+        <MenuItem Header="{loc:Tr MenuBusRecordStop}" Click="OnStopRecording" />
+        <MenuItem Header="{loc:Tr MenuBusRecordSave}" Click="OnSaveRecording" />
+        <MenuItem Header="{loc:Tr MenuBusRecordLoad}" Click="OnLoadRecording" />
+      </MenuItem>
+      <MenuItem Header="{loc:Tr MenuExtras}">
+        <MenuItem Header="{loc:Tr MenuExtrasCheck}" Click="OnRunCheck" InputGesture="F5" />
+        <MenuItem Header="{loc:Tr MenuExtrasLink}" Click="OnSmartLink" />
+        <MenuItem Header="{loc:Tr MenuExtrasReplace}" Click="OnReplaceProduct" />
+        <Separator />
+        <MenuItem Header="{loc:Tr MenuCatalog}" Click="OnCatalogLibrary" InputGesture="Ctrl+Shift+K" />
+        <MenuItem Header="{loc:Tr MenuExtrasParameters}" Click="OnOpenParameters" />
+        <MenuItem Header="{loc:Tr CommunicationObjects}" Click="OnGroupLinks" />
+        <MenuItem Header="{loc:Tr MenuExtrasOptions}" Click="OnSettings" />
+      </MenuItem>
+    </Menu>
+
+    <!-- ===== command bar: one wrapping row of action groups, no ribbon captions ===== -->
+    <Border DockPanel.Dock="Top" Classes="ribbon">
+      <WrapPanel Orientation="Horizontal">
+
+        <Border Classes="ribbonGroup">
+          <StackPanel Orientation="Horizontal" Spacing="2">
+            <Button Classes="tool" Content="{loc:Tr BtnNew}" Click="OnNewProject" />
+            <Button Classes="tool" Content="{loc:Tr BtnOpen}" Click="OnOpenProject" />
+            <Button Classes="tool" Content="{loc:Tr BtnSave}" Click="OnSaveProject"
+                    IsEnabled="{Binding HasProject}" ToolTip.Tip="{loc:Tr UxNeedsProject}"
+                    ToolTip.ShowOnDisabled="True" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="ribbonGroup">
+          <StackPanel Orientation="Horizontal" Spacing="2">
+            <Button Classes="tool" Click="OnUndo" IsEnabled="{Binding CanUndo}"
+                    ToolTip.Tip="Rückgängig (Strg+Z)" ToolTip.ShowOnDisabled="True"
+                    AutomationProperties.Name="Rückgängig (Strg+Z)">
+              <views:Icon Symbol="Undo" Width="20" Height="20" />
+            </Button>
+            <Button Classes="tool" Click="OnRedo" IsEnabled="{Binding CanRedo}"
+                    ToolTip.Tip="Wiederherstellen (Strg+Y)" ToolTip.ShowOnDisabled="True"
+                    AutomationProperties.Name="Wiederherstellen (Strg+Y)">
+              <views:Icon Symbol="Redo" Width="20" Height="20" />
+            </Button>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="ribbonGroup">
+          <StackPanel Orientation="Horizontal" Spacing="2">
+            <Button Classes="tool primary" Click="OnCatalogLibrary"
+                    ToolTip.Tip="{loc:Tr UxCatalogHint}">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <views:Icon Symbol="LibraryBooks" Width="20" Height="20" />
+                <TextBlock Text="{loc:Tr MenuCatalog}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button Classes="tool" Click="OnOpenParameters"
+                    IsEnabled="{Binding HasDeviceSelected}" ToolTip.Tip="{loc:Tr UxNeedsDevice}"
+                    ToolTip.ShowOnDisabled="True">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <views:Icon Symbol="Tune" Width="20" Height="20" />
+                <TextBlock Text="{loc:Tr BtnParameters}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button Classes="tool" Click="OnGroupLinks"
+                    IsEnabled="{Binding HasDeviceSelected}" ToolTip.Tip="{loc:Tr UxNeedsDevice}"
+                    ToolTip.ShowOnDisabled="True">
+              <TextBlock Text="{loc:Tr CommunicationObjects}" VerticalAlignment="Center" />
+            </Button>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="ribbonGroup">
+          <StackPanel Orientation="Horizontal" Spacing="2">
+            <Button Classes="tool" Command="{Binding DiscoverCommand}"
+                    ToolTip.Tip="{Binding BusInterfaceHint}">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <views:Icon Symbol="Radar" Width="20" Height="20" />
+                <TextBlock Text="{loc:Tr BtnDiscover}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button Classes="tool" Content="{loc:Tr BtnConnect}" Command="{Binding ConnectCommand}"
+                    ToolTip.Tip="{Binding BusInterfaceHint}" />
+            <Button Classes="tool" Content="{loc:Tr BtnDisconnect}" Command="{Binding DisconnectCommand}" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="ribbonGroup">
+          <StackPanel Orientation="Horizontal" Spacing="2">
+            <Button Classes="tool" Content="{loc:Tr BtnCheck}" Click="OnRunCheck"
+                    IsEnabled="{Binding HasProject}" ToolTip.Tip="{loc:Tr UxNeedsProject}"
+                    ToolTip.ShowOnDisabled="True" />
+            <Button Classes="tool" Click="OnSmartLink"
+                    IsEnabled="{Binding HasProject}" ToolTip.Tip="{loc:Tr UxNeedsProject}"
+                    ToolTip.ShowOnDisabled="True">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <views:Icon Symbol="Link" Width="20" Height="20" />
+                <TextBlock Text="{loc:Tr BtnSmartLink}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button Classes="tool" Content="{loc:Tr BtnReplaceProduct}" Click="OnReplaceProduct"
+                    IsEnabled="{Binding HasProject}" ToolTip.Tip="{loc:Tr UxNeedsProject}"
+                    ToolTip.ShowOnDisabled="True" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="ribbonGroup">
+          <StackPanel Orientation="Horizontal" Spacing="2">
+            <Button Classes="tool" IsEnabled="{Binding HasProject}" ToolTip.Tip="{loc:Tr MenuFileExport}"
+                    ToolTip.ShowOnDisabled="True">
+              <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                  <MenuItem Header="{loc:Tr MenuFileExportGroupAddresses}" Click="OnExportGroupAddresses" />
+                  <MenuItem Header="{loc:Tr MenuFileExportDevices}" Click="OnExportDevices" />
+                  <MenuItem Header="{loc:Tr MenuFileExportTopology}" Click="OnExportTopology" />
+                  <Separator />
+                  <MenuItem Header="{loc:Tr MenuFileExportTurtle}" Click="OnExportSemanticTtl" />
+                  <MenuItem Header="{loc:Tr MenuFileExportJsonLd}" Click="OnExportSemanticJsonLd" />
+                  <MenuItem Header="{loc:Tr MenuFileExportLabels}" Click="OnExportLabels" />
+                  <MenuItem Header="{loc:Tr MenuFileExportLabelsCsv}" Click="OnExportLabelsCsv" />
+                  <MenuItem Header="{loc:Tr MenuFileExportMerge}" Click="OnExportMergeDataSource" />
+                </MenuFlyout>
+              </Button.Flyout>
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="{loc:Tr MenuFileExport}" />
+                <TextBlock Text="▾" Classes="muted" />
+              </StackPanel>
+            </Button>
+            <Button Classes="tool" Click="OnSettings">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <views:Icon Symbol="Settings" Width="20" Height="20" />
+                <TextBlock Text="{loc:Tr UxSettings}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Border>
+
+      </WrapPanel>
+    </Border>
+
+    <!-- ===== status bar: project, status text, bus state (no version string) ===== -->
+    <Border DockPanel.Dock="Bottom" Classes="statusBar">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <TextBlock Text="{Binding ProjectLabel}" Classes="muted" VerticalAlignment="Center"
+                   IsVisible="{Binding HasProject}"
+                   MaxWidth="380" TextTrimming="CharacterEllipsis"
+                   ToolTip.Tip="{Binding ProjectTooltip}" />
+        <TextBlock Grid.Column="1" Text="{Binding Status}" VerticalAlignment="Center"
+                   Margin="12,0" TextTrimming="CharacterEllipsis" />
+        <TextBlock Grid.Column="2" Classes="muted" Text="{Binding BusStateText}" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <Panel>
+      <!-- ===== start screen: shown while no project is loaded and no workspace was opened ===== -->
+      <ScrollViewer IsVisible="{Binding ShowStart}" VerticalScrollBarVisibility="Auto">
+        <StackPanel Width="680" MaxWidth="680" Margin="40" Spacing="22"
+                    HorizontalAlignment="Left" VerticalAlignment="Top">
+          <TextBlock Text="{loc:Tr UxStart}" FontSize="24" FontWeight="SemiBold" />
+
+          <Grid ColumnDefinitions="*,12,*,12,*">
+            <Button Grid.Column="0" Classes="card" Click="OnOpenProject">
+              <StackPanel Spacing="10" VerticalAlignment="Top">
+                <views:Icon Symbol="FolderOpen" Width="32" Height="32"
+                            Foreground="{DynamicResource EtsAccent}" />
+                <TextBlock Text="{loc:Tr UxOpenProject}" FontSize="15" FontWeight="SemiBold" />
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="2" Classes="card" Click="OnNewProject">
+              <StackPanel Spacing="10" VerticalAlignment="Top">
+                <views:Icon Symbol="NoteAdd" Width="32" Height="32"
+                            Foreground="{DynamicResource EtsAccent}" />
+                <TextBlock Text="{loc:Tr UxNewProject}" FontSize="15" FontWeight="SemiBold" />
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="4" Classes="card" Click="OnCatalogLibrary"
+                    ToolTip.Tip="{loc:Tr UxCatalogHint}">
+              <StackPanel Spacing="10" VerticalAlignment="Top">
+                <views:Icon Symbol="LibraryBooks" Width="32" Height="32"
+                            Foreground="{DynamicResource EtsAccent}" />
+                <TextBlock Text="{loc:Tr UxCatalogCard}" FontSize="15" FontWeight="SemiBold"
+                           TextWrapping="Wrap" />
+                <TextBlock Text="{loc:Tr UxCatalogHint}" Classes="muted" TextWrapping="Wrap" />
+              </StackPanel>
+            </Button>
+          </Grid>
+
+          <StackPanel Spacing="8">
+            <TextBlock Classes="muted" Text="{loc:Tr UxRecent}" />
+            <ListBox ItemsSource="{Binding RecentProjects}"
+                     IsVisible="{Binding HasRecents}" MaxHeight="320"
+                     SelectionChanged="OnRecentSelected">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Margin="10,6">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Folder}" Classes="muted"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Classes="muted" Text="{loc:Tr UxNoRecent}" IsVisible="{Binding !HasRecents}" />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+
+      <!-- ===== workspace: every panel is a dock document or tool and can float ===== -->
+      <Panel x:Name="WorkspaceHost" IsVisible="{Binding ShowWorkspace}" Margin="6">
+        <dockCtl:DockControl x:Name="DockArea" />
+
+        <!-- The panel content is instantiated here so the code-behind keeps its named controls;
+             the constructor hands each panel to its dock document and drops this staging area. -->
+        <StackPanel x:Name="PanelStaging" IsVisible="False">
+
+          <ScrollViewer x:Name="DashboardPanel">
+            <StackPanel Margin="14" Spacing="14">
+              <TextBlock Text="{Binding DashboardProjectText}"
+                         FontSize="16" FontWeight="SemiBold" />
+              <Grid ColumnDefinitions="*,*,*,*">
+                <Border Grid.Column="0" Classes="panel" Padding="12" Margin="0,0,8,0">
+                  <StackPanel>
+                    <TextBlock Classes="kpi" Text="{Binding Stats.Devices}" />
+                    <TextBlock Classes="muted" Text="{loc:Tr DashDevices}" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Classes="panel" Padding="12" Margin="0,0,8,0">
+                  <StackPanel>
+                    <TextBlock Classes="kpi" Text="{Binding Stats.GroupAddresses}" />
+                    <TextBlock Classes="muted" Text="{loc:Tr DashGroupAddresses}" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Classes="panel" Padding="12" Margin="0,0,8,0">
+                  <StackPanel>
+                    <TextBlock Classes="kpi" Text="{Binding Stats.LinkedComObjects}" />
+                    <TextBlock Classes="muted" Text="{loc:Tr DashLinkedObjects}" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="3" Classes="panel" Padding="12">
+                  <StackPanel>
+                    <TextBlock Classes="kpi" Text="{Binding Stats.DptTypes}" />
+                    <TextBlock Classes="muted" Text="{loc:Tr DashDptTypes}" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+
+              <Grid ColumnDefinitions="*,*">
+                <Border Grid.Column="0" Classes="panel" Padding="10" Margin="0,0,8,0">
+                  <StackPanel>
+                    <TextBlock Classes="panelHeader" Text="{loc:Tr DashDevicesPerLine}" Margin="-10,-10,-10,6" />
+                    <ItemsControl ItemsSource="{Binding DashboardLines}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Grid ColumnDefinitions="*,60" Margin="2">
+                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1" Text="{Binding Count}" Classes="mono" TextAlignment="Right" />
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Classes="panel" Padding="10">
+                  <StackPanel>
+                    <TextBlock Classes="panelHeader" Text="{loc:Tr DashTopDpt}" Margin="-10,-10,-10,6" />
+                    <ItemsControl ItemsSource="{Binding DashboardDpt}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Grid ColumnDefinitions="*,60" Margin="2">
+                            <TextBlock Text="{Binding Name}" Classes="mono" />
+                            <TextBlock Grid.Column="1" Text="{Binding Count}" Classes="mono" TextAlignment="Right" />
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+              </Grid>
+            </StackPanel>
+          </ScrollViewer>
+
+          <DockPanel x:Name="GroupAddressesPanel">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="90,*,150,*" Background="{DynamicResource EtsHeaderRow}">
+              <TextBlock Grid.Column="0" Classes="columnHeader" Text="{loc:Tr ColAddress}" />
+              <TextBlock Grid.Column="1" Classes="columnHeader" Text="{loc:Tr ColName}" />
+              <TextBlock Grid.Column="2" Classes="columnHeader" Text="{loc:Tr ColDatapointType}" />
+              <TextBlock Grid.Column="3" Classes="columnHeader" Text="{loc:Tr ColLinked}" />
+            </Grid>
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="6">
+              <Button Content="{loc:Tr BtnAdd}" Padding="8,2" Click="OnAddGroupAddress"
+                      IsEnabled="{Binding HasProject}" ToolTip.Tip="{loc:Tr TipAddGroupAddress}" />
+              <Button Content="{loc:Tr BtnDelete}" Padding="8,2" Click="OnDeleteGroupAddress"
+                      IsEnabled="{Binding HasProject}" ToolTip.Tip="{loc:Tr TipDeleteGroupAddress}" />
+              <TextBox Text="{Binding SendValue}" Watermark="{loc:Tr WatermarkSendValue}" Width="220" />
+              <Button Content="{loc:Tr BtnSend}" Command="{Binding SendGroupValueCommand}" />
+              <Button Content="{loc:Tr BtnRead}" Click="OnReadGroupValue" />
+              <TextBlock Classes="muted" VerticalAlignment="Center"
+                         Text="{Binding SelectionText}" />
+            </StackPanel>
+            <Grid>
+              <ListBox ItemsSource="{Binding GroupAddresses}"
+                       SelectedItem="{Binding SelectedGroupAddress, Mode=TwoWay}"
+                       DoubleTapped="OnGroupAddressDoubleTapped">
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="90,*,150,*" Margin="6,1">
+                      <TextBlock Grid.Column="0" Text="{Binding AddressText}" Classes="mono"
+                                 Foreground="{DynamicResource EtsAccent}" />
+                      <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="2" Text="{Binding DatapointType}" Classes="muted" />
+                      <TextBlock Grid.Column="3" Text="{Binding Id}" Classes="muted" />
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+              <StackPanel IsVisible="{Binding !HasGroupAddresses}" VerticalAlignment="Center" Spacing="8"
+                          HorizontalAlignment="Center">
+                <TextBlock Text="{loc:Tr UxEmptyGroupAddresses}" Classes="muted"
+                           HorizontalAlignment="Center" />
+                <Button Content="{loc:Tr BtnAdd}" Padding="10,2" Click="OnAddGroupAddress"
+                        HorizontalAlignment="Center" ToolTip.Tip="{loc:Tr TipAddGroupAddress}" />
+              </StackPanel>
+            </Grid>
+          </DockPanel>
+
+          <DockPanel x:Name="CheckPanel">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="6">
+              <Button Content="{loc:Tr BtnRunCheck}" Click="OnRunCheck" />
+              <TextBlock Classes="muted" VerticalAlignment="Center"
+                         Text="{Binding FindingsText}" IsVisible="{Binding HasFindings}" />
+            </StackPanel>
+            <Grid>
+              <ListBox ItemsSource="{Binding Findings}">
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <Grid ColumnDefinitions="70,60,110,*" Margin="6,1">
+                      <TextBlock Grid.Column="0" Text="{Binding Severity}" FontWeight="SemiBold" />
+                      <TextBlock Grid.Column="1" Text="{Binding Code}" Classes="mono" />
+                      <TextBlock Grid.Column="2" Text="{Binding Path}" Classes="mono" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="3" Text="{Binding Message}" TextWrapping="Wrap" />
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+              <TextBlock Text="{loc:Tr UxEmptyFindings}" Classes="muted"
+                         IsVisible="{Binding !HasFindings}"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Grid>
+          </DockPanel>
+
+          <DockPanel x:Name="MonitorPanel">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="6">
+              <TextBlock Classes="muted" Text="{loc:Tr LblDeviceInNetwork}" VerticalAlignment="Center" />
+              <ComboBox ItemsSource="{Binding DiscoveredDevices}" SelectedItem="{Binding SelectedDeviceOnBus}" Width="260">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate><TextBlock Text="{Binding Name}" /></DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <Button Content="{loc:Tr BtnClearMonitor}" Click="OnClearMonitor" />
+              <TextBlock Classes="muted" VerticalAlignment="Center"
+                         Text="{Binding MonitorText}" />
+            </StackPanel>
+            <ListBox ItemsSource="{Binding Monitor}">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Text}" Classes="mono" Margin="6,0" TextWrapping="NoWrap" />
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DockPanel>
+
+          <DockPanel x:Name="RecorderPanel">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="6">
+              <Button Content="{loc:Tr BtnStart}" Click="OnStartRecording" IsEnabled="{Binding !IsRecording}" />
+              <Button Content="{loc:Tr BtnStop}" Click="OnStopRecording" IsEnabled="{Binding IsRecording}" />
+              <Button Content="{loc:Tr BtnSaveDots}" Click="OnSaveRecording" />
+              <Button Content="{loc:Tr BtnLoadDots}" Click="OnLoadRecording" />
+              <TextBlock Classes="muted" VerticalAlignment="Center"
+                         Text="{Binding RecordedText}" />
+            </StackPanel>
+            <ListBox ItemsSource="{Binding Recorded}">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="95,90,130,140,*" Margin="6,0">
+                    <TextBlock Grid.Column="0" Text="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss.fff}'}" Classes="mono" />
+                    <TextBlock Grid.Column="1" Text="{Binding Source}" Classes="mono" />
+                    <TextBlock Grid.Column="2" Text="{Binding Destination}" Classes="mono" />
+                    <TextBlock Grid.Column="3" Text="{Binding Apci}" Classes="mono" />
+                    <TextBlock Grid.Column="4" Text="{Binding Data}" Classes="mono" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DockPanel>
+
+          <Border x:Name="TopologyPanel" Classes="panel">
+            <DockPanel>
+              <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
+                <Button Grid.Column="1" Content="{loc:Tr MenuCatalog}" Padding="6,2" Margin="2"
+                        Click="OnCatalogLibrary" ToolTip.Tip="{loc:Tr UxCatalogHint}" />
+              </Grid>
+              <Grid>
+                <TreeView x:Name="TopologyTree" ItemsSource="{Binding Tree}"
+                          SelectedItem="{Binding SelectedTreeNode, Mode=TwoWay}"
+                          SelectionChanged="OnTreeSelectionChanged"
+                          DoubleTapped="OnTreeDoubleTapped"
+                          DragDrop.AllowDrop="True"
+                          DragDrop.DragOver="OnTreeDragOver"
+                          DragDrop.Drop="OnTreeDrop">
+                  <TreeView.ItemContainerTheme>
+                    <ControlTheme TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+                      <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                    </ControlTheme>
+                  </TreeView.ItemContainerTheme>
+                  <TreeView.ItemTemplate>
+                    <TreeDataTemplate ItemsSource="{Binding Children}">
+                      <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent">
+                        <StackPanel.ContextMenu>
+                          <ContextMenu>
+                            <MenuItem Header="{loc:Tr MenuCatalog}" Click="OnCatalogForNode" />
+                            <MenuItem Header="{loc:Tr BtnParameters}" Click="OnOpenParameters" />
+                            <MenuItem Header="{loc:Tr CommunicationObjects}" Click="OnGroupLinks" />
+                            <MenuItem Header="{loc:Tr CtxDeleteDevice}" Click="OnDeleteDevice" />
+                            <Separator />
+                            <MenuItem Header="{loc:Tr MenuEditAddGroupAddress}" Click="OnAddGroupAddress" />
+                          </ContextMenu>
+                        </StackPanel.ContextMenu>
+                        <TextBlock Text="{Binding Name}" Classes="mono" />
+                        <TextBlock Text="{Binding Subtitle}" Classes="muted" />
+                      </StackPanel>
+                    </TreeDataTemplate>
+                  </TreeView.ItemTemplate>
+                </TreeView>
+                <StackPanel IsVisible="{Binding !HasDevices}" VerticalAlignment="Center" Spacing="8"
+                            HorizontalAlignment="Center">
+                  <TextBlock Text="{loc:Tr UxEmptyDevices}" Classes="muted"
+                             HorizontalAlignment="Center" />
+                  <Button Content="{loc:Tr MenuCatalog}" Click="OnCatalogLibrary"
+                          HorizontalAlignment="Center" />
+                </StackPanel>
+              </Grid>
+            </DockPanel>
+          </Border>
+
+          <Border x:Name="PropertiesPanel" Classes="panel">
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Top" Classes="muted" Margin="10,8"
+                         Text="{loc:Tr MsgNoSelection}" IsVisible="{Binding !HasSelection}" />
+              <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="8" IsVisible="{Binding HasSelection}">
+                <TextBlock Classes="muted" Text="{loc:Tr ColName}" />
+                <TextBox x:Name="NameBox" Text="{Binding EditName, Mode=TwoWay}" KeyDown="OnNameKeyDown" />
+                <TextBlock Classes="muted" Text="{loc:Tr LblDatapointType}" />
+                <TextBox Text="{Binding EditDatapointType, Mode=TwoWay}" Watermark="DPST-1-1" />
+                <Button Content="{loc:Tr BtnApply}" Click="OnApplyDetails" HorizontalAlignment="Stretch" />
+                <Button Content="{loc:Tr BtnParameters}" Click="OnOpenParameters" HorizontalAlignment="Stretch"
+                        IsEnabled="{Binding HasDeviceSelected}" ToolTip.Tip="{loc:Tr UxNeedsDevice}"
+                        ToolTip.ShowOnDisabled="True" />
+                <Button Content="{loc:Tr CommunicationObjects}" Click="OnGroupLinks" HorizontalAlignment="Stretch"
+                        IsEnabled="{Binding HasDeviceSelected}" ToolTip.Tip="{loc:Tr UxNeedsDevice}"
+                        ToolTip.ShowOnDisabled="True" />
+                <Button Content="{loc:Tr BtnDownload}" Click="OnDownload" HorizontalAlignment="Stretch"
+                        IsEnabled="{Binding CanDownload}" />
+              </StackPanel>
+              <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding Details}" Margin="8,4">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <StackPanel Margin="0,3">
+                        <TextBlock Text="{Binding Name}" Classes="muted" />
+                        <TextBlock Text="{Binding DisplayValue}" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </DockPanel>
+          </Border>
+
+        </StackPanel>
+      </Panel>
+    </Panel>
+  </DockPanel>
+</Window>
