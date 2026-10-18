@@ -23,16 +23,18 @@
     <None Include="Assets\brand\buschord-house-preview.png" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.2.0" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.2.0" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.0" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.0" />
+    <PackageReference Include="Avalonia" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-    <!-- MIT docking: Dock.Avalonia 11.2.0 matches Avalonia 11.2.0; the model package brings
-         Dock.Model 11.2.0 and Dock.Settings 11.2.0 along. -->
-    <PackageReference Include="Dock.Avalonia" Version="11.2.0" />
-    <PackageReference Include="Dock.Model" Version="11.2.0" />
-    <PackageReference Include="Dock.Model.Mvvm" Version="11.2.0" />
+    <!-- MIT docking: Dock 11.3.12.1 targets Avalonia 11.3.12; the model package brings
+         Dock.Model 11.3.12.1 and Dock.Settings 11.3.12.1 along. -->
+    <PackageReference Include="Dock.Avalonia" Version="11.3.12.1" />
+    <!-- Dock 11.3 moved DockFluentTheme out of Dock.Avalonia into its own package. -->
+    <PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="11.3.12.1" />
+    <PackageReference Include="Dock.Model" Version="11.3.12.1" />
+    <PackageReference Include="Dock.Model.Mvvm" Version="11.3.12.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Knx.Core\Knx.Core.csproj" />
