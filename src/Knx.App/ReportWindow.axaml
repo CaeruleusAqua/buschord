@@ -3,7 +3,7 @@
         xmlns:loc="using:Knx.App.Localization"
         x:Class="Knx.App.ReportWindow"
         Width="900" Height="620" MinWidth="600" MinHeight="360"
-        Title="{Binding Title}" Icon="/Assets/brand/buschord-house-icon-256.png">
+        Title="{Binding Title}" Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
   <DockPanel Margin="12">
     <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,10">
       <TextBlock x:Name="TitleText" FontSize="16" FontWeight="SemiBold" />
