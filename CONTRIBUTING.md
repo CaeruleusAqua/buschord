@@ -124,7 +124,22 @@ Advisories.
 Everyone participating is expected to follow the
 [Code of Conduct](CODE_OF_CONDUCT.md).
 
-## Licence of contributions
+## Licence of contributions and CLA
 
-By submitting a pull request you agree that your contribution is licensed under
-the [Apache License 2.0](LICENSE), the licence of this repository.
+BusChord is distributed under the [Apache License 2.0](LICENSE). To keep the
+project maintainable — including the option to change the outbound licence in a
+future release — every contributor must accept the
+[Contributor License Agreement](CLA.md) before a pull request can be merged.
+
+Signing is a single comment on your pull request:
+
+> I have read the CLA Document and I hereby sign the CLA
+
+The CLA bot records your GitHub account name and the pull request number in the
+`cla-signatures` branch. You keep the copyright in your contribution and grant
+the project a broad, irrevocable licence that includes relicensing. Signing once
+covers future contributions until the CLA version changes. If you contribute on
+behalf of an employer, make sure you are authorised to do so.
+
+Pull requests without a recorded signature stay blocked by the `CLA Assistant`
+check. The maintainer account and bots are allowlisted and do not need to sign.
