@@ -39,6 +39,12 @@ public partial class App : Application
             }
             else
             {
+                // The splash is only cosmetic: it never blocks start-up and disappears
+                // as soon as the main window has rendered.
+                var splash = new SplashWindow();
+                splash.Show();
+                window.Opened += (_, _) => splash.Close();
+
                 if (StartupProject is { } path && File.Exists(path))
                     window.ViewModel.LoadProject(path);
 
