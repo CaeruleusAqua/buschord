@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Knx.Mcp</RootNamespace>
+    <AssemblyName>buschord-mcp</AssemblyName>
+    <Product>BusChord MCP</Product>
+    <Description>BusChord MCP server</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Knx.Core\Knx.Core.csproj" />
+    <ProjectReference Include="..\Knx.Bus\Knx.Bus.csproj" />
+    <ProjectReference Include="..\Knx.Reports\Knx.Reports.csproj" />
+    <ProjectReference Include="..\Knx.ProjectCompare\Knx.ProjectCompare.csproj" />
+  </ItemGroup>
+</Project>

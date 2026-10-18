@@ -1,0 +1,49 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:Knx.App.Localization"
+        x:Class="Knx.App.SettingsWindow"
+        Title="{loc:Tr OptionsTitle}" Width="620" Height="560" MinWidth="480" MinHeight="420">
+  <DockPanel Margin="14">
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,12,0,0">
+      <Button Content="{loc:Tr BtnSaveSettings}" Click="OnSave" />
+      <Button Content="{loc:Tr BtnCancel}" Click="OnCancel" />
+    </StackPanel>
+
+    <StackPanel Spacing="14">
+      <TextBlock Text="{loc:Tr OptionsAppearance}" FontWeight="SemiBold" />
+      <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto">
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr OptionsTheme}" VerticalAlignment="Center" />
+        <ComboBox Grid.Row="0" Grid.Column="1" x:Name="ThemeBox" Width="220" HorizontalAlignment="Left">
+          <ComboBoxItem Content="{loc:Tr ThemeSystem}" />
+          <ComboBoxItem Content="{loc:Tr ThemeLight}" />
+          <ComboBoxItem Content="{loc:Tr ThemeDark}" />
+        </ComboBox>
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr OptionsLanguage}" VerticalAlignment="Center" Margin="0,8,0,0" />
+        <ComboBox Grid.Row="1" Grid.Column="1" x:Name="LanguageBox" Width="220" HorizontalAlignment="Left" Margin="0,8,0,0">
+          <ComboBoxItem Content="Deutsch" />
+          <ComboBoxItem Content="English" />
+        </ComboBox>
+
+        <CheckBox Grid.Row="2" Grid.Column="1" x:Name="ConfirmDeleteBox"
+                  Content="{loc:Tr OptionsConfirmDelete}" Margin="0,8,0,0" />
+
+        <TextBlock Grid.Row="3" Grid.Column="0" Text="{loc:Tr OptionsRecent}"
+                   VerticalAlignment="Top" Margin="0,8,0,0" />
+        <Border Grid.Row="3" Grid.Column="1" Classes="panel" Height="120" Margin="0,8,0,0">
+          <ListBox x:Name="RecentList" />
+        </Border>
+      </Grid>
+
+      <TextBlock Text="{loc:Tr OptionsBus}" FontWeight="SemiBold" />
+      <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto">
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr OptionsInterface}" VerticalAlignment="Center" />
+        <TextBox Grid.Row="0" Grid.Column="1" x:Name="BusInterfaceBox" Watermark="z. B. 192.168.1.10" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr OptionsOwnAddress}" VerticalAlignment="Center" Margin="0,8,0,0" />
+        <TextBox Grid.Row="1" Grid.Column="1" x:Name="TunnelAddressBox" Watermark="1.1.250" Margin="0,8,0,0" />
+      </Grid>
+    </StackPanel>
+  </DockPanel>
+</Window>

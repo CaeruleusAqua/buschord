@@ -1,0 +1,36 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    target-branch: development
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "nuget"
+    groups:
+      dotnet-packages:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      dotnet-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    target-branch: development
+    commit-message:
+      prefix: "actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

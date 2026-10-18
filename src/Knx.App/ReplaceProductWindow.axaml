@@ -1,0 +1,52 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:Knx.App.Localization"
+        x:Class="Knx.App.ReplaceProductWindow"
+        Title="{loc:Tr ReplaceProductTitle}" Width="720" Height="560" MinWidth="560" MinHeight="420">
+  <DockPanel Margin="14">
+    <StackPanel DockPanel.Dock="Top" Spacing="8">
+      <TextBlock Classes="muted" TextWrapping="Wrap"
+                 Text="Alle Geräte eines Produkts umstellen; Verknüpfungen bleiben erhalten." />
+      <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto">
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr ReplaceOldRef}" VerticalAlignment="Center" />
+        <TextBox Grid.Row="0" Grid.Column="1" x:Name="OldBox" Watermark="M-0083_A-008A-25-6CE4" />
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr ReplaceNewRef}" VerticalAlignment="Center" Margin="0,8,0,0" />
+        <TextBox Grid.Row="1" Grid.Column="1" x:Name="NewBox" Watermark="M-0083_A-008A-25-6CE5" Margin="0,8,0,0" />
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Tr ReplaceNewProgram}" VerticalAlignment="Center" Margin="0,8,0,0" />
+        <TextBox Grid.Row="2" Grid.Column="1" x:Name="ProgramBox" Margin="0,8,0,0"
+                 Watermark="M-0083_H-Base_I-0000_A-008A-25-6CE5" />
+      </Grid>
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="{loc:Tr BtnPreview}" Click="OnPreview" />
+        <TextBlock x:Name="SummaryText" VerticalAlignment="Center" Classes="muted" />
+      </StackPanel>
+    </StackPanel>
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,12,0,0">
+      <Button x:Name="ApplyButton" Content="{loc:Tr BtnReplace}" Click="OnApply" IsEnabled="False" />
+      <Button Content="{loc:Tr BtnClose}" Click="OnClose" />
+    </StackPanel>
+
+    <Border Classes="panel" Margin="0,10,0,0">
+      <DockPanel>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="110,*,90" Background="{DynamicResource EtsHeaderRow}">
+          <TextBlock Grid.Column="0" Classes="columnHeader" Text="{loc:Tr ColAddress}" />
+          <TextBlock Grid.Column="1" Classes="columnHeader" Text="{loc:Tr ColType}" />
+          <TextBlock Grid.Column="2" Classes="columnHeader" Text="{loc:Tr ColLinked}" />
+        </Grid>
+        <ListBox x:Name="ResultList">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <Grid ColumnDefinitions="110,*,90" Margin="6,1">
+                <TextBlock Grid.Column="0" Text="{Binding Device.Address}" Classes="mono" />
+                <TextBlock Grid.Column="1" Text="{Binding NewRefId}" Classes="mono" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="2" Text="{Binding KeptLinks}" Classes="muted" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+  </DockPanel>
+</Window>

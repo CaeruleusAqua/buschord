@@ -1,0 +1,129 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:Knx.App.Localization"
+             x:Class="Knx.App.Views.CatalogPane">
+  <UserControl.Styles>
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="Foreground" Value="{DynamicResource EtsPanel}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Padding" Value="12,6" />
+    </Style>
+    <Style Selector="Button.primary:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsButtonBackground}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsMuted}" />
+    </Style>
+    <Style Selector="Button.secondary">
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="FontSize" Value="11.5" />
+    </Style>
+  </UserControl.Styles>
+
+  <DockPanel Margin="12">
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*" Margin="0,0,0,8">
+      <Button Grid.Column="0" Classes="secondary" Content="{loc:Tr CatalogImport}" Click="OnImport" />
+      <Button Grid.Column="1" Classes="secondary" Content="{loc:Tr CatalogReload}" Click="OnReload" Margin="6,0,0,0" />
+      <TextBlock Grid.Column="2" x:Name="ErrorText" Classes="muted" VerticalAlignment="Center"
+                 Margin="10,0,0,0" TextTrimming="CharacterEllipsis" IsVisible="False" />
+    </Grid>
+
+    <StackPanel x:Name="LoadingState" DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10"
+                Margin="0,0,0,8" IsVisible="False">
+      <ProgressBar IsIndeterminate="True" Width="140" VerticalAlignment="Center" />
+      <TextBlock x:Name="LoadingText" Classes="muted" VerticalAlignment="Center" />
+    </StackPanel>
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,8,0,0">
+      <Button x:Name="CloseButton" Content="{loc:Tr BtnClose}" Click="OnClose" />
+    </StackPanel>
+
+    <Grid ColumnDefinitions="220,*,300">
+      <Border Grid.Column="0" Classes="panel">
+        <DockPanel>
+          <TextBlock x:Name="LibraryHeader" DockPanel.Dock="Top" Classes="panelHeader" />
+          <Grid>
+            <ListBox x:Name="CatalogList" SelectionChanged="OnCatalogChanged">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Margin="6,3">
+                    <TextBlock Text="{Binding Manufacturer.Name}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Name}" Classes="muted" />
+                    <TextBlock Text="{Binding Products.Count}" Classes="muted" FontSize="10" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel x:Name="LibraryEmpty" IsVisible="False" Spacing="8" Margin="10" VerticalAlignment="Center">
+              <TextBlock Text="{loc:Tr CatalogNoCatalog}" Classes="muted" TextWrapping="Wrap" />
+              <Button Content="{loc:Tr CatalogImport}" Click="OnImport" HorizontalAlignment="Left" />
+            </StackPanel>
+          </Grid>
+        </DockPanel>
+      </Border>
+
+      <Border Grid.Column="1" Classes="panel" Margin="8,0">
+        <DockPanel>
+          <TextBlock x:Name="ProductsHeader" DockPanel.Dock="Top" Classes="panelHeader" />
+          <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="6">
+            <TextBox x:Name="SearchBox" Watermark="{loc:Tr CatalogSearch}" TextChanged="OnFilterChanged" />
+            <ComboBox x:Name="SectionBox" HorizontalAlignment="Stretch" SelectionChanged="OnSectionChanged" />
+          </StackPanel>
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="*,100,50" Background="{DynamicResource EtsHeaderRow}">
+            <TextBlock Grid.Column="0" Classes="columnHeader" Text="{loc:Tr ColName}" />
+            <TextBlock Grid.Column="1" Classes="columnHeader" Text="{loc:Tr CatalogOrderNumber}" />
+            <TextBlock Grid.Column="2" Classes="columnHeader" Text="{loc:Tr CatalogProgramCount}" />
+          </Grid>
+          <Grid>
+            <ListBox x:Name="ProductList" SelectionChanged="OnProductChanged">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="*,100,50" Margin="6,1">
+                    <TextBlock Grid.Column="0" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1" Text="{Binding OrderNumber}" Classes="mono" />
+                    <TextBlock Grid.Column="2" Text="{Binding ProgramRefIds.Count}" Classes="muted" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel x:Name="ProductsEmpty" IsVisible="False" Spacing="8" Margin="12"
+                        VerticalAlignment="Center" HorizontalAlignment="Center">
+              <TextBlock x:Name="ProductsEmptyText" Classes="muted" TextWrapping="Wrap" TextAlignment="Center" />
+              <Button x:Name="ClearSearchButton" Content="{loc:Tr CatalogNoResults}" Click="OnClearSearch"
+                      HorizontalAlignment="Center" />
+            </StackPanel>
+          </Grid>
+        </DockPanel>
+      </Border>
+
+      <Border Grid.Column="2" Classes="panel">
+        <DockPanel>
+          <TextBlock x:Name="UxInsert" DockPanel.Dock="Top" Classes="panelHeader" Text="{loc:Tr UxInsert}" />
+          <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="8">
+            <TextBlock x:Name="UxNeedsProject" Classes="muted" Text="{loc:Tr UxNeedsProject}"
+                       TextWrapping="Wrap" IsVisible="False" />
+            <TextBlock Classes="muted" Text="{loc:Tr CatalogTargetLine}" />
+            <ComboBox x:Name="LineBox" HorizontalAlignment="Stretch" SelectionChanged="OnLineChanged">
+              <ComboBox.ItemTemplate>
+                <DataTemplate><TextBlock Text="{Binding Text}" /></DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBlock Classes="muted" Text="{loc:Tr ColAddress}" />
+            <TextBox x:Name="AddressBox" Watermark="1.1.1" TextChanged="OnAddressChanged" />
+            <TextBlock Classes="muted" Text="{loc:Tr ColName}" />
+            <TextBox x:Name="NameBox" />
+            <TextBlock x:Name="InsertStatus" TextTrimming="CharacterEllipsis" />
+            <Button x:Name="InsertButton" Classes="primary" Content="{loc:Tr UxInsert}"
+                    Click="OnInsert" HorizontalAlignment="Stretch" />
+          </StackPanel>
+          <ScrollViewer>
+            <StackPanel Margin="8" Spacing="4">
+              <TextBlock x:Name="UxProduct" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <StackPanel x:Name="Details" Spacing="6" />
+            </StackPanel>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+    </Grid>
+  </DockPanel>
+</UserControl>
