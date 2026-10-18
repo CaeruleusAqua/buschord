@@ -21,7 +21,7 @@
       <Button x:Name="CloseButton" Content="{loc:Tr BtnClose}" Click="OnClose" />
     </StackPanel>
 
-    <Grid ColumnDefinitions="220,*,300">
+    <Grid ColumnDefinitions="200,*,260">
       <Border Grid.Column="0" Classes="panel">
         <DockPanel>
           <TextBlock x:Name="LibraryHeader" DockPanel.Dock="Top" Classes="panelHeader" />

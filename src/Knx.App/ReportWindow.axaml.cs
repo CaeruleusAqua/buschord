@@ -49,20 +49,27 @@ public partial class ReportWindow : Window
 
     private async void OnSaveCsv(object? sender, RoutedEventArgs e)
     {
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        try
         {
-            SuggestedFileName = _csvName + ".csv",
-            DefaultExtension = "csv",
-        });
-        if (file is null) return;
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                SuggestedFileName = _csvName + ".csv",
+                DefaultExtension = "csv",
+            });
+            if (file is null) return;
 
-        var sb = new StringBuilder("Stufe;Objekt;Beschreibung\n");
-        foreach (var row in _rows)
-            sb.AppendLine($"{row.Severity};{Escape(row.Title)};{Escape(row.Detail)}");
+            var sb = new StringBuilder("Stufe;Objekt;Beschreibung\n");
+            foreach (var row in _rows)
+                sb.AppendLine($"{row.Severity};{Escape(row.Title)};{Escape(row.Detail)}");
 
-        await using var stream = await file.OpenWriteAsync();
-        await using var writer = new StreamWriter(stream, new UTF8Encoding(true));
-        await writer.WriteAsync(sb.ToString());
+            await using var stream = await file.OpenWriteAsync();
+            await using var writer = new StreamWriter(stream, new UTF8Encoding(true));
+            await writer.WriteAsync(sb.ToString());
+        }
+        catch (Exception ex)
+        {
+            await ConfirmDialog.ShowMessageAsync(this, "CSV nicht speicherbar", ex.Message);
+        }
     }
 
     private static string Escape(string value)

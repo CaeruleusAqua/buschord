@@ -9,7 +9,7 @@
         x:DataType="vm:MainWindowViewModel"
         dockIds:DockProperties.IsDragEnabled="True"
         dockIds:DockProperties.IsDropEnabled="True"
-        Title="{Binding Title}" Width="1440" Height="900" MinWidth="1000" MinHeight="640"
+        Title="{Binding Title}" Width="1440" Height="900" MinWidth="1180" MinHeight="640"
         Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
 
   <DockPanel>

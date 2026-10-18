@@ -53,7 +53,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public string Title => Project is null
         ? "BusChord – kein Projekt"
-        : $"BusChord – {Project.Name}{(_undo.Steps > 0 ? " *" : "")}";
+        : $"BusChord – {Project.Name}{(_undo.IsDirty ? " *" : "")}";
+
+    /// <summary>True when the project differs from the last state written to disk.</summary>
+    public bool IsDirty => _undo.IsDirty;
 
     /// <summary>True while a project is loaded; gates commands that need project data.</summary>
     public bool HasProject => Project is not null;
@@ -267,7 +270,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         if (Project is null || ProjectPath.Length == 0) return;
         Knxproj.Save(Project, ProjectPath);
+        // Keep the history, but the current state is now what is on disk.
         _undo.Push(Project);
+        _undo.MarkSaved();
         NotifyEditState();
         Status = "Projekt gespeichert";
     }
@@ -280,6 +285,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Settings.TouchProject(path);
         Settings.Save();
         RefreshRecents();
+        _undo.Push(Project);
+        _undo.MarkSaved();
+        NotifyEditState();
         Status = "Projekt gespeichert";
     }
 
@@ -328,6 +336,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(CanUndo));
         OnPropertyChanged(nameof(CanRedo));
+        OnPropertyChanged(nameof(IsDirty));
         OnPropertyChanged(nameof(Title));
     }
 

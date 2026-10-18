@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<IDockable, IDock> _homeDocks = new();
     private readonly HashSet<IDockWindow> _releasing = new();
     private IDockWindow? _selfClosing;
+    private bool _shuttingDown;
     private DeviceRow? _paneDevice;
     private Point? _dragOrigin;
     private DeviceInstance? _draggedDevice;
@@ -52,6 +53,10 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _vm;
+        // Closing the main window must not first offer every floated panel to its closing
+        // handler: the re-dock there would cancel the whole shutdown (first X did nothing).
+        // The main window's Closing then closes the floats itself (CloseFloats).
+        ClosingBehavior = WindowClosingBehavior.OwnerWindowOnly;
         // Dock hosts each panel under its Document/Tool, so the window DataContext no longer
         // reaches them; every hosted control carries the view model itself.
         _catalog = new CatalogPane(_vm) { DataContext = _vm };
@@ -65,6 +70,7 @@ public partial class MainWindow : Window
         TopologyTree.AddHandler(PointerPressedEvent, OnTreePointerPressed, RoutingStrategies.Tunnel);
         TopologyTree.PointerMoved += OnTreePointerMoved;
         KeyDown += OnKeyDown;
+        Closing += OnClosing;
         _vm.PropertyChanged += (_, e) =>
         {
             switch (e.PropertyName)
@@ -173,6 +179,8 @@ public partial class MainWindow : Window
             if (e.Window is not { Layout: IRootDock windowRoot } window || ReferenceEquals(windowRoot, _root))
                 return;
             if (ReferenceEquals(_selfClosing, window)) return; // our own close of the emptied window
+            // Shutdown: floats close with the main window instead of being re-docked.
+            if (_shuttingDown) return;
 
             // Closing a floating panel re-docks it: release it from the floating window first,
             // re-add it to the dock it came from, then close the now empty window.
@@ -243,6 +251,52 @@ public partial class MainWindow : Window
         foreach (var panel in panels) panel.DataContext = viewModel;
     }
 
+    // ---------- shutdown ----------
+
+    /// <summary>Desktop lifetime is shutting down: floats must stop re-docking into a closing layout.</summary>
+    public void RequestShutdown() => _shuttingDown = true;
+
+    /// <summary>
+    /// One click on X ends the app: a dirty project asks first, then every floating panel is
+    /// closed instead of being re-docked, so no float keeps the process alive.
+    /// </summary>
+    private void OnClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (_shuttingDown)
+        {
+            CloseFloats();
+            return;
+        }
+        if (!_vm.IsDirty)
+        {
+            BeginShutdown();
+            return;
+        }
+
+        e.Cancel = true;
+        // The prompt is a dialog and Closing cannot await: ask after this pass has finished.
+        Dispatcher.UIThread.Post(async () =>
+        {
+            if (!await ConfirmDiscardAsync()) return;
+            BeginShutdown();
+            Close();
+        }, DispatcherPriority.Input);
+    }
+
+    private void BeginShutdown()
+    {
+        _shuttingDown = true;
+        CloseFloats();
+    }
+
+    /// <summary>Closes the floating panel windows; a leftover float would keep the process alive.</summary>
+    private void CloseFloats()
+    {
+        if (_root.Windows is not { } windows) return;
+        foreach (var window in windows.ToList())
+            window.Host?.Exit();
+    }
+
     /// <summary>Brings a document to the front of its current dock and leaves the start screen.</summary>
     private void Activate(Document document)
     {
@@ -271,7 +325,7 @@ public partial class MainWindow : Window
                     break;
                 case Key.Z: _vm.UndoCommand.Execute(null); e.Handled = true; break;
                 case Key.Y: _vm.RedoCommand.Execute(null); e.Handled = true; break;
-                case Key.S: _vm.SaveProject(); e.Handled = true; break;
+                case Key.S: OnSaveProject(this, new RoutedEventArgs()); e.Handled = true; break;
                 case Key.N: OnNewProject(this, new RoutedEventArgs()); e.Handled = true; break;
                 case Key.O: OnOpenProject(this, new RoutedEventArgs()); e.Handled = true; break;
             }
@@ -316,6 +370,7 @@ public partial class MainWindow : Window
 
     private async void OnNewProject(object? sender, RoutedEventArgs e)
     {
+        if (!await ConfirmDiscardAsync()) return;
         var window = new NewProjectWindow();
         if (await window.ShowDialog<bool>(this) != true) return;
 
@@ -345,6 +400,7 @@ public partial class MainWindow : Window
     /// <summary>Loads a project path; used by the file picker and the recent list on the start screen.</summary>
     private async Task OpenProject(string path)
     {
+        if (!await ConfirmDiscardAsync()) return;
         try
         {
             _vm.LoadProject(path);
@@ -352,7 +408,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _vm.Status = $"Projekt nicht ladbar: {ex.Message}";
-            await ShowMessage("Projekt nicht ladbar", ex.Message);
+            await ConfirmDialog.ShowMessageAsync(this, "Projekt nicht ladbar", ex.Message);
         }
     }
 
@@ -364,21 +420,66 @@ public partial class MainWindow : Window
         await OpenProject(item.Path);
     }
 
-    private void OnSaveProject(object? sender, RoutedEventArgs e)
-    {
-        if (_vm.ProjectPath.Length == 0) { OnSaveProjectAs(sender, e); return; }
-        _vm.SaveProject();
-    }
-
-    private async void OnSaveProjectAs(object? sender, RoutedEventArgs e)
+    private async void OnSaveProject(object? sender, RoutedEventArgs e)
     {
         if (_vm.Project is null) return;
+        if (_vm.ProjectPath.Length == 0) { await SaveAsAsync(); return; }
+        SaveNow();
+    }
+
+    private async void OnSaveProjectAs(object? sender, RoutedEventArgs e) => await SaveAsAsync();
+
+    /// <summary>Resolves the Save As picker; false when the user cancels or the write fails.</summary>
+    private async Task<bool> SaveAsAsync()
+    {
+        if (_vm.Project is not { } project) return false;
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            SuggestedFileName = $"{_vm.Project.Name}.knxproj",
+            SuggestedFileName = $"{project.Name}.knxproj",
             DefaultExtension = "knxproj",
         });
-        if (file?.TryGetLocalPath() is { } path) _vm.SaveProjectAs(path);
+        if (file?.TryGetLocalPath() is not { } path) return false;
+        try
+        {
+            _vm.SaveProjectAs(path);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _vm.Status = $"Speichern fehlgeschlagen: {ex.Message}";
+            await ConfirmDialog.ShowMessageAsync(this, "Speichern fehlgeschlagen", ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary>Writes to the known path; an IO error lands in the status line instead of crashing.</summary>
+    private bool SaveNow()
+    {
+        try
+        {
+            _vm.SaveProject();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _vm.Status = $"Speichern fehlgeschlagen: {ex.Message}";
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Save / Discard / Cancel when the project has unsaved changes. False keeps the caller
+    /// where it is (cancel, failed save or cancelled Save As).
+    /// </summary>
+    private async Task<bool> ConfirmDiscardAsync()
+    {
+        if (!_vm.IsDirty) return true;
+        return await ConfirmDialog.AskUnsavedAsync(this, _vm.Project?.Name ?? "") switch
+        {
+            ConfirmChoice.Discard => true,
+            ConfirmChoice.Save => _vm.ProjectPath.Length == 0 ? await SaveAsAsync() : SaveNow(),
+            _ => false,
+        };
     }
 
     private void OnExit(object? sender, RoutedEventArgs e) => Close();
@@ -407,16 +508,23 @@ public partial class MainWindow : Window
             _vm.Status = "kein Projekt geladen";
             return;
         }
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        try
         {
-            SuggestedFileName = fileName,
-            DefaultExtension = extension,
-        });
-        if (file?.TryGetLocalPath() is not { } path) return;
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                SuggestedFileName = fileName,
+                DefaultExtension = extension,
+            });
+            if (file?.TryGetLocalPath() is not { } path) return;
 
-        SemanticExport.Export(project, path, format);
-        var ontology = format == SemanticExport.SemanticFormat.Turtle && File.Exists(SemanticExport.DefaultOntologyPath);
-        _vm.Status = $"{Path.GetFileName(path)} exportiert" + (ontology ? " (Ontologie eingebettet)" : "");
+            SemanticExport.Export(project, path, format);
+            var ontology = format == SemanticExport.SemanticFormat.Turtle && File.Exists(SemanticExport.DefaultOntologyPath);
+            _vm.Status = $"{Path.GetFileName(path)} exportiert" + (ontology ? " (Ontologie eingebettet)" : "");
+        }
+        catch (Exception ex)
+        {
+            _vm.Status = $"Export fehlgeschlagen: {ex.Message}";
+        }
     }
 
     private async void OnExportLabels(object? sender, RoutedEventArgs e)
@@ -441,16 +549,23 @@ public partial class MainWindow : Window
             _vm.Status = "kein Projekt geladen";
             return;
         }
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        try
         {
-            SuggestedFileName = fileName,
-            DefaultExtension = extension,
-        });
-        if (file is null) return;
-        await using var stream = await file.OpenWriteAsync();
-        await using var writer = new StreamWriter(stream, new UTF8Encoding(true));
-        await writer.WriteAsync(render(project));
-        _vm.Status = $"{fileName} exportiert";
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                SuggestedFileName = fileName,
+                DefaultExtension = extension,
+            });
+            if (file is null) return;
+            await using var stream = await file.OpenWriteAsync();
+            await using var writer = new StreamWriter(stream, new UTF8Encoding(true));
+            await writer.WriteAsync(render(project));
+            _vm.Status = $"{fileName} exportiert";
+        }
+        catch (Exception ex)
+        {
+            _vm.Status = $"Export fehlgeschlagen: {ex.Message}";
+        }
     }
 
     private async void OnImportGroupAddresses(object? sender, RoutedEventArgs e)
@@ -460,20 +575,27 @@ public partial class MainWindow : Window
             _vm.Status = "kein Projekt geladen";
             return;
         }
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        try
         {
-            AllowMultiple = false,
-            Title = "Gruppenadressen importieren",
-            FileTypeFilter = [new FilePickerFileType("CSV") { Patterns = ["*.csv", "*.txt"] }],
-        });
-        if (files is not { Count: > 0 } || files[0].TryGetLocalPath() is not { } path) return;
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                AllowMultiple = false,
+                Title = "Gruppenadressen importieren",
+                FileTypeFilter = [new FilePickerFileType("CSV") { Patterns = ["*.csv", "*.txt"] }],
+            });
+            if (files is not { Count: > 0 } || files[0].TryGetLocalPath() is not { } path) return;
 
-        var result = ProjectWizard.ImportGroupAddresses(project, installation, await File.ReadAllTextAsync(path));
-        _vm.Refresh();
-        _vm.Status = $"Import: {result.Imported} neu, {result.Skipped} übersprungen, {result.Errors.Count} Fehler";
-        if (result.Errors.Count > 0)
-            ShowReport("Importfehler", $"{result.Errors.Count} Zeile(n) konnten nicht gelesen werden",
-                result.Errors.Select(error => new ReportRow("Fehler", Path.GetFileName(path), error)));
+            var result = ProjectWizard.ImportGroupAddresses(project, installation, await File.ReadAllTextAsync(path));
+            _vm.Refresh();
+            _vm.Status = $"Import: {result.Imported} neu, {result.Skipped} übersprungen, {result.Errors.Count} Fehler";
+            if (result.Errors.Count > 0)
+                ShowReport("Importfehler", $"{result.Errors.Count} Zeile(n) konnten nicht gelesen werden",
+                    result.Errors.Select(error => new ReportRow("Fehler", Path.GetFileName(path), error)));
+        }
+        catch (Exception ex)
+        {
+            _vm.Status = $"Import fehlgeschlagen: {ex.Message}";
+        }
     }
 
     // ---------- editing ----------
@@ -483,9 +605,11 @@ public partial class MainWindow : Window
 
     private void OnAddGroupAddress(object? sender, RoutedEventArgs e) => _vm.AddGroupAddress();
 
-    private void OnDeleteGroupAddress(object? sender, RoutedEventArgs e)
+    private async void OnDeleteGroupAddress(object? sender, RoutedEventArgs e)
     {
         if (_vm.SelectedGroupAddress is not { } row) { _vm.Status = "keine Gruppenadresse ausgewählt"; return; }
+        if (_vm.Settings.ConfirmDelete
+            && !await ConfirmDialog.AskDeleteAsync(this, $"Gruppenadresse {row.AddressText}")) return;
         _vm.DeleteGroupAddress(row);
     }
 
@@ -518,10 +642,12 @@ public partial class MainWindow : Window
         OnCatalogLibrary(sender, e);
     }
 
-    private void OnDeleteDevice(object? sender, RoutedEventArgs e)
+    private async void OnDeleteDevice(object? sender, RoutedEventArgs e)
     {
-        if (_vm.SelectedDevice is { } device) _vm.DeleteDevice(device);
-        else _vm.Status = "kein Gerät ausgewählt";
+        if (_vm.SelectedDevice is not { } device) { _vm.Status = "kein Gerät ausgewählt"; return; }
+        if (_vm.Settings.ConfirmDelete
+            && !await ConfirmDialog.AskDeleteAsync(this, $"Gerät {device.AddressText} ({device.Name})")) return;
+        _vm.DeleteDevice(device);
     }
 
     private void OnTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -784,35 +910,49 @@ public partial class MainWindow : Window
     private async void OnSaveRecording(object? sender, RoutedEventArgs e)
     {
         if (_vm.Recorder.Count == 0) { _vm.Status = "keine Aufzeichnung vorhanden"; return; }
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        try
         {
-            SuggestedFileName = "telegramme.jsonl",
-            DefaultExtension = "jsonl",
-            FileTypeChoices =
-            [
-                new FilePickerFileType("JSON Lines") { Patterns = ["*.jsonl"] },
-                new FilePickerFileType("CSV") { Patterns = ["*.csv"] },
-            ],
-        });
-        if (file?.TryGetLocalPath() is not { } path) return;
-        if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)) _vm.Recorder.SaveCsv(path);
-        else _vm.Recorder.SaveJsonLines(path);
-        _vm.Status = $"Aufzeichnung gespeichert: {Path.GetFileName(path)}";
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                SuggestedFileName = "telegramme.jsonl",
+                DefaultExtension = "jsonl",
+                FileTypeChoices =
+                [
+                    new FilePickerFileType("JSON Lines") { Patterns = ["*.jsonl"] },
+                    new FilePickerFileType("CSV") { Patterns = ["*.csv"] },
+                ],
+            });
+            if (file?.TryGetLocalPath() is not { } path) return;
+            if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)) _vm.Recorder.SaveCsv(path);
+            else _vm.Recorder.SaveJsonLines(path);
+            _vm.Status = $"Aufzeichnung gespeichert: {Path.GetFileName(path)}";
+        }
+        catch (Exception ex)
+        {
+            _vm.Status = $"Aufzeichnung nicht speicherbar: {ex.Message}";
+        }
     }
 
     private async void OnLoadRecording(object? sender, RoutedEventArgs e)
     {
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        try
         {
-            AllowMultiple = false,
-            Title = "Aufzeichnung laden",
-            FileTypeFilter = [new FilePickerFileType("Aufzeichnung") { Patterns = ["*.jsonl", "*.csv"] }],
-        });
-        if (files is not { Count: > 0 } || files[0].TryGetLocalPath() is not { } path) return;
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                AllowMultiple = false,
+                Title = "Aufzeichnung laden",
+                FileTypeFilter = [new FilePickerFileType("Aufzeichnung") { Patterns = ["*.jsonl", "*.csv"] }],
+            });
+            if (files is not { Count: > 0 } || files[0].TryGetLocalPath() is not { } path) return;
 
-        var entries = TelegramRecorder.Load(path);
-        _vm.LoadRecording(entries);
-        _vm.Status = $"{entries.Count} Telegramme geladen (Wiedergabe über den Monitor)";
+            var entries = TelegramRecorder.Load(path);
+            _vm.LoadRecording(entries);
+            _vm.Status = $"{entries.Count} Telegramme geladen (Wiedergabe über den Monitor)";
+        }
+        catch (Exception ex)
+        {
+            _vm.Status = $"Aufzeichnung nicht lesbar: {ex.Message}";
+        }
     }
 
     private void OnClearMonitor(object? sender, RoutedEventArgs e) => _vm.Monitor.Clear();
@@ -862,11 +1002,5 @@ public partial class MainWindow : Window
         var window = new ReportWindow();
         window.Load(title, subtitle, rows, primaryText, primary, csvName);
         window.ShowDialog(this);
-    }
-
-    private async Task ShowMessage(string title, string message)
-    {
-        await Task.CompletedTask;
-        ShowReport(title, message, []);
     }
 }

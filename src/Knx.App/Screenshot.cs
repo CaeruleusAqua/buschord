@@ -38,6 +38,7 @@ internal static class Screenshot
     {
         Window window = main;
         Task? catalogueReady = null;
+        Action? afterShown = null;
         switch (screen.ToLowerInvariant())
         {
             case "catalog":
@@ -47,13 +48,20 @@ internal static class Screenshot
                 break;
             case "parameters":
                 // Demo project and parameter set live in memory only: no settings or file write.
-                DemoProject(main.ViewModel);
-                var (instances, types) = DemoParameters();
-                main.ShowDemoParameters(instances, types);
+                // Activate after the dock has been shown so the document is realised.
+                afterShown = () =>
+                {
+                    DemoProject(main.ViewModel);
+                    var (instances, types) = DemoParameters();
+                    main.ShowDemoParameters(instances, types);
+                };
                 break;
             case "links":
-                DemoProject(main.ViewModel);
-                main.ShowLinks();
+                afterShown = () =>
+                {
+                    DemoProject(main.ViewModel);
+                    main.ShowLinks();
+                };
                 break;
             case "settings":
                 window = new SettingsWindow(main.ViewModel.Settings);
@@ -76,11 +84,13 @@ internal static class Screenshot
         // delay also lets the initial theme transitions settle.
         window.Opened += (_, _) =>
         {
+            afterShown?.Invoke();
             var started = Stopwatch.StartNew();
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
             timer.Tick += (_, _) =>
             {
-                if (started.Elapsed < TimeSpan.FromMilliseconds(300)) return;
+                if (started.Elapsed < TimeSpan.FromMilliseconds(
+                        screen is "parameters" or "links" ? 1500 : 300)) return;
                 // The catalogue screen waits for the library service (up to 90 s) instead of
                 // capturing an empty frame; other screens only need the render cycle.
                 if (catalogueReady is { IsCompleted: false } && started.Elapsed < TimeSpan.FromSeconds(90)) return;

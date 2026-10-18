@@ -172,42 +172,50 @@ public partial class CatalogPane : UserControl
     private async void OnImport(object? sender, RoutedEventArgs e)
     {
         if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
-        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        try
         {
-            AllowMultiple = true,
-            Title = Strings.Get("CatalogImport"),
-            FileTypeFilter = [new FilePickerFileType(Strings.Get("CatalogFileTypes")) { Patterns = ["*.knxprod", "*.zip"] }],
-        });
-        if (files.Count == 0) return;
+            var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                AllowMultiple = true,
+                Title = Strings.Get("CatalogImport"),
+                FileTypeFilter = [new FilePickerFileType(Strings.Get("CatalogFileTypes")) { Patterns = ["*.knxprod", "*.zip"] }],
+            });
+            if (files.Count == 0) return;
 
-        var imported = new List<KnxProductCatalog>();
-        var errors = new List<string>();
-        foreach (var file in files)
-        {
-            if (file.TryGetLocalPath() is not { } path)
+            var imported = new List<KnxProductCatalog>();
+            var errors = new List<string>();
+            foreach (var file in files)
             {
-                errors.Add(Strings.Get("CatalogLocalFileRequired", file.Name));
-                continue;
+                if (file.TryGetLocalPath() is not { } path)
+                {
+                    errors.Add(Strings.Get("CatalogLocalFileRequired", file.Name));
+                    continue;
+                }
+                try
+                {
+                    // Import parses the new file; keep that off the UI thread like the library load.
+                    imported.Add(await Task.Run(() => _library.Store.Import(path)));
+                }
+                catch (Exception ex)
+                {
+                    errors.Add(Strings.Get("CatalogLoadError", Path.GetFileName(path) + ": " + ex.Message));
+                }
             }
-            try
+            // Merge into the cached snapshot instead of re-parsing the whole library.
+            var snapshot = _library.Add(imported);
+            if (snapshot is null)
             {
-                // Import parses the new file; keep that off the UI thread like the library load.
-                imported.Add(await Task.Run(() => _library.Store.Import(path)));
+                await _library.GetAsync();
+                snapshot = _library.Add(imported);
             }
-            catch (Exception ex)
-            {
-                errors.Add(Strings.Get("CatalogLoadError", Path.GetFileName(path) + ": " + ex.Message));
-            }
+            Bind(snapshot, errors);
+            if (imported.Count > 0 && errors.Count == 0) SetMessage(Strings.Get("CatalogImported", imported.Count));
         }
-        // Merge into the cached snapshot instead of re-parsing the whole library.
-        var snapshot = _library.Add(imported);
-        if (snapshot is null)
+        catch (Exception ex)
         {
-            await _library.GetAsync();
-            snapshot = _library.Add(imported);
+            // A picker or library failure must not take the process down.
+            SetMessage(Strings.Get("CatalogLoadError", ex.Message));
         }
-        Bind(snapshot, errors);
-        if (imported.Count > 0 && errors.Count == 0) SetMessage(Strings.Get("CatalogImported", imported.Count));
     }
 
     private async void OnReload(object? sender, RoutedEventArgs e) => await LoadAsync(reload: true);
