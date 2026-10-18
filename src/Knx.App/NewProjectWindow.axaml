@@ -6,8 +6,8 @@
         Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
   <DockPanel Margin="14">
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
-                Spacing="8" Margin="0,12,0,0">
-      <Button Content="{loc:Tr BtnCreate}" Click="OnCreate" IsDefault="True" />
+                Spacing="{StaticResource ControlGap}" Margin="0,12,0,0">
+      <Button Content="{loc:Tr BtnCreate}" Classes="primary" Click="OnCreate" IsDefault="True" />
       <Button Content="{loc:Tr BtnCancel}" Click="OnCancel" />
     </StackPanel>
 

@@ -52,7 +52,7 @@
                 <TreeView.ItemTemplate>
                   <TreeDataTemplate ItemsSource="{Binding Children}">
                     <StackPanel Orientation="Horizontal" Spacing="6" Margin="2,1">
-                      <views:Icon Symbol="FolderOpen" Width="14" Height="14" VerticalAlignment="Center" />
+                      <views:Icon Symbol="FolderOpen" Width="16" Height="16" VerticalAlignment="Center" />
                       <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                       <TextBlock Text="{Binding KindText}" Classes="muted" VerticalAlignment="Center" />
                       <TextBlock Text="{Binding CountText}" Classes="muted" VerticalAlignment="Center" />

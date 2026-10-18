@@ -5,7 +5,7 @@
              x:Class="Knx.App.Views.ParameterPane">
   <DockPanel>
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
-                Spacing="8" Margin="0,12,0,0">
+                Spacing="{StaticResource ControlGap}" Margin="0,12,0,0">
       <Button x:Name="ApplyButton" Content="{loc:Tr BtnApply}" Click="OnApply" IsVisible="False" />
       <Button x:Name="CloseButton" Content="{loc:Tr BtnClose}" Click="OnClose" IsVisible="False" />
     </StackPanel>
@@ -27,7 +27,7 @@
                Text="{loc:Tr ParameterNoticeMore}" Classes="muted" Margin="0,0,0,12" />
     <TextBlock x:Name="EmptyText" DockPanel.Dock="Top" IsVisible="False" TextWrapping="Wrap"
                Classes="muted" Margin="0,0,0,8" />
-    <TextBlock x:Name="HeaderText" DockPanel.Dock="Top" FontWeight="Bold" FontSize="15"
+    <TextBlock x:Name="HeaderText" DockPanel.Dock="Top" FontWeight="Bold" FontSize="14"
                Margin="0,0,0,8" Text="{loc:Tr ParameterTitle}" TextWrapping="Wrap" />
     <ScrollViewer HorizontalScrollBarVisibility="Disabled">
       <ItemsControl x:Name="ParameterList">
@@ -36,7 +36,7 @@
             <Grid ColumnDefinitions="220,*" Margin="0,3" IsVisible="{Binding IsVisible}">
               <StackPanel Grid.Column="0" VerticalAlignment="Center">
                 <TextBlock Text="{Binding Name}" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding Description}" FontSize="10" Foreground="Gray"
+                <TextBlock Text="{Binding Description}" Classes="muted"
                            TextWrapping="Wrap" IsVisible="{Binding Description, Converter={x:Static ObjectConverters.IsNotNull}}" />
               </StackPanel>
               <ContentControl Grid.Column="1" Content="{Binding}"

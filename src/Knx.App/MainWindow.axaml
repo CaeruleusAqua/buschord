@@ -12,18 +12,6 @@
         Title="{Binding Title}" Width="1440" Height="900" MinWidth="1000" MinHeight="640"
         Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
 
-  <Window.Styles>
-    <!-- Command bar buttons: no minimum width so the bar fits 1440 px and wraps as whole
-         groups instead of clipping or scrolling at 1000 px. -->
-    <Style Selector="Button.tool">
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="Padding" Value="6,4" />
-    </Style>
-    <Style Selector="Button.tool views|Icon">
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-  </Window.Styles>
-
   <DockPanel>
     <!-- ===== menu ===== -->
     <Menu DockPanel.Dock="Top" Background="{DynamicResource EtsChrome}">
@@ -84,7 +72,7 @@
       <WrapPanel Orientation="Horizontal">
 
         <Border Classes="ribbonGroup">
-          <StackPanel Orientation="Horizontal" Spacing="2">
+          <StackPanel Orientation="Horizontal" Spacing="1">
             <Button Classes="tool" Content="{loc:Tr BtnNew}" Click="OnNewProject" />
             <Button Classes="tool" Content="{loc:Tr BtnOpen}" Click="OnOpenProject" />
             <Button Classes="tool" Content="{loc:Tr BtnSave}" Click="OnSaveProject"
@@ -94,7 +82,7 @@
         </Border>
 
         <Border Classes="ribbonGroup">
-          <StackPanel Orientation="Horizontal" Spacing="2">
+          <StackPanel Orientation="Horizontal" Spacing="1">
             <Button Classes="tool" Click="OnUndo" IsEnabled="{Binding CanUndo}"
                     ToolTip.Tip="Rückgängig (Strg+Z)" ToolTip.ShowOnDisabled="True"
                     AutomationProperties.Name="Rückgängig (Strg+Z)">
@@ -109,7 +97,7 @@
         </Border>
 
         <Border Classes="ribbonGroup">
-          <StackPanel Orientation="Horizontal" Spacing="2">
+          <StackPanel Orientation="Horizontal" Spacing="1">
             <Button Classes="tool primary" Click="OnCatalogLibrary"
                     ToolTip.Tip="{loc:Tr UxCatalogHint}">
               <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
@@ -134,7 +122,7 @@
         </Border>
 
         <Border Classes="ribbonGroup">
-          <StackPanel Orientation="Horizontal" Spacing="2">
+          <StackPanel Orientation="Horizontal" Spacing="1">
             <Button Classes="tool" Command="{Binding DiscoverCommand}"
                     ToolTip.Tip="{Binding BusInterfaceHint}">
               <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
@@ -149,7 +137,7 @@
         </Border>
 
         <Border Classes="ribbonGroup">
-          <StackPanel Orientation="Horizontal" Spacing="2">
+          <StackPanel Orientation="Horizontal" Spacing="1">
             <Button Classes="tool" Content="{loc:Tr BtnCheck}" Click="OnRunCheck"
                     IsEnabled="{Binding HasProject}" ToolTip.Tip="{loc:Tr UxNeedsProject}"
                     ToolTip.ShowOnDisabled="True" />
@@ -168,7 +156,7 @@
         </Border>
 
         <Border Classes="ribbonGroup">
-          <StackPanel Orientation="Horizontal" Spacing="2">
+          <StackPanel Orientation="Horizontal" Spacing="1">
             <Button Classes="tool" IsEnabled="{Binding HasProject}" ToolTip.Tip="{loc:Tr MenuFileExport}"
                     ToolTip.ShowOnDisabled="True">
               <Button.Flyout>
@@ -226,32 +214,32 @@
                        VerticalAlignment="Center" />
           </StackPanel>
 
-          <Grid ColumnDefinitions="*,12,*,12,*">
-            <Button Grid.Column="0" Classes="card" Click="OnOpenProject">
+          <UniformGrid Columns="3">
+            <Button Grid.Column="0" Classes="card" Click="OnOpenProject" Margin="0,0,12,0">
               <StackPanel Spacing="10" VerticalAlignment="Top">
                 <views:Icon Symbol="FolderOpen" Width="32" Height="32"
                             Foreground="{DynamicResource EtsAccent}" />
-                <TextBlock Text="{loc:Tr UxOpenProject}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="{loc:Tr UxOpenProject}" FontSize="14" FontWeight="SemiBold" />
               </StackPanel>
             </Button>
-            <Button Grid.Column="2" Classes="card" Click="OnNewProject">
+            <Button Grid.Column="1" Classes="card" Click="OnNewProject" Margin="0,0,12,0">
               <StackPanel Spacing="10" VerticalAlignment="Top">
                 <views:Icon Symbol="NoteAdd" Width="32" Height="32"
                             Foreground="{DynamicResource EtsAccent}" />
-                <TextBlock Text="{loc:Tr UxNewProject}" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="{loc:Tr UxNewProject}" FontSize="14" FontWeight="SemiBold" />
               </StackPanel>
             </Button>
-            <Button Grid.Column="4" Classes="card" Click="OnCatalogLibrary"
+            <Button Grid.Column="2" Classes="card" Click="OnCatalogLibrary" Margin="0,0,12,0"
                     ToolTip.Tip="{loc:Tr UxCatalogHint}">
               <StackPanel Spacing="10" VerticalAlignment="Top">
                 <views:Icon Symbol="LibraryBooks" Width="32" Height="32"
                             Foreground="{DynamicResource EtsAccent}" />
-                <TextBlock Text="{loc:Tr UxCatalogCard}" FontSize="15" FontWeight="SemiBold"
+                <TextBlock Text="{loc:Tr UxCatalogCard}" FontSize="14" FontWeight="SemiBold"
                            TextWrapping="Wrap" />
                 <TextBlock Text="{loc:Tr UxCatalogHint}" Classes="muted" TextWrapping="Wrap" />
               </StackPanel>
             </Button>
-          </Grid>
+          </UniformGrid>
 
           <StackPanel Spacing="8">
             <TextBlock Classes="muted" Text="{loc:Tr UxRecent}" />
@@ -356,9 +344,9 @@
               <TextBlock Grid.Column="3" Classes="columnHeader" Text="{loc:Tr ColLinked}" />
             </Grid>
             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="6">
-              <Button Content="{loc:Tr BtnAdd}" Padding="8,2" Click="OnAddGroupAddress"
+              <Button Content="{loc:Tr BtnAdd}" Classes="compact" Click="OnAddGroupAddress"
                       IsEnabled="{Binding HasProject}" ToolTip.Tip="{loc:Tr TipAddGroupAddress}" />
-              <Button Content="{loc:Tr BtnDelete}" Padding="8,2" Click="OnDeleteGroupAddress"
+              <Button Content="{loc:Tr BtnDelete}" Classes="compact" Click="OnDeleteGroupAddress"
                       IsEnabled="{Binding HasProject}" ToolTip.Tip="{loc:Tr TipDeleteGroupAddress}" />
               <TextBox Text="{Binding SendValue}" Watermark="{loc:Tr WatermarkSendValue}" Width="220" />
               <Button Content="{loc:Tr BtnSend}" Command="{Binding SendGroupValueCommand}" />
@@ -386,7 +374,7 @@
                           HorizontalAlignment="Center">
                 <TextBlock Text="{loc:Tr UxEmptyGroupAddresses}" Classes="muted"
                            HorizontalAlignment="Center" />
-                <Button Content="{loc:Tr BtnAdd}" Padding="10,2" Click="OnAddGroupAddress"
+                <Button Content="{loc:Tr BtnAdd}" Classes="compact" Click="OnAddGroupAddress"
                         HorizontalAlignment="Center" ToolTip.Tip="{loc:Tr TipAddGroupAddress}" />
               </StackPanel>
             </Grid>
@@ -465,7 +453,7 @@
           <Border x:Name="TopologyPanel" Classes="panel">
             <DockPanel>
               <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
-                <Button Grid.Column="1" Content="{loc:Tr MenuCatalog}" Padding="6,2" Margin="2"
+                <Button Grid.Column="1" Content="{loc:Tr MenuCatalog}" Classes="compact" Margin="2"
                         Click="OnCatalogLibrary" ToolTip.Tip="{loc:Tr UxCatalogHint}" />
               </Grid>
               <Grid>
