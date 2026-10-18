@@ -9,7 +9,8 @@
         x:DataType="vm:MainWindowViewModel"
         dockIds:DockProperties.IsDragEnabled="True"
         dockIds:DockProperties.IsDropEnabled="True"
-        Title="{Binding Title}" Width="1440" Height="900" MinWidth="1000" MinHeight="640">
+        Title="{Binding Title}" Width="1440" Height="900" MinWidth="1000" MinHeight="640"
+        Icon="/Assets/brand/buschord-icon-256.png">
 
   <Window.Styles>
     <!-- Command bar buttons: no minimum width so the bar fits 1440 px and wraps as whole
@@ -218,7 +219,12 @@
       <ScrollViewer IsVisible="{Binding ShowStart}" VerticalScrollBarVisibility="Auto">
         <StackPanel Width="680" MaxWidth="680" Margin="40" Spacing="22"
                     HorizontalAlignment="Left" VerticalAlignment="Top">
-          <TextBlock Text="{loc:Tr UxStart}" FontSize="24" FontWeight="SemiBold" />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Image Source="/Assets/brand/buschord-icon-256.png" Width="40" Height="40"
+                   VerticalAlignment="Center" />
+            <TextBlock Text="{loc:Tr UxStart}" FontSize="24" FontWeight="SemiBold"
+                       VerticalAlignment="Center" />
+          </StackPanel>
 
           <Grid ColumnDefinitions="*,12,*,12,*">
             <Button Grid.Column="0" Classes="card" Click="OnOpenProject">

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>BusChord – application icon</title>
+  <desc>Stylized B formed from connected electrical bus traces and terminal nodes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0.1" y1="0" x2="0.96" y2="1">
+      <stop offset="0%" stop-color="#172F50"/><stop offset="42%" stop-color="#0E203A"/><stop offset="100%" stop-color="#0B142A"/>
+    </linearGradient>
+    <radialGradient id="ambient" cx="72%" cy="20%" r="74%">
+      <stop offset="0%" stop-color="#1D6DAD" stop-opacity=".45"/>
+      <stop offset="55%" stop-color="#174E83" stop-opacity=".13"/>
+      <stop offset="100%" stop-color="#0D152A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="spine" gradientUnits="userSpaceOnUse" x1="321" y1="267" x2="321" y2="756">
+      <stop offset="0%" stop-color="#D0F6FF"/><stop offset="50%" stop-color="#98DEFC"/><stop offset="100%" stop-color="#5BACF6"/>
+    </linearGradient>
+    <linearGradient id="loop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#9EEAFF"/><stop offset="38%" stop-color="#69CDF7"/><stop offset="74%" stop-color="#4BA2F4"/><stop offset="100%" stop-color="#487BE9"/>
+    </linearGradient>
+    <linearGradient id="loop2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#71D6F8"/><stop offset="52%" stop-color="#4A9BF0"/><stop offset="100%" stop-color="#6386F5"/>
+    </linearGradient>
+    <radialGradient id="dot" cx="35%" cy="27%" r="80%">
+      <stop offset="0%" stop-color="#FEFFFF"/><stop offset="45%" stop-color="#C7F5FF"/><stop offset="100%" stop-color="#65D2FD"/>
+    </radialGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="29"/>
+    </filter>
+    <filter id="smallglow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+  <!-- Flat app badge silhouette -->
+
+
+
+  <!-- Soft glows stay behind the silhouette and communicate technology without noise -->
+  <g stroke="#3DABF5" stroke-width="74" fill="none" opacity=".17" filter="url(#glow)">
+    <path d="M 321 267 H 520 C 681 267 731 310 731 391 C 731 475 667 509 523 509 H 321"/>
+    <path d="M 321 509 H 536 C 699 509 748 570 748 652 C 748 747 676 756 528 756 H 321"/>
+  </g>
+  <!-- Two linked bus branches forming a recognizable letter B -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="65">
+    <path d="M 321 267 H 521 C 673 267 733 309 733 394 C 733 476 668 512 522 512 H 321" stroke="url(#loop)"/>
+    <path d="M 321 512 H 540 C 700 512 751 565 751 650 C 751 743 682 756 536 756 H 321" stroke="url(#loop2)"/>
+    <path d="M 321 267 V 756" stroke="url(#spine)"/>
+  </g>
+  <!-- Bright engineering connector nodes on the bus: three addresses -->
+  <g>
+    <circle cx="321" cy="267" r="34" fill="#79CBFF" opacity=".38" filter="url(#smallglow)"/>
+    <circle cx="321" cy="512" r="34" fill="#79CBFF" opacity=".38" filter="url(#smallglow)"/>
+    <circle cx="321" cy="756" r="34" fill="#79CBFF" opacity=".38" filter="url(#smallglow)"/>
+    <circle cx="321" cy="267" r="24" fill="url(#dot)"/>
+    <circle cx="321" cy="512" r="24" fill="url(#dot)"/>
+    <circle cx="321" cy="756" r="24" fill="url(#dot)"/>
+    <circle cx="321" cy="267" r="9" fill="#FFFFFF"/>
+    <circle cx="321" cy="512" r="9" fill="#FFFFFF"/>
+    <circle cx="321" cy="756" r="9" fill="#FFFFFF"/>
+  </g>
+</svg>
