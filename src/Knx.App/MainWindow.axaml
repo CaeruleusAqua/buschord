@@ -508,7 +508,8 @@
                 <TextBox x:Name="NameBox" Text="{Binding EditName, Mode=TwoWay}" KeyDown="OnNameKeyDown" />
                 <TextBlock Classes="muted" Text="{loc:Tr LblDatapointType}" />
                 <TextBox Text="{Binding EditDatapointType, Mode=TwoWay}" Watermark="DPST-1-1" />
-                <Button Content="{loc:Tr BtnApply}" Click="OnApplyDetails" HorizontalAlignment="Stretch" />
+                <Button Content="{loc:Tr BtnApply}" Click="OnApplyDetails" HorizontalAlignment="Stretch"
+                        Classes="primary" />
                 <Button Content="{loc:Tr BtnParameters}" Click="OnOpenParameters" HorizontalAlignment="Stretch"
                         IsEnabled="{Binding HasDeviceSelected}" ToolTip.Tip="{loc:Tr UxNeedsDevice}"
                         ToolTip.ShowOnDisabled="True" />

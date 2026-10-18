@@ -44,7 +44,7 @@
                      Watermark="{loc:Tr ColAddress}" TextChanged="OnAddressFilterChanged" />
             <StackPanel DockPanel.Dock="Bottom" Margin="6">
               <Button x:Name="AddButton" Content="{loc:Tr LinkAdd}" HorizontalAlignment="Stretch"
-                      Click="OnAdd" />
+                      Classes="primary" Click="OnAdd" />
             </StackPanel>
             <Grid>
               <ListBox x:Name="AddressList" SelectionChanged="OnAddressSelected">

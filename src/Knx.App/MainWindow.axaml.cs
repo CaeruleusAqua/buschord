@@ -107,7 +107,7 @@ public partial class MainWindow : Window
         _docDashboard = NewDocument("Dashboard", Strings.Get("TabDashboard"), DashboardPanel);
         _docGroupAddresses = NewDocument("GroupAddresses", Strings.Get("TabGroupAddresses"), GroupAddressesPanel);
         _docCatalog = NewDocument("Catalog", Strings.Get("MenuCatalog"), _catalog);
-        _docParameters = NewDocument("Parameters", Strings.Get("BtnParameters"), _parameters);
+        _docParameters = NewDocument("Parameters", Strings.Get("TabParameters"), _parameters);
         _docLinks = NewDocument("Links", Strings.Get("CommunicationObjects"), _links);
         _docCheck = NewDocument("Check", Strings.Get("TabCheck"), CheckPanel);
         _docMonitor = NewDocument("Monitor", Strings.Get("TabMonitor"), MonitorPanel);
