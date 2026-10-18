@@ -104,9 +104,17 @@ try
         ExpectFailure(() => Knxproj.Save(project, originalPath), "invalid XML refuses save");
         Check(File.ReadAllBytes(originalPath).SequenceEqual(untouched), "serialization failure leaves destination identical");
         device.ParameterValues.Remove("bad");
-        using (var locked = new FileStream(originalPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        // Windows refuses to replace an open file; Unix allows it, so this check is Windows-only.
+        if (OperatingSystem.IsWindows())
+        {
+            using var locked = new FileStream(originalPath, FileMode.Open, FileAccess.Read, FileShare.Read);
             ExpectFailure(() => Knxproj.Save(project, originalPath), "locked destination refuses atomic replace");
-        Check(File.ReadAllBytes(originalPath).SequenceEqual(untouched), "replace failure leaves destination identical");
+            Check(File.ReadAllBytes(originalPath).SequenceEqual(untouched), "replace failure leaves destination identical");
+        }
+        else
+        {
+            Console.WriteLine("  SKIP locked destination (Unix allows replacing an open file)");
+        }
         Check(!Directory.EnumerateFiles(directory, "*.tmp").Any(), "failed save cleans temporary file");
     }
 
