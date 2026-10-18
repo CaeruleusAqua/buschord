@@ -171,12 +171,17 @@ public partial class MainWindow : Window
 
             // Closing a floating panel re-docks it: release it from the floating window first,
             // re-add it to the dock it came from, then close the now empty window.
-            e.Cancel = true;
-            if (!_releasing.Add(window)) return;
             var dockables = _homeDocks
                 .Where(pair => ReferenceEquals(_dockFactory.FindRoot(pair.Key, _ => true), windowRoot))
                 .Select(pair => (pair.Key, pair.Value))
                 .ToList();
+
+            // A cross-window drop can already have moved every dockable out; closing that
+            // emptied window must go through or it stays behind as a ghost.
+            if (dockables.Count == 0) return;
+
+            e.Cancel = true;
+            if (!_releasing.Add(window)) return;
 
             Dispatcher.UIThread.Post(() =>
             {
