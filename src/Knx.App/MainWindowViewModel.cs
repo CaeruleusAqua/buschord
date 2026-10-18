@@ -12,14 +12,33 @@ public sealed partial class MainWindowViewModel : ObservableObject
 {
     private KnxBus? _bus;
     private readonly UndoStack _undo = new();
+    private readonly CatalogLibrary _catalog;
+    private readonly Dictionary<string, CatalogApplicationProgram> _catalogPrograms = [];
+    private bool _awaitingCatalog;
 
-    public MainWindowViewModel()
+    public MainWindowViewModel() : this(CatalogLibrary.Shared) { }
+
+    /// <summary>Tests pass their own library; the app shares one parse across panes and windows.</summary>
+    public MainWindowViewModel(CatalogLibrary catalog)
     {
+        _catalog = catalog;
+        _catalog.Changed += OnCatalogChanged;
         Settings = AppSettings.Load();
         Recorder = new TelegramRecorder();
         _status = Strings.Get("StatusReady");
         Stats = new DashboardStats { ProjectName = "" };
         RefreshRecents();
+    }
+
+    /// <summary>Raised off the UI thread when the catalogue snapshot finally arrived.</summary>
+    public event EventHandler? CatalogLoaded;
+
+    /// <summary>True while a parameter lookup waits for the first catalogue snapshot.</summary>
+    public bool IsAwaitingCatalog => _awaitingCatalog;
+
+    private void OnCatalogChanged(object? sender, EventArgs e)
+    {
+        if (_awaitingCatalog) CatalogLoaded?.Invoke(this, EventArgs.Empty);
     }
 
     // ---------- project ----------
@@ -497,13 +516,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             }
             else
             {
-                CatalogApplicationProgram? program = null;
-                foreach (var catalog in new CatalogStore().LoadAll())
-                {
-                    var product = catalog.Products.FirstOrDefault(p => p.Id == device.Device.ProductRefId);
-                    if (product is not null) program = catalog.FindProgramFor(product);
-                    if (program is not null) break;
-                }
+                var program = CatalogProgram(device.Device);
                 if (program is null) return ([], []);
                 types = program.ParameterTypes;
                 instances = program.ParameterInstances;
@@ -524,6 +537,42 @@ public sealed partial class MainWindowViewModel : ObservableObject
             Status = $"Parameter nicht lesbar: {ex.Message}";
             return ([], []);
         }
+    }
+
+    /// <summary>
+    /// Resolves the device's application program from the shared catalogue snapshot. With a cold
+    /// library the background parse starts once and this returns null immediately: the pane shows
+    /// its empty state and <see cref="CatalogLoaded"/> reloads it when the snapshot is published.
+    /// </summary>
+    private CatalogApplicationProgram? CatalogProgram(DeviceInstance device)
+    {
+        if (_catalogPrograms.TryGetValue(device.ProductRefId, out var cached)) return cached;
+        if (_catalog.Current is not { } snapshot)
+        {
+            if (!_awaitingCatalog)
+            {
+                _awaitingCatalog = true;
+                _ = _catalog.GetAsync();
+            }
+            Status = Strings.Get("CatalogLoading");
+            return null;
+        }
+        if (_awaitingCatalog)
+        {
+            _awaitingCatalog = false;
+            if (Status == Strings.Get("CatalogLoading")) Status = Strings.Get("StatusReady");
+        }
+        foreach (var catalog in snapshot.Catalogs)
+        {
+            var product = catalog.Products.FirstOrDefault(p =>
+                string.Equals(p.Id, device.ProductRefId, StringComparison.Ordinal));
+            if (product is null || catalog.FindProgramFor(product) is not { } program) continue;
+            // ponytail: resolved once per product ref; a re-imported catalogue keeps the first
+            // program until restart. Restart is when the cache is rebuilt anyway.
+            _catalogPrograms[device.ProductRefId] = program;
+            return program;
+        }
+        return null;
     }
 
     public bool ApplyParameterValues(DeviceInstance device, IReadOnlyList<ParameterInstance> instances,

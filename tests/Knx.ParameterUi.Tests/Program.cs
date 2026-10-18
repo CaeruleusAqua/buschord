@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Xml.Linq;
 using Knx;
 using Knx.App.Services;
+using Knx.Catalog;
 
 var failures = 0;
 void Check(string name, bool ok)
@@ -87,6 +88,65 @@ try
     Check("Device with product but no rows says so",
         ParameterEmptyState.Reason(vm.Project, device, 0) == ParameterEmptyReason.WithoutParameters
         && ParameterEmptyState.Text(vm.Project, device, 0) is { Length: < 80 });
+
+    // Catalogue fallback: a cold library must never be parsed on the caller's (UI) thread.
+    var libraryRoot = Path.Combine(directory, "catalog");
+    var library = new CatalogLibrary(new CatalogStore(Path.Combine(libraryRoot, "library")));
+    var catalogProject = new Project { Id = "P-C", Name = "Catalogue" };
+    var catalogInstallation = new Installation { Id = "I-C" };
+    var catalogArea = new Area { Id = "A-C", Address = 1 };
+    var catalogLine = new Line { Id = "L-C", Address = 1 };
+    var catalogDevice = new DeviceInstance
+    {
+        Id = "1.1.1", Name = "Catalog actuator", Address = new(1, 1, 1), ProductRefId = "M-UI_H-1_P-1",
+    };
+    catalogLine.Devices.Add(catalogDevice);
+    catalogArea.Lines.Add(catalogLine);
+    catalogInstallation.Areas.Add(catalogArea);
+    catalogProject.Installations.Add(catalogInstallation);
+
+    Directory.CreateDirectory(libraryRoot);
+    var fixture = Path.Combine(libraryRoot, "fixture.knxprod");
+    using (var zipFile = ZipFile.Open(fixture, ZipArchiveMode.Create))
+    using (var writer = new StreamWriter(zipFile.CreateEntry("knxprod.xml").Open()))
+        writer.Write("""
+            <KNX><ManufacturerData><Manufacturer RefId="M-UI">
+            <ApplicationPrograms><ApplicationProgram Id="M-UI_A-1" ApplicationNumber="1" ApplicationVersion="1">
+            <Static><ParameterTypes>
+            <ParameterType Id="N" Name="Number"><TypeNumber Type="unsignedInt" SizeInBit="8" minInclusive="0" maxInclusive="255" /></ParameterType>
+            </ParameterTypes><Parameters><Parameter Id="P-N" Name="Brightness" ParameterType="N" Value="42" /></Parameters>
+            <ParameterRefs><ParameterRef Id="R-N" RefId="P-N" /></ParameterRefs></Static>
+            <Dynamic><choose /></Dynamic></ApplicationProgram></ApplicationPrograms>
+            <Hardware><Hardware Id="M-UI_H-1"><Products><Product Id="M-UI_H-1_P-1" Text="Fixture" /></Products>
+            <Hardware2Programs><Hardware2Program Id="M-UI_H-1_H2P-1">
+            <ApplicationProgramRef RefId="M-UI_A-1" /></Hardware2Program></Hardware2Programs>
+            </Hardware></Hardware></Manufacturer></ManufacturerData></KNX>
+            """);
+
+    var clock = System.Diagnostics.Stopwatch.StartNew();
+    library.Store.Import(fixture);
+    var coldVm = new MainWindowViewModel(library);
+    coldVm.CreateProject(catalogProject, null);
+    var loadedSignal = new TaskCompletionSource();
+    coldVm.CatalogLoaded += (_, _) => loadedSignal.TrySetResult();
+    var cold = coldVm.LoadParametersFor(coldVm.Devices.Single());
+    clock.Stop();
+    Check("Cold catalogue lookup does not parse the library on the UI thread",
+        cold.Instances.Count == 0 && clock.ElapsedMilliseconds < 1000);
+    Check("Cold catalogue lookup says it is loading", coldVm.IsAwaitingCatalog
+        && coldVm.Status == Strings.Get("CatalogLoading"));
+
+    var published = await library.GetAsync();
+    await Task.WhenAny(loadedSignal.Task, Task.Delay(TimeSpan.FromSeconds(20)));
+    clock.Restart();
+    var warm = coldVm.LoadParametersFor(coldVm.Devices.Single());
+    clock.Stop();
+    Check("Warm catalogue lookup resolves from the shared snapshot",
+        published.Catalogs.Count == 1 && warm.Instances.Single().Id == "R-N" && warm.Instances[0].Value == "42");
+    Check("Warm catalogue lookup stays fast", clock.ElapsedMilliseconds < 1000);
+    Check("Warm catalogue lookup clears the waiting flag", !coldVm.IsAwaitingCatalog);
+    Check("Catalogue completion notifies the pane once", loadedSignal.Task.IsCompleted);
+
 
     var paneType = typeof(Knx.App.Views.ParameterPane);
     Check("Pane keeps the embedding contract",

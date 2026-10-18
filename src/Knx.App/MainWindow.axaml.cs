@@ -52,9 +52,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _vm;
-        _catalog = new CatalogPane(_vm);
-        _parameters = new ParameterPane(_vm);
-        _links = new GroupLinksPane(_vm);
+        // Dock hosts each panel under its Document/Tool, so the window DataContext no longer
+        // reaches them; every hosted control carries the view model itself.
+        _catalog = new CatalogPane(_vm) { DataContext = _vm };
+        _parameters = new ParameterPane(_vm) { DataContext = _vm };
+        _links = new GroupLinksPane(_vm) { DataContext = _vm };
         // Padding the panes used to get from their workspace tab.
         _parameters.Margin = new Thickness(10, 6);
         _links.Margin = new Thickness(10, 6);
@@ -78,6 +80,8 @@ public partial class MainWindow : Window
                     break;
             }
         };
+        // The catalogue parse runs in the background; wake the parameter pane when it lands.
+        _vm.CatalogLoaded += (_, _) => Dispatcher.UIThread.Post(RefreshFromCatalog);
     }
 
     // ---------- docking ----------
@@ -89,6 +93,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void BuildLayout()
     {
+        AttachPanelContext(PanelStaging.Children, _vm);
         foreach (var panel in PanelStaging.Children.ToList())
             PanelStaging.Children.Remove(panel);
         WorkspaceHost.Children.Remove(PanelStaging);
@@ -228,6 +233,15 @@ public partial class MainWindow : Window
         CanClose = false,
         CanFloat = true
     };
+
+    /// <summary>
+    /// Gives each docked panel the view model explicitly: the dock's content presenter exposes
+    /// the Document/Tool as DataContext, so bindings inside the panel would look there instead.
+    /// </summary>
+    internal static void AttachPanelContext(IEnumerable<Control> panels, object viewModel)
+    {
+        foreach (var panel in panels) panel.DataContext = viewModel;
+    }
 
     /// <summary>Brings a document to the front of its current dock and leaves the start screen.</summary>
     private void Activate(Document document)
@@ -737,6 +751,17 @@ public partial class MainWindow : Window
         _parameters.Refresh();
         _links.Refresh();
         _catalog.ReloadProject();
+    }
+
+    /// <summary>
+    /// The catalogue snapshot arrived after a parameter lookup had to return empty; reload the
+    /// panes so the device parameters appear without the user reselecting the device.
+    /// </summary>
+    private void RefreshFromCatalog()
+    {
+        if (!_vm.IsAwaitingCatalog) return;
+        _paneDevice = null;
+        SyncDevicePanes();
     }
 
     private async void OnDownload(object? sender, RoutedEventArgs e)
