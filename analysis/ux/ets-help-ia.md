@@ -1,5 +1,11 @@
 # ETS6: Informationsarchitektur, Hilfe-Modell und Aufgabenordnung
 
+> Historischer Stand. Der [Gegencheck vom 2026-10-19](ets6-panel-recheck.md)
+> berichtigt den Gegensatz „Panels statt Tabs“: ETS6 unterstützt beides.
+> Topologie ist ein Arbeitsfenster, Eigenschaften ein Sidebar-Container;
+> Parameter und Kommunikationsobjekte sind untergeordnete Listenreiter.
+> Die damalige BusChord-Bestandsaufnahme unten ist nicht mehr aktuell.
+
 Stand: 2026-10-18. Reine Analyse, kein Code. Ziel: belastbare Grundlage für eine
 intuitivere BusChord-Navigation.
 

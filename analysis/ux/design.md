@@ -1,5 +1,9 @@
 # BusChord: UX-/UI-Design
 
+> Die zentrale flache Tab-Aufteilung unter D2/D3 ist eine BusChord-Entscheidung,
+> kein ETS6-Nachweis. Der [ETS6-Gegencheck](ets6-panel-recheck.md) trennt
+> Arbeitsfenster, Geräte-Unterreiter und Eigenschaften-Sidebar.
+
 Stand: 2026-10-18. Grundlage: [ETS6-Hilfe und IA](ets-help-ia.md),
 [Ist-Audit mit User Stories](current-ui-audit.md), [Icon-Vorschlag](icon-map.md)
 und [Teufelsadvokat](icon-review.md). Kein Nachweis von ETS-Layoutgleichheit;
