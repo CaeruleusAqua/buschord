@@ -45,6 +45,7 @@ public partial class MainWindow : Window
     private DeviceRow? _paneDevice;
     private Point? _dragOrigin;
     private DeviceInstance? _draggedDevice;
+    private bool _confirmingClose;
 
     /// <summary>Exposed for start-up options (settings, startup project).</summary>
     public MainWindowViewModel ViewModel => _vm;
@@ -263,7 +264,7 @@ public partial class MainWindow : Window
     public void RequestShutdown() => _shuttingDown = true;
 
     /// <summary>
-    /// One click on X ends the app: a dirty project asks first, then every floating panel is
+    /// One click on X ends the app: dirty drafts/project ask first, then every floating panel is
     /// closed instead of being re-docked, so no float keeps the process alive.
     /// </summary>
     private void OnClosing(object? sender, WindowClosingEventArgs e)
@@ -273,19 +274,26 @@ public partial class MainWindow : Window
             CloseFloats();
             return;
         }
-        if (!_vm.IsDirty)
+        if (!_vm.IsDirty && !_parameters.HasUnappliedChanges)
         {
             BeginShutdown();
             return;
         }
 
         e.Cancel = true;
+        if (_confirmingClose) return;
+        _confirmingClose = true;
         // The prompt is a dialog and Closing cannot await: ask after this pass has finished.
         Dispatcher.UIThread.Post(async () =>
         {
-            if (!await ConfirmDiscardAsync()) return;
-            BeginShutdown();
-            Close();
+            try
+            {
+                if (!await ConfirmDiscardAsync()) return;
+                _parameters.DiscardDrafts();
+                BeginShutdown();
+                Close();
+            }
+            finally { _confirmingClose = false; }
         }, DispatcherPriority.Input);
     }
 
@@ -388,7 +396,17 @@ public partial class MainWindow : Window
             DefaultExtension = "knxproj",
         });
         var path = file?.TryGetLocalPath();
-        _vm.CreateProject(project, path);
+        if (path is null) return;
+        try
+        {
+            _vm.CreateProject(project, path);
+            _parameters.DiscardDrafts();
+        }
+        catch (Exception ex)
+        {
+            _vm.Status = $"Projekt nicht anlegbar: {ex.Message}";
+            await ConfirmDialog.ShowMessageAsync(this, "Projekt nicht anlegbar", ex.Message);
+        }
     }
 
     private async void OnOpenProject(object? sender, RoutedEventArgs e)
@@ -410,6 +428,7 @@ public partial class MainWindow : Window
         try
         {
             _vm.LoadProject(path);
+            _parameters.DiscardDrafts();
         }
         catch (Exception ex)
         {
@@ -448,6 +467,7 @@ public partial class MainWindow : Window
         try
         {
             _vm.SaveProjectAs(path);
+            ShowDraftSaveNotice();
             return true;
         }
         catch (Exception ex)
@@ -464,6 +484,7 @@ public partial class MainWindow : Window
         try
         {
             _vm.SaveProject();
+            ShowDraftSaveNotice();
             return true;
         }
         catch (Exception ex)
@@ -474,11 +495,13 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Save / Discard / Cancel when the project has unsaved changes. False keeps the caller
-    /// where it is (cancel, failed save or cancelled Save As).
+    /// Draft Cancel / Discard, then project Save / Discard / Cancel. False keeps the caller
+    /// where it is (cancel, failed save or cancelled Save As); consent never clears drafts.
     /// </summary>
     private async Task<bool> ConfirmDiscardAsync()
     {
+        // Consent is not a mutation: later prompts, pickers and IO can still cancel/fail.
+        if (_parameters.HasUnappliedChanges && !await ConfirmDialog.AskDiscardDraftsAsync(this)) return false;
         if (!_vm.IsDirty) return true;
         return await ConfirmDialog.AskUnsavedAsync(this, _vm.Project?.Name ?? "") switch
         {
@@ -486,6 +509,12 @@ public partial class MainWindow : Window
             ConfirmChoice.Save => _vm.ProjectPath.Length == 0 ? await SaveAsAsync() : SaveNow(),
             _ => false,
         };
+    }
+
+    private void ShowDraftSaveNotice()
+    {
+        if (_parameters.HasUnappliedChanges)
+            _vm.Status = "Projekt gespeichert; nicht übernommene Parameterentwürfe wurden nicht gespeichert.";
     }
 
     private void OnExit(object? sender, RoutedEventArgs e) => Close();

@@ -11,7 +11,7 @@ namespace Knx.App.Services;
 public sealed partial class MainWindowViewModel : ObservableObject
 {
     private KnxBus? _bus;
-    private readonly UndoStack _undo = new();
+    private UndoStack _undo = new();
     private readonly CatalogLibrary _catalog;
     private readonly Dictionary<string, CatalogApplicationProgram> _catalogPrograms = [];
     private bool _awaitingCatalog;
@@ -238,12 +238,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public void LoadProject(string path)
     {
-        Project = Knxproj.Load(path);
+        var project = Knxproj.Load(path);
+        var undo = new UndoStack();
+        undo.Reset(project);
+        RememberProject(path);
+        Project = project;
         ClearSelection();
         ProjectPath = path;
-        _undo.Reset(Project);
-        Settings.TouchProject(path);
-        Settings.Save();
+        _undo = undo;
         RefreshRecents();
         Refresh();
         Status = $"Projekt geladen: {Project.Name}";
@@ -251,19 +253,37 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public void CreateProject(Project project, string? path)
     {
-        Project = project;
-        ClearSelection();
-        ProjectPath = path ?? "";
-        _undo.Reset(project);
+        var undo = new UndoStack();
+        undo.Reset(project);
         if (path is not null)
         {
             Knxproj.Save(project, path);
-            Settings.TouchProject(path);
-            Settings.Save();
-            RefreshRecents();
+            RememberProject(path);
         }
+        Project = project;
+        ClearSelection();
+        ProjectPath = path ?? "";
+        _undo = undo;
+        if (path is not null) RefreshRecents();
         Refresh();
         Status = $"Neues Projekt '{project.Name}' angelegt";
+    }
+
+    private void RememberProject(string path)
+    {
+        var last = Settings.LastProject;
+        var recent = Settings.RecentProjects.ToList();
+        try
+        {
+            Settings.TouchProject(path);
+            Settings.Save();
+        }
+        catch
+        {
+            Settings.LastProject = last;
+            Settings.RecentProjects = recent;
+            throw;
+        }
     }
 
     public void SaveProject()

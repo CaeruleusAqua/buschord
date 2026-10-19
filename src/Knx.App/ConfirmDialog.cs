@@ -82,6 +82,13 @@ public sealed class ConfirmDialog : Window
             ("Nicht speichern", ConfirmChoice.Discard, false),
             (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, false));
 
+    /// <summary>Draft consent is separate from project Save and never applies the editor.</summary>
+    public static async Task<bool> AskDiscardDraftsAsync(Window owner)
+        => await ShowAsync(owner, "Nicht übernommene Parameter",
+            "Parameterentwürfe wurden noch nicht übernommen. Projekt speichern speichert diese Entwürfe nicht.\n\nEntwürfe verwerfen und fortfahren?",
+            (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, true),
+            ("Entwürfe verwerfen", ConfirmChoice.Discard, false)) == ConfirmChoice.Discard;
+
     /// <summary>Yes / No before a destructive edit (settings: "ask before deleting").</summary>
     public static async Task<bool> AskDeleteAsync(Window owner, string subject)
         => await ShowAsync(owner, "Löschen bestätigen", $"{subject} wirklich löschen?",
