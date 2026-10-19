@@ -24,6 +24,8 @@ namespace Knx.App;
 public partial class MainWindow : Window
 {
     private const string DeviceFormat = "knx-device";
+    private static readonly DataFormat<string> DeviceDataFormat =
+        DataFormat.CreateStringApplicationFormat(DeviceFormat);
     private readonly MainWindowViewModel _vm = new();
     private readonly CatalogPane _catalog;
     private readonly ParameterPane _parameters;
@@ -44,6 +46,7 @@ public partial class MainWindow : Window
     private bool _shuttingDown;
     private DeviceRow? _paneDevice;
     private Point? _dragOrigin;
+    private PointerPressedEventArgs? _dragPressArgs;
     private DeviceInstance? _draggedDevice;
     private bool _confirmingClose;
 
@@ -698,6 +701,7 @@ public partial class MainWindow : Window
     private void OnTreePointerPressed(object? sender, PointerPressedEventArgs e)
     {
         _dragOrigin = e.GetPosition(TopologyTree);
+        _dragPressArgs = e;
         _draggedDevice = NodeAt(e.Source)?.Tag as DeviceInstance;
     }
 
@@ -710,10 +714,11 @@ public partial class MainWindow : Window
         if (Math.Abs(now.X - origin.X) < 6 && Math.Abs(now.Y - origin.Y) < 6) return;
 
         var device = _draggedDevice;
+        if (_dragPressArgs is not { } pressArgs) { ResetDrag(); return; }
+        var data = new DataTransfer();
+        data.Add(DataTransferItem.Create(DeviceDataFormat, device.Address.ToString()));
+        await DragDrop.DoDragDropAsync(pressArgs, data, DragDropEffects.Move);
         ResetDrag();
-        var data = new DataObject();
-        data.Set(DeviceFormat, device.Address.ToString());
-        await DragDrop.DoDragDrop(e, data, DragDropEffects.Move);
     }
 
     private void OnTreeDragOver(object? sender, DragEventArgs e)
@@ -741,6 +746,7 @@ public partial class MainWindow : Window
     private void ResetDrag()
     {
         _dragOrigin = null;
+        _dragPressArgs = null;
         _draggedDevice = null;
     }
 

@@ -1,4 +1,5 @@
 using Avalonia.Markup.Xaml;
+using Avalonia.Metadata;
 using Knx;
 
 namespace Knx.App.Localization;

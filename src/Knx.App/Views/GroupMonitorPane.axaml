@@ -23,7 +23,7 @@
       <ComboBox Grid.Column="4" x:Name="KindBox" SelectedIndex="0" SelectionChanged="OnKindChanged"
                 HorizontalAlignment="Stretch" Margin="8,0,0,0" />
       <CheckBox Grid.Column="5" x:Name="GroupOnlyBox" Content="{loc:Tr LblGroupOnly}" Margin="10,0,0,0"
-                VerticalAlignment="Center" Checked="OnGroupOnlyChanged" Unchecked="OnGroupOnlyChanged" />
+                VerticalAlignment="Center" IsCheckedChanged="OnGroupOnlyChanged" />
     </Grid>
 
     <TextBlock DockPanel.Dock="Top" x:Name="CountText" Classes="muted" Margin="0,0,0,6" />
