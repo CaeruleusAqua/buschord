@@ -24,7 +24,7 @@ derived from the KNX Association or any tool vendor.
 | KNX Data Security (keyring, secure telegrams, secure wrapper) | foundation, not yet wired into the tunnel |
 | Semantic export (Turtle/JSON-LD) + OWL/KIM checks | working |
 | Reports: CSV, labels (HTML/mail merge), project compare | working |
-| UI: dashboard, dockable workspace views, light/dark theme, German/English | experimental; floating Topology/Properties can crash; see limitations below |
+| UI: Avalonia 12.1.4 + Dock 12.1.0.12, dashboard, dockable workspace views, light/dark theme, German/English | experimental; floating Topology/Properties can crash; see limitations below |
 | MCP server for AI agents (stdio, 41 tools) | working; includes manual communication-object links |
 | Hawk/IoT device images, building structure (`loc:`) in semantic export | open |
 
