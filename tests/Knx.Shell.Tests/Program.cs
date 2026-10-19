@@ -138,6 +138,10 @@ internal static class Program
             {
                 Failure("settings failure Open preserves state", () => Vm.LoadProject(ProjectPath));
                 Failure("settings failure New preserves state", () => Vm.CreateProject(project, Path.Combine(Root, "new.knxproj")));
+                var pathBeforeSaveAs = Vm.ProjectPath;
+                Vm.ProjectPath = "";
+                Failure("settings failure Save As preserves path and recents", () => Vm.SaveProjectAs(Path.Combine(Root, "save-as.knxproj")));
+                Vm.ProjectPath = pathBeforeSaveAs;
             }
             finally { Environment.SetEnvironmentVariable("BUSCHORD_SETTINGS", SettingsPath); }
             if (args.Contains("--transaction")) { Console.WriteLine("TRANSACTION OK"); return; }

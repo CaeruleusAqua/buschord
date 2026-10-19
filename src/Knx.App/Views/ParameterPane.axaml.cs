@@ -143,7 +143,8 @@ public sealed partial class ParameterPane : UserControl
         {
             apply();
             foreach (var instance in instances) baseline[instance.Id] = instance.Value;
-            if (device is not null) _drafts.Remove(device);
+            if (device is not null && _drafts.TryGetValue(device, out var draft)
+                && ReferenceEquals(draft.Instances, instances)) _drafts.Remove(device);
             if (ReferenceEquals(_instances, instances)) MessageText.Text = Strings.Get("ParameterSaved");
             return true;
         }

@@ -72,6 +72,21 @@ internal static class NativeDraftChecks
             Assert("Only B was dirty after Apply; reverting B leaves no hidden A draft", !pane.HasUnappliedChanges);
             pane.DiscardDrafts();
             Assert("Discarding B leaves applied A clean", !pane.HasUnappliedChanges);
+            pane.Load(a); Row().Value = "70";
+            var reentered = false;
+            System.ComponentModel.PropertyChangedEventHandler replaceDraft = (_, e) =>
+            {
+                if (reentered || e.PropertyName != nameof(MainWindowViewModel.CanUndo)) return;
+                reentered = true;
+                pane.Load(b); pane.Load(a); Row().Value = "71"; pane.Load(b);
+            };
+            vm.PropertyChanged += replaceDraft;
+            applied = pane.Apply();
+            vm.PropertyChanged -= replaceDraft;
+            Assert("Apply retains a newer same-device draft while hidden", applied && reentered && pane.HasUnappliedChanges);
+            pane.Load(a);
+            Assert("Newer same-device draft survives Apply cleanup", Row().Value == "71"
+                && a.Device.ParameterValues.GetValueOrDefault("R-N") == "70" && pane.HasUnappliedChanges);
             window.Close();
         }
         catch (Exception ex) { Console.WriteLine(ex); failures++; }

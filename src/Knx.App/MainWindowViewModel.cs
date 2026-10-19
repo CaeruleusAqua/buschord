@@ -301,9 +301,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         if (Project is null) return;
         Knxproj.Save(Project, path);
+        RememberProject(path);
         ProjectPath = path;
-        Settings.TouchProject(path);
-        Settings.Save();
         RefreshRecents();
         _undo.Push(Project);
         _undo.MarkSaved();
