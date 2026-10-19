@@ -172,7 +172,13 @@ public partial class MainWindow : Window
         // its panel to the dock it came from instead of losing it.
         _dockFactory.HostWindowLocator = new Dictionary<string, Func<IHostWindow?>>
         {
-            [nameof(IDockWindow)] = () => new HostWindow()
+            [nameof(IDockWindow)] = () =>
+            {
+                var host = new HostWindow();
+                // Bubble only: editors keep their own handled undo/delete shortcuts.
+                host.KeyDown += OnKeyDown;
+                return host;
+            }
         };
         _dockFactory.WindowClosing += (_, e) =>
         {
