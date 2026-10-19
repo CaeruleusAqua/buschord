@@ -6,6 +6,8 @@ using Knx.App.Services;
 using Knx.App.Views;
 using Knx.Catalog;
 
+if (args.Contains("--native")) return NativeDraftChecks.Run();
+
 var failures = 0;
 void Check(string name, bool ok)
 {
@@ -44,6 +46,26 @@ try
     vm.ProjectPath = path;
     var pane = new ParameterPane(vm);
     ParameterItemViewModel[] PaneRows() => ((IEnumerable<ParameterItemViewModel>)pane.FindControl<ItemsControl>("ParameterList")!.ItemsSource!).ToArray();
+    pane.Load(vm.Devices[0]);
+    PaneRows()[0].Value = "44"; PaneRows()[0].Value = "25";
+    Check("Edit back to baseline is clean", !pane.HasUnappliedChanges);
+    pane.Load(vm.Devices[1]); pane.Load(vm.Devices[0]);
+    Check("No-op draft is not cached", !pane.HasUnappliedChanges && PaneRows()[0].Value == "25");
+    PaneRows()[0].Value = "45";
+    var removed = vm.Devices[0];
+    var modelLine = vm.Project!.Installations[0].Areas[0].Lines[0];
+    pane.Load(vm.Devices[1]); modelLine.Devices.Remove(removed.Device);
+    Check("Dirty API prunes a deleted hidden device without refresh", !pane.HasUnappliedChanges);
+    pane.Refresh();
+    Check("Refresh prunes a deleted hidden device", !pane.HasUnappliedChanges);
+    pane.Load(removed);
+    Check("Deleted selection cannot resurrect a draft", pane.Device is null && !pane.HasUnappliedChanges);
+    modelLine.Devices.Add(removed.Device);
+    pane.Load(removed); PaneRows()[0].Value = "45"; modelLine.Devices.Remove(removed.Device);
+    Check("Dirty API ignores a deleted visible device", !pane.HasUnappliedChanges);
+    pane.Refresh();
+    Check("Refresh clears deleted visible editor", pane.Device is null && !pane.HasUnappliedChanges);
+    modelLine.Devices.Insert(0, removed.Device); pane.DiscardDrafts();
     pane.Load(vm.Devices[1]);
     PaneRows()[0].Value = "41";
     pane.Load(vm.Devices[0]);
@@ -180,6 +202,7 @@ try
         Id = "1.1.1", Name = "Catalog actuator", Address = new(1, 1, 1), ProductRefId = "M-UI_H-1_P-1",
     };
     catalogLine.Devices.Add(catalogDevice);
+    catalogLine.Devices.Add(new DeviceInstance { Id = "C2", Name = "Catalogue B", Address = new(1, 1, 2), ProductRefId = catalogDevice.ProductRefId });
     catalogArea.Lines.Add(catalogLine);
     catalogInstallation.Areas.Add(catalogArea);
     catalogProject.Installations.Add(catalogInstallation);
@@ -208,7 +231,7 @@ try
     coldVm.CreateProject(catalogProject, null);
     var loadedSignal = new TaskCompletionSource();
     coldVm.CatalogLoaded += (_, _) => loadedSignal.TrySetResult();
-    var cold = coldVm.LoadParametersFor(coldVm.Devices.Single());
+    var cold = coldVm.LoadParametersFor(coldVm.Devices[0]);
     clock.Stop();
     Check("Cold catalogue lookup does not parse the library on the UI thread",
         cold.Instances.Count == 0 && clock.ElapsedMilliseconds < 1000);
@@ -218,13 +241,31 @@ try
     var published = await library.GetAsync();
     await Task.WhenAny(loadedSignal.Task, Task.Delay(TimeSpan.FromSeconds(20)));
     clock.Restart();
-    var warm = coldVm.LoadParametersFor(coldVm.Devices.Single());
+    var warm = coldVm.LoadParametersFor(coldVm.Devices[0]);
     clock.Stop();
     Check("Warm catalogue lookup resolves from the shared snapshot",
         published.Catalogs.Count == 1 && warm.Instances.Single().Id == "R-N" && warm.Instances[0].Value == "42");
     Check("Warm catalogue lookup stays fast", clock.ElapsedMilliseconds < 1000);
     Check("Warm catalogue lookup clears the waiting flag", !coldVm.IsAwaitingCatalog);
     Check("Catalogue completion notifies the pane once", loadedSignal.Task.IsCompleted);
+
+    var catalogPane = new ParameterPane(coldVm);
+    ParameterItemViewModel CatalogRow() => ((IEnumerable<ParameterItemViewModel>)catalogPane.FindControl<ItemsControl>("ParameterList")!.ItemsSource!).Single();
+    catalogPane.Load(coldVm.Devices[0]); CatalogRow().Value = "51"; catalogPane.Refresh();
+    Check("Catalogue refresh retains dirty ownership", CatalogRow().Value == "51" && catalogPane.HasUnappliedChanges);
+    catalogPane.Load(coldVm.Devices[1]);
+    Check("Catalogue devices do not share mutable values", CatalogRow().Value == "42");
+    CatalogRow().Value = "52"; catalogPane.Load(coldVm.Devices[0]);
+    Check("Catalogue A draft remains isolated", CatalogRow().Value == "51" && catalogPane.Apply());
+    catalogPane.Load(coldVm.Devices[1]);
+    Check("Applying catalogue A preserves B draft", CatalogRow().Value == "52" && catalogPane.HasUnappliedChanges);
+    catalogPane.DiscardDrafts();
+    Check("Discarded catalogue B returns to default", CatalogRow().Value == "42" && !catalogPane.HasUnappliedChanges);
+    var detached = coldVm.LoadParametersFor(coldVm.Devices[1]);
+    detached.Types[0].Restrictions[0].Max = 7;
+    detached.Instances[0].ParameterType!.IsVisible = false;
+    var fresh = coldVm.LoadParametersFor(coldVm.Devices[1]);
+    Check("Catalogue definitions are detached too", fresh.Types[0].Restrictions[0].Max == 255 && fresh.Instances[0].ParameterType!.IsVisible);
 
 
     var paneType = typeof(Knx.App.Views.ParameterPane);

@@ -18,7 +18,7 @@ public sealed partial class ParameterPane : UserControl
     private DeviceRow? _row;
     private Func<bool>? _apply;
     private Dictionary<string, string?> _baseline = [];
-    private bool _dirty;
+    private bool IsDirty => _instances.Any(i => i.Value != _baseline.GetValueOrDefault(i.Id));
     private Project? _project;
     private string _signature = "";
     private List<ParameterInstance> _instances = [];
@@ -35,18 +35,32 @@ public sealed partial class ParameterPane : UserControl
     public DeviceInstance? Device => _row?.Device;
 
     /// <summary>Includes drafts for devices which are not currently selected; never implies project edits.</summary>
-    public bool HasUnappliedChanges => (_vm is null || ReferenceEquals(_project, _vm.Project))
-        && (_dirty || _drafts.Count > 0);
+    public bool HasUnappliedChanges
+    {
+        get
+        {
+            if (_vm is not null && !ReferenceEquals(_project, _vm.Project)) return false;
+            PruneDrafts();
+            return _drafts.Count > 0 || (IsDirty && (_vm is null || _row is not null
+                && _project is not null && ProjectQuery.DeviceList(_project).Any(d => ReferenceEquals(d, _row.Device))));
+        }
+    }
+
+    private void PruneDrafts()
+    {
+        if (_vm is null) return;
+        var devices = _vm.Project is { } project ? ProjectQuery.DeviceList(project).ToHashSet() : [];
+        foreach (var device in _drafts.Keys.Where(d => !devices.Contains(d)).ToArray()) _drafts.Remove(device);
+    }
 
     /// <summary>Explicitly abandons every draft and restores the current editor from the project.</summary>
     public void DiscardDrafts()
     {
         _drafts.Clear();
-        _dirty = false;
+        foreach (var instance in _instances) instance.Value = _baseline.GetValueOrDefault(instance.Id);
         if (_vm is not null) Load(_row);
         else
         {
-            foreach (var instance in _instances) instance.Value = _baseline.GetValueOrDefault(instance.Id);
             Show(HeaderText.Text, _instances, _types, WarningDetail.Text, EmptyText.IsVisible ? EmptyText.Text : null);
         }
     }
@@ -60,11 +74,12 @@ public sealed partial class ParameterPane : UserControl
         if (!ReferenceEquals(_project, _vm?.Project))
         {
             _drafts.Clear();
-            _dirty = false;
             _project = _vm?.Project;
         }
-        else if (_dirty && _row is not null)
+        else if (IsDirty && _row is not null)
             _drafts[_row.Device] = new(_instances, _types, _baseline, _signature, MessageText.Text ?? "");
+        else if (_row is not null) _drafts.Remove(_row.Device);
+        PruneDrafts();
         _row = device;
         _apply = null;
         if (_vm is not { Project: { } project })
@@ -98,7 +113,6 @@ public sealed partial class ParameterPane : UserControl
         if (restored)
         {
             _baseline = draft!.Baseline;
-            _dirty = true;
             MessageText.Text = draft.Message;
         }
         else if (discarded) MessageText.Text = ParameterEmptyState.DiscardedText;
@@ -112,7 +126,7 @@ public sealed partial class ParameterPane : UserControl
     public void Refresh()
     {
         if (_vm is null) return;
-        var drafts = _dirty || _drafts.Count > 0;
+        var drafts = IsDirty || _drafts.Count > 0;
         Load(_row);
         if (drafts && !HasUnappliedChanges) MessageText.Text = ParameterEmptyState.DiscardedText;
     }
@@ -121,17 +135,21 @@ public sealed partial class ParameterPane : UserControl
     public bool Apply()
     {
         if (_apply is null) return false;
+        var apply = _apply;
+        var device = _row?.Device;
+        var instances = _instances;
+        var baseline = _baseline;
         try
         {
-            _apply();
-            _dirty = false;
-            if (_row is not null) _drafts.Remove(_row.Device);
-            MessageText.Text = Strings.Get("ParameterSaved");
+            apply();
+            foreach (var instance in instances) baseline[instance.Id] = instance.Value;
+            if (device is not null) _drafts.Remove(device);
+            if (ReferenceEquals(_instances, instances)) MessageText.Text = Strings.Get("ParameterSaved");
             return true;
         }
         catch (Exception ex)
         {
-            MessageText.Text = ex.Message;
+            if (ReferenceEquals(_instances, instances)) MessageText.Text = ex.Message;
             return false;
         }
     }
@@ -141,7 +159,6 @@ public sealed partial class ParameterPane : UserControl
         IEnumerable<ParameterType> types, Func<bool>? apply, string? warning = null)
     {
         _drafts.Clear();
-        _dirty = false;
         _row = null;
         _apply = apply;
         ApplyButton.IsVisible = apply is not null;
@@ -162,7 +179,7 @@ public sealed partial class ParameterPane : UserControl
         HeaderText.Text = string.IsNullOrWhiteSpace(title) ? Strings.Get("ParameterTitle") : title;
 
         var hasRows = instances.Count > 0;
-        ParameterList.ItemsSource = hasRows ? ParameterItemViewModel.Build(instances, types, () => _dirty = true) : null;
+        ParameterList.ItemsSource = hasRows ? ParameterItemViewModel.Build(instances, types) : null;
         ParameterList.IsVisible = hasRows;
         NoticeExpander.IsVisible = hasRows;
         EmptyText.Text = empty ?? ParameterEmptyState.NoParametersText;
@@ -173,7 +190,6 @@ public sealed partial class ParameterPane : UserControl
         WarningDetail.IsVisible = hasWarning;
         WarningDetail.Text = warning ?? "";
         MessageText.Text = "";
-        _dirty = false;
     }
 
     private void ShowState(string? empty)
@@ -192,7 +208,6 @@ public sealed partial class ParameterPane : UserControl
         EmptyText.Text = empty ?? ParameterEmptyState.NoParametersText;
         EmptyText.IsVisible = true;
         MessageText.Text = "";
-        _dirty = false;
     }
 
     private void OnApply(object? sender, RoutedEventArgs e) => Apply();

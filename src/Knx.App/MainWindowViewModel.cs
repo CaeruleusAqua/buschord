@@ -527,8 +527,15 @@ public sealed partial class MainWindowViewModel : ObservableObject
             {
                 var program = CatalogProgram(device.Device);
                 if (program is null) return ([], []);
-                types = program.ParameterTypes;
-                instances = program.ParameterInstances;
+                // Editors own their mutable values and definitions; never overlay the shared catalogue.
+                var copyOptions = new System.Text.Json.JsonSerializerOptions
+                {
+                    PreferredObjectCreationHandling = System.Text.Json.Serialization.JsonObjectCreationHandling.Populate,
+                };
+                types = System.Text.Json.JsonSerializer.Deserialize<List<ParameterType>>(
+                    System.Text.Json.JsonSerializer.Serialize(program.ParameterTypes), copyOptions)!;
+                instances = System.Text.Json.JsonSerializer.Deserialize<List<ParameterInstance>>(
+                    System.Text.Json.JsonSerializer.Serialize(program.ParameterInstances), copyOptions)!;
                 comObjects = program.ComObjects;
                 ParameterWarning = string.Join(", ", program.UnsupportedFeatures);
             }
