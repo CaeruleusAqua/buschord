@@ -116,6 +116,8 @@ jobs:
         run: dotnet run --project src/Knx.App -c Release --no-build -- --smoke
       - name: App screenshot selftest (Windows only)
         run: dotnet run --project src/Knx.App -c Release --no-build -- --screenshot-selftest
+      - name: Docking window regressions (Windows only)
+        run: dotnet run --project tests/Knx.Docking.Tests -c Release
 
   ci:
     name: ci
