@@ -157,3 +157,18 @@ No global exception handler, swallowing the invariant failure, disabling floatin
 - Wrong-manager failure is not minimized independently of BusChord's layout. Next bounded experiment: a two-native-window harness with multiple TextBoxes and the same nested Grid/ListBox layout, logging queue insertion, transfer, and first stale dequeue with control identity/root. Compare **equivalent** fresh-view versus reparented-view layouts, then source-patch root validation to verify destination layout correctness. Do not infer proof from simply draining queues or suppressing the guard.
 - No claim about drag/drop gesture timing, physical keyboard, native mouse gestures, every document type, long multi-cycle stability, or saved layouts. All transfers here used Factory APIs on real native windows.
 - No product fix was made. Only this report is intended for commit/cherry-pick.
+
+## Follow-up: rejected direct-template approach
+
+A subsequent bounded test returned the actual singleton Context control directly
+from an `IRecyclingDataTemplate`, without forced detachment or layout draining.
+Topology and Properties then floated as **blank panels**: their real controls
+remained under detached DeferredContentPresenters. Dock's logical-parent
+detachment branch could not release them because the logical parent's Content no
+longer referenced that control. The explicit document move still raised the
+wrong-LayoutManager exception. The attempted change was removed entirely.
+
+This rejects the narrow template-result proposal above as a proven repair.
+The tool crashes are also reachable by native mouse gestures; see the separate
+[native validation](review-native-docking.md). A safe presentation-lifetime
+redesign or independently validated framework remedy remains outstanding.
