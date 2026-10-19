@@ -1,7 +1,9 @@
 using System.IO.Compression;
 using System.Xml.Linq;
+using Avalonia.Controls;
 using Knx;
 using Knx.App.Services;
+using Knx.App.Views;
 using Knx.Catalog;
 
 var failures = 0;
@@ -21,7 +23,9 @@ try
     var line = new Line { Id = "L-1", Address = 1 };
     var device = new DeviceInstance { Id = "D-1", Name = "Actuator", Address = new(1, 1, 1),
         ProductRefId = "M-000F_A-0001-01-0000" };
-    line.Devices.Add(device); area.Lines.Add(line); installation.Areas.Add(area); project.Installations.Add(installation);
+    line.Devices.Add(device);
+    line.Devices.Add(new DeviceInstance { Id = "D-2", Name = "Device 2", Address = new(1, 1, 2), ProductRefId = device.ProductRefId });
+    area.Lines.Add(line); installation.Areas.Add(area); project.Installations.Add(installation);
     Knxproj.Save(project, path);
     using (var archive = ZipFile.Open(path, ZipArchiveMode.Update))
     using (var stream = archive.CreateEntry("M-000F/M-000F_A-0001-01-0000.xml").Open())
@@ -38,8 +42,83 @@ try
     var vm = new MainWindowViewModel();
     vm.CreateProject(Knxproj.Load(path), null);
     vm.ProjectPath = path;
-    var loaded = vm.LoadParametersFor(vm.Devices.Single());
-    device = vm.Devices.Single().Device;
+    var pane = new ParameterPane(vm);
+    ParameterItemViewModel[] PaneRows() => ((IEnumerable<ParameterItemViewModel>)pane.FindControl<ItemsControl>("ParameterList")!.ItemsSource!).ToArray();
+    pane.Load(vm.Devices[1]);
+    PaneRows()[0].Value = "41";
+    pane.Load(vm.Devices[0]);
+    pane.Load(vm.Devices[1]);
+    Check("Device 2 draft 25 -> 41 survives selection away and back", PaneRows()[0].Value == "41");
+    Check("Selection does not apply drafts", vm.Devices[1].Device.ParameterValues.Count == 0 && !vm.IsDirty);
+    Check("Dirty API includes the visible draft", pane.HasUnappliedChanges);
+    pane.Load(null);
+    Check("Dirty API includes drafts while no device is selected", pane.HasUnappliedChanges && pane.Device is null);
+    pane.Load(vm.Devices[1]);
+    pane.Refresh();
+    Check("Same-device refresh retains compatible drafts", PaneRows()[0].Value == "41" && pane.HasUnappliedChanges);
+    vm.SaveProject();
+    pane.Refresh();
+    Check("Ordinary Save never persists or clears unapplied drafts", PaneRows()[0].Value == "41"
+        && pane.HasUnappliedChanges && ProjectQuery.DeviceList(Knxproj.Load(path)).Last().ParameterValues.Count == 0);
+    PaneRows()[0].Value = "101";
+    Check("Invalid pane Apply retains the draft", !pane.Apply() && pane.HasUnappliedChanges);
+    var error = pane.FindControl<TextBlock>("MessageText")!.Text;
+    pane.Load(vm.Devices[0]); pane.Load(vm.Devices[1]);
+    Check("Validation failure survives selection switches", PaneRows()[0].Value == "101"
+        && pane.FindControl<TextBlock>("MessageText")!.Text == error && !string.IsNullOrEmpty(error));
+    PaneRows()[0].Value = "41";
+    Check("Explicit pane Apply persists and resets dirty state", pane.Apply() && !pane.HasUnappliedChanges
+        && vm.Devices[1].Device.ParameterValues["R-N"] == "41");
+    pane.Load(vm.Devices[0]); pane.Load(vm.Devices[1]);
+    Check("Applied values do not resurrect an old draft", PaneRows()[0].Value == "41" && !pane.HasUnappliedChanges);
+    PaneRows()[0].Value = "42"; pane.Load(vm.Devices[0]); PaneRows()[0].Value = "43";
+    pane.DiscardDrafts();
+    Check("DiscardDrafts resets current editor and every stored draft", !pane.HasUnappliedChanges && PaneRows()[0].Value == "25");
+    pane.Load(vm.Devices[1]);
+    Check("Discarded hidden-device draft cannot return", PaneRows()[0].Value == "41" && !pane.HasUnappliedChanges);
+    PaneRows()[0].Value = "44";
+    vm.UndoCommand.Execute(null);
+    pane.Load(vm.Devices[1]);
+    Check("Undo snapshot invalidates prior drafts", PaneRows()[0].Value == "25" && !pane.HasUnappliedChanges);
+    PaneRows()[0].Value = "45";
+    vm.CreateProject(Knxproj.Load(path), null); vm.ProjectPath = path;
+    pane.Load(vm.Devices[1]);
+    Check("Different project instance with same IDs cannot inherit drafts", PaneRows()[0].Value == "25" && !pane.HasUnappliedChanges);
+    PaneRows()[0].Value = "46";
+    vm.Devices[1].Device.ParameterValues["R-N"] = "47";
+    pane.Refresh();
+    Check("Changed model baseline invalidates a draft with notice", PaneRows()[0].Value == "47" && !pane.HasUnappliedChanges
+        && pane.FindControl<TextBlock>("MessageText")!.Text == ParameterEmptyState.DiscardedText);
+    PaneRows()[0].Value = "48";
+    pane.Load(vm.Devices[0]);
+    const string applicationEntry = "M-000F/M-000F_A-0001-01-0000.xml";
+    XDocument definition;
+    using (var archive = ZipFile.Open(path, ZipArchiveMode.Update))
+    {
+        var entry = archive.GetEntry(applicationEntry)!;
+        using (var stream = entry.Open()) definition = XDocument.Load(stream);
+        entry.Delete();
+        definition.Descendants("TypeNumber").Single().SetAttributeValue("maxInclusive", "40");
+        definition.Descendants("Parameter").First().SetAttributeValue("IsVisible", "false");
+        using var output = archive.CreateEntry(applicationEntry).Open();
+        definition.Save(output);
+    }
+    pane.Load(vm.Devices[1]);
+    Check("Refreshed application definition cannot restore an obsolete hidden draft", PaneRows()[0].Value == "47"
+        && !PaneRows()[0].IsVisible && !pane.HasUnappliedChanges
+        && pane.FindControl<TextBlock>("MessageText")!.Text == ParameterEmptyState.DiscardedText);
+    using (var archive = ZipFile.Open(path, ZipArchiveMode.Update))
+    {
+        archive.GetEntry(applicationEntry)!.Delete();
+        definition.Descendants("TypeNumber").Single().SetAttributeValue("maxInclusive", "100");
+        definition.Descendants("Parameter").First().Attribute("IsVisible")!.Remove();
+        using var output = archive.CreateEntry(applicationEntry).Open();
+        definition.Save(output);
+    }
+    // Start the existing apply/undo checks from the original saved fixture.
+    vm.CreateProject(Knxproj.Load(path), null); vm.ProjectPath = path;
+    var loaded = vm.LoadParametersFor(vm.Devices[0]);
+    device = vm.Devices[0].Device;
     Check("Archive parameters load by ref identity", loaded.Instances.Count == 2 && loaded.Instances[0].Id == "R-N");
     Check("Dynamic warning is exposed", vm.ParameterWarning.Length > 0);
     var rows = ParameterItemViewModel.Build(loaded.Instances, loaded.Types);
@@ -58,14 +137,14 @@ try
     Check("Apply can restore initial defaults after previous Apply", vm.ApplyParameterValues(device, loaded.Instances, loaded.Types, baseline)
         && device.ParameterValues["R-N"] == "25");
     vm.UndoCommand.Execute(null);
-    Check("Undo restores previous overrides", vm.Devices.Single().Device.ParameterValues["R-N"] == "50");
+    Check("Undo restores previous overrides", vm.Devices[0].Device.ParameterValues["R-N"] == "50");
     try { vm.ApplyParameterValues(device, loaded.Instances, loaded.Types, baseline); Check("Stale dialog rejected", false); }
     catch (InvalidOperationException) { Check("Stale dialog rejected", true); }
     vm.RedoCommand.Execute(null);
     Knxproj.Save(vm.Project!, path);
     var reloaded = Knxproj.Load(path);
-    Check("Save/reload persists overrides", ProjectQuery.DeviceList(reloaded).Single().ParameterValues["R-N"] == "25");
-    var reopened = vm.LoadParametersFor(vm.Devices.Single());
+    Check("Save/reload persists overrides", ProjectQuery.DeviceList(reloaded).First().ParameterValues["R-N"] == "25");
+    var reopened = vm.LoadParametersFor(vm.Devices[0]);
     Check("Reopening editor overlays saved values", reopened.Instances.Single(i => i.Id == "R-N").Value == "25");
     using var zip = ZipFile.OpenRead(path);
     Check("Application data survives save and undo", zip.GetEntry("M-000F/M-000F_A-0001-01-0000.xml") is not null);

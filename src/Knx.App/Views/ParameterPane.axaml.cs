@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Knx;
@@ -18,6 +19,13 @@ public sealed partial class ParameterPane : UserControl
     private Func<bool>? _apply;
     private Dictionary<string, string?> _baseline = [];
     private bool _dirty;
+    private Project? _project;
+    private string _signature = "";
+    private List<ParameterInstance> _instances = [];
+    private List<ParameterType> _types = [];
+    private readonly Dictionary<DeviceInstance, Draft> _drafts = [];
+    private sealed record Draft(List<ParameterInstance> Instances, List<ParameterType> Types,
+        Dictionary<string, string?> Baseline, string Signature, string Message);
 
     public ParameterPane() => InitializeComponent();
 
@@ -26,12 +34,37 @@ public sealed partial class ParameterPane : UserControl
     /// <summary>Device currently edited; null while the pane shows an empty state.</summary>
     public DeviceInstance? Device => _row?.Device;
 
+    /// <summary>Includes drafts for devices which are not currently selected; never implies project edits.</summary>
+    public bool HasUnappliedChanges => (_vm is null || ReferenceEquals(_project, _vm.Project))
+        && (_dirty || _drafts.Count > 0);
+
+    /// <summary>Explicitly abandons every draft and restores the current editor from the project.</summary>
+    public void DiscardDrafts()
+    {
+        _drafts.Clear();
+        _dirty = false;
+        if (_vm is not null) Load(_row);
+        else
+        {
+            foreach (var instance in _instances) instance.Value = _baseline.GetValueOrDefault(instance.Id);
+            Show(HeaderText.Text, _instances, _types, WarningDetail.Text, EmptyText.IsVisible ? EmptyText.Text : null);
+        }
+    }
+
     /// <summary>Raised by the pane's Close button, which only the dialog wrapper shows.</summary>
     public event EventHandler? CloseRequested;
 
     /// <summary>Shows the device's parameters; null shows the empty state without touching the project.</summary>
     public void Load(DeviceRow? device)
     {
+        if (!ReferenceEquals(_project, _vm?.Project))
+        {
+            _drafts.Clear();
+            _dirty = false;
+            _project = _vm?.Project;
+        }
+        else if (_dirty && _row is not null)
+            _drafts[_row.Device] = new(_instances, _types, _baseline, _signature, MessageText.Text ?? "");
         _row = device;
         _apply = null;
         if (_vm is not { Project: { } project })
@@ -44,24 +77,44 @@ public sealed partial class ParameterPane : UserControl
             ShowState(ParameterEmptyState.Text(project, null, 0));
             return;
         }
+        if (!ProjectQuery.DeviceList(project).Any(d => ReferenceEquals(d, device.Device)))
+        {
+            _row = null;
+            ShowState(ParameterEmptyState.Text(project, null, 0));
+            return;
+        }
 
         var (instances, types) = _vm.LoadParametersFor(device);
-        _apply = () => _vm.ApplyParameterValues(device.Device, instances, types, _baseline);
+        // Compare the entire resolved definition and model values before restoring a draft.
+        // Catalogue/visibility changes must not bring back an editor for an obsolete program.
+        _signature = JsonSerializer.Serialize(new { instances, types, device.Device.ProductRefId,
+            device.Device.Hardware2ProgramRefId, device.Device.ParameterValues });
+        var restored = _drafts.Remove(device.Device, out var draft) && draft.Signature == _signature;
+        var discarded = draft is not null && !restored;
+        if (restored) { instances = draft!.Instances; types = draft.Types; }
         ApplyButton.IsVisible = true;
         Show($"Parameter – {device.Name}", instances, types, _vm.ParameterWarning,
             ParameterEmptyState.Text(project, device.Device, instances.Count));
+        if (restored)
+        {
+            _baseline = draft!.Baseline;
+            _dirty = true;
+            MessageText.Text = draft.Message;
+        }
+        else if (discarded) MessageText.Text = ParameterEmptyState.DiscardedText;
+        var baseline = _baseline;
+        _apply = () => _vm.ApplyParameterValues(device.Device, instances, types, baseline);
     }
 
     /// <summary>
-    /// Re-reads the model after undo/redo or a project change. Unsaved drafts are dropped, so the
-    /// pane says so instead of silently replacing what the user just typed.
+    /// Re-reads the model, retaining compatible drafts. A new project or undo snapshot invalidates them.
     /// </summary>
     public void Refresh()
     {
         if (_vm is null) return;
-        var drafts = _dirty;
+        var drafts = _dirty || _drafts.Count > 0;
         Load(_row);
-        if (drafts && ParameterList.IsVisible) MessageText.Text = ParameterEmptyState.DiscardedText;
+        if (drafts && !HasUnappliedChanges) MessageText.Text = ParameterEmptyState.DiscardedText;
     }
 
     /// <summary>Applies the drafts atomically; failures stay inline instead of throwing at the caller.</summary>
@@ -72,6 +125,7 @@ public sealed partial class ParameterPane : UserControl
         {
             _apply();
             _dirty = false;
+            if (_row is not null) _drafts.Remove(_row.Device);
             MessageText.Text = Strings.Get("ParameterSaved");
             return true;
         }
@@ -86,6 +140,8 @@ public sealed partial class ParameterPane : UserControl
     internal void LoadResolved(string? title, IEnumerable<ParameterInstance> parameters,
         IEnumerable<ParameterType> types, Func<bool>? apply, string? warning = null)
     {
+        _drafts.Clear();
+        _dirty = false;
         _row = null;
         _apply = apply;
         ApplyButton.IsVisible = apply is not null;
@@ -100,6 +156,8 @@ public sealed partial class ParameterPane : UserControl
     private void Show(string? title, List<ParameterInstance> instances, List<ParameterType> types,
         string? warning, string? empty)
     {
+        _instances = instances;
+        _types = types;
         _baseline = instances.ToDictionary(i => i.Id, i => i.Value);
         HeaderText.Text = string.IsNullOrWhiteSpace(title) ? Strings.Get("ParameterTitle") : title;
 
@@ -120,6 +178,8 @@ public sealed partial class ParameterPane : UserControl
 
     private void ShowState(string? empty)
     {
+        _instances = [];
+        _types = [];
         _baseline = [];
         _apply = null;
         ApplyButton.IsVisible = false;
