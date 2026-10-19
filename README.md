@@ -24,7 +24,7 @@ derived from the KNX Association or any tool vendor.
 | KNX Data Security (keyring, secure telegrams, secure wrapper) | foundation, not yet wired into the tunnel |
 | Semantic export (Turtle/JSON-LD) + OWL/KIM checks | working |
 | Reports: CSV, labels (HTML/mail merge), project compare | working |
-| UI: ribbon shell, dashboard, ETS-style workspace tabs (catalogue, parameters, communication objects), light/dark theme, German/English | working |
+| UI: dashboard, dockable workspace views, light/dark theme, German/English | experimental; floating Topology/Properties can crash; see limitations below |
 | MCP server for AI agents (stdio, 41 tools) | working; includes manual communication-object links |
 | Hawk/IoT device images, building structure (`loc:`) in semantic export | open |
 
@@ -32,6 +32,16 @@ Latest bounded reference-tool analysis and implemented gap fixes:
 [REA parity implementation report](analysis/parity-implementation.md).
 Archive signatures are preserved but not recomputed; changed signed data may no
 longer validate in ETS. Encrypted project archives remain unsupported.
+
+**Docking limitation:** do not float Topology or Properties while working on
+unsaved data: native dragging currently reproduces application crashes. Explicit
+cross-window document moves also have a reproduced layout-manager failure;
+successful mouse redocking is not proof of general safety. See the
+[native tests](analysis/review-native-docking.md) and
+[ownership investigation](analysis/dock-crash-rootcause.md).
+The [ETS6 UI comparison](analysis/ux/ets6-panel-recheck.md) distinguishes project
+tabs, work panels, device sub-tabs and the properties sidebar; the current flat
+workspace tab arrangement is not a faithful reproduction of that hierarchy.
 
 ## Quick start
 
@@ -68,6 +78,14 @@ dotnet run --project tests/Knx.Address.Tests
 dotnet run --project src/Knx.Mcp -- --selftest
 dotnet run --project src/Knx.App -- --smoke
 dotnet run --project src/Knx.App.Tests
+```
+
+Native-window regressions require a graphical Windows desktop:
+
+```powershell
+dotnet run --project tests/Knx.ParameterUi.Tests -- --native
+dotnet run --project tests/Knx.Docking.Tests
+dotnet run --project tests/Knx.Shell.Tests
 ```
 
 ## Layout
