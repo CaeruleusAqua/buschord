@@ -25,6 +25,7 @@ public partial class WorkbenchWindow : Window
     private readonly ParameterEditingSession _parameterSession;
     private readonly ComboBox _parameterDevice = new() { MinWidth = 240, Margin = new(0, 0, 0, 12) };
     private readonly StackPanel _modePanel = new() { Margin = new(0, 12, 0, 0), Spacing = 8, MaxWidth = 620, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
+    private readonly ScrollViewer _modeScroll = new() { VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto };
     private readonly List<Window> _toolWindows = [];
     private WorkbenchSessions? _sessions;
     private DispatcherTimer? _sessionTimer;
@@ -65,9 +66,12 @@ public partial class WorkbenchWindow : Window
         var parameterLayout = new DockPanel();
         DockPanel.SetDock(_parameterDevice, Avalonia.Controls.Dock.Top);
         parameterLayout.Children.Add(_parameterDevice);
-        DockPanel.SetDock(_modePanel, Avalonia.Controls.Dock.Bottom);
-        parameterLayout.Children.Add(_modePanel);
-        parameterLayout.Children.Add(_parameters);
+        _modeScroll.Content = _modePanel;
+        _modeScroll.IsVisible = false;
+        var parameterContent = new Grid();
+        parameterContent.Children.Add(_parameters);
+        parameterContent.Children.Add(new Border { VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top, Child = _modeScroll });
+        parameterLayout.Children.Add(parameterContent);
         ParametersHost.Content = parameterLayout;
         _parameterDevice.ItemTemplate = new FuncDataTemplate<DeviceRow>((d, _) => Label(d is null ? "" : $"{d.AddressText} · {d.Name}"));
         _parameterDevice.SelectionChanged += (_, _) =>
@@ -101,17 +105,22 @@ public partial class WorkbenchWindow : Window
         foreach (var (key, title) in new[] { ("objects", "Kommunikationsobjekte"), ("params", "Parameter"), ("relations", "Beziehungen"), ("overview", "Prüfung") })
         {
             var view = key;
-            Representations.Children.Add(ActionButton(title, () => SetRepresentation(view), "quiet"));
+            var button = ActionButton(title, () => SetRepresentation(view), "quiet");
+            button.Classes.Add("wb-view-tab");
+            Representations.Children.Add(button);
         }
         foreach (var (key, title) in new[] { ("monitor", "Monitor"), ("programming", "Programmierung"), ("problems", "Prüfmeldungen") })
         {
             var tool = key;
-            ToolTabs.Children.Add(ActionButton(title, () => ShowTool(tool), "quiet"));
+            var button = ActionButton(title, () => ShowTool(tool), "quiet");
+            button.Classes.Add("wb-tool-tab");
+            ToolTabs.Children.Add(button);
         }
         ViewModel.PropertyChanged += OnModelChanged;
         ViewModel.Devices.CollectionChanged += OnDevicesChanged;
         ViewModel.CatalogLoaded += OnCatalogLoaded;
         Workspace.PropertyChanged += OnWorkspaceChanged;
+        SizeChanged += (_, _) => ApplyLayout();
         KeyDown += OnShellKeyDown;
         Closing += OnClosing;
         foreach (var splitter in new[] { NavSplitter, InspectorSplitter, ToolsSplitter })
@@ -405,6 +414,8 @@ public partial class WorkbenchWindow : Window
                     ? $"{WorkbenchProjection.Devices(p, tab.Target).Count} Geräte im Ausschnitt · gemeinsamer Projektstand"
                       + (tab.Target.Kind == "room" ? " · Einbauort und relevante externe Kanäle getrennt" : "") : "";
             Representations.IsVisible = tab is not null && !tool;
+            var workItem = tab is not null && !tool && tab.Target.Kind is not "project";
+            WatchButton.IsVisible = AddDeviceButton.IsVisible = InspectorButton.IsVisible = workItem;
             TableViewport.IsVisible = TableHost.IsVisible = tab is not null && !tool && tab.View == "objects";
             ObjectToolbar.IsVisible = TableHost.IsVisible;
             ParametersHost.IsVisible = !tool && tab?.View == "params";
@@ -674,6 +685,11 @@ public partial class WorkbenchWindow : Window
         EnsureSessions();
         Workspace.ActiveTool = tool;
         Workspace.ToolsVisible = true;
+        foreach (var button in ToolTabs.Children.OfType<Button>())
+            button.Classes.Set("active", button.Content switch
+            {
+                "Monitor" => tool == "monitor", "Programmierung" => tool == "programming", "Prüfmeldungen" => tool == "problems", _ => false
+            });
         ToolHost.Content = tool switch
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), _ => CreateMonitorView()
@@ -759,10 +775,41 @@ public partial class WorkbenchWindow : Window
         toolbar.Children.Add(ActionButton("Vollaufzeichnung …", () => _ = GuardAsync(ExportFullMonitorAsync), "quiet"));
         toolbar.Children.Add(live);
         DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top); panel.Children.Add(toolbar);
+        var header = new Grid { ColumnDefinitions = new("80,90,140,110,60,*"), Height = 28 };
+        header.Classes.Add("wb-table-header");
+        var headings = new[] { "Zeit", "Quelle", "Ziel / Gruppenadresse", "Dienst", "DPT", "Wert" };
+        for (var i = 0; i < headings.Length; i++)
+        {
+            var text = Label(headings[i]); text.FontSize = 9; text.Classes.Add("wb-muted"); text.Margin = new(6, 0, 0, 0);
+            Grid.SetColumn(text, i); header.Children.Add(text);
+        }
+        DockPanel.SetDock(header, Avalonia.Controls.Dock.Top); panel.Children.Add(header);
+        var tablePanel = new Grid();
+        var empty = new TextBlock { Text = "Noch keine Telegramme für diesen Filter.", Classes = { "wb-muted" }, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
         var list = new ListBox { ItemsSource = sessions.Monitor.FilteredRows, Background = Brushes.Transparent };
-        list.ItemTemplate = new FuncDataTemplate<WorkbenchTelegram>((row, _) => row is null ? new Border() : Label(
-            $"{row.Timestamp:HH:mm:ss.fff}   {row.Source,-9} → {row.Destination,-11}   {row.Service,-16}   {row.DatapointType ?? "—",-6}   {row.Value}   · {row.Origin}"));
-        panel.Children.Add(list);
+        list.ItemTemplate = new FuncDataTemplate<WorkbenchTelegram>((row, _) =>
+        {
+            if (row is null) return new Border();
+            var grid = new Grid { ColumnDefinitions = new("80,90,140,110,60,*"), Height = 28 };
+            var cells = new[] { row.Timestamp.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture), row.Source, row.Destination, row.Service, row.DatapointType ?? "—", row.Value };
+            for (var i = 0; i < cells.Length; i++)
+            {
+                var cell = Label(cells[i]); cell.FontSize = 10; cell.Margin = new(6, 0, 0, 0);
+                if (i is 0 or 4 or 5) cell.Classes.Add("wb-muted");
+                Grid.SetColumn(cell, i); grid.Children.Add(cell);
+            }
+            return grid;
+        });
+        tablePanel.Children.Add(list);
+        tablePanel.Children.Add(empty);
+        empty.IsVisible = sessions.Monitor.FilteredRows.Count == 0;
+        if (sessions.Monitor.FilteredRows is System.Collections.Specialized.INotifyCollectionChanged changed)
+        {
+            void OnChanged(object? _, System.Collections.Specialized.NotifyCollectionChangedEventArgs __) => empty.IsVisible = sessions.Monitor.FilteredRows.Count == 0;
+            changed.CollectionChanged += OnChanged;
+            list.DetachedFromVisualTree += (_, _) => changed.CollectionChanged -= OnChanged;
+        }
+        panel.Children.Add(tablePanel);
         RefreshState();
         return panel;
     }
@@ -823,14 +870,14 @@ public partial class WorkbenchWindow : Window
     private void UpdateModePreview()
     {
         _modePanel.Children.Clear();
-        _modePanel.IsVisible = false;
+        _modeScroll.IsVisible = false;
         _parameters.IsVisible = true;
         if (_parameterDevice.SelectedItem is not DeviceRow selected || ViewModel.Project is not { } project) return;
         var demo = project.Workbench.Devices.GetValueOrDefault(selected.Device.Id)?.Demo == true
             && selected.Device.ParameterValues.Count > 0;
         if (!demo) return;
         _parameters.IsVisible = false;
-        _modePanel.IsVisible = true;
+        _modeScroll.IsVisible = true;
         _modePanel.Children.Add(Label("Demo-Applikation · Änderungen erst nach Übernehmen"));
         var editors = new Dictionary<string, Control>(StringComparer.Ordinal);
         foreach (var (key, raw) in selected.Device.ParameterValues
@@ -932,12 +979,31 @@ public partial class WorkbenchWindow : Window
     }
     private void ApplyLayout()
     {
+        var narrow = Bounds.Width is > 0 and < 1100;
+        var navigationWidth = narrow ? 210 : Workspace.NavigatorWidth;
         Navigator.IsVisible = NavSplitter.IsVisible = Workspace.NavigatorVisible;
-        Zones.ColumnDefinitions[1].Width = new(Workspace.NavigatorVisible ? Workspace.NavigatorWidth : 0);
+        Zones.ColumnDefinitions[1].Width = new(Workspace.NavigatorVisible ? navigationWidth : 0);
         Zones.ColumnDefinitions[2].Width = new(Workspace.NavigatorVisible ? 5 : 0);
-        Inspector.IsVisible = InspectorSplitter.IsVisible = Workspace.InspectorVisible;
-        Zones.ColumnDefinitions[4].Width = new(Workspace.InspectorVisible ? 5 : 0);
-        Zones.ColumnDefinitions[5].Width = new(Workspace.InspectorVisible ? Workspace.InspectorWidth : 0);
+        Inspector.IsVisible = Workspace.InspectorVisible;
+        if (Workspace.InspectorVisible && narrow)
+        {
+            // Narrow windows overlay the inspector like the reference instead of squeezing the editor.
+            Grid.SetColumn(Inspector, 3);
+            Inspector.Width = Math.Clamp(Bounds.Width - navigationWidth - 47 - 5 - 24, 280, 350);
+            Inspector.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
+            Zones.ColumnDefinitions[4].Width = new(0);
+            Zones.ColumnDefinitions[5].Width = new(0);
+            InspectorSplitter.IsVisible = false;
+        }
+        else
+        {
+            Grid.SetColumn(Inspector, 5);
+            Inspector.Width = double.NaN;
+            Inspector.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+            Zones.ColumnDefinitions[4].Width = new(Workspace.InspectorVisible ? 5 : 0);
+            Zones.ColumnDefinitions[5].Width = new(Workspace.InspectorVisible ? Workspace.InspectorWidth : 0);
+            InspectorSplitter.IsVisible = Workspace.InspectorVisible;
+        }
         Tools.IsVisible = ToolsSplitter.IsVisible = Workspace.ToolsVisible;
         Editor.IsVisible = !Workspace.ToolsVisible || !Workspace.ToolsMaximized;
         MainColumn.RowDefinitions[1].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(0) : new(1, GridUnitType.Star);
@@ -1039,6 +1105,9 @@ public partial class WorkbenchWindow : Window
     private static Button ActionButton(string text, Action action, string? style = null, string? accessibleName = null)
     {
         var button = new Button { Content = text };
+        button.Classes.Add("wb-button");
+        if (style == "primary") button.Classes.Add("wb-primary");
+        else if (style == "quiet") button.Classes.Add("wb-quiet");
         if (style is not null) button.Classes.Add(style);
         if (accessibleName is not null) { ToolTip.SetTip(button, accessibleName); AutomationProperties.SetName(button, accessibleName); }
         button.Click += (_, _) => action(); return button;

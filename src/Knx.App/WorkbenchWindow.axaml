@@ -1,10 +1,11 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:Knx.App.Views"
         x:Class="Knx.App.WorkbenchWindow" Title="BusChord" Width="1440" Height="900"
         MinWidth="900" MinHeight="600" Background="{DynamicResource WbBackground}" FontFamily="Inter, Segoe UI" FontSize="12"
         Foreground="{DynamicResource WbText}" Icon="/Assets/brand/buschord-house-transparent-tile.ico">
   <!-- Opt-in V4 resources shared with the native workbench; legacy panels keep their own styles. -->
   <Window.Styles>
-    <Style Selector="Button"><Setter Property="MinHeight" Value="28"/><Setter Property="Padding" Value="9,4"/><Setter Property="FontSize" Value="11"/><Setter Property="CornerRadius" Value="5"/></Style>
+    <Style Selector="Button"><Setter Property="MinHeight" Value="30"/><Setter Property="Padding" Value="10,0"/><Setter Property="FontSize" Value="12"/><Setter Property="CornerRadius" Value="5"/></Style>
     <Style Selector="Button.quiet"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/></Style>
     <Style Selector="Button.active"><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
     <Style Selector="Button.primary"><Setter Property="Background" Value="{DynamicResource WbAccent}"/><Setter Property="Foreground" Value="{DynamicResource WbOnAccent}"/></Style>
@@ -12,6 +13,13 @@
     <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="{DynamicResource WbMuted}"/><Setter Property="FontSize" Value="10"/></Style>
     <Style Selector="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="MinHeight" Value="29"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
     <Style Selector="ListBoxItem:selected /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
+    <Style Selector="Button.wb-view-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="34"/><Setter Property="Padding" Value="0"/><Setter Property="FontSize" Value="12"/></Style>
+    <Style Selector="Button.wb-view-tab.active"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
+    <Style Selector="Button.wb-tool-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="35"/><Setter Property="Padding" Value="0,0,0,0"/></Style>
+    <Style Selector="Button.wb-tool-tab.active"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
+    <Style Selector="Button.wb-doc-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="38"/><Setter Property="MinWidth" Value="130"/><Setter Property="Padding" Value="10,0"/></Style>
+    <Style Selector="Button.wb-doc-tab.active"><Setter Property="Background" Value="{DynamicResource WbPaper}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/><Setter Property="Foreground" Value="{DynamicResource WbText}"/></Style>
+    <Style Selector="Grid.wb-table-header"><Setter Property="Background" Value="{DynamicResource WbPanel}"/></Style>
     <Style Selector="Grid.wb-device"><Setter Property="Background" Value="{DynamicResource WbHover}"/></Style>
     <Style Selector="Grid.wb-channel"><Setter Property="Background" Value="{DynamicResource WbPanel}"/></Style>
     <Style Selector="TextBlock.wb-subtle"><Setter Property="Foreground" Value="{DynamicResource WbSubtle}"/></Style>
@@ -31,7 +39,7 @@
         <Button Grid.Column="2" Content="⌕   Projekt durchsuchen                       Ctrl K" HorizontalAlignment="Center"
                 MinWidth="220" Classes="quiet" Click="OnPalette" Background="{DynamicResource WbBackground}"/>
         <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <TextBlock Text="OFFLINE" Foreground="#996415" FontSize="10" VerticalAlignment="Center"/>
+          <TextBlock Text="OFFLINE" Foreground="{DynamicResource WbWarning}" FontSize="10" VerticalAlignment="Center"/>
           <Button Content="Programmieren" Click="OnProgramming" Classes="primary"/>
         </StackPanel>
       </Grid>
@@ -55,11 +63,11 @@
         <Grid x:Name="Editor" Grid.Row="1" RowDefinitions="Auto,Auto,*">
           <StackPanel Margin="24,16,24,0" Spacing="6">
             <TextBlock x:Name="Breadcrumb" Classes="muted"/>
-            <Grid ColumnDefinitions="*,Auto"><TextBlock x:Name="EditorTitle" FontSize="22" FontWeight="SemiBold"/>
+            <Grid ColumnDefinitions="*,Auto"><TextBlock x:Name="EditorTitle" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
               <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                <Button Content="Beobachten" Click="OnWatch" Classes="quiet"/>
-                <Button Content="+ Gerät" Click="OnAddDevice" Classes="quiet"/>
-                <Button Content="Eigenschaften" Click="OnInspector" Classes="quiet"/>
+                <Button x:Name="WatchButton" Content="Beobachten" Click="OnWatch" Classes="quiet"/>
+                <Button x:Name="AddDeviceButton" Content="+ Gerät" Click="OnAddDevice" Classes="quiet"/>
+                <Button x:Name="InspectorButton" Content="Eigenschaften" Click="OnInspector" Classes="quiet"/>
               </StackPanel></Grid>
             <TextBlock x:Name="Subtitle" Classes="muted" TextWrapping="Wrap" Margin="0,0,0,6"/>
             <StackPanel x:Name="Representations" Orientation="Horizontal" Spacing="12"/>
@@ -89,9 +97,9 @@
           </Grid>
         </Grid>
         <GridSplitter x:Name="ToolsSplitter" Grid.Row="2" Height="5" Background="{DynamicResource WbLine}" ResizeDirection="Rows"/>
-        <Grid x:Name="Tools" Grid.Row="3" RowDefinitions="35,*" Background="#fcfcfd">
+        <Grid x:Name="Tools" Grid.Row="3" RowDefinitions="35,*" Background="{DynamicResource WbPaper}">
           <Grid ColumnDefinitions="*,Auto,Auto,Auto"><StackPanel x:Name="ToolTabs" Orientation="Horizontal" Margin="12,0"/>
-            <Button Grid.Column="1" Content="↗" ToolTip.Tip="Frische Werkzeugansicht in eigenem Fenster" Click="OnFloatTool" Classes="quiet"/>
+            <Button Grid.Column="1" Content="↗" ToolTip.Tip="Werkzeug in eigenem Fenster öffnen" Click="OnFloatTool" Classes="quiet"/>
             <Button Grid.Column="2" Content="□" ToolTip.Tip="Werkzeug maximieren" Click="OnMaximizeTool" Classes="quiet"/>
             <Button Grid.Column="3" Content="×" ToolTip.Tip="Werkzeug ausblenden" Click="OnHideTool" Classes="quiet"/>
           </Grid>
@@ -106,7 +114,7 @@
       </Border>
     </Grid>
     <Border Grid.Row="2" Background="{DynamicResource WbStatusbar}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="*,Auto" Margin="12,0"><TextBlock Text="{Binding Status}" FontSize="10" VerticalAlignment="Center" Foreground="{DynamicResource WbSuccess}"/>
+      <Grid ColumnDefinitions="*,Auto" Margin="12,0"><TextBlock Text="{Binding Status}" FontSize="10" VerticalAlignment="Center" Foreground="{DynamicResource WbMuted}"/>
         <TextBlock Grid.Column="1" Text="Lokal · keine Busverbindung" Classes="muted" VerticalAlignment="Center"/>
       </Grid>
     </Border>

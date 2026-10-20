@@ -85,7 +85,7 @@ public partial class WorkbenchWindow
         if (!await ConfirmDiscardAsync()) return;
         await ResetSessionsForReplacementAsync();
         try { ViewModel.LoadProject(path); _parameters.DiscardDrafts(); RefreshWorkspace(); }
-        catch (Exception ex) { ViewModel.Status = $"Projekt nicht ladbar: {ex.Message}"; await ConfirmDialog.ShowMessageAsync(this, "Projekt nicht ladbar", ex.Message); }
+        catch (Exception ex) { ViewModel.Status = $"Projekt nicht ladbar: {ex.Message}"; await ConfirmDialog.ShowMessageAsync(this, "Projekt nicht ladbar", ex.Message); RefreshWorkspace(); }
     }
 
     private async Task NewProjectAsync()
@@ -98,7 +98,7 @@ public partial class WorkbenchWindow
         if (file?.TryGetLocalPath() is not { } path) return;
         await ResetSessionsForReplacementAsync();
         try { ViewModel.CreateProject(project, path); _parameters.DiscardDrafts(); RefreshWorkspace(); }
-        catch (Exception ex) { ViewModel.Status = ex.Message; await ConfirmDialog.ShowMessageAsync(this, "Projekt nicht anlegbar", ex.Message); }
+        catch (Exception ex) { ViewModel.Status = ex.Message; await ConfirmDialog.ShowMessageAsync(this, "Projekt nicht anlegbar", ex.Message); RefreshWorkspace(); }
     }
 
     private async Task<bool> SaveAsync(bool saveAs = false)
