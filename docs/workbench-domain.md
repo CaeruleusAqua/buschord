@@ -36,6 +36,8 @@ MutationResult result = WorkbenchProject.AddLinks(project, [key], "central-off",
 - `ConfigurationSignature(project, deviceId)` hashes ordered bus-relevant facts,
   including parameters, object state and actual linked addresses/security.
   It excludes labels, room/effect placement and revision counters.
+  Opaque native manufacturer XML remains preserved, not evaluated as application
+  dynamics or a complete programmable device image.
 - `Associations` yields report DTOs including all inactive links and explicit
   sending choice. Escape fields at the actual HTML/CSV export boundary.
 - `WorkbenchJson.Import/Export` reads/writes the bundle envelope

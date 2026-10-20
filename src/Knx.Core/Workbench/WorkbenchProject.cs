@@ -43,7 +43,13 @@ public static class WorkbenchProject
     {
         var row = ScopeObjects(project, new(IncludeInactive: true)).SingleOrDefault(r => r.Key == key);
         var ga = ProjectQuery.GroupAddresses(project).SingleOrDefault(g => g.Id == groupId);
+        return ValidateLink(project, key, row, ga);
+    }
+
+    private static string? ValidateLink(Project project, ObjectKey key, ObjectRow? row, GroupAddressEntry? ga)
+    {
         if (row is null || ga is null) return "Object or group address does not exist.";
+        var groupId = ga.Id;
         if (row.Object.Links.Contains(groupId)) return null;
         var m = row.Metadata;
         var g = project.Workbench.Groups.GetValueOrDefault(groupId);
@@ -60,10 +66,11 @@ public static class WorkbenchProject
     public static MutationResult AddLinks(Project project, IEnumerable<ObjectKey> keys, string groupId, UndoStack? undo = null)
     {
         var selected = keys.Distinct().ToList();
-        var errors = selected.Select(k => new LinkError(k, ValidateLink(project, k, groupId) ?? "")).Where(e => e.Reason.Length > 0).ToList();
+        var rows = ScopeObjects(project, new(IncludeInactive: true)).ToDictionary(r => r.Key);
+        var ga = ProjectQuery.GroupAddresses(project).SingleOrDefault(g => g.Id == groupId);
+        var errors = selected.Select(k => new LinkError(k, ValidateLink(project, k, rows.GetValueOrDefault(k), ga) ?? "")).Where(e => e.Reason.Length > 0).ToList();
         if (selected.Count == 0) errors.Add(new(default, "No communication objects selected."));
         if (errors.Count > 0) return new(false, 0, errors, []);
-        var rows = ScopeObjects(project, new(IncludeInactive: true)).ToDictionary(r => r.Key);
         var changed = 0;
         foreach (var key in selected)
             if (GroupLinks.Link(project, rows[key].Device, key.ObjectRefId, groupId)) changed++;
@@ -132,7 +139,9 @@ public static class WorkbenchProject
         var config = new
         {
             Address = device.Address.ToString(), Line = located.Line?.Address, Area = located.Area.Address,
+            Segment = located.Segment?.Address,
             Medium = located.Line?.MediumTypeRefId, device.ProductRefId, device.Hardware2ProgramRefId,
+            Application = project.Workbench.Devices.GetValueOrDefault(deviceId)?.Application,
             Secure = project.Workbench.Devices.GetValueOrDefault(deviceId)?.SecureCapable,
             Params = device.ParameterValues.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray(),
             Objects = device.ComObjectRefs.OrderBy(o => o.Id, StringComparer.Ordinal).Select(o =>

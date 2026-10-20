@@ -20,6 +20,7 @@ var roomDevice = rows.First(r => r.Device.Id == "taster-living").Device;
 Check(ReferenceEquals(roomDevice, WorkbenchProject.ScopeObjects(project, new(WorkbenchScopeKind.Line, "1.1")).First(r => r.Device.Id == roomDevice.Id).Device), "shared identity");
 foreach (var edit in new Action<JsonObject>[] {
     n => n["data"]!["rooms"]![0]!["floor"] = "missing",
+    n => n["data"]!["rooms"]![0]!["id"] = "ug",
     n => n["data"]!["objects"]![0]!["channel"] = "missing",
     n => n["data"]!["links"]![0]!["ko"] = "missing",
     n => n["data"]!["devices"]![1]!["id"] = n["data"]!["devices"]![0]!["id"]!.GetValue<string>(),
@@ -36,6 +37,8 @@ Reject(() => WorkbenchJson.Import(originalJson.Replace("\"version\": 4", "\"vers
 var undo = new UndoStack(); undo.Reset(project);
 var key = new ObjectKey("taster-living", "taster-living-switch");
 var wrong = new ObjectKey("climate-living", "climate-living-temp");
+var notSecure = new ObjectKey("taster-office", "taster-office-switch");
+Check(!WorkbenchProject.AddLinks(project, [notSecure], "kitchen-switch").Ok, "Secure capability validation");
 var before = WorkbenchJson.Export(project);
 Check(!WorkbenchProject.AddLinks(project, [key, wrong], "central-off", undo).Ok, "atomic incompatible batch rejected");
 Check(WorkbenchJson.Export(project) == before && undo.Steps == 0, "no partial changes or undo");
@@ -70,6 +73,20 @@ ProjectQuery.FindGroupAddressById(project, "living-switch")!.Address = GroupAddr
 Check(WorkbenchProject.ConfigurationSignature(project, roomDevice.Id) != sig, "actual linked GA address included");
 var native = new Project { Id = "Native", Name = "Native" };
 Check(!WorkbenchProject.PreviewMode(native, "unknown", "dim").Supported, "unknown native dynamics unsupported");
+var metadata = WorkbenchProject.Metadata(project, key)!;
+var savedBits = metadata.Bits;
+metadata.Bits = 8;
+Check(!WorkbenchProject.AddLinks(project, [key], "central-off").Ok, "bit size validation");
+metadata.Bits = savedBits;
+var savedDpt = metadata.Dpt;
+metadata.Dpt = "1.018";
+Check(!WorkbenchProject.AddLinks(project, [key], "central-off").Ok, "equal bits do not imply equal full DPT");
+metadata.Dpt = null;
+Check(!WorkbenchProject.AddLinks(project, [key], "central-off").Ok, "unknown native capability is not inferred");
+metadata.Dpt = savedDpt;
+var flagsBefore = WorkbenchProject.Metadata(project, new("dimmer", "dimmer-a-switch"))!.Flags;
+Check(WorkbenchProject.SetSending(project, new("dimmer", "dimmer-a-switch"), "central-off").Ok, "sending allowed without T flag");
+Check(WorkbenchProject.Metadata(project, new("dimmer", "dimmer-a-switch"))!.Flags == flagsBefore && !flagsBefore!.Contains('T'), "sending does not invent T");
 var xml = Knxproj.ToXml(project);
 XNamespace vendor = "urn:test:vendor";
 xml.Root!.Add(new XElement(vendor + "Opaque", new XAttribute("Data", "preserve me")));

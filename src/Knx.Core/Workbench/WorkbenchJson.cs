@@ -47,6 +47,7 @@ public static class WorkbenchJson
         var devices = Index(data, "devices", 100, "id name address room line product application secure params revision downloadedRevision channels");
         var objects = Index(data, "objects", 1000, "id device channel number name dpt bits flags active role");
         var groups = Index(data, "gas", 1000, "id address name dpt bits room secure");
+        Need(!floors.Keys.Intersect(rooms.Keys).Any(), "Floor and room IDs must be distinct in the native Locations tree.");
         foreach (var floor in floors.Values) S(floor, "short");
         foreach (var room in rooms.Values) Ref(S(room, "floor"), floors);
         foreach (var line in lines.Values)
