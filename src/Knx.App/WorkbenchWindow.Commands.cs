@@ -238,6 +238,8 @@ public partial class WorkbenchWindow
         var panel = new DockPanel { Margin = new(16) };
         var query = new TextBox { PlaceholderText = "Raum, Gerät, GA oder Befehl …", Margin = new(0, 0, 0, 12) };
         var list = new ListBox();
+        Avalonia.Automation.AutomationProperties.SetName(query, "Arbeitsgegenstand oder Befehl suchen");
+        Avalonia.Automation.AutomationProperties.SetName(list, "Suchergebnisse");
         DockPanel.SetDock(query, Avalonia.Controls.Dock.Top); panel.Children.Add(query); panel.Children.Add(list); dialog.Content = panel;
         var candidates = new List<(string Label, Action Run)>();
         if (ViewModel.Project is { } p)
@@ -264,6 +266,15 @@ public partial class WorkbenchWindow
             dialog.Close(); entry.Run();
         }
         query.TextChanged += (_, _) => Filter(); list.DoubleTapped += (_, _) => Activate();
+        query.KeyDown += (_, e) =>
+        {
+            if (e.Key == Avalonia.Input.Key.Down) { list.Focus(); if (list.SelectedIndex < 0 && list.ItemCount > 0) list.SelectedIndex = 0; e.Handled = true; }
+        };
+        list.KeyDown += (_, e) =>
+        {
+            if (e.Key == Avalonia.Input.Key.Enter) { Activate(); e.Handled = true; }
+            else if (e.Key == Avalonia.Input.Key.Escape) { dialog.Close(); e.Handled = true; }
+        };
         dialog.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Escape) dialog.Close(); else if (e.Key == Avalonia.Input.Key.Enter) Activate(); };
         Filter(); dialog.Opened += (_, _) => query.Focus(); dialog.ShowDialog(this);
     }

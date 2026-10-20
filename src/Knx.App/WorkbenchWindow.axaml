@@ -17,8 +17,9 @@
     <Style Selector="Button.wb-view-tab.active"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
     <Style Selector="Button.wb-tool-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="35"/><Setter Property="Padding" Value="0,0,0,0"/></Style>
     <Style Selector="Button.wb-tool-tab.active"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
+    <Style Selector="Border.wb-doc-tab"><Setter Property="Background" Value="{DynamicResource WbTabbar}"/><Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/><Setter Property="BorderThickness" Value="0,0,1,0"/></Style>
+    <Style Selector="Border.wb-doc-tab.active"><Setter Property="Background" Value="{DynamicResource WbPaper}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/><Setter Property="BorderThickness" Value="0,0,1,2"/></Style>
     <Style Selector="Button.wb-doc-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="38"/><Setter Property="MinWidth" Value="130"/><Setter Property="Padding" Value="10,0"/></Style>
-    <Style Selector="Button.wb-doc-tab.active"><Setter Property="Background" Value="{DynamicResource WbPaper}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/><Setter Property="Foreground" Value="{DynamicResource WbText}"/></Style>
     <Style Selector="Grid.wb-table-header"><Setter Property="Background" Value="{DynamicResource WbPanel}"/></Style>
     <Style Selector="Grid.wb-device"><Setter Property="Background" Value="{DynamicResource WbHover}"/></Style>
     <Style Selector="Grid.wb-channel"><Setter Property="Background" Value="{DynamicResource WbPanel}"/></Style>
@@ -27,6 +28,7 @@
     <Style Selector="TextBlock.wb-accent"><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/></Style>
     <Style Selector="TextBlock.wb-success"><Setter Property="Foreground" Value="{DynamicResource WbSuccess}"/></Style>
     <Style Selector="TextBlock.wb-error"><Setter Property="Foreground" Value="{DynamicResource WbError}"/></Style>
+    <Style Selector="TextBlock.wb-warning"><Setter Property="Foreground" Value="{DynamicResource WbWarning}"/></Style>
   </Window.Styles>
   <Grid RowDefinitions="49,*,27">
     <Border Background="{DynamicResource WbPaper}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,0,1">
@@ -70,7 +72,7 @@
                 <Button x:Name="InspectorButton" Content="Eigenschaften" Click="OnInspector" Classes="quiet"/>
               </StackPanel></Grid>
             <TextBlock x:Name="Subtitle" Classes="muted" TextWrapping="Wrap" Margin="0,0,0,6"/>
-            <StackPanel x:Name="Representations" Orientation="Horizontal" Spacing="12"/>
+            <StackPanel x:Name="Representations" Orientation="Horizontal" Spacing="20"/>
           </StackPanel>
           <Grid x:Name="ObjectToolbar" Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,170,Auto" Margin="24,9">
             <Button Content="Verknüpfen" Click="OnLinks"/>
@@ -81,10 +83,10 @@
           </Grid>
           <Grid Grid.Row="2">
             <ScrollViewer x:Name="TableViewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <Grid x:Name="TableHost" RowDefinitions="31,*,27" Margin="24,0,24,0" MinWidth="620">
+            <Grid x:Name="TableHost" RowDefinitions="31,*,27" Margin="24,0,24,0" MinWidth="540">
               <Border Grid.Row="0" Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}"
                       BorderThickness="0,0,0,1" Margin="0,0,12,0">
-                <Grid ColumnDefinitions="*,85,55,55,190">
+                <Grid ColumnDefinitions="*,80,50,50,170">
                   <TextBlock Text="Objekt / Funktion" Margin="8,8" Classes="muted"/><TextBlock Grid.Column="1" Text="DPT" Margin="0,8" Classes="muted"/>
                   <TextBlock Grid.Column="2" Text="Länge" Margin="0,8" Classes="muted"/><TextBlock Grid.Column="3" Text="Flags" Margin="0,8" Classes="muted"/>
                   <TextBlock Grid.Column="4" Text="Gruppenadressen" Margin="0,8" Classes="muted"/>

@@ -54,7 +54,7 @@
           <SolidColorBrush x:Key="WbLine" Color="#e1e5eb" />
           <SolidColorBrush x:Key="WbText" Color="#202c3c" />
           <SolidColorBrush x:Key="WbMuted" Color="#687487" />
-          <SolidColorBrush x:Key="WbSubtle" Color="#8a94a5" />
+          <SolidColorBrush x:Key="WbSubtle" Color="#6b7686" />
           <SolidColorBrush x:Key="WbAccent" Color="#087e81" />
           <SolidColorBrush x:Key="WbAccentHover" Color="#076c70" />
           <SolidColorBrush x:Key="WbOnAccent" Color="#ffffff" />
@@ -81,7 +81,7 @@
           <SolidColorBrush x:Key="WbLine" Color="#3c4858" />
           <SolidColorBrush x:Key="WbText" Color="#e5ebf3" />
           <SolidColorBrush x:Key="WbMuted" Color="#b0bdce" />
-          <SolidColorBrush x:Key="WbSubtle" Color="#96a5b9" />
+          <SolidColorBrush x:Key="WbSubtle" Color="#a9b7c9" />
           <SolidColorBrush x:Key="WbAccent" Color="#62d1cd" />
           <SolidColorBrush x:Key="WbAccentHover" Color="#85e0dc" />
           <SolidColorBrush x:Key="WbOnAccent" Color="#12292a" />

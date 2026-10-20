@@ -7,7 +7,7 @@ using Knx.Bus;
 namespace Knx.App.Workbench;
 
 public enum WorkbenchMonitorMode { Group, Bus }
-public enum MonitorScope { All, Project, Room, GroupAddress, ComObject, None }
+public enum MonitorScope { All, Project, Room, GroupAddress, ComObject, Device, None }
 public sealed record MonitorFilter(MonitorScope Scope, string? Id = null);
 public sealed record WorkbenchTelegram(DateTimeOffset Timestamp, string Source, string Destination,
     string Service, string? DatapointType, string Value, SessionOrigin Origin,
@@ -204,7 +204,7 @@ public sealed class MonitorSession : SessionState, IDisposable
     {
         VerifyAccess(); ThrowIfDisposed(); ArgumentNullException.ThrowIfNull(filter);
         if (!Enum.IsDefined(filter.Scope)) throw new ArgumentOutOfRangeException(nameof(filter));
-        if (filter.Scope is MonitorScope.ComObject or MonitorScope.GroupAddress or MonitorScope.Room)
+        if (filter.Scope is MonitorScope.ComObject or MonitorScope.GroupAddress or MonitorScope.Room or MonitorScope.Device)
             ArgumentException.ThrowIfNullOrWhiteSpace(filter.Id);
         _follow = false; _filter = filter;
         OnPropertyChanged(nameof(FollowSelection)); OnPropertyChanged(nameof(Filter)); Refilter();
@@ -266,6 +266,9 @@ public sealed class MonitorSession : SessionState, IDisposable
             ids = _project() is { } p ? ProjectQuery.GroupAddresses(p).Select(g => g.Id).ToHashSet() : new HashSet<string>();
         else if (_filter.Scope == MonitorScope.ComObject)
             ids = _project() is { } p ? ProjectQuery.ComObjectRefs(p).Where(o => o.Ref.Id == _filter.Id)
+                .SelectMany(o => o.Ref.Links).ToHashSet() : new HashSet<string>();
+        else if (_filter.Scope == MonitorScope.Device)
+            ids = _project() is { } p ? ProjectQuery.ComObjectRefs(p).Where(o => o.Device.Id == _filter.Id)
                 .SelectMany(o => o.Ref.Links).ToHashSet() : new HashSet<string>();
         else ids = new HashSet<string>();
         _filtered.Replace(_rows.Where(r => r.GroupAddressId is not null && ids.Contains(r.GroupAddressId)));

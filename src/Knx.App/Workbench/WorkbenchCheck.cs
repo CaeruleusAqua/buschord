@@ -175,7 +175,8 @@ internal static class WorkbenchCheck
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Check("native inspector rename refreshes work-item titles", d.Name == "Tastsensor · bearbeitet" && deviceTab.Title == d.Name);
                 window.SetRepresentation("relations");
-                Check("existing validated link editor receives the native device", window.FindControl<ContentControl>("RelationsHost")!.Content is GroupLinksPane links && ReferenceEquals(links.Device, d));
+                Check("relations view uses domain-validated links", window.FindControl<ContentControl>("RelationsHost")!.Content is ScrollViewer
+                    && window.ViewModel.Project is { } relationProject && Knx.Workbench.WorkbenchProject.Associations(relationProject).Count > 0);
                 window.SetRepresentation("objects");
                 var layout = Path.Combine(TestDirectory!, "layout.json");
                 window.Workspace.NavigatorWidth = 300;
@@ -250,6 +251,17 @@ internal static class WorkbenchCheck
                 window.Sessions.Monitor.TickDemo(new(DateTimeOffset.Now, "1.1.250", "1/0/1", "GroupValueWrite", "1.001", "1", SessionOrigin.Demo, "living-switch"));
                 window.Sessions.Monitor.FlushDisplay();
                 Check("monitor session records and filters demo telegram", window.Sessions.Monitor.RecordedCount == 1 && window.Sessions.Monitor.FilteredRows.Count == 1);
+                window.Sessions.Monitor.Stop();
+                window.Sessions.Monitor.Configure(WorkbenchMonitorMode.Bus, SessionOrigin.Demo, "demo-ip");
+                window.ShowTool("monitor");
+                var monitorHost = (Control)window.FindControl<ContentControl>("ToolHost")!.Content!;
+                var modeBox = monitorHost.GetVisualDescendants().OfType<ComboBox>()
+                    .First(c => c.ItemsSource is IEnumerable<string> items && items.Contains("Busmonitor"));
+                modeBox.SelectedIndex = 1;
+                monitorHost.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Starten"))
+                    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Check("start honours the selected monitor mode", window.Sessions.Monitor.IsRunning
+                    && window.Sessions.Monitor.Mode == WorkbenchMonitorMode.Bus);
                 window.Sessions.Monitor.Stop();
                 var job = window.Sessions.Programming.Enqueue("taster-living");
                 await window.Sessions.Programming.RunAsync();

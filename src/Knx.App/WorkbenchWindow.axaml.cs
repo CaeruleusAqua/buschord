@@ -85,7 +85,9 @@ public partial class WorkbenchWindow : Window
         foreach (var (key, title, glyph) in new[] { ("building", "Gebäude", "Category"), ("topology", "Topologie", "AccountTree"), ("groups", "Gruppen", "FormatListBulleted") })
         {
             var perspective = key;
-            Perspectives.Children.Add(ActionButton(title, () => Navigate(perspective), "quiet"));
+            var perspectiveButton = ActionButton(title, () => Navigate(perspective), "quiet");
+            perspectiveButton.FontSize = 10; perspectiveButton.Padding = new(2, 0); perspectiveButton.MinWidth = 0;
+            Perspectives.Children.Add(perspectiveButton);
             var rail = ActionButton("", () => Navigate(perspective), "quiet");
             rail.Content = new Icon { Symbol = glyph, Width = 19, Height = 19 };
             rail.Width = 35; rail.Height = 35; rail.FontSize = 20;
@@ -213,6 +215,8 @@ public partial class WorkbenchWindow : Window
                 .SelectMany(r => r.Ref.Links).ToHashSet(),
             MonitorScope.Room => WorkbenchProject.ScopeObjects(project, new(WorkbenchScopeKind.Room, filter.Id))
                 .SelectMany(r => r.Object.Links).ToHashSet(),
+            MonitorScope.Device => ProjectQuery.ComObjectRefs(project).Where(r => r.Device.Id == filter.Id)
+                .SelectMany(r => r.Ref.Links).ToHashSet(),
             _ => new HashSet<string>()
         };
     }
@@ -360,11 +364,13 @@ public partial class WorkbenchWindow : Window
         {
             var header = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal };
             var activate = ActionButton(tab.Title, () => { CaptureScroll(); Workspace.ActiveTab = tab; }, "quiet");
-            activate.MaxWidth = 240; activate.Height = 38;
-            activate.Classes.Set("active", tab == Workspace.ActiveTab);
+            activate.MaxWidth = 220; activate.Height = 39; activate.MinWidth = 110;
             header.Children.Add(activate);
             header.Children.Add(ActionButton("×", () => { Workspace.Close(tab); RefreshWorkspace(); }, "quiet", tab.Title + " schließen"));
-            ObjectTabs.Children.Add(header);
+            var border = new Border { Child = header, Height = 39 };
+            border.Classes.Add("wb-doc-tab");
+            border.Classes.Set("active", tab == Workspace.ActiveTab);
+            ObjectTabs.Children.Add(border);
         }
         ObjectTabs.Children.Add(ActionButton("+", ShowPalette, "quiet", "Arbeitsgegenstand suchen"));
     }
@@ -442,12 +448,7 @@ public partial class WorkbenchWindow : Window
                     if (!ReferenceEquals(_parameters.Device, selected?.Device)) _parameters.Load(selected);
                     UpdateModePreview();
                 }
-                if (RelationsHost.IsVisible)
-                {
-                    var links = new GroupLinksPane(ViewModel);
-                    links.Load(current);
-                    RelationsHost.Content = links;
-                }
+                if (RelationsHost.IsVisible) RelationsHost.Content = CreateRelationsView();
                 if (tool && tab.Target.Id == "catalog")
                 {
                     var line = CurrentLine();
@@ -483,6 +484,7 @@ public partial class WorkbenchWindow : Window
     {
         var node = entry.Node;
         var grid = new Grid { ColumnDefinitions = new("22,*,Auto"), Margin = new(entry.Depth * 12, 0, 4, 0), Height = 29 };
+        AutomationProperties.SetName(grid, node.Meta.Length > 0 ? $"{node.Name}, {node.Meta}" : node.Name);
         var expand = ActionButton(node.Children.Count == 0 ? "·" : Workspace.Navigators[Workspace.Perspective].ExpandedIds.Contains(node.Key) ? "⌄" : "›", () =>
         {
             var expanded = Workspace.Navigators[Workspace.Perspective].ExpandedIds;
@@ -500,7 +502,10 @@ public partial class WorkbenchWindow : Window
 
     private Control BuildObjectRow(WorkbenchRow row)
     {
-        var grid = new Grid { ColumnDefinitions = new("*,85,55,55,190"), Height = 32, Margin = new(0, 0, 12, 0) };
+        var grid = new Grid { ColumnDefinitions = new("*,80,50,50,170"), Height = 32, Margin = new(0, 0, 12, 0) };
+        AutomationProperties.SetName(grid, row.Object is null
+            ? $"{row.Name}, {row.Address}{(row.External ? ", externer Kanal" : "")}"
+            : $"{row.Name}, Nummer {row.Address}, DPT {row.Dpt ?? "unbekannt"}, {row.Bits?.ToString() ?? "unbekannte"} Bit, Flags {row.Flags ?? "unbekannt"}, {row.Links}");
         if (row.Kind == "device") grid.Classes.Add("wb-device");
         if (row.Kind is "channel" or "group") grid.Classes.Add("wb-channel");
         var name = new Grid { ColumnDefinitions = new("22,Auto,*"), Margin = new(4 + row.Depth * 12, 0, 6, 0) };
@@ -571,6 +576,7 @@ public partial class WorkbenchWindow : Window
         if (ObjectTable.SelectedItems is { } selected)
             foreach (var row in selected.OfType<WorkbenchRow>()) tab.SelectedObjectIds.Add(row.Key);
         if (CurrentDevice() is { } device) ViewModel.SelectedDevice = device;
+        _sessions?.Monitor.SelectionChanged(SelectedComObjectId());
         RefreshInspector();
     }
     private void OnExpandAll(object? sender, RoutedEventArgs e)
@@ -696,6 +702,58 @@ public partial class WorkbenchWindow : Window
         };
         ApplyLayout();
     }
+    private Control CreateRelationsView()
+    {
+        if (ViewModel.Project is not { } project || Workspace.ActiveTab is not { } tab)
+            return Note("Zuerst ein Gerät oder eine Gruppenadresse öffnen.");
+        var panel = new StackPanel { Spacing = 8, Margin = new(24, 12) };
+        var rows = WorkbenchProjection.Rows(project, tab).Where(r => r.Object is not null).ToList();
+        if (rows.Count == 0) { panel.Children.Add(Note("Keine Kommunikationsobjekte im aktuellen Ausschnitt.")); return panel; }
+        panel.Children.Add(Label("Zuordnungen dieses Arbeitsgegenstands"));
+        panel.Children.Add(Note("DPT, Länge und Secure-Fähigkeit werden vor jeder Änderung geprüft. Die Sendeadresse wird ausdrücklich im Inspektor gewählt."));
+        foreach (var row in rows)
+        {
+            var card = new Border
+            {
+                Background = null, BorderThickness = new(0, 0, 0, 1), Padding = new(0, 6),
+                BorderBrush = Avalonia.Media.Brushes.Transparent
+            };
+            var stack = new StackPanel { Spacing = 4 };
+            stack.Children.Add(Label($"#{row.Object!.Number} · {row.Name} · DPT {row.Dpt ?? "unbekannt"}"));
+            var links = row.Object.Links.ToList();
+            if (links.Count == 0) stack.Children.Add(Note("Keine Zuordnung."));
+            foreach (var id in links)
+            {
+                var ga = ProjectQuery.GroupAddresses(project).FirstOrDefault(g => g.Id == id);
+                var sending = WorkbenchProject.Metadata(project, new(row.Device.Id, row.Object.Id))?.SendingGroupId == id;
+                var line = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
+                line.Children.Add(ga is null ? Note(id) : ActionButton($"{ga.Address} · {ga.Name}" + (sending ? "  · sendend" : ""),
+                    () => OpenTarget(new("ga", id)), "quiet"));
+                line.Children.Add(ActionButton("Entfernen", () =>
+                {
+                    string? warning = null;
+                    ViewModel.Edit($"Zuordnung {id} entfernen", p =>
+                        warning = WorkbenchProject.RemoveLink(p, new(row.Device.Id, row.Object.Id), id).Warnings.FirstOrDefault());
+                    if (warning is not null) ViewModel.Status = warning;
+                    RefreshWorkspace();
+                }, "quiet"));
+                stack.Children.Add(line);
+            }
+            stack.Children.Add(ActionButton("Zuordnungen bearbeiten …", () =>
+            {
+                if (Workspace.ActiveTab is { } active)
+                {
+                    active.SelectedObjectIds.Clear();
+                    active.SelectedObjectIds.Add(WorkbenchProjection.ObjectKey(row.Device, row.Object));
+                }
+                ShowBatchLinkDialog();
+            }, "quiet"));
+            card.Child = stack;
+            panel.Children.Add(card);
+        }
+        return new ScrollViewer { Content = panel };
+    }
+
     private Control CreateProblemsView()
     {
         ViewModel.RunCheck();
@@ -720,33 +778,35 @@ public partial class WorkbenchWindow : Window
             live.Classes.Set("wb-success", running);
             live.Classes.Set("wb-subtle", !running);
         }
-        toolbar.Children.Add(ActionButton("Starten", () =>
-        {
-            try
-            {
-                if (!sessions.Monitor.IsRunning)
-                {
-                    sessions.Monitor.Configure(WorkbenchMonitorMode.Group, SessionOrigin.Demo, "demo-ip");
-                    sessions.Monitor.Start();
-                }
-                RefreshState();
-            }
-            catch (Exception ex) { ViewModel.Status = ex.Message; }
-        }, "primary"));
         toolbar.Children.Add(ActionButton("Stoppen", () => { sessions.Monitor.Stop(); RefreshState(); }));
         toolbar.Children.Add(ActionButton("Anzeige leeren", () => { sessions.Monitor.ClearDisplay(); RefreshState(); }, "quiet"));
-        var mode = new ComboBox { ItemsSource = new[] { "Gruppenmonitor", "Busmonitor" }, SelectedIndex = 0, MinWidth = 130 };
+        var mode = new ComboBox { ItemsSource = new[] { "Gruppenmonitor", "Busmonitor" }, SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0, MinWidth = 130 };
         mode.SelectionChanged += (_, _) =>
         {
             if (sessions.Monitor.IsRunning) { mode.SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0; ViewModel.Status = "Monitorart nur im gestoppten Zustand wechseln."; return; }
             sessions.Monitor.Configure(mode.SelectedIndex == 1 ? WorkbenchMonitorMode.Bus : WorkbenchMonitorMode.Group, SessionOrigin.Demo, "demo-ip");
         };
         toolbar.Children.Add(mode);
+        toolbar.Children.Add(ActionButton("Starten", () =>
+        {
+            try
+            {
+                if (!sessions.Monitor.IsRunning)
+                {
+                    var desired = mode.SelectedIndex == 1 ? WorkbenchMonitorMode.Bus : WorkbenchMonitorMode.Group;
+                    if (sessions.Monitor.Mode != desired || sessions.Monitor.Origin != SessionOrigin.Demo)
+                        sessions.Monitor.Configure(desired, SessionOrigin.Demo, "demo-ip");
+                    sessions.Monitor.Start();
+                }
+                RefreshState();
+            }
+            catch (Exception ex) { ViewModel.Status = ex.Message; }
+        }, "primary"));
         var filter = new ComboBox { MinWidth = 190, SelectedIndex = 0 };
         filter.ItemsSource = new[] { "Alle Telegramme", "Ganzes Projekt", "Aktueller Arbeitsgegenstand", "Auswahl folgen" };
         filter.SelectedIndex = _monitorScope switch
         {
-            MonitorScope.Project => 1, MonitorScope.Room or MonitorScope.GroupAddress => 2, MonitorScope.ComObject => 3, _ => 0
+            MonitorScope.Project => 1, MonitorScope.Room or MonitorScope.GroupAddress or MonitorScope.Device => 2, MonitorScope.ComObject => 3, _ => 0
         };
         filter.SelectionChanged += (_, _) =>
         {
@@ -760,6 +820,7 @@ public partial class WorkbenchWindow : Window
                         {
                             "room" => new(MonitorScope.Room, tab.Target.Id),
                             "ga" => new(MonitorScope.GroupAddress, tab.Target.Id),
+                            "device" => new(MonitorScope.Device, tab.Target.Id),
                             _ => new(MonitorScope.Project)
                         });
                         break;
@@ -774,6 +835,9 @@ public partial class WorkbenchWindow : Window
         toolbar.Children.Add(ActionButton("CSV gefiltert …", () => _ = GuardAsync(ExportFilteredMonitorAsync)));
         toolbar.Children.Add(ActionButton("Vollaufzeichnung …", () => _ = GuardAsync(ExportFullMonitorAsync), "quiet"));
         toolbar.Children.Add(live);
+        var demoBadge = Label("DEMO-Simulation · keine reale Busaufzeichnung"); demoBadge.FontSize = 10;
+        demoBadge.Classes.Add("wb-warning");
+        toolbar.Children.Add(demoBadge);
         DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top); panel.Children.Add(toolbar);
         var header = new Grid { ColumnDefinitions = new("70,80,120,90,50,70,*"), Height = 28 };
         header.Classes.Add("wb-table-header");
@@ -1069,6 +1133,7 @@ public partial class WorkbenchWindow : Window
             {
                 "room" => new(MonitorScope.Room, tab.Target.Id),
                 "ga" => new(MonitorScope.GroupAddress, tab.Target.Id),
+                "device" => new(MonitorScope.Device, tab.Target.Id),
                 _ => new(MonitorScope.Project)
             });
     }
