@@ -120,10 +120,13 @@ public static class WorkbenchProjection
         var devices = ProjectQuery.DeviceList(p).ToList();
         WorkbenchNavNode Device(DeviceInstance d) => new("device:" + d.Id, d.Name ?? d.Address.ToString(), d.Address.ToString(),
             d, new("device", d.Id), []);
-        WorkbenchNavNode Space(SpaceNode s) => new("space:" + s.Id, s.Name, s.Kind.ToString(), s, new("room", s.Id),
+        WorkbenchNavNode Space(SpaceNode s) => new("space:" + s.Id, s.Name,
+            BuildingTree.DevicesUnder(s).Count() is var count && count > 0 ? count.ToString() : "",
+            s, new("room", s.Id),
             s.Children.Select(Space).Concat(s.DeviceRefs.Select(id => devices.FirstOrDefault(d => d.Id == id))
                 .OfType<DeviceInstance>().Select(Device)).ToList());
-        WorkbenchNavNode Range(GroupRange g) => new("range:" + g.Id, g.Name ?? g.Id, "", g, null,
+        WorkbenchNavNode Range(GroupRange g) => new("range:" + g.Id, g.Name ?? g.Id,
+            g.Addresses.Count > 0 ? g.Addresses.Count.ToString() : "", g, null,
             g.Ranges.Select(Range).Concat(g.Addresses.Select(a => new WorkbenchNavNode("ga:" + a.Id, a.Name, a.Address.ToString(), a,
                 new("ga", a.Id), devices.Where(d => d.ComObjectRefs.Any(o => o.Links.Contains(a.Id))).Select(Device).ToList()))).ToList());
         var children = perspective switch

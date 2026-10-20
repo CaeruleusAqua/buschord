@@ -156,6 +156,7 @@ public partial class WorkbenchWindow : Window
             _sessionTimer?.Stop();
             if (_sessions is not null) { _ = DisposeSessionsAsync(); }
             _sessionProjectId = null;
+            ToolHost.Content = null;
             return;
         }
         if (_sessions is not null && _sessionProjectId == project.Id) return;
@@ -171,6 +172,9 @@ public partial class WorkbenchWindow : Window
         _sessionTimer.Tick -= OnSessionTick;
         _sessionTimer.Tick += OnSessionTick;
         _sessionTimer.Start();
+        // Tool views close over one session instance; never leave them pointing at a disposed one.
+        ToolHost.Content = null;
+        if (Workspace.ToolsVisible) ShowTool(Workspace.ActiveTool);
     }
 
     private async Task DisposeSessionsAsync()
@@ -180,6 +184,13 @@ public partial class WorkbenchWindow : Window
         if (sessions is null) return;
         try { await sessions.DisposeAsync(); }
         catch (Exception ex) { ViewModel.Status = "Werkzeugsitzung beendet: " + ex.Message; }
+    }
+
+    private async Task ResetSessionsForReplacementAsync()
+    {
+        _sessionTimer?.Stop();
+        ToolHost.Content = null;
+        await DisposeSessionsAsync();
     }
 
     private IReadOnlySet<string> ResolveMonitorIds(MonitorFilter filter)
@@ -349,8 +360,21 @@ public partial class WorkbenchWindow : Window
         ObjectTabs.Children.Add(ActionButton("+", ShowPalette, "quiet", "Arbeitsgegenstand suchen"));
     }
 
-    private DeviceRow? CurrentDevice()
+    /// <summary>Insertion line suggested by the current work item; rooms fall back to their first device/line.</summary>
+    private Line? CurrentLine()
     {
+        if (ViewModel.Project is not { } project || Workspace.ActiveTab is not { } tab) return null;
+        return tab.Target.Kind switch
+        {
+            "line" => WorkbenchProjection.Lines(project).FirstOrDefault(l => l.Id == tab.Target.Id),
+            "device" => ProjectQuery.LocateDevice(project, ProjectQuery.DeviceList(project).First(d => d.Id == tab.Target.Id).Address)?.Line,
+            "room" => WorkbenchProjection.Devices(project, tab.Target).Select(d => ProjectQuery.LocateDevice(project, d.Address)?.Line)
+                .FirstOrDefault(l => l is not null),
+            _ => WorkbenchProjection.Lines(project).FirstOrDefault()
+        };
+    }
+
+    private DeviceRow? CurrentDevice()    {
         if (ViewModel.Project is not { } p || Workspace.ActiveTab is not { } tab) return null;
         var selected = WorkbenchProjection.Rows(p, tab).FirstOrDefault(r => tab.SelectedObjectIds.Contains(r.Key));
         var d = selected?.Device ?? WorkbenchProjection.Devices(p, tab.Target).FirstOrDefault();
@@ -415,7 +439,9 @@ public partial class WorkbenchWindow : Window
                 }
                 if (tool && tab.Target.Id == "catalog")
                 {
-                    if (ToolPageHost.Content is not CatalogPane) ToolPageHost.Content = new CatalogPane(ViewModel, _catalogLibrary) { DataContext = ViewModel };
+                    var line = CurrentLine();
+                    if (ToolPageHost.Content is CatalogPane open) { if (line is not null) open.PreferredLine = line; }
+                    else ToolPageHost.Content = new CatalogPane(ViewModel, _catalogLibrary) { DataContext = ViewModel, PreferredLine = line };
                 }
                 else if (tab.View == "overview") ToolPageHost.Content = CreateProblemsView();
                 for (var i = 0; i < Representations.Children.Count; i++)
@@ -972,7 +998,14 @@ public partial class WorkbenchWindow : Window
         };
         var window = new Window { Title = Workspace.ActiveTool == "problems" ? "BusChord · Prüfmeldungen" : Workspace.ActiveTool == "programming" ? "BusChord · Programmierung" : "BusChord · Monitor", Width = 1000, Height = 380,
             Content = content };
-        _toolWindows.Add(window); window.Closed += (_, _) => _toolWindows.Remove(window); window.Show(this);
+        _toolWindows.Add(window);
+        window.Closed += (_, _) =>
+        {
+            _toolWindows.Remove(window);
+            // Closing a fresh tool window is the explicit re-dock action; no live control is reparented.
+            if (!_shuttingDown) ShowTool(Workspace.ActiveTool);
+        };
+        window.Show(this);
     }
     private void OnShellKeyDown(object? sender, KeyEventArgs e)
     {

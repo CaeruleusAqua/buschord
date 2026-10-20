@@ -1,5 +1,11 @@
 # BusChord — Analyse & Status
 
+V4-Workbench (2026-10-20): nativer objektbezogener Arbeitsbereich mit
+gemeinsamem Projektmodell, drei Navigatorperspektiven, Mehrfachzuordnung,
+Sendeadresse, Demo-Wirkungsvorschau, unabhängigen Monitor-/Programmiersitzungen,
+V4-Theme und strengem Demo-JSON-Austausch. Umsetzung und offene Abnahmepunkte:
+[Workbench-Meilenstein](analysis/workbench-v4-shell-milestone.md).
+
 V4 shell integration milestone (not full acceptance):
 [native shell, tests and explicit remaining matrix](analysis/workbench-v4-shell-milestone.md).
 

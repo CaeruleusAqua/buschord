@@ -51,6 +51,7 @@ public partial class WorkbenchWindow
             {
                 Item("Projektprüfung", () => ShowTool("problems")), Item("Monitor", () => ShowTool("monitor")),
                 Item("Produktkatalog", ShowCatalog), Async("Aufzeichnung exportieren …", ExportRecordingAsync),
+                Item("Secure-Übersicht", ShowSecureOverview),
                 Item("Bedienung und Grenzen", ShowHelp)
             } }
         };
@@ -82,6 +83,7 @@ public partial class WorkbenchWindow
     private async Task OpenPathAsync(string path)
     {
         if (!await ConfirmDiscardAsync()) return;
+        await ResetSessionsForReplacementAsync();
         try { ViewModel.LoadProject(path); _parameters.DiscardDrafts(); RefreshWorkspace(); }
         catch (Exception ex) { ViewModel.Status = $"Projekt nicht ladbar: {ex.Message}"; await ConfirmDialog.ShowMessageAsync(this, "Projekt nicht ladbar", ex.Message); }
     }
@@ -94,6 +96,7 @@ public partial class WorkbenchWindow
         var project = ProjectWizard.Create(wizard.Options);
         var file = await StorageProvider.SaveFilePickerAsync(new() { Title = "Neues Projekt speichern", SuggestedFileName = project.Name + ".knxproj", DefaultExtension = "knxproj" });
         if (file?.TryGetLocalPath() is not { } path) return;
+        await ResetSessionsForReplacementAsync();
         try { ViewModel.CreateProject(project, path); _parameters.DiscardDrafts(); RefreshWorkspace(); }
         catch (Exception ex) { ViewModel.Status = ex.Message; await ConfirmDialog.ShowMessageAsync(this, "Projekt nicht anlegbar", ex.Message); }
     }
@@ -201,6 +204,7 @@ public partial class WorkbenchWindow
         try
         {
             var imported = Knx.Workbench.WorkbenchJson.Import(await File.ReadAllTextAsync(path));
+            await ResetSessionsForReplacementAsync();
             ViewModel.CreateProject(imported, null);
             _parameterSession.DiscardDrafts();
             RefreshWorkspace();
@@ -211,6 +215,21 @@ public partial class WorkbenchWindow
             ViewModel.Status = "Demo-Import fehlgeschlagen: " + ex.Message;
             await ConfirmDialog.ShowMessageAsync(this, "Demo-Import fehlgeschlagen", ex.Message);
         }
+    }
+
+    private void ShowSecureOverview()
+    {
+        if (ViewModel.Project is not { } project) { ViewModel.Status = "Kein Projekt geladen"; return; }
+        var devices = ProjectQuery.DeviceList(project);
+        var capable = devices.Where(d => project.Workbench.Devices.GetValueOrDefault(d.Id)?.SecureCapable == true).ToList();
+        var unknown = devices.Count(d => project.Workbench.Devices.GetValueOrDefault(d.Id)?.SecureCapable is null);
+        var secureGroups = project.Workbench.Groups.Count(g => g.Value.Secure == true);
+        var lines = string.Join("\n", capable.Take(40).Select(d => $"{d.Address} · {d.Name}"));
+        _ = ConfirmDialog.ShowMessageAsync(this, "KNX Secure · lesbare Übersicht",
+            $"{capable.Count} von {devices.Count()} Geräten ausdrücklich Secure-fähig; {unknown} ohne belegte Fähigkeit.\n" +
+            $"{secureGroups} Gruppenadressen sind als Secure markiert.\n\n" +
+            (lines.Length > 0 ? lines : "Keine Secure-Fähigkeit in den Zusatzdaten belegt.") +
+            "\n\nDiese Übersicht verwaltet keine Schlüssel oder Zertifikate und behauptet keine sichere Inbetriebnahme.");
     }
 
     private void ShowPalette()

@@ -190,6 +190,7 @@ internal static class WorkbenchCheck
                     Check($"fresh tool window {cycle + 1} does not reparent main content", !ReferenceEquals(floating.Content, window.FindControl<ContentControl>("ToolHost")!.Content));
                     floating.Close();
                     Check($"closing tool window {cycle + 1} retains recorder", window.ViewModel.IsRecording);
+                    Check($"closing tool window {cycle + 1} docks back into the shell", window.Workspace.ToolsVisible && window.FindControl<ContentControl>("ToolHost")!.Content is not null);
                 }
                 window.ViewModel.StopRecording();
                 window.ViewModel.UndoCommand.Execute(null); window.RefreshWorkspace();
@@ -242,6 +243,17 @@ internal static class WorkbenchCheck
                 await window.Sessions.Programming.RunAsync();
                 Check("demo programming queue records simulated success", job.Status == ProgrammingJobStatus.Done && !window.Sessions.Programming.NeedsProgramming("taster-living"));
                 Check("demo JSON roundtrip remains available", Knx.Workbench.WorkbenchJson.Import(Knx.Workbench.WorkbenchJson.Export(demo)).Id == demo.Id);
+                window.ShowTool("monitor");
+                Check("monitor tool is visible before project replacement", window.FindControl<ContentControl>("ToolHost")!.Content is not null);
+                LoadFixture(window);
+                await Task.Delay(60);
+                Check("project replacement rebuilds the tool view on fresh sessions", window.Sessions is not null
+                    && window.FindControl<ContentControl>("ToolHost")!.Content is not null);
+                var refreshedTools = (Control)window.FindControl<ContentControl>("ToolHost")!.Content!;
+                refreshedTools.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Starten"))
+                    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Check("rebuilt tool view controls the new session", window.Sessions!.Monitor.IsRunning);
+                window.Sessions.Monitor.Stop();
 
                 Console.WriteLine(failures.Count == 0 ? "WORKBENCH NATIVE OK" : $"WORKBENCH FAILURES: {failures.Count}");
                 window.RequestShutdown(); desktop.Shutdown(failures.Count == 0 ? 0 : 1);

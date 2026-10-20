@@ -73,23 +73,31 @@ Grund; die Statuszeile zeigt denselben Text.
 
 ### 2.4 Hauptfenster
 
-Nach dem Laden erscheinen Menüleiste, Aktionsleiste, Statuszeile und der
-Arbeitsbereich:
+Die Produktoberfläche ist die objektbezogene V4-Workbench:
 
-- links der **Topologie**-Baum (Installation → Bereich → Linie → Segment → Gerät),
-- in der Mitte die Tabs **Dashboard**, **Gruppenadressen**, **Katalog**,
-  **Parameter**, **Kommunikationsobjekte**, **Projektprüfung**,
-- rechts **Eigenschaften** zur aktuellen Auswahl,
-- unten **Busmonitor** und **Recorder**.
+- **links** der Navigator mit den Perspektiven **Gebäude**, **Topologie** und
+  **Gruppenadressen**, jeweils mit eigenem Suchfilter, eigener Auswahl und eigenem
+  Aufklappzustand,
+- **Mitte** schließbare Arbeitsgegenstands-Tabs für Projekt, Raum, Linie, Gerät
+  und Gruppenadresse; jede Darstellung (Kommunikationsobjekte, Parameter,
+  Beziehungen, Prüfung) bleibt an ihren Tab gebunden,
+- **rechts** der bei Bedarf eingeblendete Inspektor,
+- **unten** die Werkzeuge **Monitor**, **Programmierung** und **Prüfmeldungen**.
 
-Die Statuszeile zeigt Projektdatei, Statusmeldung und Buszustand („Nicht
-verbunden“, „Verbinde…“, „Verbunden: …“).
+Kopfzeile: Projekt/Bearbeiten/Ansicht/Werkzeuge, Befehlssuche (`Ctrl+K`) und
+„Programmieren“. Die Werkzeugleiste links blendet Navigator, Katalog, Prüfung,
+Monitor und Optionen ein. `Ctrl+B` schaltet den Navigator, `Ctrl+J` das untere
+Werkzeug. Größen und Sichtbarkeit werden als Layout getrennt vom Projekt
+gespeichert; „Fokuslayout“ und „Layout zurücksetzen“ ändern keine Projektdaten.
 
-Geräte lassen sich im Baum per Drag & Drop verschieben: auf eine Linie oder ein
-Segment direkt, auf einen Bereich in dessen erste Linie, auf ein anderes Gerät in
-dessen Linie. Ein Ziel ohne Linie wird mit einer Statusmeldung abgelehnt. Das
-Kontextmenü eines Baumelements bietet Katalog, Parameter, Kommunikationsobjekte,
-„Gerät löschen“ und „Gruppenadresse anlegen“.
+Die Tabelle zeigt Geräte, Herstellerkanäle und Kommunikationsobjekte in einer
+gemeinsamen virtualisierten Liste mit DPT, Länge, Flags und Gruppenadressen.
+Mehrfachauswahl und „Verknüpfen“ prüfen alle Ziele vor der Änderung; eine
+unverträgliche Auswahl wird vollständig abgelehnt. Die Sendeadresse wird
+ausdrücklich im Inspektor gewählt und ist unabhängig vom T-Flag.
+
+Das frühere Ribbon-/Dock-Hauptfenster existiert nur noch als
+Kompatibilitätsprüfstand für ältere Tests; es ist nicht die Produktoberfläche.
 
 ## 3. Katalog
 

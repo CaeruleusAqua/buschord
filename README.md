@@ -24,7 +24,7 @@ derived from the KNX Association or any tool vendor.
 | KNX Data Security (keyring, secure telegrams, secure wrapper) | foundation, not yet wired into the tunnel |
 | Semantic export (Turtle/JSON-LD) + OWL/KIM checks | working |
 | Reports: CSV, labels (HTML/mail merge), project compare | working |
-| UI: Avalonia 12.1.4 + Dock 12.1.0.12, dashboard, dockable workspace views, light/dark theme, German/English | experimental; floating Topology/Properties can crash; see limitations below |
+| UI: Avalonia 12.1.4 + Dock 12.1.0.12, object-centred workbench, independent tabs, inspector, monitor/programming sessions, light/dark theme, German/English | working V4 shell; advanced ETS parity still limited |
 | MCP server for AI agents (stdio, 41 tools) | working; includes manual communication-object links |
 | Hawk/IoT device images, building structure (`loc:`) in semantic export | open |
 
@@ -33,15 +33,14 @@ Latest bounded reference-tool analysis and implemented gap fixes:
 Archive signatures are preserved but not recomputed; changed signed data may no
 longer validate in ETS. Encrypted project archives remain unsupported.
 
-**Docking limitation:** do not float Topology or Properties while working on
-unsaved data: native dragging currently reproduces application crashes. Explicit
-cross-window document moves also have a reproduced layout-manager failure;
-successful mouse redocking is not proof of general safety. See the
+**Workbench limitation:** the native workbench uses explicit fresh tool windows
+and a dock-back action; the legacy `MainWindow` remains only for compatibility
+harnesses and still shows the known Topology/Properties floating defect. See the
 [native tests](analysis/review-native-docking.md) and
 [ownership investigation](analysis/dock-crash-rootcause.md).
 The [ETS6 UI comparison](analysis/ux/ets6-panel-recheck.md) distinguishes project
-tabs, work panels, device sub-tabs and the properties sidebar; the current flat
-workspace tab arrangement is not a faithful reproduction of that hierarchy.
+tabs, work panels, device sub-tabs and the properties sidebar; the workbench keeps
+those roles distinct instead of presenting one flat tab strip.
 
 ## Quick start
 
@@ -71,12 +70,18 @@ dotnet run --project tests/Knx.Mcp.Tests
 dotnet run --project tests/Knx.Archive.Tests
 dotnet run --project tests/Knx.Parameter.Tests
 dotnet run --project tests/Knx.ParameterUi.Tests
+dotnet run --project tests/Knx.Workbench.Tests
+dotnet run --project tests/Knx.WorkbenchUiState.Tests
+dotnet run --project tests/Knx.WorkbenchSessions.Tests
+dotnet run --project tests/Knx.WorkbenchTheme.Tests
+dotnet run --project tests/Knx.WorkbenchPerformance.Tests
 dotnet run --project tests/Knx.Linking.Tests
 dotnet run --project tests/Knx.SmartLink.Tests
 dotnet run --project tests/Knx.CatalogUi.Tests
 dotnet run --project tests/Knx.Address.Tests
 dotnet run --project src/Knx.Mcp -- --selftest
 dotnet run --project src/Knx.App -- --smoke
+dotnet run --project src/Knx.App -- --workbench-selftest --theme=light
 dotnet run --project src/Knx.App.Tests
 ```
 
