@@ -18,6 +18,11 @@ var directory = Path.Combine(Path.GetTempPath(), "buschord-parameter-ui-" + Guid
 Directory.CreateDirectory(directory);
 try
 {
+    var settings = Path.Combine(directory, "settings.json");
+    File.WriteAllText(settings, "{}");
+    Environment.SetEnvironmentVariable("BUSCHORD_SETTINGS", settings);
+    typeof(CatalogLibrary).GetField("_store", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+        .SetValue(CatalogLibrary.Shared, new CatalogStore(Path.Combine(directory, "empty-catalog")));
     var path = Path.Combine(directory, "test.knxproj");
     var project = new Project { Id = "P-1", Name = "Parameter UI" };
     var installation = new Installation { Id = "I-1" };
@@ -266,6 +271,40 @@ try
     detached.Instances[0].ParameterType!.IsVisible = false;
     var fresh = coldVm.LoadParametersFor(coldVm.Devices[1]);
     Check("Catalogue definitions are detached too", fresh.Types[0].Restrictions[0].Max == 255 && fresh.Instances[0].ParameterType!.IsVisible);
+
+    var session = new ParameterEditingSession(coldVm);
+    session.Load(coldVm.Devices[0]);
+    session.Rows[0].Value = "999";
+    var undoBeforePreview = coldVm.CanUndo;
+    var modelBeforePreview = coldVm.Devices[0].Device.ParameterValues["R-N"];
+    var preview = session.ReviewChanges();
+    Check("Control-free preview uses core validation without project mutation", !preview.IsValid
+        && preview.Changes.Single() is { Before: "51", After: "999", Error: not null }
+        && coldVm.CanUndo == undoBeforePreview && coldVm.Devices[0].Device.ParameterValues["R-N"] == modelBeforePreview);
+    var validationMessage = session.Message;
+    using var firstView = new ParameterPane(session);
+    using var secondView = new ParameterPane(session);
+    Check("Two fresh views share the existing draft and validation", !ReferenceEquals(firstView, secondView)
+        && firstView.Session == secondView.Session && session.Rows[0].Value == "999"
+        && firstView.FindControl<TextBlock>("MessageText")!.Text == validationMessage
+        && secondView.FindControl<TextBlock>("MessageText")!.Text == validationMessage);
+    firstView.Dispose();
+    session.Rows[0].Value = "998";
+    session.ReviewChanges();
+    Check("Disposed view receives no stale session events", firstView.FindControl<ItemsControl>("ParameterList")!.ItemCount == 0
+        && firstView.FindControl<TextBlock>("MessageText")!.Text == validationMessage);
+    secondView.Dispose();
+    Check("Host can query dirty state without a view", session.HasUnappliedChanges);
+    session.DiscardDrafts();
+    Check("Host can discard without a view", !session.HasUnappliedChanges && session.Rows[0].Value == "51");
+    session.Rows[0].Value = "55";
+    // A replacement project must really have a new identity, even with identical device IDs.
+    coldVm.CreateProject(Knxproj.Load(path), null);
+    Check("Session dirty query ignores drafts after project replacement", !session.HasUnappliedChanges);
+    Check("Project replacement rejects a stale preview and Apply without a control", !session.ReviewChanges().IsValid && !session.Apply());
+    using var replacementView = new ParameterPane(session);
+    Check("Fresh view cannot display an old project's draft", session.Device is null && session.Rows.Length == 0
+        && !session.HasUnappliedChanges);
 
 
     var paneType = typeof(Knx.App.Views.ParameterPane);

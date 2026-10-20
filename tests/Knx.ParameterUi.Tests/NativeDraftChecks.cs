@@ -5,6 +5,8 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Avalonia.Interactivity;
+using Knx.Catalog;
 using Knx;
 using Knx.App.Services;
 using Knx.App.Views;
@@ -28,6 +30,11 @@ internal static class NativeDraftChecks
         void Assert(string name, bool ok) { Console.WriteLine($"{(ok ? "PASS" : "FAIL")} {name}"); if (!ok) failures++; }
         try
         {
+            var settings = Path.Combine(root, "settings.json");
+            File.WriteAllText(settings, "{}");
+            Environment.SetEnvironmentVariable("BUSCHORD_SETTINGS", settings);
+            typeof(CatalogLibrary).GetField("_store", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .SetValue(CatalogLibrary.Shared, new CatalogStore(Path.Combine(root, "catalog")));
             Application.Current.Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
             var project = new Project { Id = "P", Name = "Native draft regression" };
             var installation = new Installation { Id = "I" };
@@ -87,6 +94,38 @@ internal static class NativeDraftChecks
             pane.Load(a);
             Assert("Newer same-device draft survives Apply cleanup", Row().Value == "71"
                 && a.Device.ParameterValues.GetValueOrDefault("R-N") == "70" && pane.HasUnappliedChanges);
+            void Click(string name) => pane.FindControl<Button>(name)!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Click("ReviewButton");
+            Assert("Native review panel shows proposed parameter diff without applying", pane.FindControl<StackPanel>("PreviewPanel")!.IsVisible
+                && pane.Session.Preview!.Changes.Single() is { Before: "70", After: "71", Error: null }
+                && a.Device.ParameterValues["R-N"] == "70");
+            Click("CancelReviewButton");
+            Assert("Native cancel review preserves draft and model", !pane.FindControl<StackPanel>("PreviewPanel")!.IsVisible
+                && pane.HasUnappliedChanges && Row().Value == "71" && a.Device.ParameterValues["R-N"] == "70");
+            Row().Value = "101"; Click("ReviewButton");
+            Assert("Native invalid preview blocks Apply", !pane.FindControl<Button>("ApplyButton")!.IsEnabled
+                && pane.Session.Preview?.IsValid == false && a.Device.ParameterValues["R-N"] == "70");
+            var editing = pane.Session;
+            window.Content = null; pane.Dispose();
+            var detachedMessage = pane.FindControl<TextBlock>("MessageText")!.Text;
+            pane = new ParameterPane(editing); window.Content = pane;
+            await Task.Delay(150);
+            Assert("Native fresh view retains invalid draft and validation", Row().Value == "101"
+                && pane.FindControl<TextBlock>("MessageText")!.Text == detachedMessage && pane.HasUnappliedChanges);
+            using var peer = new ParameterPane(editing);
+            var peerWindow = new Window { Content = peer, Width = 700, Height = 500 };
+            peerWindow.Show();
+            await Task.Delay(150);
+            Row().Value = "72";
+            Assert("Two native views update the same draft without recreating editors", peer.GetVisualDescendants()
+                .OfType<NumericUpDown>().Single().Value == 72 && Row().Value == "72");
+            Click("ReviewButton"); Click("ApplyButton");
+            Assert("Native reviewed Apply commits once and clears draft", a.Device.ParameterValues["R-N"] == "72"
+                && !editing.HasUnappliedChanges && !pane.FindControl<StackPanel>("PreviewPanel")!.IsVisible);
+            vm.UndoCommand.Execute(null);
+            Assert("One undo restores reviewed Apply", vm.Devices[0].Device.ParameterValues["R-N"] == "70");
+            peerWindow.Close();
+            pane.Dispose();
             window.Close();
         }
         catch (Exception ex) { Console.WriteLine(ex); failures++; }
