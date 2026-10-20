@@ -5,6 +5,31 @@ Canonical scope: approved OpenChamber plan `1792528033708-buschord-vollst-ndige-
 
 **This change delivers resources and an inventory, not the V4 application.** Existing source was inspected, not changed. All native functional and visual acceptance below remains **PENDING** unless a concrete result is stated. Proposed command/test names are contracts for implementation, not claims that those members or tests exist. Shell/domain/session owners may rename them while preserving every inventory ID. Historical completion marks in `FEATURE.md` are not V4 acceptance evidence.
 
+## Implementation status (2026-10-21)
+
+The inventory below was written before the V4 shell existed. The integrated native
+workbench now covers the core object-centred flow; this summary supersedes its
+“resources only” framing. Detailed historical ledger rows remain useful as the
+reference/action inventory, not as current completion status.
+
+| Criterion | Implemented evidence | Remaining gap |
+|---|---|---|
+| A01 / US01 | `WorkbenchProjection` resolves building, topology and GA navigation to the same native `DeviceInstance`; routed workbench self-check opens all three perspectives. | Native drag/drop device move is not wired in the workbench. |
+| A02 | `WorkbenchWorkspace` per-tab view/filter/selection/expansion/scroll state; layout JSON and restore tests; tabs survive representation switches. | Full keyboard and 100/150/200% native acceptance not yet recorded. |
+| A03 / US02 | `Knx.Workbench.WorkbenchProject.ScopeObjects` includes relevant external channels and excludes unrelated channels of the same device; shell self-check asserts both. | Effect-room metadata is BusChord supplement, not native ETS function data. |
+| A04 | Virtualized hierarchical shared-column `ListBox` projection; 10,026-object unit case and 10,027-row native case with 17 realized rows. | No formal p95 UI budget sign-off; table is a projection, not TreeDataGrid. |
+| A05 / US03–US06 | Atomic whole-batch link validation, duplicate no-op, explicit sending choice, domain preview/apply for DEMO switch/dim with retained links, one undo step; Workbench tests plus shell checks. | Native manufacturer dynamic effects/DCA remain unsupported and are named. |
+| A06 / US07–US09 | Control-free monitor/programming sessions, disk-backed full recording vs 500-row display, pinned/follow filters, frozen job payload/signature, retry/fail semantics, interface coordination; 56 session checks. | Real bus programming/monitoring stays unverified and is not exposed as real. |
+| A07 | Avalonia 12.1.4 / Dock 12.1.0.12 native MVVM shell; opt-in `Wb*` theme with light/dark dictionaries. | Third-party table/docking licenses were not added; the native projection avoids them. |
+| US10 | Native archive preservation plus strict `knx-studio-demo` JSON bridge; lossless-export guard; GA/device/topology/assignment CSV and HTML report. | External ETS interchange and native JSON parity are not claimed. |
+
+Evidence commands: `dotnet run --project tests/Knx.Workbench.Tests`,
+`...Knx.WorkbenchUiState.Tests`, `...Knx.WorkbenchSessions.Tests`,
+`...Knx.WorkbenchTheme.Tests`, `...Knx.WorkbenchPerformance.Tests`, and
+`dotnet src/Knx.App/bin/Release/net9.0/BusChord.dll --workbench-selftest --theme=light`.
+Visual snapshots live outside the repository under
+`%TEMP%\opencode\wb-shots` (demo, parameters, monitor, programming, inspector, light/dark).
+
 ## Reference integrity and reproduced checks
 
 All **18/18** entries of `bundle/checksums.sha256` matched SHA-256; zero failures. Manifest SHA-256: `aa7ce905cf12a1ce98e8709d6f423da579a4b1ccc86e0f208f5492950742af6d`.

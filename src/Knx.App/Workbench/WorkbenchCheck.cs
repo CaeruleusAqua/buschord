@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Knx.App.Services;
@@ -83,8 +84,9 @@ internal static class WorkbenchCheck
     {
         if (screen.StartsWith("demo", StringComparison.OrdinalIgnoreCase)) LoadDemo(main);
         else LoadFixture(main);
+        var small = screen.EndsWith("-small", StringComparison.OrdinalIgnoreCase);
         Window window = main;
-        switch (screen.ToLowerInvariant())
+        switch ((small ? screen[..^6] : screen).ToLowerInvariant())
         {
             case "parameters": main.SetRepresentation("params"); break;
             case "demoparams": main.SetRepresentation("params"); break;
@@ -102,7 +104,8 @@ internal static class WorkbenchCheck
             case "splash": window = new SplashWindow(); break;
         }
         var capture = window;
-        capture.Width = screen == "splash" ? 380 : 1440; capture.Height = screen == "splash" ? 420 : 900;
+        capture.Width = small ? 1024 : screen == "splash" ? 380 : 1440;
+        capture.Height = small ? 700 : screen == "splash" ? 420 : 900;
         capture.Opened += (_, _) => DispatcherTimer.RunOnce(() =>
         {
             try { Screenshot.Write(capture, path, new((int)capture.Width, (int)capture.Height)); main.RequestShutdown(); desktop.Shutdown(0); }
@@ -178,6 +181,13 @@ internal static class WorkbenchCheck
                 window.SaveLayout(layout);
                 var restored = new WorkbenchWorkspace(p.Id);
                 Check("saved layout restores tabs and visibility without project mutation", restored.TryRestoreLayout(layout) && restored.InspectorVisible && restored.NavigatorWidth == 300 && restored.Tabs.Count == window.Workspace.Tabs.Count);
+                var navBefore = window.Workspace.NavigatorVisible;
+                window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.B, KeyModifiers = KeyModifiers.Control });
+                Check("Ctrl+B toggles the navigator", window.Workspace.NavigatorVisible != navBefore);
+                window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.B, KeyModifiers = KeyModifiers.Control });
+                var toolsBefore = window.Workspace.ToolsVisible;
+                window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.J, KeyModifiers = KeyModifiers.Control });
+                Check("Ctrl+J toggles the lower tools", window.Workspace.ToolsVisible != toolsBefore);
                 window.ShowTool("monitor"); window.ViewModel.StartRecording(); window.Workspace.ToolsVisible = false;
                 window.ShowTool("monitor");
                 Check("hiding and recreating monitor retains recorder state", window.ViewModel.IsRecording);

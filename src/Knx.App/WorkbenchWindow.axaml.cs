@@ -489,7 +489,7 @@ public partial class WorkbenchWindow : Window
 
     private Control BuildObjectRow(WorkbenchRow row)
     {
-        var grid = new Grid { ColumnDefinitions = new("*,95,65,65,220"), Height = 34, Margin = new(0, 0, 12, 0) };
+        var grid = new Grid { ColumnDefinitions = new("*,85,55,55,190"), Height = 34, Margin = new(0, 0, 12, 0) };
         if (row.Kind == "device") grid.Classes.Add("wb-device");
         if (row.Kind is "channel" or "group") grid.Classes.Add("wb-channel");
         var name = new Grid { ColumnDefinitions = new("22,Auto,*"), Margin = new(4 + row.Depth * 12, 0, 6, 0) };
@@ -645,7 +645,10 @@ public partial class WorkbenchWindow : Window
             InspectorBody.Children.Add(Label(current.Name));
             var name = new TextBox { Text = current.Name };
             InspectorBody.Children.Add(Note("Bezeichnung")); InspectorBody.Children.Add(name);
-            InspectorBody.Children.Add(Note($"Adresse: {current.AddressText}\nProdukt: {current.Device.ProductRefId}\nApplikation: {current.Device.Hardware2ProgramRefId ?? "—"}"));
+            var application = current.Device.Hardware2ProgramRefId
+                ?? ViewModel.Project?.Workbench.Devices.GetValueOrDefault(current.Device.Id)?.Application
+                ?? "-";
+            InspectorBody.Children.Add(Note($"Adresse: {current.AddressText}\nProdukt: {current.Device.ProductRefId}\nApplikation: {application}"));
             InspectorBody.Children.Add(ActionButton("Eigenschaften übernehmen", () =>
             {
                 ViewModel.SelectedDevice = current; ViewModel.EditName = name.Text ?? ""; ViewModel.ApplyDetailsEdit(); RefreshWorkspace();

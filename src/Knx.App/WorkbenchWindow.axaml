@@ -73,8 +73,8 @@
           </Grid>
           <Grid Grid.Row="2">
             <ScrollViewer x:Name="TableViewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <Grid x:Name="TableHost" RowDefinitions="31,*,27" Margin="24,0,24,0" MinWidth="680">
-              <Grid ColumnDefinitions="*,95,65,65,220" Background="{DynamicResource WbPanel}" Margin="0,0,12,0">
+            <Grid x:Name="TableHost" RowDefinitions="31,*,27" Margin="24,0,24,0" MinWidth="620">
+              <Grid ColumnDefinitions="*,85,55,55,190" Background="{DynamicResource WbPanel}" Margin="0,0,12,0">
                 <TextBlock Text="Objekt / Funktion" Margin="8,8" Classes="muted"/><TextBlock Grid.Column="1" Text="DPT" Margin="0,8" Classes="muted"/>
                 <TextBlock Grid.Column="2" Text="Länge" Margin="0,8" Classes="muted"/><TextBlock Grid.Column="3" Text="Flags" Margin="0,8" Classes="muted"/>
                 <TextBlock Grid.Column="4" Text="Gruppenadressen" Margin="0,8" Classes="muted"/>
