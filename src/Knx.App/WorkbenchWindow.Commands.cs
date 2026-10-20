@@ -294,6 +294,8 @@ public partial class WorkbenchWindow
         actions.Children.Add(ActionButton("Abbrechen", dialog.Close, "quiet"));
         DockPanel.SetDock(actions, Avalonia.Controls.Dock.Bottom); panel.Children.Add(actions);
         dialog.Content = panel;
+        dialog.Opened += (_, _) => picker.Focus();
+        dialog.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Escape) dialog.Close(); };
         void Validate()
         {
             if (picker.SelectedItem is not GroupAddressEntry ga) { preview.ItemsSource = null; errors.Text = ""; add.IsEnabled = false; return; }

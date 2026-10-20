@@ -77,7 +77,7 @@
             <Button Grid.Column="1" Content="Eigenschaften" Classes="quiet" Click="OnInspector"/>
             <CheckBox x:Name="Unlinked" Grid.Column="3" Content="Ohne GA" FontSize="11" IsCheckedChanged="OnUnlinked" Margin="8,0"/>
             <TextBox x:Name="ObjectSearch" Grid.Column="4" PlaceholderText="Objekte filtern …" TextChanged="OnObjectSearch"/>
-            <Button Grid.Column="5" Content="↕" ToolTip.Tip="Alles auf-/zuklappen" Click="OnExpandAll" Classes="quiet"/>
+            <Button Grid.Column="5" Content="↕" ToolTip.Tip="Alles auf-/zuklappen" AutomationProperties.Name="Alle Geräte auf- oder zuklappen" Click="OnExpandAll" Classes="quiet"/>
           </Grid>
           <Grid Grid.Row="2">
             <ScrollViewer x:Name="TableViewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
@@ -102,16 +102,16 @@
         <GridSplitter x:Name="ToolsSplitter" Grid.Row="2" Height="5" Background="{DynamicResource WbLine}" ResizeDirection="Rows"/>
         <Grid x:Name="Tools" Grid.Row="3" RowDefinitions="35,*" Background="{DynamicResource WbPaper}">
           <Grid ColumnDefinitions="*,Auto,Auto,Auto"><StackPanel x:Name="ToolTabs" Orientation="Horizontal" Margin="12,0" Spacing="14"/>
-            <Button Grid.Column="1" Content="↗" ToolTip.Tip="Werkzeug in eigenem Fenster öffnen" Click="OnFloatTool" Classes="quiet"/>
-            <Button Grid.Column="2" Content="□" ToolTip.Tip="Werkzeug maximieren" Click="OnMaximizeTool" Classes="quiet"/>
-            <Button Grid.Column="3" Content="×" ToolTip.Tip="Werkzeug ausblenden" Click="OnHideTool" Classes="quiet"/>
+            <Button Grid.Column="1" Content="↗" ToolTip.Tip="Werkzeug in eigenem Fenster öffnen" AutomationProperties.Name="Werkzeug auslagern" Click="OnFloatTool" Classes="quiet"/>
+            <Button Grid.Column="2" Content="□" ToolTip.Tip="Werkzeug maximieren" AutomationProperties.Name="Werkzeug maximieren" Click="OnMaximizeTool" Classes="quiet"/>
+            <Button Grid.Column="3" Content="×" ToolTip.Tip="Werkzeug ausblenden" AutomationProperties.Name="Werkzeug ausblenden" Click="OnHideTool" Classes="quiet"/>
           </Grid>
           <ContentControl x:Name="ToolHost" Grid.Row="1"/>
         </Grid>
       </Grid>
       <GridSplitter x:Name="InspectorSplitter" Grid.Column="4" Width="5" Background="{DynamicResource WbLine}" ResizeDirection="Columns"/>
       <Border x:Name="Inspector" Grid.Column="5" Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}" BorderThickness="1,0,0,0">
-        <Grid RowDefinitions="44,*"><Grid ColumnDefinitions="*,Auto" Margin="15,0"><TextBlock Text="Eigenschaften" VerticalAlignment="Center" FontWeight="SemiBold"/><Button Grid.Column="1" Content="×" Click="OnInspector" Classes="quiet"/></Grid>
+        <Grid RowDefinitions="44,*"><Grid ColumnDefinitions="*,Auto" Margin="15,0"><TextBlock Text="Eigenschaften" VerticalAlignment="Center" FontWeight="SemiBold"/><Button Grid.Column="1" Content="×" AutomationProperties.Name="Eigenschaften ausblenden" Click="OnInspector" Classes="quiet"/></Grid>
           <ScrollViewer Grid.Row="1"><StackPanel x:Name="InspectorBody" Margin="15" Spacing="12"/></ScrollViewer>
         </Grid>
       </Border>
