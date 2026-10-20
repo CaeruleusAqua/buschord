@@ -164,7 +164,7 @@ public sealed class MonitorSession : SessionState, IDisposable
                 (generation is not null && generation != _generation) || telegram?.Telegram is null) return;
             var frame = telegram.Telegram;
             var data = frame.Data?.ToArray() ?? [];
-            var group = frame.IsGroupAddress && _groups.TryGetValue((ushort)(frame.Destination.Raw & 0x7fff), out var g)
+            var group = frame.IsGroupAddress && _groups.TryGetValue(frame.Destination.Raw, out var g)
                 ? g : default;
             var (value, unit) = GroupMonitor.DecodeValue(group.Dpt, data);
             Append(new(telegram.Timestamp, frame.Source.ToString(), frame.IsGroupAddress

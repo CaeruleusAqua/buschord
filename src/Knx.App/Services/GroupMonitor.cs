@@ -353,7 +353,7 @@ public sealed class GroupMonitor
             {
                 if (isGroup)
                 {
-                    var raw = (ushort)(frame.Destination.Raw & 0x7FFF);
+                    var raw = frame.Destination.Raw;
                     var address = raw == 0 ? null : ProjectQuery.FindGroupAddress(project, new GroupAddress(raw));
                     datapointType = address?.DatapointType;
                     name = address?.Name ?? "";
@@ -376,8 +376,7 @@ public sealed class GroupMonitor
     /// <summary>Group address text without throwing on a reserved raw value such as 0.</summary>
     public static string GroupText(ushort raw)
     {
-        var value = (ushort)(raw & 0x7FFF);
-        return value == 0 ? "0/0/0" : new GroupAddress(value).ToString();
+        return raw == 0 ? "0/0/0" : new GroupAddress(raw).ToString();
     }
 
     private static void AppendRow(StringBuilder builder, params string[] fields)

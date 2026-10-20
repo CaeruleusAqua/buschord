@@ -19,6 +19,32 @@ public sealed class WorkbenchMetadata
     public Dictionary<string, GroupMetadata> Groups { get; set; } = [];
     public Dictionary<string, string> FloorShortNames { get; set; } = [];
     [JsonIgnore] public bool IsEmpty => Objects.Count + Devices.Count + Groups.Count + FloorShortNames.Count == 0;
+
+    /// <summary>Rejects malformed supplemental data before it reaches project-public state.</summary>
+    public void Validate()
+    {
+        if (Objects is null) throw new InvalidDataException("Workbench object metadata is null.");
+        if (Devices is null) throw new InvalidDataException("Workbench device metadata is null.");
+        if (Groups is null) throw new InvalidDataException("Workbench group metadata is null.");
+        if (FloorShortNames is null) throw new InvalidDataException("Workbench floor metadata is null.");
+        if (Objects.Any(p => string.IsNullOrWhiteSpace(p.Key) || p.Value is null))
+            throw new InvalidDataException("Workbench object metadata contains an empty key or null entry.");
+        if (Devices.Any(p => string.IsNullOrWhiteSpace(p.Key) || p.Value is null))
+            throw new InvalidDataException("Workbench device metadata contains an empty key or null entry.");
+        if (Groups.Any(p => string.IsNullOrWhiteSpace(p.Key) || p.Value is null))
+            throw new InvalidDataException("Workbench group metadata contains an empty key or null entry.");
+        if (FloorShortNames.Any(p => string.IsNullOrWhiteSpace(p.Key) || p.Value is null))
+            throw new InvalidDataException("Workbench floor metadata contains an empty key or null entry.");
+        foreach (var (key, value) in Objects)
+        {
+            if (value.Bits is < 1 or > 65535) throw new InvalidDataException($"Object {key} has an invalid bit size.");
+            if (value.Dpt is { Length: > 30 }) throw new InvalidDataException($"Object {key} has an invalid DPT.");
+            if (value.Flags is { } flags && !System.Text.RegularExpressions.Regex.IsMatch(flags, @"^C[RWTUI]*\z"))
+                throw new InvalidDataException($"Object {key} has invalid flags.");
+        }
+        foreach (var (key, value) in Groups)
+            if (value.Bits is < 1 or > 65535) throw new InvalidDataException($"Group {key} has an invalid bit size.");
+    }
 }
 
 public sealed class ObjectMetadata

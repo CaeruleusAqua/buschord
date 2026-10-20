@@ -304,8 +304,18 @@ public static class Knxproj
         if (proj.Element(ExtensionNamespace + "Workbench") is { } workbench)
         {
             if ((int?)workbench.Attribute("Version") != 1) throw new InvalidDataException("Unsupported BusChord Workbench metadata version.");
-            project.Workbench = System.Text.Json.JsonSerializer.Deserialize<Workbench.WorkbenchMetadata>((string?)workbench.Attribute("Data") ?? "")
-                ?? throw new InvalidDataException("Invalid BusChord Workbench metadata.");
+            Workbench.WorkbenchMetadata metadata;
+            try
+            {
+                metadata = System.Text.Json.JsonSerializer.Deserialize<Workbench.WorkbenchMetadata>((string?)workbench.Attribute("Data") ?? "")
+                    ?? throw new InvalidDataException("Invalid BusChord Workbench metadata.");
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                throw new InvalidDataException("Invalid BusChord Workbench metadata: " + ex.Message, ex);
+            }
+            metadata.Validate();
+            project.Workbench = metadata;
         }
         project.BaselineXml = GenerateXml(project);
         project.OriginalXml = new XDocument(doc);

@@ -14,7 +14,7 @@ public static class KimCheck
 
         foreach (var point in kim.FunctionPoints)
         {
-            var path = point.GroupAddressRaw is uint raw && raw is > 0 and <= 0x7FFF
+            var path = point.GroupAddressRaw is uint raw && raw is > 0 and <= 0xFFFF
                 ? new GroupAddress((ushort)raw).ToString()
                 : point.Subject;
 

@@ -21,7 +21,7 @@ public sealed class RecordedTelegram
         Timestamp = telegram.Timestamp,
         Source = telegram.Telegram.Source.ToString(),
         Destination = telegram.Telegram.IsGroupAddress
-            ? new Knx.GroupAddress((ushort)(telegram.Telegram.Destination.Raw & 0x7FFF)).ToString()
+            ? new Knx.GroupAddress(telegram.Telegram.Destination.Raw).ToString()
             : telegram.Telegram.Destination.ToString(),
         IsGroupAddress = telegram.Telegram.IsGroupAddress,
         Apci = telegram.Telegram.Apci.ToString(),

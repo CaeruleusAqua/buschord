@@ -1,5 +1,7 @@
+using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace Knx.Workbench;
 
@@ -92,7 +94,7 @@ public static class WorkbenchJson
             Need(numbers.Add((device, N(obj, "number", 0, 65535))), "Duplicate object number within device.");
             CheckDpt(obj); B(obj, "active");
             var flags = S(obj, "flags");
-            Need(Regex.IsMatch(flags, "^C[RWTUI]*$") && flags.Distinct().Count() == flags.Length, "Invalid object flags.");
+            Need(Regex.IsMatch(flags, @"^C[RWTUI]*\z") && flags.Distinct().Count() == flags.Length, "Invalid object flags.");
             Need(S(obj, "role") is "command" or "feedback" or "measure", "Unknown object role.");
         }
         addresses.Clear();
@@ -206,18 +208,91 @@ public static class WorkbenchJson
             links = WorkbenchProject.ScopeObjects(project, new(IncludeInactive: true)).SelectMany(r => r.Object.Links.Select(id => new { ko = r.Object.Id, ga = id, sending = r.Metadata?.SendingGroupId == id }))
         };
         var json = JsonSerializer.Serialize(new { format = "knx-studio-demo", version = 4, data }, JsonOptions);
-        Import(json); // Refuse lossy/unrepresentable native states instead of emitting an invalid demo file.
+        // Refuse lossy/unrepresentable native states: converting the emitted subset back must
+        // reproduce every modeled and preserved native detail, not only the fields exported.
+        var reimported = Import(json);
+        if (!Representable(project, reimported))
+            throw new InvalidDataException(
+                "V4 JSON cannot represent every detail of this project; use native knxproj. " +
+                "Export would discard native fields or opaque data.");
         return json;
     }
 
-    private static string Medium(string name) => name switch { "TP" => "MT-0", "PL" => "MT-1", "RF" => "MT-2", "IP" => "MT-5", _ => throw new InvalidDataException("Unknown medium.") };
-    private static string MediumName(string id) => id switch { "MT-0" => "TP", "MT-1" => "PL", "MT-2" => "RF", "MT-5" => "IP", _ => throw new InvalidDataException("Unknown native medium.") };
+    private static bool Representable(Project source, Project imported)
+    {
+        if (source.ArchiveState is { } archive && HasOpaqueArchiveEntries(archive)) return false;
+        return XNode.DeepEquals(Canonical(source), Canonical(imported))
+            && MetadataJson(source.Workbench) == MetadataJson(imported.Workbench);
+    }
+
+    private static XElement Canonical(Project project)
+    {
+        var root = new XElement(Knxproj.ToXml(project).Root!);
+        root.Descendants(XName.Get("Workbench", "urn:buschord:project:1")).Remove();
+        // Raw JSON stored in parameter overrides may use different (but equivalent) escaping.
+        foreach (var attribute in root.Descendants().Attributes("Value"))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(attribute.Value);
+                attribute.Value = JsonSerializer.Serialize(document.RootElement);
+            }
+            catch (JsonException) { }
+        }
+        return CanonicalElement(root);
+    }
+
+    private static XElement CanonicalElement(XElement element) => new(element.Name,
+        element.Attributes().Where(a => !a.IsNamespaceDeclaration)
+            .OrderBy(a => a.Name.ToString(), StringComparer.Ordinal)
+            .Select(a => new XAttribute(a.Name, a.Value)),
+        element.Elements().Select(CanonicalElement));
+
+    private static string MetadataJson(WorkbenchMetadata metadata)
+    {
+        var ordered = new
+        {
+            Objects = metadata.Objects.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new { p.Key, p.Value }),
+            Devices = metadata.Devices.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new { p.Key, p.Value }),
+            Groups = metadata.Groups.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new { p.Key, p.Value }),
+            metadata.FloorShortNames
+        };
+        return JsonSerializer.Serialize(ordered);
+    }
+
+    /// <summary>A native archive may carry opaque XML, master data or extra ZIP members the demo cannot represent.</summary>
+    private static bool HasOpaqueArchiveEntries(ArchiveState state)
+    {
+        try
+        {
+            using var stream = new MemoryStream(state.Bytes, writable: false);
+            using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
+            foreach (var entry in zip.Entries)
+            {
+                if (entry.FullName is "0.xml" or "project.xml") continue;
+                if (state.NestedEntry is { } nested && entry.FullName == nested)
+                {
+                    using var inner = new MemoryStream();
+                    using (var entryStream = entry.Open()) entryStream.CopyTo(inner);
+                    inner.Position = 0;
+                    using var nestedZip = new ZipArchive(inner, ZipArchiveMode.Read);
+                    if (nestedZip.Entries.Any(e => e.FullName is not ("0.xml" or "project.xml"))) return true;
+                    continue;
+                }
+                return true;
+            }
+            return false;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException) { return true; }
+    }
+
+    private static string Medium(string name) => name switch { "TP" => "MT-0", "PL" => "MT-1", "RF" => "MT-2", "IP" => "MT-5", _ => throw new InvalidDataException("Unknown medium.") };    private static string MediumName(string id) => id switch { "MT-0" => "TP", "MT-1" => "PL", "MT-2" => "RF", "MT-5" => "IP", _ => throw new InvalidDataException("Unknown native medium.") };
     private static void Need(bool condition, string message) { if (!condition) throw new InvalidDataException(message); }
     private static string Text(JsonElement value) { var s = value.GetString(); Need(!string.IsNullOrWhiteSpace(s) && s.Length <= 300, "Expected nonempty text up to 300 characters."); return s!; }
     private static string S(JsonElement element, string name) => Text(element.GetProperty(name));
     private static bool B(JsonElement element, string name) => element.GetProperty(name).GetBoolean();
     private static long N(JsonElement element, string name, long min, long max) { var n = element.GetProperty(name).GetInt64(); Need(n >= min && n <= max, "Integer out of range: " + name); return n; }
-    private static void Id(string value) => Need(Regex.IsMatch(value, "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$") && value is not ("__proto__" or "prototype" or "constructor"), "Invalid ID.");
+    private static void Id(string value) => Need(Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\z") && value is not ("__proto__" or "prototype" or "constructor"), "Invalid ID.");
     private static void Ref(string id, Dictionary<string, JsonElement> index) => Need(index.ContainsKey(id), "Missing reference: " + id);
     private static void CheckDpt(JsonElement value) => Need(Dpts.TryGetValue(S(value, "dpt"), out var bits) && N(value, "bits", 1, 65535) == bits, "Unsupported demo DPT or inconsistent size.");
     private static void Shape(JsonElement element, string fields)

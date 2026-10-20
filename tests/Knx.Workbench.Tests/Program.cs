@@ -12,6 +12,60 @@ static void Reject(Action action, string message)
 }
 var project = WorkbenchJson.CreateDemo();
 var originalJson = WorkbenchJson.Export(project);
+var reviewFailures = new List<string>();
+void Regression(string name, Action action)
+{
+    try { action(); Console.WriteLine("PASS " + name); }
+    catch (Exception ex) { reviewFailures.Add(name + ": " + ex.Message); Console.WriteLine("FAIL " + name); }
+}
+foreach (var address in new[] { "16/0/1", "31/7/255" })
+    Regression("full GA range " + address, () =>
+    {
+        var node = JsonNode.Parse(originalJson)!; node["data"]!["gas"]![0]!["address"] = address;
+        var imported = WorkbenchJson.Import(node.ToJsonString());
+        Check(ProjectQuery.GroupAddresses(imported).First().Address.ToString() == address, "GA conversion narrowed the address");
+        WorkbenchJson.Import(WorkbenchJson.Export(imported));
+    });
+foreach (var flags in new[] { false, true })
+    Regression(flags ? "flags reject trailing newline" : "IDs reject trailing newline", () =>
+    {
+        var node = JsonNode.Parse(originalJson)!;
+        if (flags) node["data"]!["objects"]![0]!["flags"] = "CT\n";
+        else node["data"]!["project"]!["id"] = "sample\n";
+        Reject(() => WorkbenchJson.Import(node.ToJsonString()), "newline outside alphabet");
+    });
+Regression("JSON export refuses native-only modeled fields", () =>
+{
+    var sample = WorkbenchJson.CreateDemo(); var device = ProjectQuery.DeviceList(sample).First();
+    device.Hardware2ProgramRefId = "native-application-ref"; device.Description = "keep description";
+    Reject(() => WorkbenchJson.Export(sample), "lossy native fields");
+});
+Regression("JSON export refuses opaque native XML", () =>
+{
+    var sample = Knxproj.ToXml(WorkbenchJson.CreateDemo());
+    sample.Root!.Add(new XElement(XName.Get("Opaque", "urn:vendor:test"), "important payload"));
+    Reject(() => WorkbenchJson.Export(Knxproj.FromXml(sample)), "lossy opaque XML");
+});
+foreach (var data in new[] { "{\"Groups\":{\"bad\":null}}", "{\"Objects\":null}" })
+    Regression("native metadata rejects malformed collections: " + data, () =>
+    {
+        var sample = Knxproj.ToXml(WorkbenchJson.CreateDemo());
+        sample.Descendants(XName.Get("Workbench", "urn:buschord:project:1")).Single().SetAttributeValue("Data", data);
+        Reject(() => Knxproj.FromXml(sample), "malformed extension must be a controlled format error");
+    });
+Regression("existing incompatible batch member prevents all changes", () =>
+{
+    var sample = WorkbenchJson.CreateDemo();
+    var existing = new ObjectKey("taster-living", "taster-living-switch");
+    var added = new ObjectKey("presence-living", "presence-living-switch");
+    WorkbenchProject.Metadata(sample, existing)!.Active = false;
+    var history = new UndoStack(); history.Reset(sample);
+    var count = ProjectQuery.ComObjectRefs(sample).Sum(r => r.Ref.Links.Count);
+    var result = WorkbenchProject.AddLinks(sample, [existing, added], "living-switch", history);
+    Check(!result.Ok && result.Changed == 0 && history.Steps == 0
+        && ProjectQuery.ComObjectRefs(sample).Sum(r => r.Ref.Links.Count) == count, "batch changed despite invalid existing member");
+});
+if (reviewFailures.Count > 0) throw new Exception(string.Join(Environment.NewLine, reviewFailures));
 Check(WorkbenchJson.Export(WorkbenchJson.Import(originalJson)) == originalJson, "JSON roundtrip");
 var rows = WorkbenchProject.ScopeObjects(project, new(WorkbenchScopeKind.Room, "living"));
 Check(rows.Any(r => r.Key.ObjectRefId == "dimmer-a-value" && r.External), "external relevant channel");
@@ -95,6 +149,15 @@ var path = Path.Combine(Path.GetTempPath(), "workbench-test-" + Guid.NewGuid() +
 try
 {
     Knxproj.Save(project, path);
+    var cleanPath = Path.Combine(Path.GetTempPath(), "workbench-clean-" + Guid.NewGuid() + ".knxproj");
+    try
+    {
+        var cleanSource = WorkbenchJson.CreateDemo();
+        Knxproj.Save(cleanSource, cleanPath);
+        Check(WorkbenchJson.Export(Knxproj.Load(cleanPath)) == WorkbenchJson.Export(cleanSource),
+            "clean archive reload remains exportable");
+    }
+    finally { File.Delete(cleanPath); }
     using (var zip = ZipFile.Open(path, ZipArchiveMode.Update))
     { using var writer = new StreamWriter(zip.CreateEntry("vendor/opaque.bin").Open()); writer.Write("opaque archive payload"); }
     var loaded = Knxproj.Load(path);
@@ -112,6 +175,7 @@ try
     using var savedArchive = ZipFile.OpenRead(path);
     using var reader = new StreamReader(savedArchive.GetEntry("vendor/opaque.bin")!.Open());
     Check(reader.ReadToEnd() == "opaque archive payload", "unknown ZIP member retained through save and undo");
+    Reject(() => WorkbenchJson.Export(loaded), "opaque ZIP data cannot be exported to demo JSON");
 }
 finally { File.Delete(path); }
 Console.WriteLine("Workbench checks OK: identity, strict JSON, scope, atomic links, sending, mode preview, signatures, native extension/archive and undo.");

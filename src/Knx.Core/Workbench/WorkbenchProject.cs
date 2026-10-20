@@ -50,7 +50,6 @@ public static class WorkbenchProject
     {
         if (row is null || ga is null) return "Object or group address does not exist.";
         var groupId = ga.Id;
-        if (row.Object.Links.Contains(groupId)) return null;
         var m = row.Metadata;
         var g = project.Workbench.Groups.GetValueOrDefault(groupId);
         if (m?.Active == false) return "Communication object is inactive.";
