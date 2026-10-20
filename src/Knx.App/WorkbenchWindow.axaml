@@ -14,7 +14,7 @@
     <Style Selector="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="MinHeight" Value="29"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
     <Style Selector="ListBoxItem:selected /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
     <Style Selector="Button.wb-view-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="34"/><Setter Property="Padding" Value="0"/><Setter Property="FontSize" Value="12"/></Style>
-    <Style Selector="Button.wb-view-tab.active"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
+    <Style Selector="Button.wb-view-tab.active"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
     <Style Selector="Button.wb-tool-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="35"/><Setter Property="Padding" Value="0,0,0,0"/></Style>
     <Style Selector="Button.wb-tool-tab.active"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
     <Style Selector="Border.wb-doc-tab"><Setter Property="Background" Value="{DynamicResource WbTabbar}"/><Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/><Setter Property="BorderThickness" Value="0,0,1,0"/></Style>
@@ -74,12 +74,13 @@
             <TextBlock x:Name="Subtitle" Classes="muted" TextWrapping="Wrap" Margin="0,0,0,6"/>
             <StackPanel x:Name="Representations" Orientation="Horizontal" Spacing="20"/>
           </StackPanel>
-          <Grid x:Name="ObjectToolbar" Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,170,Auto" Margin="24,9">
+          <Grid x:Name="ObjectToolbar" Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto,170,Auto" Margin="24,9">
             <Button Content="Verknüpfen" Click="OnLinks"/>
             <Button Grid.Column="1" Content="Eigenschaften" Classes="quiet" Click="OnInspector"/>
-            <CheckBox x:Name="Unlinked" Grid.Column="3" Content="Ohne GA" FontSize="11" IsCheckedChanged="OnUnlinked" Margin="8,0"/>
-            <TextBox x:Name="ObjectSearch" Grid.Column="4" PlaceholderText="Objekte filtern …" TextChanged="OnObjectSearch"/>
-            <Button Grid.Column="5" Content="↕" ToolTip.Tip="Alles auf-/zuklappen" AutomationProperties.Name="Alle Geräte auf- oder zuklappen" Click="OnExpandAll" Classes="quiet"/>
+            <CheckBox x:Name="RelatedBox" Grid.Column="3" Content="Externe Kanäle" FontSize="11" IsCheckedChanged="OnRelated" Margin="8,0"/>
+            <CheckBox x:Name="Unlinked" Grid.Column="4" Content="Ohne GA" FontSize="11" IsCheckedChanged="OnUnlinked" Margin="8,0"/>
+            <TextBox x:Name="ObjectSearch" Grid.Column="5" PlaceholderText="Objekte filtern …" TextChanged="OnObjectSearch"/>
+            <Button Grid.Column="6" Content="↕" ToolTip.Tip="Alles auf-/zuklappen" AutomationProperties.Name="Alle Geräte auf- oder zuklappen" Click="OnExpandAll" Classes="quiet"/>
           </Grid>
           <Grid Grid.Row="2">
             <ScrollViewer x:Name="TableViewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">

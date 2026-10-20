@@ -431,6 +431,7 @@ public partial class WorkbenchWindow : Window
             {
                 ObjectSearch.Text = tab.Filter;
                 Unlinked.IsChecked = tab.UnlinkedOnly;
+                RelatedBox.IsChecked = tab.IncludeRelated;
                 var rows = ViewModel.Project is { } project ? WorkbenchProjection.Rows(project, tab) : [];
                 _scrollRestorePending = true;
                 var restoreVersion = ++_scrollRestoreVersion;
@@ -568,6 +569,11 @@ public partial class WorkbenchWindow : Window
     {
         if (_refreshing || Workspace.ActiveTab is not { } tab) return;
         tab.UnlinkedOnly = Unlinked.IsChecked == true; RefreshEditor();
+    }
+    private void OnRelated(object? sender, RoutedEventArgs e)
+    {
+        if (_refreshing || Workspace.ActiveTab is not { } tab) return;
+        tab.IncludeRelated = RelatedBox.IsChecked != false; RefreshEditor();
     }
     private void OnObjectSelected(object? sender, SelectionChangedEventArgs e)
     {
@@ -849,7 +855,7 @@ public partial class WorkbenchWindow : Window
         }
         DockPanel.SetDock(header, Avalonia.Controls.Dock.Top); panel.Children.Add(header);
         var tablePanel = new Grid();
-        var empty = new TextBlock { Text = "Noch keine Telegramme für diesen Filter.", Classes = { "wb-muted" }, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+        var empty = new TextBlock { Text = "Noch keine Aufzeichnung. Monitor starten.", Classes = { "wb-muted" }, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
         var list = new ListBox { ItemsSource = sessions.Monitor.FilteredRows, Background = Brushes.Transparent };
         list.ItemTemplate = new FuncDataTemplate<WorkbenchTelegram>((row, _) =>
         {
@@ -916,6 +922,9 @@ public partial class WorkbenchWindow : Window
         }, "quiet"));
         toolbar.Children.Add(Note("SIMULATION · kein realer Download und keine Geräteprogrammierung"));
         DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top); panel.Children.Add(toolbar);
+        var needing = devices.Count(d => sessions.Programming.NeedsProgramming(d.Device.Id));
+        var needNote = Note($"{needing} Gerät(e) mit Programmierbedarf gegenüber dem zuletzt simulierten Erfolgsstand.");
+        DockPanel.SetDock(needNote, Avalonia.Controls.Dock.Top); panel.Children.Add(needNote);
         var header = new Grid { ColumnDefinitions = new("110,220,100,90,*"), Height = 28 };
         header.Classes.Add("wb-table-header");
         var headings = new[] { "Adresse", "Gerät", "Status", "Auftrag", "Hinweis" };
