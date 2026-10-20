@@ -12,8 +12,10 @@
     <Style Selector="TextBox"><Setter Property="MinHeight" Value="28"/><Setter Property="FontSize" Value="11"/></Style>
     <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="{DynamicResource WbMuted}"/><Setter Property="FontSize" Value="10"/></Style>
     <Style Selector="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="MinHeight" Value="29"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
-    <Style Selector="ListBoxItem:selected /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
-    <Style Selector="Button.wb-view-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="34"/><Setter Property="Padding" Value="0"/><Setter Property="FontSize" Value="12"/></Style>
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbTint}"/><Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
+    <Style Selector="Grid.wb-row-active"><Setter Property="Background" Value="{DynamicResource WbSelected}"/></Style>
+    <Style Selector="Grid.wb-row-active TextBlock"><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
+    <Style Selector="Button.wb-view-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="34"/><Setter Property="Padding" Value="0"/><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{DynamicResource WbMuted}"/></Style>
     <Style Selector="Button.wb-view-tab.active"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
     <Style Selector="Button.wb-tool-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="35"/><Setter Property="Padding" Value="0,0,0,0"/></Style>
     <Style Selector="Button.wb-tool-tab.active"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
@@ -80,7 +82,7 @@
             <CheckBox x:Name="RelatedBox" Grid.Column="3" Content="Externe Kanäle" FontSize="11" IsCheckedChanged="OnRelated" Margin="8,0"/>
             <CheckBox x:Name="Unlinked" Grid.Column="4" Content="Ohne GA" FontSize="11" IsCheckedChanged="OnUnlinked" Margin="8,0"/>
             <TextBox x:Name="ObjectSearch" Grid.Column="5" PlaceholderText="Objekte filtern …" TextChanged="OnObjectSearch"/>
-            <Button Grid.Column="6" Content="↕" ToolTip.Tip="Alles auf-/zuklappen" AutomationProperties.Name="Alle Geräte auf- oder zuklappen" Click="OnExpandAll" Classes="quiet"/>
+            <Button Grid.Column="6" Content="Alle" FontSize="10" Padding="6,0" ToolTip.Tip="Alles auf-/zuklappen" AutomationProperties.Name="Alle Geräte auf- oder zuklappen" Click="OnExpandAll" Classes="quiet"/>
           </Grid>
           <Grid Grid.Row="2">
             <ScrollViewer x:Name="TableViewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
@@ -104,7 +106,7 @@
         </Grid>
         <GridSplitter x:Name="ToolsSplitter" Grid.Row="2" Height="5" Background="{DynamicResource WbLine}" ResizeDirection="Rows"/>
         <Grid x:Name="Tools" Grid.Row="3" RowDefinitions="35,*" Background="{DynamicResource WbPaper}">
-          <Grid ColumnDefinitions="*,Auto,Auto,Auto"><StackPanel x:Name="ToolTabs" Orientation="Horizontal" Margin="12,0" Spacing="14"/>
+          <Grid ColumnDefinitions="*,Auto,Auto,Auto"><StackPanel x:Name="ToolTabs" Orientation="Horizontal" Margin="12,0" Spacing="20"/>
             <Button Grid.Column="1" Content="↗" ToolTip.Tip="Werkzeug in eigenem Fenster öffnen" AutomationProperties.Name="Werkzeug auslagern" Click="OnFloatTool" Classes="quiet"/>
             <Button Grid.Column="2" Content="□" ToolTip.Tip="Werkzeug maximieren" AutomationProperties.Name="Werkzeug maximieren" Click="OnMaximizeTool" Classes="quiet"/>
             <Button Grid.Column="3" Content="×" ToolTip.Tip="Werkzeug ausblenden" AutomationProperties.Name="Werkzeug ausblenden" Click="OnHideTool" Classes="quiet"/>

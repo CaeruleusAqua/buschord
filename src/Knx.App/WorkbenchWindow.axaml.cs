@@ -27,6 +27,7 @@ public partial class WorkbenchWindow : Window
     private readonly StackPanel _modePanel = new() { Margin = new(0, 12, 0, 0), Spacing = 8, MaxWidth = 620, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
     private readonly ScrollViewer _modeScroll = new() { VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto };
     private readonly List<Window> _toolWindows = [];
+    private readonly Dictionary<string, Button> _railButtons = new(StringComparer.Ordinal);
     private WorkbenchSessions? _sessions;
     private DispatcherTimer? _sessionTimer;
     private string? _sessionProjectId;
@@ -92,6 +93,7 @@ public partial class WorkbenchWindow : Window
             rail.Content = new Icon { Symbol = glyph, Width = 19, Height = 19 };
             rail.Width = 35; rail.Height = 35; rail.FontSize = 20;
             ToolTip.SetTip(rail, title); AutomationProperties.SetName(rail, title);
+            _railButtons[key] = rail;
             Rail.Children.Add(rail);
         }
         foreach (var (symbol, title, run) in new (string, string, Action)[]
@@ -264,6 +266,12 @@ public partial class WorkbenchWindow : Window
         RefreshWorkspace();
     }
 
+    private void UpdateRail()
+    {
+        foreach (var (key, button) in _railButtons)
+            button.Classes.Set("active", key == Workspace.Perspective);
+    }
+
     public WorkbenchTab OpenTarget(WorkbenchTarget target, string? view = null)
     {
         if (ViewModel.Project is { } project && Workspace.ProjectId != project.Id) RefreshWorkspace();
@@ -322,6 +330,7 @@ public partial class WorkbenchWindow : Window
             ProjectSummary.Text = p is null ? "Projekt öffnen oder neu anlegen" : $"{ProjectQuery.DeviceList(p).Count()} Geräte · {WorkbenchProjection.Lines(p).Count()} Linien";
             NavSearch.Text = Workspace.Navigators[Workspace.Perspective].Query;
             RefreshNavigation();
+            UpdateRail();
             RefreshTabs();
             RefreshEditor();
             ApplyLayout();
@@ -472,6 +481,7 @@ public partial class WorkbenchWindow : Window
                 var start = new StackPanel { Spacing = 12 };
                 start.Children.Add(ActionButton("Projekt öffnen …", () => _ = GuardAsync(OpenProjectAsync), "primary"));
                 start.Children.Add(ActionButton("Neues Projekt …", () => _ = GuardAsync(NewProjectAsync)));
+                start.Children.Add(ActionButton("Gerät aus Katalog …", ShowCatalog));
                 foreach (var recent in ViewModel.RecentProjects)
                     start.Children.Add(ActionButton(recent.Name, () => _ = OpenPathAsync(recent.Path), "quiet"));
                 ToolPageHost.Content = start;
@@ -486,6 +496,7 @@ public partial class WorkbenchWindow : Window
         var node = entry.Node;
         var grid = new Grid { ColumnDefinitions = new("22,*,Auto"), Margin = new(entry.Depth * 12, 0, 4, 0), Height = 29 };
         AutomationProperties.SetName(grid, node.Meta.Length > 0 ? $"{node.Name}, {node.Meta}" : node.Name);
+        if (Workspace.ActiveTab?.Target is { } activeTarget && node.Target == activeTarget) grid.Classes.Add("wb-row-active");
         var expand = ActionButton(node.Children.Count == 0 ? "·" : Workspace.Navigators[Workspace.Perspective].ExpandedIds.Contains(node.Key) ? "⌄" : "›", () =>
         {
             var expanded = Workspace.Navigators[Workspace.Perspective].ExpandedIds;
@@ -535,7 +546,7 @@ public partial class WorkbenchWindow : Window
             var links = Label(row.Links.Length > 0 ? row.Links : "Keine Zuordnung"); links.FontSize = 10;
             links.Classes.Add(row.Links.Length > 0 ? "wb-accent" : "wb-subtle");
             Grid.SetColumn(links, 4); grid.Children.Add(links); ToolTip.SetTip(links, row.LinkDetails);
-            if (!row.Active) { name.Opacity = 0.55; ToolTip.SetTip(text, row.Name + " · inaktiv"); }
+            if (!row.Active) { text.Classes.Add("wb-muted"); ToolTip.SetTip(text, row.Name + " · inaktiv"); }
             if (row.External) text.Classes.Add("wb-success");
         }
         else if (row.External)
@@ -1019,8 +1030,7 @@ public partial class WorkbenchWindow : Window
                 }));
         }
         _modePanel.Children.Add(preview);
-        _modePanel.Children.Add(ActionButton("Auswirkungen prüfen", Review, "primary"));
-        _modePanel.Children.Add(ActionButton("Übernehmen", () =>
+        var applyButton = ActionButton("Übernehmen", () =>
         {
             var values = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var (key, control) in editors)
@@ -1047,7 +1057,11 @@ public partial class WorkbenchWindow : Window
             });
             ViewModel.Status = "Demo-Parameter übernommen; bestehende Zuordnungen bleiben erhalten.";
             RefreshWorkspace();
-        }));
+        }, "primary");
+        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+        actions.Children.Add(applyButton);
+        actions.Children.Add(ActionButton("Auswirkungen prüfen", Review, "quiet"));
+        _modePanel.Children.Add(actions);
     }
 
     private async Task ExportFilteredMonitorAsync()
@@ -1099,7 +1113,7 @@ public partial class WorkbenchWindow : Window
         Editor.IsVisible = !Workspace.ToolsVisible || !Workspace.ToolsMaximized;
         MainColumn.RowDefinitions[1].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(0) : new(1, GridUnitType.Star);
         MainColumn.RowDefinitions[2].Height = new(Workspace.ToolsVisible ? 5 : 0);
-        MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(1, GridUnitType.Star) : new(Workspace.ToolsVisible ? Workspace.ToolsHeight : 0);
+        MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(1, GridUnitType.Star) : new(Workspace.ToolsVisible ? Math.Min(Workspace.ToolsHeight, Bounds.Height is > 0 and < 700 ? 175 : Workspace.ToolsHeight) : 0);
         if (Workspace.ToolsVisible && ToolHost.Content is null) ToolHost.Content = Workspace.ActiveTool switch
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), "monitor" => CreateMonitorView(),

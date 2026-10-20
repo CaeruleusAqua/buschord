@@ -104,8 +104,11 @@ internal static class WorkbenchCheck
             case "splash": window = new SplashWindow(); break;
         }
         var capture = window;
-        capture.Width = small ? 1024 : screen == "splash" ? 380 : 1440;
-        capture.Height = small ? 700 : screen == "splash" ? 420 : 900;
+        if (screen is not ("settings" or "new-project"))
+        {
+            capture.Width = small ? 1024 : screen == "splash" ? 380 : 1440;
+            capture.Height = small ? 700 : screen == "splash" ? 420 : 900;
+        }
         capture.Opened += (_, _) => DispatcherTimer.RunOnce(() =>
         {
             try { Screenshot.Write(capture, path, new((int)capture.Width, (int)capture.Height)); main.RequestShutdown(); desktop.Shutdown(0); }

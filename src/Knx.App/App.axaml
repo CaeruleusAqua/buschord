@@ -45,12 +45,12 @@
           <SolidColorBrush x:Key="EtsPanel" Color="#FFFFFF" />
           <SolidColorBrush x:Key="EtsBorder" Color="#BFC5CB" />
           <SolidColorBrush x:Key="EtsHeaderRow" Color="#E3E9EF" />
-          <SolidColorBrush x:Key="EtsText" Color="#14181C" />
+          <SolidColorBrush x:Key="EtsText" Color="#202C3C" />
           <SolidColorBrush x:Key="EtsMuted" Color="#4C5560" />
-          <SolidColorBrush x:Key="EtsAccent" Color="#0B4F8A" />
-          <SolidColorBrush x:Key="EtsAccentHover" Color="#083D6B" />
+          <SolidColorBrush x:Key="EtsAccent" Color="#087E81" />
+          <SolidColorBrush x:Key="EtsAccentHover" Color="#076C70" />
           <SolidColorBrush x:Key="EtsOnAccent" Color="#FFFFFF" />
-          <SolidColorBrush x:Key="EtsAccentSoft" Color="#D6E6F5" />
+          <SolidColorBrush x:Key="EtsAccentSoft" Color="#E4F2F1" />
           <SolidColorBrush x:Key="EtsButtonBackground" Color="#FBFCFD" />
           <SolidColorBrush x:Key="EtsButtonHover" Color="#E1EDF8" />
           <SolidColorBrush x:Key="EtsStatusBackground" Color="#E2E5E8" />
@@ -74,11 +74,11 @@
           <SolidColorBrush x:Key="DockThemeControlBackgroundBrush" Color="#FFFFFF" />
           <SolidColorBrush x:Key="DockThemeBorderLowBrush" Color="#BFC5CB" />
           <SolidColorBrush x:Key="DockThemeForegroundBrush" Color="#14181C" />
-          <SolidColorBrush x:Key="DockThemeAccentBrush" Color="#0B4F8A" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushLow" Color="#0B4F8A" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushMed" Color="#083D6B" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#D6E6F5" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#0B4F8A" />
+          <SolidColorBrush x:Key="DockThemeAccentBrush" Color="#087E81" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushLow" Color="#087E81" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushMed" Color="#076C70" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#E4F2F1" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#087E81" />
           <SolidColorBrush x:Key="DockApplicationAccentForegroundBrush" Color="#FFFFFF" />
         </ResourceDictionary>
 
@@ -88,12 +88,12 @@
           <SolidColorBrush x:Key="EtsPanel" Color="#25292E" />
           <SolidColorBrush x:Key="EtsBorder" Color="#4A5158" />
           <SolidColorBrush x:Key="EtsHeaderRow" Color="#2F353B" />
-          <SolidColorBrush x:Key="EtsText" Color="#F2F4F6" />
+          <SolidColorBrush x:Key="EtsText" Color="#E5EBF3" />
           <SolidColorBrush x:Key="EtsMuted" Color="#B9C1C9" />
-          <SolidColorBrush x:Key="EtsAccent" Color="#6CB6F0" />
-          <SolidColorBrush x:Key="EtsAccentHover" Color="#4D9DD8" />
+          <SolidColorBrush x:Key="EtsAccent" Color="#62D1CD" />
+          <SolidColorBrush x:Key="EtsAccentHover" Color="#85E0DC" />
           <SolidColorBrush x:Key="EtsOnAccent" Color="#101418" />
-          <SolidColorBrush x:Key="EtsAccentSoft" Color="#2B4256" />
+          <SolidColorBrush x:Key="EtsAccentSoft" Color="#233F43" />
           <SolidColorBrush x:Key="EtsButtonBackground" Color="#33383E" />
           <SolidColorBrush x:Key="EtsButtonHover" Color="#3E4A56" />
           <SolidColorBrush x:Key="EtsStatusBackground" Color="#2A2E33" />
@@ -117,11 +117,11 @@
           <SolidColorBrush x:Key="DockThemeControlBackgroundBrush" Color="#25292E" />
           <SolidColorBrush x:Key="DockThemeBorderLowBrush" Color="#4A5158" />
           <SolidColorBrush x:Key="DockThemeForegroundBrush" Color="#F2F4F6" />
-          <SolidColorBrush x:Key="DockThemeAccentBrush" Color="#6CB6F0" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushLow" Color="#6CB6F0" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushMed" Color="#4D9DD8" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#2B4256" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#6CB6F0" />
+          <SolidColorBrush x:Key="DockThemeAccentBrush" Color="#62D1CD" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushLow" Color="#62D1CD" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushMed" Color="#85E0DC" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#233F43" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#62D1CD" />
           <SolidColorBrush x:Key="DockApplicationAccentForegroundBrush" Color="#101418" />
         </ResourceDictionary>
 
@@ -133,8 +133,8 @@
     <!-- Fluent's own accent (checkbox, progress bar, expander) follows the Ets palette. -->
     <FluentTheme>
       <FluentTheme.Palettes>
-        <fluent:ColorPaletteResources x:Key="Light" Accent="#0B4F8A" />
-        <fluent:ColorPaletteResources x:Key="Dark" Accent="#6CB6F0" />
+        <fluent:ColorPaletteResources x:Key="Light" Accent="#087E81" />
+        <fluent:ColorPaletteResources x:Key="Dark" Accent="#62D1CD" />
       </FluentTheme.Palettes>
     </FluentTheme>
     <DockFluentTheme />
