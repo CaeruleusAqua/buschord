@@ -775,9 +775,9 @@ public partial class WorkbenchWindow : Window
         toolbar.Children.Add(ActionButton("Vollaufzeichnung …", () => _ = GuardAsync(ExportFullMonitorAsync), "quiet"));
         toolbar.Children.Add(live);
         DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top); panel.Children.Add(toolbar);
-        var header = new Grid { ColumnDefinitions = new("80,90,140,110,60,*"), Height = 28 };
+        var header = new Grid { ColumnDefinitions = new("70,80,120,90,50,70,*"), Height = 28 };
         header.Classes.Add("wb-table-header");
-        var headings = new[] { "Zeit", "Quelle", "Ziel / Gruppenadresse", "Dienst", "DPT", "Wert" };
+        var headings = new[] { "Zeit", "Quelle", "Ziel / Gruppenadresse", "Dienst", "DPT", "Wert", "Herkunft" };
         for (var i = 0; i < headings.Length; i++)
         {
             var text = Label(headings[i]); text.FontSize = 9; text.Classes.Add("wb-muted"); text.Margin = new(6, 0, 0, 0);
@@ -790,12 +790,12 @@ public partial class WorkbenchWindow : Window
         list.ItemTemplate = new FuncDataTemplate<WorkbenchTelegram>((row, _) =>
         {
             if (row is null) return new Border();
-            var grid = new Grid { ColumnDefinitions = new("80,90,140,110,60,*"), Height = 28 };
-            var cells = new[] { row.Timestamp.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture), row.Source, row.Destination, row.Service, row.DatapointType ?? "—", row.Value };
+            var grid = new Grid { ColumnDefinitions = new("70,80,120,90,50,70,*"), Height = 28 };
+            var cells = new[] { row.Timestamp.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture), row.Source, row.Destination, row.Service, row.DatapointType ?? "—", row.Value, row.Origin.ToString() };
             for (var i = 0; i < cells.Length; i++)
             {
                 var cell = Label(cells[i]); cell.FontSize = 10; cell.Margin = new(6, 0, 0, 0);
-                if (i is 0 or 4 or 5) cell.Classes.Add("wb-muted");
+                if (i is 0 or 4 or 5 or 6) cell.Classes.Add("wb-muted");
                 Grid.SetColumn(cell, i); grid.Children.Add(cell);
             }
             return grid;
@@ -852,9 +852,27 @@ public partial class WorkbenchWindow : Window
         }, "quiet"));
         toolbar.Children.Add(Note("SIMULATION · kein realer Download und keine Geräteprogrammierung"));
         DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top); panel.Children.Add(toolbar);
+        var header = new Grid { ColumnDefinitions = new("110,220,100,90,*"), Height = 28 };
+        header.Classes.Add("wb-table-header");
+        var headings = new[] { "Adresse", "Gerät", "Status", "Auftrag", "Hinweis" };
+        for (var i = 0; i < headings.Length; i++)
+        {
+            var text = Label(headings[i]); text.FontSize = 9; text.Classes.Add("wb-muted"); text.Margin = new(6, 0, 0, 0);
+            Grid.SetColumn(text, i); header.Children.Add(text);
+        }
+        DockPanel.SetDock(header, Avalonia.Controls.Dock.Top); panel.Children.Add(header);
         var list = new ListBox { ItemsSource = sessions.Programming.Jobs, Background = Brushes.Transparent };
-        list.ItemTemplate = new FuncDataTemplate<ProgrammingJob>((job, _) => job is null ? new Border() : Label(
-            $"{job.Address} · {job.Name}   {job.Status.ToString().ToUpperInvariant()}   {job.Operation}   {(job.Error ?? "")}"));
+        list.ItemTemplate = new FuncDataTemplate<ProgrammingJob>((job, _) =>
+        {
+            if (job is null) return new Border();
+            var grid = new Grid { ColumnDefinitions = new("110,220,100,90,*"), Height = 28 };
+            var cells = new[] { job.Address, job.Name, job.Status.ToString().ToUpperInvariant(), job.Operation, job.Error ?? "" };
+            for (var i = 0; i < cells.Length; i++)
+            {
+                var cell = Label(cells[i]); cell.FontSize = 10; cell.Margin = new(6, 0, 0, 0); Grid.SetColumn(cell, i); grid.Children.Add(cell);
+            }
+            return grid;
+        });
         panel.Children.Add(list);
         return panel;
     }
