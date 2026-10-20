@@ -1,5 +1,12 @@
 # Workbench V4 — UX, accessibility and interaction review
 
+> Integration status 2026-10-21: captured at `a6292e9`; several findings were fixed
+> afterwards (domain-validated relations view, monitor mode/follow selection,
+> accessible row names, tool-tab spacing, palette keyboard navigation, link-dialog
+> focus/Escape, monitor origin column, programming demand). Residual items remain,
+> especially full keyboard/focus acceptance, English shell localization and
+> legacy-pane reachability.
+
 Commit reviewed: `a6292e9d3f84f97cd51a1c343aa4769814c95532` (integration worktree).
 Review worktree: `C:\projects\ai_work\agent-wt\workbench-v4-design-ux`, branch `agents/workbench-v4/design-ux`.
 Reference: `C:\Users\julia\Downloads\knx-workbench-v4-bundle` (`ANFORDERUNGEN_UND_USER_STORIES.md`, `KONZEPT.md`, `DATENMODELL_UND_ZUSTAENDE.md`), `docs/manual.md`, `analysis/workbench-v4-acceptance.md`, actual code.

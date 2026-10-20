@@ -1,5 +1,11 @@
 ﻿# Workbench V4: visual design review of the whole app
 
+> Integration status 2026-10-21: accent unification, active rail/navigation,
+> document/view tabs, parameter footer, 900 px dock cap, muted inactive rows,
+> selected-row text and text-budget fixes landed after this review. Residual items
+> remain: legacy catalog styling, remaining glyph affordances, overlay elevation
+> and full DPI/focus verification.
+
 Review of the **current** integration tip `e56d8c76aebce7ab4ed64fde1b8287c443951019`
 ("Surface external channels, monitor origin and programming demand"), read-only from
 `C:\projects\ai_work\agent-wt\workbench-v4-integration`. My earlier pass ran on `a6292e9d`;
