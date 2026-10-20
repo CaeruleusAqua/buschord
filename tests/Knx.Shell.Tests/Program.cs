@@ -39,6 +39,7 @@ internal static class Program
         typeof(CatalogLibrary).GetField("_store", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(CatalogLibrary.Shared, new CatalogStore(Path.Combine(Root, "catalog")));
         App.ForcedLanguage = "en";
+        App.TestWindowFactory = () => new MainWindow();
         AppBuilder.Configure<App>().UsePlatformDetect().WithInterFont()
             .AfterSetup(_ => DispatcherTimer.RunOnce(async () => await Run(args), TimeSpan.FromMilliseconds(300)))
             .StartWithClassicDesktopLifetime([]);

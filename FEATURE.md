@@ -1,5 +1,8 @@
 # BusChord — Analyse & Status
 
+V4 shell integration milestone (not full acceptance):
+[native shell, tests and explicit remaining matrix](analysis/workbench-v4-shell-milestone.md).
+
 Aktueller begrenzter REA-Abgleich (2026-10-18):
 [Befunde und implementierte Arbeitsabläufe](analysis/parity-implementation.md).
 Die historischen Featurelisten unten sind kein vollständiger Kompatibilitätsnachweis;

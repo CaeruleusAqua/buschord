@@ -21,7 +21,7 @@ internal static class Screenshot
     public const int Height = 900;
 
     internal static readonly string[] Screens =
-        ["main", "catalog", "parameters", "links", "settings", "new-project", "splash"];
+        ["main", "catalog", "parameters", "links", "settings", "new-project", "splash", "monitor", "inspector"];
 
     /// <summary>PNG path from --screenshot=&lt;path&gt;; null keeps the normal start.</summary>
     public static string? TargetPath { get; set; }
@@ -113,7 +113,7 @@ internal static class Screenshot
         window.Show();
     }
 
-    private static void Write(Window window, string path, PixelSize size)
+    internal static void Write(Window window, string path, PixelSize size)
     {
         var full = System.IO.Path.GetFullPath(path);
         System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
@@ -190,7 +190,8 @@ internal static class Screenshot
             if (!ok) failures++;
         }
 
-        var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "buschord-screenshot");
+        var directory = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Temp", "opencode", "buschord-screenshot-" + Guid.NewGuid().ToString("N"));
         var good = System.IO.Path.Combine(directory, "main.png");
         var bogus = System.IO.Path.Combine(directory, "bogus.png");
         foreach (var file in new[] { good, bogus })
@@ -220,6 +221,8 @@ internal static class Screenshot
     private static int Run(string exe, params string[] arguments)
     {
         var startInfo = new ProcessStartInfo(exe) { UseShellExecute = false };
+        if (System.IO.Path.GetFileNameWithoutExtension(exe).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+            startInfo.ArgumentList.Add(typeof(Screenshot).Assembly.Location);
         foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
         using var process = Process.Start(startInfo)!;
         process.WaitForExit();

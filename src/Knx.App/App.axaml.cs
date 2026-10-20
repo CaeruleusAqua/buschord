@@ -3,11 +3,14 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Knx;
+using Knx.App.Workbench;
 
 namespace Knx.App;
 
 public partial class App : Application
 {
+    /// <summary>Compatibility harness injection; never selected by product settings or command-line options.</summary>
+    public static Func<Window>? TestWindowFactory { get; set; }
     /// <summary>Language code passed on the command line (--lang=en), overriding the settings.</summary>
     public static string? ForcedLanguage { get; set; }
 
@@ -30,17 +33,34 @@ public partial class App : Application
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            if (TestWindowFactory is { } factory)
+            {
+                desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+                desktop.MainWindow = factory();
+                if (desktop.MainWindow is MainWindow compatibilityWindow)
+                    desktop.ShutdownRequested += (_, _) => compatibilityWindow.RequestShutdown();
+                base.OnFrameworkInitializationCompleted();
+                return;
+            }
             // The main window owns the process: closing it also ends floated panels,
             // so a single click on X cannot be swallowed by a floating dock window.
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
-            var window = new MainWindow();
+            var testing = WorkbenchCheck.Enabled || Screenshot.TargetPath is not null;
+            var testCatalog = testing ? new Services.CatalogLibrary(new Knx.Catalog.CatalogStore(Path.Combine(WorkbenchCheck.TestDirectory!, "catalog"))) : null;
+            var window = testing
+                ? new WorkbenchWindow(new Services.MainWindowViewModel(testCatalog!), new Workbench.WorkbenchWorkspace(), catalogLibrary: testCatalog)
+                : new WorkbenchWindow();
             desktop.MainWindow = window;
             desktop.ShutdownRequested += (_, _) => window.RequestShutdown();
 
-            if (Screenshot.TargetPath is { } screenshot)
+            if (WorkbenchCheck.Enabled)
             {
-                // Deliberately no project: loading one writes the real settings file.
-                Screenshot.Capture(desktop, window, screenshot, Screenshot.Screen);
+                WorkbenchCheck.Run(desktop, window);
+            }
+            else if (Screenshot.TargetPath is { } screenshot)
+            {
+                // Synthetic archive and isolated settings/catalogue only; never load the user's startup project.
+                WorkbenchCheck.Capture(desktop, window, screenshot, Screenshot.Screen);
             }
             else
             {
