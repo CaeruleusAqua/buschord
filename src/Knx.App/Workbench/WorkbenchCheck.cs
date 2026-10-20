@@ -122,6 +122,8 @@ internal static class WorkbenchCheck
             void Check(string name, bool value) { Console.WriteLine($"{(value ? "PASS" : "FAIL")} {name}"); if (!value) failures.Add(name); }
             try
             {
+                Check("empty workbench offers project start actions", window.FindControl<ContentControl>("ToolPageHost")?.Content is StackPanel start
+                    && start.Children.OfType<Button>().Any(b => Equals(b.Content, "Projekt öffnen …")));
                 LoadFixture(window);
                 var p = window.ViewModel.Project!;
                 var d = ProjectQuery.DeviceList(p).First();
