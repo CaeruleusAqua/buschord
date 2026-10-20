@@ -97,6 +97,7 @@ public enum InstallationType { Unknown, Regular, Partial }
 /// <summary>ETS project root (knxproj: Project).</summary>
 public sealed class Project
 {
+    public Workbench.WorkbenchMetadata Workbench { get; set; } = new();
     internal ArchiveState? ArchiveState { get; set; }
     internal System.Xml.Linq.XDocument? OriginalXml { get; set; }
     internal System.Xml.Linq.XDocument? BaselineXml { get; set; }

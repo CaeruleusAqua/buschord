@@ -5,4 +5,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Knx</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Workbench\demo-project.json" LogicalName="Knx.Workbench.demo-project.json" />
+  </ItemGroup>
 </Project>

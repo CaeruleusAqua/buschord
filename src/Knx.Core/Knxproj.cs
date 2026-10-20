@@ -138,6 +138,9 @@ public static class Knxproj
             installationsEl.Add(installationEl);
         }
         projectEl.Add(installationsEl);
+        if (!project.Workbench.IsEmpty)
+            projectEl.Add(new XElement(ExtensionNamespace + "Workbench", new XAttribute("Version", 1),
+                new XAttribute("Data", System.Text.Json.JsonSerializer.Serialize(project.Workbench))));
         var knx = new XElement(ns + XmlNames.Knx,
             new XAttribute("xmlns", ns),
             new XAttribute(XNamespace.Xmlns + "xsi", XNamespace.Get("http://www.w3.org/2001/XMLSchema-instance")),
@@ -297,6 +300,12 @@ public static class Knxproj
                 installation.MainRanges.Add(ReadRange(rangeEl));
             if (Element(instEl, XmlNames.Locations) is { } locations) ReadLocations(installation, locations);
             project.Installations.Add(installation);
+        }
+        if (proj.Element(ExtensionNamespace + "Workbench") is { } workbench)
+        {
+            if ((int?)workbench.Attribute("Version") != 1) throw new InvalidDataException("Unsupported BusChord Workbench metadata version.");
+            project.Workbench = System.Text.Json.JsonSerializer.Deserialize<Workbench.WorkbenchMetadata>((string?)workbench.Attribute("Data") ?? "")
+                ?? throw new InvalidDataException("Invalid BusChord Workbench metadata.");
         }
         project.BaselineXml = GenerateXml(project);
         project.OriginalXml = new XDocument(doc);
