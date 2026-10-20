@@ -1,7 +1,9 @@
 using System.Collections.Specialized;
+using System.Collections.Concurrent;
 using System.Text;
 using Knx;
 using Knx.App.Workbench;
+using Knx.Bus;
 
 var checks = 0;
 void Check(string name, bool condition)
@@ -29,6 +31,37 @@ range.Addresses.Add(new() { Id = "G1", Name = "Light", Address = GroupAddress.Th
 range.Addresses.Add(new() { Id = "G2", Name = "Status", Address = GroupAddress.ThreeLevel(1, 1, 2), DatapointType = "DPST-1-1" });
 installation.MainRanges.Add(range);
 var coordinator = new InterfaceCoordinator();
+var realSource = new FakeTelegramSource();
+using (var realMonitor = new MonitorSession(coordinator, () => project))
+{
+    realMonitor.ConfigureReal("fake-real-interface", realSource);
+    realSource.IsConnected = false;
+    Reject("real source must be connected explicitly", realMonitor.Start);
+    realSource.IsConnected = true; realMonitor.Start(); realMonitor.Start();
+    Check("real Start is idempotent, one subscription", realSource.SubscriberCount == 1);
+    var events = 0;
+    ((INotifyCollectionChanged)realMonitor.Rows).CollectionChanged += (_, _) => events++;
+    var payload = new byte[] { 1 };
+    await Task.Run(() => Parallel.For(0, 600, _ => realSource.Send(new BusTelegram
+    {
+        Source = "fake transport", Telegram = new Telegram
+        {
+            Source = device.Address, Destination = new IndividualAddress(range.Addresses[0].Address.Raw),
+            IsGroupAddress = true, Apci = Apci.GroupValueWrite, Data = payload,
+        },
+    })));
+    payload[0] = 0;
+    Check("background real feed never raises observable UI events", events == 0 && realMonitor.RecordedCount == 600);
+    realMonitor.FlushDisplay();
+    var row = realMonitor.Rows[0];
+    Check("real capture copies payload and resolves source/destination/DPT/identity", realMonitor.Rows.Count == 500 && events == 1 &&
+        row.Source == "1.1.1" && row.Destination == "1/1/1" && row.DeviceId == device.Id && row.GroupAddressId == "G1" &&
+        row.DatapointType == "DPST-1-1" && row.Origin == SessionOrigin.Real && row.DataHex == "01");
+    Reject("demo tick cannot enter a real session", () => realMonitor.TickDemo(new(DateTimeOffset.Now, "1.1.1", "1/1/1", "Write", null, "1", SessionOrigin.Demo)));
+    realMonitor.Stop(); Check("stop unsubscribes real adapter", realSource.SubscriberCount == 0);
+    realMonitor.Start(); realMonitor.Dispose();
+    Check("dispose unsubscribes real adapter", realSource.SubscriberCount == 0);
+}
 using (var monitor = new MonitorSession(coordinator, () => project))
 {
     var resets = 0;
@@ -42,6 +75,9 @@ using (var monitor = new MonitorSession(coordinator, () => project))
     Check("bounded 500-row display, one coalesced reset", monitor.Rows.Count == 500 && resets == 1);
     monitor.SetFollowSelection(true, ko.Id);
     Check("KO follows ALL linked GAs", monitor.FilteredRows.Count == 500);
+    ko.Links.Remove("G2"); monitor.RefreshFilter();
+    Check("follow reevaluates changed KO membership", monitor.FilteredRows.Count == 250);
+    ko.Links.Add("G2"); monitor.RefreshFilter();
     monitor.SelectionChanged(null); Check("no selection is not all traffic", monitor.FilteredRows.Count == 0);
     monitor.PinFilter(new(MonitorScope.GroupAddress, "G1")); monitor.SelectionChanged(ko.Id);
     Check("pinned GA survives selection/tab changes", monitor.FilteredRows.Count == 250 && !monitor.FollowSelection);
@@ -84,13 +120,24 @@ Check("GA address changes affect device signature", before.Signature != DeviceCo
 range.Addresses[0].Address = GroupAddress.ThreeLevel(1, 1, 1);
 ko.Links.Reverse();
 Check("equivalent link order does not change signature", before.Signature == DeviceConfigurationSnapshot.Freeze(project, device).Signature);
+range.Addresses[0].DatapointType = "DPST-5-1";
+Check("GA DPT changes affect device signature", before.Signature != DeviceConfigurationSnapshot.Freeze(project, device).Signature);
+range.Addresses[0].DatapointType = "DPST-1-1";
+device.Address = new(1, 1, 2);
+Check("physical address changes affect signature", before.Signature != DeviceConfigurationSnapshot.Freeze(project, device).Signature);
+device.Address = new(1, 1, 1);
+line.MediumTypeRefId = "MT-1";
+Check("topology medium changes affect signature", before.Signature != DeviceConfigurationSnapshot.Freeze(project, device).Signature);
+line.MediumTypeRefId = "MT-0";
 
 var attempts = 0;
+var failNext = false;
 var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 await using (var queue = new ProgrammingSession(coordinator, () => project, demoExecutor: async (job, token) =>
 {
     attempts++;
+    if (failNext) throw new IOException("Later failure");
     if (attempts == 1) { entered.SetResult(); await release.Task.WaitAsync(token); throw new IOException("Synthetic demo failure"); }
 }))
 {
@@ -118,6 +165,8 @@ await using (var queue = new ProgrammingSession(coordinator, () => project, demo
     await using var restored = new ProgrammingSession(coordinator, () => project);
     restored.ImportDownloadedJson(persisted);
     Check("downloaded comparison JSON roundtrip", restored.Downloaded.Single() == queue.Downloaded.Single() && restored.NeedsProgramming(device.Id));
+    try { restored.ImportDownloadedJson(persisted.Replace("\"ProjectId\":\"P\"", "\"ProjectId\":\"other\"")); throw new Exception("Expected invalid project"); }
+    catch (FormatException) { Check("invalid comparison import is atomic", restored.Downloaded.Single() == queue.Downloaded.Single()); }
     using var blocker = new MonitorSession(coordinator, () => project);
     blocker.Configure(WorkbenchMonitorMode.Bus, SessionOrigin.Demo, "demo-ip"); blocker.Start();
     var blockedJob = restored.Enqueue(device.Id);
@@ -125,6 +174,10 @@ await using (var queue = new ProgrammingSession(coordinator, () => project, demo
     catch (InvalidOperationException) { Check("blocked queue retains queued job and unlocks", !restored.IsRunning && blockedJob.Status == ProgrammingJobStatus.Queued); }
     blocker.Stop(); await restored.RunAsync();
     Check("queue starts after interface released", blockedJob.Status == ProgrammingJobStatus.Done);
+    failNext = true;
+    var previousDownloaded = queue.Downloaded.Single();
+    var laterFailed = queue.Enqueue(device.Id); await queue.RunAsync();
+    Check("later failure preserves previous successful baseline", laterFailed.Status == ProgrammingJobStatus.Failed && queue.Downloaded.Single() == previousDownloaded);
 }
 
 var cancellationEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -136,4 +189,78 @@ var cancelledJob = cancelled.Enqueue(device.Id); var pending = cancelled.RunAsyn
 await cancelled.DisposeAsync(); await pending;
 Check("explicit async dispose cancels and joins owned queue", cancelledJob.Status == ProgrammingJobStatus.Failed && !cancelled.IsRunning && cancelled.Downloaded.Count == 0);
 Check("cancelled queue releases interface", coordinator.TryAcquire("demo-ip", InterfaceActivity.Scan, out var lastLease)); lastLease?.Dispose();
+
+Project? current = project;
+await using (var scoped = new WorkbenchSessions(() => current))
+{
+    scoped.Programming.Enqueue(device.Id);
+    scoped.Monitor.PinFilter(new(MonitorScope.Project));
+    current = new Project { Id = "OtherProject", Name = "Other" };
+    Reject("comparison state/jobs cannot silently migrate to another project", () => scoped.Programming.NeedsProgramming(device.Id));
+    Reject("monitor cannot silently migrate to another project", scoped.Monitor.Start);
+}
+current = project;
+Check("disposal does not resolve a changed project or filter", true);
+
+var appended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var finishFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var executions = 0;
+await using (var growingQueue = new ProgrammingSession(coordinator, () => project, demoExecutor: async (_, token) =>
+{
+    if (++executions == 1) { appended.SetResult(); await finishFirst.Task.WaitAsync(token); }
+}))
+{
+    growingQueue.Enqueue(device.Id);
+    var running = growingQueue.RunAsync(); await appended.Task;
+    var appendedJob = growingQueue.Enqueue(device.Id);
+    finishFirst.SetResult(); await running;
+    Check("jobs enqueued during execution drain in the same run", appendedJob.Status == ProgrammingJobStatus.Done && executions == 2);
+}
+
+PumpContext.Run(async () =>
+{
+    var owner = SynchronizationContext.Current;
+    var ownerEventsOnly = true;
+    await using var uiQueue = new ProgrammingSession(coordinator, () => project, demoExecutor: async (_, token) => await Task.Delay(10, token));
+    uiQueue.PropertyChanged += (_, _) => ownerEventsOnly &= SynchronizationContext.Current == owner;
+    ((INotifyCollectionChanged)uiQueue.Downloaded).CollectionChanged += (_, _) => ownerEventsOnly &= SynchronizationContext.Current == owner;
+    var job = uiQueue.Enqueue(device.Id);
+    job.PropertyChanged += (_, _) => ownerEventsOnly &= SynchronizationContext.Current == owner;
+    await Task.Run(() =>
+    {
+        try { uiQueue.Enqueue(device.Id); throw new Exception("Expected owner boundary"); }
+        catch (InvalidOperationException) { }
+    });
+    await uiQueue.RunAsync();
+    Check("async queue notifications return to owning UI context", ownerEventsOnly && job.Status == ProgrammingJobStatus.Done);
+});
 Console.WriteLine($"{checks} checks passed.");
+
+sealed class FakeTelegramSource : IMonitorTelegramSource
+{
+    private Action<BusTelegram>? _received;
+    public bool IsConnected { get; set; } = true;
+    public int SubscriberCount => _received?.GetInvocationList().Length ?? 0;
+    public event Action<BusTelegram> TelegramReceived { add => _received += value; remove => _received -= value; }
+    public void Send(BusTelegram telegram) => _received?.Invoke(telegram);
+}
+
+sealed class PumpContext : SynchronizationContext
+{
+    private readonly BlockingCollection<(SendOrPostCallback Callback, object? State)> _work = new();
+    public override void Post(SendOrPostCallback d, object? state) => _work.Add((d, state));
+    public static void Run(Func<Task> action)
+    {
+        var previous = Current;
+        var context = new PumpContext();
+        SetSynchronizationContext(context);
+        try
+        {
+            var task = action();
+            while (!task.IsCompleted)
+                if (context._work.TryTake(out var item, 100)) item.Callback(item.State);
+            task.GetAwaiter().GetResult();
+        }
+        finally { SetSynchronizationContext(previous); context._work.Dispose(); }
+    }
+}

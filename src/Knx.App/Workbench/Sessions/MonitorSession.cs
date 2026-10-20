@@ -13,6 +13,23 @@ public sealed record WorkbenchTelegram(DateTimeOffset Timestamp, string Source, 
     string Service, string? DatapointType, string Value, SessionOrigin Origin,
     string? GroupAddressId = null, string? DeviceId = null, string DataHex = "", bool IsGroup = true);
 
+/// <summary>Receive-only seam; implementations must not start a network connection implicitly.</summary>
+public interface IMonitorTelegramSource
+{
+    bool IsConnected { get; }
+    event Action<BusTelegram> TelegramReceived;
+}
+
+public sealed class KnxBusMonitorSource(KnxBus bus) : IMonitorTelegramSource
+{
+    public bool IsConnected => bus.State == BusConnectionState.Connected;
+    public event Action<BusTelegram> TelegramReceived
+    {
+        add => bus.TelegramReceived += value;
+        remove => bus.TelegramReceived -= value;
+    }
+}
+
 /// <summary>
 /// Full CSV recording is disk-backed and independent of the 500-row display tail. Ingest is thread-safe;
 /// call FlushDisplay on a UI timer (e.g. 100 ms) to coalesce observable updates. No view owns capture.
@@ -33,7 +50,10 @@ public sealed class MonitorSession : SessionState, IDisposable
     private Dictionary<ushort, (string Id, string? Dpt)> _groups = [];
     private Dictionary<string, string> _devices = [];
     private IDisposable? _lease;
-    private KnxBus? _bus;
+    private IMonitorTelegramSource? _bus;
+    private Action<BusTelegram>? _receive;
+    private long _generation;
+    private string? _error;
     private bool _running, _disposed, _follow;
     private long _count, _publishedCount = -1;
     private MonitorFilter _filter = new(MonitorScope.All);
@@ -41,7 +61,7 @@ public sealed class MonitorSession : SessionState, IDisposable
     public MonitorSession(InterfaceCoordinator interfaces, Func<Project?> project,
         Func<MonitorFilter, IReadOnlySet<string>>? resolveGroupIds = null)
     {
-        _interfaces = interfaces; _project = project; _resolve = resolveGroupIds;
+        _interfaces = interfaces; _project = new SessionProject(project).Get; _resolve = resolveGroupIds;
         Rows = new(_rows); FilteredRows = new(_filtered);
         var path = Path.Combine(Path.GetTempPath(), $"buschord-monitor-{Guid.NewGuid():N}.csv");
         _recording = new(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read,
@@ -52,72 +72,105 @@ public sealed class MonitorSession : SessionState, IDisposable
 
     public ReadOnlyObservableCollection<WorkbenchTelegram> Rows { get; }
     public ReadOnlyObservableCollection<WorkbenchTelegram> FilteredRows { get; }
-    public bool IsRunning => _running;
+    public bool IsRunning { get { lock (_gate) return _running; } }
     public bool FollowSelection => _follow;
     public MonitorFilter Filter => _filter;
     public WorkbenchMonitorMode Mode { get; private set; }
     public SessionOrigin Origin { get; private set; } = SessionOrigin.Demo;
     public string InterfaceId { get; private set; } = "demo-ip";
     public long RecordedCount { get { lock (_gate) return _count; } }
+    public string? LastError { get { lock (_gate) return _error; } }
 
     /// <summary>Real mode borrows an already connected bus; never connects, writes or disposes that bus.</summary>
     public void Configure(WorkbenchMonitorMode mode, SessionOrigin origin, string interfaceId, KnxBus? bus = null)
+        => ConfigureCore(mode, origin, interfaceId, bus is null ? null : new KnxBusMonitorSource(bus));
+
+    private void ConfigureCore(WorkbenchMonitorMode mode, SessionOrigin origin, string interfaceId, IMonitorTelegramSource? source)
     {
         VerifyAccess(); ThrowIfDisposed();
         if (IsRunning) throw new InvalidOperationException("Stop the monitor before changing interface or mode.");
         ArgumentException.ThrowIfNullOrWhiteSpace(interfaceId);
+        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+        if (!Enum.IsDefined(origin)) throw new ArgumentOutOfRangeException(nameof(origin));
         if (origin == SessionOrigin.Real && mode == WorkbenchMonitorMode.Bus)
             throw new NotSupportedException("KnxBus supplies group traffic, not a hardware bus-monitor adapter.");
-        if (origin == SessionOrigin.Real && bus is null) throw new ArgumentNullException(nameof(bus));
-        Mode = mode; Origin = origin; InterfaceId = interfaceId; _bus = bus;
+        if (origin == SessionOrigin.Real && source is null) throw new ArgumentNullException(nameof(source));
+        ReleaseInterface();
+        Mode = mode; Origin = origin; InterfaceId = interfaceId; _bus = source;
         OnPropertyChanged(nameof(Mode)); OnPropertyChanged(nameof(Origin)); OnPropertyChanged(nameof(InterfaceId));
+    }
+
+    public void ConfigureReal(string interfaceId, IMonitorTelegramSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ConfigureCore(WorkbenchMonitorMode.Group, SessionOrigin.Real, interfaceId, source);
     }
 
     public void Start()
     {
         VerifyAccess(); ThrowIfDisposed();
         if (IsRunning) return;
-        if (Origin == SessionOrigin.Real && _bus?.State != BusConnectionState.Connected)
+        ReleaseInterface();
+        if (Origin == SessionOrigin.Real && _bus?.IsConnected != true)
             throw new InvalidOperationException("The real bus must already be connected.");
-        var project = _project();
-        _groups = project is null ? [] : ProjectQuery.GroupAddresses(project)
-            .GroupBy(g => g.Address.Raw).ToDictionary(g => g.Key, g => (g.First().Id, g.First().DatapointType));
-        _devices = project is null ? [] : ProjectQuery.DeviceList(project)
-            .GroupBy(d => d.Address.ToString()).ToDictionary(g => g.Key, g => g.First().Id);
+        RefreshMetadata();
         if (!_interfaces.TryAcquire(InterfaceId, Mode == WorkbenchMonitorMode.Bus
                 ? InterfaceActivity.BusMonitor : InterfaceActivity.GroupMonitor, out _lease))
             throw new InvalidOperationException("The interface is occupied by a conflicting operation.");
-        lock (_gate) _running = true;
-        if (Origin == SessionOrigin.Real) _bus!.TelegramReceived += Receive;
+        lock (_gate) { _running = true; _error = null; _generation++; }
+        try
+        {
+            if (Origin == SessionOrigin.Real)
+            {
+                var generation = _generation;
+                _receive = telegram => IngestReal(telegram, generation);
+                _bus!.TelegramReceived += _receive;
+            }
+        }
+        catch
+        {
+            lock (_gate) _running = false;
+            ReleaseInterface();
+            throw;
+        }
+        OnPropertyChanged(nameof(LastError));
         OnPropertyChanged(nameof(IsRunning));
     }
 
     public void Stop()
     {
         VerifyAccess();
-        lock (_gate) _running = false;
-        if (_bus is not null) _bus.TelegramReceived -= Receive;
-        _lease?.Dispose(); _lease = null;
+        lock (_gate) { _running = false; _generation++; }
+        ReleaseInterface();
         OnPropertyChanged(nameof(IsRunning));
         if (!_disposed) FlushDisplay();
     }
 
-    private void Receive(BusTelegram telegram) => IngestReal(telegram);
+    private void ReleaseInterface()
+    {
+        if (_bus is not null && _receive is not null) _bus.TelegramReceived -= _receive;
+        _receive = null;
+        _lease?.Dispose(); _lease = null;
+    }
 
     /// <summary>Real adapter feed. Payload and metadata are copied immediately, never retained as mutable frames.</summary>
-    public void IngestReal(BusTelegram telegram)
+    public void IngestReal(BusTelegram telegram) => IngestReal(telegram, null);
+
+    private void IngestReal(BusTelegram telegram, long? generation)
     {
         lock (_gate)
         {
-            if (!_running || _disposed || Origin != SessionOrigin.Real) return;
+            if (!_running || _disposed || Origin != SessionOrigin.Real ||
+                (generation is not null && generation != _generation) || telegram?.Telegram is null) return;
             var frame = telegram.Telegram;
+            var data = frame.Data?.ToArray() ?? [];
             var group = frame.IsGroupAddress && _groups.TryGetValue((ushort)(frame.Destination.Raw & 0x7fff), out var g)
                 ? g : default;
-            var (value, unit) = GroupMonitor.DecodeValue(group.Dpt, frame.Data);
+            var (value, unit) = GroupMonitor.DecodeValue(group.Dpt, data);
             Append(new(telegram.Timestamp, frame.Source.ToString(), frame.IsGroupAddress
                 ? GroupMonitor.GroupText(frame.Destination.Raw) : frame.Destination.ToString(),
                 frame.Apci.ToString(), group.Dpt, value + (unit.Length == 0 ? "" : " " + unit), SessionOrigin.Real,
-                group.Id, _devices.GetValueOrDefault(frame.Source.ToString()), Convert.ToHexString(frame.Data ?? []), frame.IsGroupAddress));
+                group.Id, _devices.GetValueOrDefault(frame.Source.ToString()), Convert.ToHexString(data), frame.IsGroupAddress));
         }
     }
 
@@ -135,7 +188,13 @@ public sealed class MonitorSession : SessionState, IDisposable
 
     private void Append(WorkbenchTelegram telegram)
     {
-        _writer.Write(CsvRow(telegram));
+        try { _writer.Write(CsvRow(telegram)); }
+        catch (IOException ex)
+        {
+            _error = "Recording stopped: " + ex.Message;
+            _running = false;
+            return;
+        }
         _count++;
         _tail.Enqueue(telegram);
         if (_tail.Count > DisplayCapacity) _tail.Dequeue();
@@ -144,6 +203,9 @@ public sealed class MonitorSession : SessionState, IDisposable
     public void PinFilter(MonitorFilter filter)
     {
         VerifyAccess(); ThrowIfDisposed(); ArgumentNullException.ThrowIfNull(filter);
+        if (!Enum.IsDefined(filter.Scope)) throw new ArgumentOutOfRangeException(nameof(filter));
+        if (filter.Scope is MonitorScope.ComObject or MonitorScope.GroupAddress or MonitorScope.Room)
+            ArgumentException.ThrowIfNullOrWhiteSpace(filter.Id);
         _follow = false; _filter = filter;
         OnPropertyChanged(nameof(FollowSelection)); OnPropertyChanged(nameof(Filter)); Refilter();
     }
@@ -166,6 +228,11 @@ public sealed class MonitorSession : SessionState, IDisposable
     public void FlushDisplay()
     {
         VerifyAccess(); ThrowIfDisposed();
+        if (!_running && _lease is not null)
+        {
+            ReleaseInterface();
+            OnPropertyChanged(nameof(IsRunning)); OnPropertyChanged(nameof(LastError));
+        }
         WorkbenchTelegram[] rows;
         lock (_gate)
         {
@@ -176,7 +243,17 @@ public sealed class MonitorSession : SessionState, IDisposable
     }
 
     /// <summary>Call after project/link changes to reevaluate dynamic room/project/KO membership.</summary>
-    public void RefreshFilter() { VerifyAccess(); ThrowIfDisposed(); Refilter(); }
+    public void RefreshFilter() { VerifyAccess(); ThrowIfDisposed(); RefreshMetadata(); Refilter(); }
+
+    private void RefreshMetadata()
+    {
+        var project = _project();
+        var groups = project is null ? [] : ProjectQuery.GroupAddresses(project)
+            .GroupBy(g => g.Address.Raw).ToDictionary(g => g.Key, g => (g.First().Id, g.First().DatapointType));
+        var devices = project is null ? [] : ProjectQuery.DeviceList(project)
+            .GroupBy(d => d.Address.ToString()).ToDictionary(g => g.Key, g => g.First().Id);
+        lock (_gate) { _groups = groups; _devices = devices; }
+    }
 
     private void Refilter()
     {
@@ -231,7 +308,16 @@ public sealed class MonitorSession : SessionState, IDisposable
     {
         VerifyAccess();
         if (_disposed) return;
-        Stop();
-        lock (_gate) { _disposed = true; _writer.Dispose(); _recording.Dispose(); }
+        lock (_gate)
+        {
+            _disposed = true; _running = false; _generation++;
+            try { ReleaseInterface(); }
+            finally
+            {
+                try { _writer.Dispose(); }
+                finally { _recording.Dispose(); }
+            }
+        }
+        OnPropertyChanged(nameof(IsRunning));
     }
 }

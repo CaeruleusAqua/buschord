@@ -17,14 +17,15 @@ public sealed class WorkbenchSessions : IAsyncDisposable
         Func<Project, DeviceInstance, FrozenConfiguration>? freezeConfiguration = null,
         Func<ProgrammingJob, CancellationToken, Task>? demoExecutor = null)
     {
-        Monitor = new(Interfaces, project, resolveGroupIds);
-        Programming = new(Interfaces, project, freezeConfiguration, demoExecutor);
+        var scopedProject = new SessionProject(project);
+        Monitor = new(Interfaces, scopedProject.Get, resolveGroupIds);
+        Programming = new(Interfaces, scopedProject.Get, freezeConfiguration, demoExecutor);
     }
 
     public async ValueTask DisposeAsync()
     {
-        Monitor.Dispose();
-        await Programming.DisposeAsync();
+        try { Monitor.Dispose(); }
+        finally { await Programming.DisposeAsync(); }
     }
 }
 
@@ -40,6 +41,7 @@ public sealed class InterfaceCoordinator
     public bool TryAcquire(string interfaceId, InterfaceActivity activity, out IDisposable? lease)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(interfaceId);
+        if (!Enum.IsDefined(activity)) throw new ArgumentOutOfRangeException(nameof(activity));
         lock (_gate)
         {
             if (_active.Any(r => r.InterfaceId == interfaceId &&
@@ -87,5 +89,20 @@ internal sealed class SnapshotCollection<T> : ObservableCollection<T>
         OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
         OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
         OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+    }
+}
+
+/// <summary>Undo may replace the project instance, but switching project identity requires fresh sessions.</summary>
+internal sealed class SessionProject(Func<Project?> provider)
+{
+    private string? _id;
+    public Project? Get()
+    {
+        var project = provider();
+        if (project is null) return null;
+        _id ??= project.Id;
+        if (_id != project.Id)
+            throw new InvalidOperationException("Dispose the previous project's sessions before switching project identity.");
+        return project;
     }
 }

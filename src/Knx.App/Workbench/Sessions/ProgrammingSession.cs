@@ -52,7 +52,7 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
         Func<Project, DeviceInstance, FrozenConfiguration>? freezeConfiguration = null,
         Func<ProgrammingJob, CancellationToken, Task>? demoExecutor = null)
     {
-        _interfaces = interfaces; _project = project;
+        _interfaces = interfaces; _project = new SessionProject(project).Get;
         _freeze = freezeConfiguration ?? DeviceConfigurationSnapshot.Freeze;
         _execute = demoExecutor ?? ((_, token) => Task.Delay(150, token));
         Jobs = new(_jobs); Downloaded = new(_downloaded);
@@ -110,6 +110,7 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
     {
         VerifyAccess(); ThrowIfDisposed();
         if (IsRunning) return _run;
+        _ = _project() ?? throw new InvalidOperationException("No project is open.");
         _cancellation?.Dispose();
         _cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _running = true; OnPropertyChanged(nameof(IsRunning));
@@ -121,9 +122,9 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
     {
         try
         {
-            foreach (var job in _jobs.Where(j => j.Status == ProgrammingJobStatus.Queued).ToArray())
+            while (!token.IsCancellationRequested &&
+                _jobs.FirstOrDefault(j => j.Status == ProgrammingJobStatus.Queued) is { } job)
             {
-                if (token.IsCancellationRequested) break;
                 if (!_interfaces.TryAcquire(job.InterfaceId, InterfaceActivity.Programming, out var lease))
                     throw new InvalidOperationException("The interface is occupied by a conflicting operation; queued jobs were retained.");
                 using (lease)
@@ -134,15 +135,16 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
                     {
                         await _execute(job, token);
                         token.ThrowIfCancellationRequested();
-                        _states[job.DeviceId] = new(job.DeviceId, job.Configuration.Signature, DateTimeOffset.UtcNow, SessionOrigin.Demo);
-                        PublishDownloaded();
-                        job.Change(ProgrammingJobStatus.Done);
                     }
                     catch (Exception ex)
                     {
                         job.Change(ProgrammingJobStatus.Failed, ex is OperationCanceledException ? "Cancelled; no success recorded." : ex.Message);
+                        continue;
                     }
                     finally { _activeDevice = null; OnPropertyChanged(nameof(ActiveDeviceId)); }
+                    _states[job.DeviceId] = new(job.DeviceId, job.Configuration.Signature, DateTimeOffset.UtcNow, SessionOrigin.Demo);
+                    job.Change(ProgrammingJobStatus.Done);
+                    PublishDownloaded();
                 }
             }
         }
