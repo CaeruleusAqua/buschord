@@ -59,4 +59,6 @@ Console.WriteLine(JsonSerializer.Serialize(new
     ProcessorCount = Environment.ProcessorCount,
     Coverage = "Domain projection/filter only; not native rendering, virtualization or monitor concurrency."
 }, new JsonSerializerOptions { WriteIndented = true }));
+GC.KeepAlive(project);
+GC.KeepAlive(all);
 Console.WriteLine("WORKBENCH LARGE-PROJECTION CHECKS OK");
