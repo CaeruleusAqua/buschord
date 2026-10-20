@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Knx.App.Services;
+using Knx.Workbench;
 
 namespace Knx.App.Workbench;
 
@@ -38,37 +39,80 @@ public static class WorkbenchProjection
     {
         var addresses = new Dictionary<string, GroupAddressEntry>(StringComparer.Ordinal);
         foreach (var entry in ProjectQuery.GroupAddresses(p)) addresses.TryAdd(entry.Id, entry);
-        var result = new List<WorkbenchRow>();
-        var ga = Resolve(p, tab.Target) as GroupAddressEntry;
-        foreach (var d in Devices(p, tab.Target))
+        var scope = tab.Target.Kind switch
         {
-            var objects = d.ComObjectRefs.Where(o => ga is null || o.Links.Contains(ga.Id))
-                .Where(o => !tab.UnlinkedOnly || o.Links.Count == 0)
-                .Where(o => Match(tab.Filter, d.Name, d.Address.ToString(), o.Text, o.FunctionText, o.Number.ToString(),
-                    string.Join(" ", o.Links.Select(id => addresses.TryGetValue(id, out var g) ? $"{g.Address} {g.Name}" : id)))).ToList();
-            if (objects.Count == 0 && (tab.UnlinkedOnly || tab.Filter.Length > 0 || ga is not null)) continue;
+            "room" => new WorkbenchScope(WorkbenchScopeKind.Room, tab.Target.Id, tab.IncludeRelated),
+            "line" => new WorkbenchScope(WorkbenchScopeKind.Line, tab.Target.Id),
+            "device" => new WorkbenchScope(WorkbenchScopeKind.Device, tab.Target.Id),
+            "ga" => new WorkbenchScope(WorkbenchScopeKind.GroupAddress, tab.Target.Id),
+            _ => new WorkbenchScope(WorkbenchScopeKind.Project)
+        };
+        var all = WorkbenchProject.ScopeObjects(p, scope with { IncludeInactive = true });
+        var result = new List<WorkbenchRow>();
+        foreach (var deviceGroup in all.GroupBy(r => r.Device)
+                     .OrderBy(g => g.Key.Address.Area).ThenBy(g => g.Key.Address.Line).ThenBy(g => g.Key.Address.Device))
+        {
+            var d = deviceGroup.Key;
+            var objects = deviceGroup
+                .Where(r => !tab.UnlinkedOnly || r.Object.Links.Count == 0)
+                .Where(r => Match(tab.Filter, d.Name, d.Address.ToString(), r.Object.Text, r.Object.FunctionText, r.Object.Number.ToString(),
+                    string.Join(" ", r.Object.Links.Select(id => addresses.TryGetValue(id, out var g) ? $"{g.Address} {g.Name}" : id))))
+                .OrderBy(r => r.Metadata?.ChannelId, StringComparer.Ordinal)
+                .ThenBy(r => r.Object.Number).ToList();
+            if (objects.Count == 0 && (tab.UnlinkedOnly || tab.Filter.Length > 0 || tab.Target.Kind == "ga")) continue;
+            var external = objects.Any(r => r.External);
             result.Add(new("device:" + d.Id, "device", d.Name ?? d.Address.ToString(), d.Address.ToString(), d, null, 0,
-                !tab.CollapsedDeviceIds.Contains(d.Id), true));
+                !tab.CollapsedDeviceIds.Contains(d.Id), true, External: external));
             if (tab.CollapsedDeviceIds.Contains(d.Id)) continue;
-            foreach (var channel in d.Channels) AddChannel(channel, 1);
-            if (d.Channels.Count > 0)
-                result.Add(new("unassigned:" + d.Id, "group", "Kommunikationsobjekte · kein Kanalbezug hinterlegt", "", d, null, 1, true, false));
-            foreach (var o in objects)
+            var hasChannelMetadata = objects.Any(r => r.Metadata?.ChannelId is not null);
+            if (!hasChannelMetadata && d.Channels.Count > 0)
             {
-                var links = o.Links.Distinct().Select(id => addresses.TryGetValue(id, out var g) ? g.Address.ToString() : id).ToList();
-                result.Add(new(ObjectKey(d, o), "object", o.Text ?? o.FunctionText ?? o.Id, "#" + o.Number, d, o, 2,
-                    false, false, string.Join("  ", links.Take(2)) + (links.Count > 2 ? $"  +{links.Count - 2}" : ""),
-                    string.Join("\n", o.Links.Select(id => addresses.TryGetValue(id, out var g) ? $"{g.Address} · {g.Name}" : id))));
+                // Native projects have no Workbench channel metadata: keep the manufacturer hierarchy visible.
+                foreach (var channel in d.Channels) AddNativeChannel(d, channel, 1);
+                if (objects.Count > 0)
+                    result.Add(new("unassigned:" + d.Id, "group", "Ohne Kanalbezug", "", d, null, 1, true, false));
+                foreach (var r in objects) result.Add(ObjectRowOf(r, 2, addresses));
+                continue;
             }
-            void AddChannel(ChannelInstance ch, int depth)
+            var channelNames = d.Channels.ToDictionary(c => c.Id, c => c.Name, StringComparer.Ordinal);
+            foreach (var channel in objects.Where(r => r.Metadata?.ChannelId is not null)
+                         .GroupBy(r => r.Metadata!.ChannelId!).OrderBy(g => g.Key, StringComparer.Ordinal))
             {
-                var key = "channel:" + d.Id + ":" + ch.Id;
+                var name = channelNames.GetValueOrDefault(channel.Key, channel.Key);
+                var key = "channel:" + d.Id + ":" + channel.Key;
                 var expanded = !tab.CollapsedDeviceIds.Contains(key);
-                result.Add(new(key, "channel", ch.Name, "", d, null, depth, expanded, ch.Channels.Count > 0));
-                if (expanded) foreach (var child in ch.Channels) AddChannel(child, depth + 1);
+                result.Add(new(key, "channel", name, "", d, null, 1, expanded, true, External: channel.Any(r => r.External)));
+                if (expanded)
+                    foreach (var r in channel)
+                        result.Add(ObjectRowOf(r, 2, addresses));
             }
+            var unassigned = objects.Where(r => r.Metadata?.ChannelId is null).ToList();
+            if (unassigned.Count > 0 && d.Channels.Count > 0)
+                result.Add(new("unassigned:" + d.Id, "group", "Ohne Kanalbezug", "", d, null, 1, true, false,
+                    External: unassigned.Any(r => r.External)));
+            foreach (var r in unassigned) result.Add(ObjectRowOf(r, d.Channels.Count > 0 ? 2 : 1, addresses));
         }
         return result;
+
+        WorkbenchRow ObjectRowOf(ObjectRow r, int depth, Dictionary<string, GroupAddressEntry> linked)
+        {
+            var links = r.Object.Links.Distinct()
+                .Select(id => linked.TryGetValue(id, out var g) ? g.Address.ToString() : id).ToList();
+            var metadata = r.Metadata;
+            return new(ObjectKey(r.Device, r.Object), "object", r.Object.Text ?? r.Object.FunctionText ?? r.Object.Id,
+                "#" + r.Object.Number, r.Device, r.Object, depth, false, false,
+                string.Join("  ", links.Take(2)) + (links.Count > 2 ? $"  +{links.Count - 2}" : ""),
+                string.Join("\n", r.Object.Links.Select(id => linked.TryGetValue(id, out var g) ? $"{g.Address} · {g.Name}" : id)),
+                metadata?.Dpt, metadata?.Bits, metadata?.Flags, metadata?.Active != false, r.External, metadata?.ChannelId);
+        }
+
+        void AddNativeChannel(DeviceInstance device, ChannelInstance channel, int depth)
+        {
+            var key = "channel:" + device.Id + ":" + channel.Id;
+            var expanded = !tab.CollapsedDeviceIds.Contains(key);
+            result.Add(new(key, "channel", channel.Name, "", device, null, depth, expanded, channel.Channels.Count > 0));
+            if (expanded) foreach (var child in channel.Channels) AddNativeChannel(device, child, depth + 1);
+        }
     }
 
     public static IReadOnlyList<WorkbenchNavNode> Navigation(Project p, string perspective)
@@ -124,4 +168,6 @@ public sealed record WorkbenchNavNode(string Key, string Name, string Meta, obje
     IReadOnlyList<WorkbenchNavNode> Children);
 
 public sealed record WorkbenchRow(string Key, string Kind, string Name, string Address, DeviceInstance Device,
-    ComObjectInstanceRef? Object, int Depth, bool Expanded, bool CanExpand, string Links = "", string LinkDetails = "");
+    ComObjectInstanceRef? Object, int Depth, bool Expanded, bool CanExpand, string Links = "", string LinkDetails = "",
+    string? Dpt = null, int? Bits = null, string? Flags = null, bool Active = true, bool External = false,
+    string? ChannelId = null);

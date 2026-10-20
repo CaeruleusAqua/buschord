@@ -21,7 +21,8 @@ internal static class Screenshot
     public const int Height = 900;
 
     internal static readonly string[] Screens =
-        ["main", "catalog", "parameters", "links", "settings", "new-project", "splash", "monitor", "inspector"];
+        ["main", "catalog", "parameters", "links", "settings", "new-project", "splash", "monitor", "inspector",
+         "demo", "demoparams", "demolinks", "demomonitor", "demoprogramming", "demoinspector", "democatalog"];
 
     /// <summary>PNG path from --screenshot=&lt;path&gt;; null keeps the normal start.</summary>
     public static string? TargetPath { get; set; }

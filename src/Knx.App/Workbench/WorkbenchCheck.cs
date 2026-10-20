@@ -17,8 +17,18 @@ internal static class WorkbenchCheck
     public static bool Enabled { get; set; }
     public static string? TestDirectory { get; set; }
 
-    internal static void LoadFixture(WorkbenchWindow window)
+    /// <summary>Embedded fictional V4 demo, used only for reference screenshots and manual demos.</summary>
+    internal static void LoadDemo(WorkbenchWindow window)
     {
+        var demo = Knx.Workbench.WorkbenchJson.CreateDemo();
+        window.ViewModel.CreateProject(demo, null);
+        window.RefreshWorkspace();
+        window.Workspace.Navigators["building"].ExpandedIds.UnionWith(["eg", "living"]);
+        window.OpenTarget(new("room", "living"));
+        window.RefreshWorkspace();
+    }
+
+    internal static void LoadFixture(WorkbenchWindow window)    {
         var p = new Project { Id = "P-SHELL", Name = "Villa Linden · synthetisches Testprojekt" };
         var installation = new Installation { Id = "I-1", Name = "Wohngebäude" };
         var area = new Area { Id = "A-1", Address = 1 };
@@ -71,15 +81,22 @@ internal static class WorkbenchCheck
 
     public static void Capture(IClassicDesktopStyleApplicationLifetime desktop, WorkbenchWindow main, string path, string screen)
     {
-        LoadFixture(main);
+        if (screen.StartsWith("demo", StringComparison.OrdinalIgnoreCase)) LoadDemo(main);
+        else LoadFixture(main);
         Window window = main;
         switch (screen.ToLowerInvariant())
         {
             case "parameters": main.SetRepresentation("params"); break;
+            case "demoparams": main.SetRepresentation("params"); break;
             case "links": main.SetRepresentation("relations"); break;
+            case "demolinks": main.SetRepresentation("relations"); break;
             case "monitor": main.ShowTool("monitor"); break;
+            case "demomonitor": main.ShowTool("monitor"); break;
+            case "demoprogramming": main.ShowTool("programming"); break;
             case "inspector": main.Workspace.InspectorVisible = true; break;
+            case "demoinspector": main.Workspace.InspectorVisible = true; break;
             case "catalog": main.ShowCatalog(); break;
+            case "democatalog": main.ShowCatalog(); break;
             case "settings": window = new SettingsWindow(main.ViewModel.Settings); break;
             case "new-project": window = new NewProjectWindow(); break;
             case "splash": window = new SplashWindow(); break;
@@ -200,6 +217,32 @@ internal static class WorkbenchCheck
                 window.FindControl<TextBox>("ObjectSearch")!.Text = "Lasttest 10019";
                 await Task.Delay(80);
                 Check("filter searches unrealized model objects", ((IEnumerable<WorkbenchRow>)table.ItemsSource!).Count(r => r.Object is not null) == 1);
+
+                // Demo-data integration: domain metadata, atomic links, sessions and JSON bridge.
+                LoadDemo(window);
+                var demo = window.ViewModel.Project!;
+                var living = window.Workspace.ActiveTab!;
+                var demoRows = WorkbenchProjection.Rows(demo, living);
+                Check("room scope includes relevant external channel", demoRows.Any(r => r.External && r.Object?.Id == "dimmer-a-value"));
+                Check("room scope excludes unrelated external channel", !demoRows.Any(r => r.Object?.Id is { } id && id.StartsWith("dimmer-b-", StringComparison.Ordinal)));
+                Check("object metadata fills DPT, bits and flags columns", demoRows.Any(r => r.Object is not null && r.Dpt == "1.001" && r.Bits == 1 && r.Flags == "CT"));
+                var beforeLinks = Knx.Workbench.WorkbenchJson.Export(demo);
+                var incompatible = Knx.Workbench.WorkbenchProject.AddLinks(demo,
+                    [new("taster-living", "taster-living-switch"), new("climate-living", "climate-living-temp")], "central-off");
+                Check("batch compatibility is checked atomically in the shell model", !incompatible.Ok && Knx.Workbench.WorkbenchJson.Export(demo) == beforeLinks);
+                var addKey = new Knx.Workbench.ObjectKey("taster-living", "taster-living-floor");
+                Check("explicit sending selection is available", Knx.Workbench.WorkbenchProject.SetSending(demo, addKey, "living-floor").Ok);
+                window.Sessions!.Monitor.Configure(WorkbenchMonitorMode.Group, SessionOrigin.Demo, "demo-ip");
+                window.Sessions.Monitor.Start();
+                window.Sessions.Monitor.TickDemo(new(DateTimeOffset.Now, "1.1.250", "1/0/1", "GroupValueWrite", "1.001", "1", SessionOrigin.Demo, "living-switch"));
+                window.Sessions.Monitor.FlushDisplay();
+                Check("monitor session records and filters demo telegram", window.Sessions.Monitor.RecordedCount == 1 && window.Sessions.Monitor.FilteredRows.Count == 1);
+                window.Sessions.Monitor.Stop();
+                var job = window.Sessions.Programming.Enqueue("taster-living");
+                await window.Sessions.Programming.RunAsync();
+                Check("demo programming queue records simulated success", job.Status == ProgrammingJobStatus.Done && !window.Sessions.Programming.NeedsProgramming("taster-living"));
+                Check("demo JSON roundtrip remains available", Knx.Workbench.WorkbenchJson.Import(Knx.Workbench.WorkbenchJson.Export(demo)).Id == demo.Id);
+
                 Console.WriteLine(failures.Count == 0 ? "WORKBENCH NATIVE OK" : $"WORKBENCH FAILURES: {failures.Count}");
                 window.RequestShutdown(); desktop.Shutdown(failures.Count == 0 ? 0 : 1);
             }

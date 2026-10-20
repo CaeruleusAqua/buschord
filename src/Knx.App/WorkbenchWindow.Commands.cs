@@ -3,8 +3,10 @@ using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Knx.App.Services;
 using Knx.App.Workbench;
 using Knx.Reports;
+using Knx.Workbench;
 
 namespace Knx.App;
 
@@ -25,6 +27,9 @@ public partial class WorkbenchWindow
                 Async("Geräte · CSV …", () => ExportAsync("geraete.csv", ProjectCsvExporter.Devices)),
                 Async("Topologie · CSV …", () => ExportAsync("topologie.csv", ProjectCsvExporter.Topology)),
                 Async("Projektbericht · HTML …", () => ExportAsync("projektbericht.html", p => ProjectReport.Render(p))),
+                Async("Objektzuordnungen · CSV …", () => ExportAsync("zuordnungen.csv", AssociationsCsv)),
+                Async("Demo-Projekt · JSON exportieren …", ExportDemoJsonAsync),
+                Async("Demo-Projekt · JSON importieren …", ImportDemoJsonAsync),
                 new Separator(), Item("Beenden", Close)
             } },
             new() { Header = "Bearbeiten", ItemsSource = new object[]
@@ -32,6 +37,7 @@ public partial class WorkbenchWindow
                 Item("Rückgängig    Ctrl Z", () => ViewModel.UndoCommand.Execute(null)),
                 Item("Wiederherstellen    Ctrl Shift Z", () => ViewModel.RedoCommand.Execute(null)),
                 Item("Zuordnungen bearbeiten", () => SetRepresentation("relations")),
+                Item("Auswahl verknüpfen …", ShowBatchLinkDialog),
                 Item("Eigenschaften", () => Workspace.InspectorVisible = true)
             } },
             new() { Header = "Ansicht", ItemsSource = new object[]
@@ -58,11 +64,13 @@ public partial class WorkbenchWindow
 
     public void ShowCatalog() => OpenTarget(new("tool", "catalog"));
     private void ShowSettings() => _ = GuardAsync(async () => await new SettingsWindow(ViewModel.Settings).ShowDialog(this));
-    private void ShowHelp() => _ = ConfirmDialog.ShowMessageAsync(this, "BusChord · Workbench", 
-        "Raum, Linie, Gerät oder Gruppenadresse öffnen. Tabs behalten ihre eigenen Filter, Auswahl und Darstellung.\n\n" +
-        "Ctrl+B: Navigator · Ctrl+J: Werkzeug · Ctrl+K: Suche · Ctrl+Tab: nächster Tab · Ctrl+Z / Ctrl+Shift+Z: Projekt-Undo/Redo.\n\n" +
-        "Parameter ändern erst nach Übernehmen das Projekt. Speichern übernimmt keine Entwürfe.\n\n" +
-        "Dieser Meilenstein nutzt native Projektarchive und den vorhandenen Herstellerkatalog. Externe Raum-/Kanalbezüge, atomare Mehrfachzuordnung, Sendeadresse, Wirkungsvorschau und unabhängige Monitor-/Programmiersitzungen werden noch integriert. Keine reale Busprogrammierung und keine Secure-Schlüsselverwaltung in dieser Shell.");
+    private void ShowHelp() => _ = ConfirmDialog.ShowMessageAsync(this, "BusChord · Workbench V4",
+        "Raum, Linie, Gerät oder Gruppenadresse öffnen. Tabs behalten ihre eigenen Filter, Auswahl, Aufklappzustände und Darstellung.\n\n" +
+        "Ctrl+B: Navigator · Ctrl+J: Werkzeug · Ctrl+K: Befehlssuche · Ctrl+Tab: nächster Tab · Ctrl+Z / Ctrl+Shift+Z: Projekt-Undo/Redo.\n\n" +
+        "Mehrfachzuordnung prüft DPT, Länge und explizite Secure-Fähigkeit atomar. Die Sendeadresse wird ausdrücklich aus bestehenden Zuordnungen gewählt; beim Entfernen wird keine Ersatzadresse still bestimmt.\n\n" +
+        "Parameter ändern erst nach Prüfen und Übernehmen das Projekt. Speichern übernimmt keine Entwürfe. Demo-Applikationen zeigen eine reine Wirkungsvorschau; unbekannte Herstellerdynamik und DCA werden nicht ausgeführt.\n\n" +
+        "Monitor und Programmierwarteschlange sind projektgebundene Sitzungen: Ausblenden beendet sie nicht. Programmierung ist in dieser Fassung ausschließlich eine gekennzeichnete Simulation, kein realer Download. Die vollständige Aufzeichnung liegt getrennt vom Anzeigepuffer.\n\n" +
+        "Native Projektarchive bleiben das Speicherformat; das V4-Demo-JSON ist ein eigenes, streng geprüftes Austauschformat und verweigert den Export nicht darstellbarer Herstellerdaten. ETS-Kompatibilität, Secure-Schlüsselverwaltung und reale Busprogrammierung werden nicht behauptet.");
 
     private async Task OpenProjectAsync()
     {
@@ -159,6 +167,52 @@ public partial class WorkbenchWindow
         if (file?.TryGetLocalPath() is { } path) ViewModel.Recorder.SaveCsv(path);
     }
 
+    private static string AssociationsCsv(Project project)
+    {
+        var builder = new StringBuilder("Geräteadresse;Gerät;Objektnummer;Objekt;DPT;Länge;Flags;Aktiv;GA-Adresse;GA-Name;Sendend;Einbauort\r\n");
+        foreach (var a in Knx.Workbench.WorkbenchProject.Associations(project))
+        {
+            foreach (var value in new[] { a.DeviceAddress, a.DeviceName, a.Number.ToString(),
+                a.ObjectName, a.Dpt ?? "", a.Bits?.ToString() ?? "", a.Flags ?? "", a.Active ? "ja" : "nein",
+                a.GroupAddress, a.GroupName, a.Sending ? "ja" : "nein", a.InstalledRoomId ?? "" })
+                builder.Append(GroupMonitor.CsvField(value)).Append(';');
+            builder.Length -= 1;
+            builder.Append("\r\n");
+        }
+        return builder.ToString();
+    }
+
+    private async Task ExportDemoJsonAsync()
+    {
+        if (ViewModel.Project is not { } project) { ViewModel.Status = "Kein Projekt geladen"; return; }
+        var json = Knx.Workbench.WorkbenchJson.Export(project);
+        var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = "demo-projekt.json", DefaultExtension = "json" });
+        if (file?.TryGetLocalPath() is not { } path) return;
+        await File.WriteAllTextAsync(path, json, new UTF8Encoding(false));
+        ViewModel.Status = "Demo-Projekt exportiert";
+    }
+
+    private async Task ImportDemoJsonAsync()
+    {
+        if (!await ConfirmDiscardAsync()) return;
+        var files = await StorageProvider.OpenFilePickerAsync(new() { AllowMultiple = false,
+            FileTypeFilter = [new("V4-Demo-Projekt") { Patterns = ["*.json"] }] });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
+        try
+        {
+            var imported = Knx.Workbench.WorkbenchJson.Import(await File.ReadAllTextAsync(path));
+            ViewModel.CreateProject(imported, null);
+            _parameterSession.DiscardDrafts();
+            RefreshWorkspace();
+            ViewModel.Status = "Demo-Projekt importiert; als knxproj speichern für einen nativen Projektstand.";
+        }
+        catch (Exception ex)
+        {
+            ViewModel.Status = "Demo-Import fehlgeschlagen: " + ex.Message;
+            await ConfirmDialog.ShowMessageAsync(this, "Demo-Import fehlgeschlagen", ex.Message);
+        }
+    }
+
     private void ShowPalette()
     {
         var dialog = new Window { Title = "Arbeitsgegenstand oder Befehl suchen", Width = 660, Height = 480, WindowStartupLocation = WindowStartupLocation.CenterOwner };
@@ -176,11 +230,13 @@ public partial class WorkbenchWindow
             foreach (var g in ProjectQuery.GroupAddresses(p)) candidates.Add(($"{g.Address} · {g.Name}", () => OpenTarget(new("ga", g.Id))));
         }
         candidates.AddRange([("Produktkatalog", ShowCatalog), ("Projektprüfung", () => ShowTool("problems")), ("Monitor", () => ShowTool("monitor")),
-            ("Layout zurücksetzen", Workspace.ResetLayout), ("Projekt öffnen", () => _ = GuardAsync(OpenProjectAsync)), ("Hilfe", ShowHelp)]);
+            ("Programmierung", () => ShowTool("programming")), ("Layout zurücksetzen", Workspace.ResetLayout),
+            ("Projekt öffnen", () => _ = GuardAsync(OpenProjectAsync)), ("Hilfe", ShowHelp)]);
         list.ItemTemplate = new FuncDataTemplate<PaletteEntry>((entry, _) => Label(entry?.Label ?? ""));
         void Filter()
         {
-            list.ItemsSource = candidates.Where(c => c.Label.Contains(query.Text ?? "", StringComparison.OrdinalIgnoreCase)).Take(100).Select(c => new PaletteEntry(c.Label, c.Run)).ToList();
+            list.ItemsSource = candidates.Where(c => c.Label.Contains(query.Text ?? "", StringComparison.OrdinalIgnoreCase)).Take(100)
+                .Select(c => new PaletteEntry(c.Label, c.Run)).ToList();
             list.SelectedIndex = 0;
         }
         void Activate()
@@ -192,5 +248,76 @@ public partial class WorkbenchWindow
         dialog.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Escape) dialog.Close(); else if (e.Key == Avalonia.Input.Key.Enter) Activate(); };
         Filter(); dialog.Opened += (_, _) => query.Focus(); dialog.ShowDialog(this);
     }
+
+    private void ShowBatchLinkDialog()
+    {
+        if (ViewModel.Project is not { } project || Workspace.ActiveTab is not { } tab) return;
+        var selected = WorkbenchProjection.Rows(project, tab)
+            .Where(r => r.Object is not null && tab.SelectedObjectIds.Contains(r.Key)).ToList();
+        if (selected.Count == 0) { ViewModel.Status = "Zuerst mindestens ein Kommunikationsobjekt auswählen."; return; }
+        var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
+        var dialog = new Window { Title = $"Zuordnen · {selected.Count} Objekt(e)", Width = 720, Height = 560, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var panel = new DockPanel { Margin = new(16) };
+        var top = new StackPanel { Spacing = 8 };
+        var picker = new ComboBox { ItemsSource = groups, MinWidth = 420, PlaceholderText = "Gruppenadresse wählen" };
+        picker.ItemTemplate = new FuncDataTemplate<GroupAddressEntry>((g, _) => Label(g is null ? "" : $"{g.Address} · {g.Name} · {g.DatapointType ?? "DPT?"}"));
+        var preview = new ListBox { Height = 320 };
+        var errors = new TextBlock { FontSize = 11, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+        var add = ActionButton("Zuordnen", () => { }, "primary");
+        add.IsEnabled = false;
+        top.Children.Add(Label("Mehrfachzuordnung wird vollständig geprüft und atomar übernommen."));
+        top.Children.Add(picker);
+        top.Children.Add(preview);
+        top.Children.Add(errors);
+        DockPanel.SetDock(top, Avalonia.Controls.Dock.Top); panel.Children.Add(top);
+        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
+        actions.Children.Add(add);
+        actions.Children.Add(ActionButton("Abbrechen", dialog.Close, "quiet"));
+        DockPanel.SetDock(actions, Avalonia.Controls.Dock.Bottom); panel.Children.Add(actions);
+        dialog.Content = panel;
+        void Validate()
+        {
+            if (picker.SelectedItem is not GroupAddressEntry ga) { preview.ItemsSource = null; errors.Text = ""; add.IsEnabled = false; return; }
+            var results = selected.Select(r =>
+            {
+                var reason = WorkbenchProject.ValidateLink(project, new(r.Device.Id, r.Object!.Id), ga.Id);
+                var already = r.Object.Links.Contains(ga.Id);
+                return new LinkPreview(r, reason, already);
+            }).ToList();
+            preview.ItemsSource = results;
+            preview.ItemTemplate = new FuncDataTemplate<LinkPreview>((p, _) => Label(
+                p is null ? "" : $"{(p.AlreadyLinked ? "bereits verknüpft" : p.Error is null ? "bereit" : "unverträglich")} · {p.Row.Name}"
+                + (p.Error is null ? "" : " — " + p.Error)));
+            var invalid = results.Where(r => r.Error is not null).ToList();
+            add.IsEnabled = invalid.Count == 0;
+            errors.Text = invalid.Count == 0
+                ? results.All(r => r.AlreadyLinked) ? "Alle gewählten Objekte sind bereits mit dieser Adresse verknüpft; es wird nichts doppelt angelegt."
+                : "Alle Objekte sind verträglich. Bestehende Zuordnungen bleiben erhalten."
+                : $"{invalid.Count} Objekt(e) sind unverträglich; es wird nichts teilweise übernommen.";
+            errors.Foreground = Avalonia.Media.Brush.Parse(invalid.Count == 0 ? "#268175" : "#b45054");
+        }
+        picker.SelectionChanged += (_, _) => Validate();
+        add.Click += (_, _) =>
+        {
+            if (picker.SelectedItem is not GroupAddressEntry ga) return;
+            try
+            {
+                var keys = selected.Select(r => new Knx.Workbench.ObjectKey(r.Device.Id, r.Object!.Id)).ToList();
+                MutationResult result = new(false, 0, [], []);
+                ViewModel.Edit($"Zuordnung {ga.Address}", p => result = WorkbenchProject.AddLinks(p, keys, ga.Id));
+                if (!result.Ok)
+                {
+                    ViewModel.Status = result.Errors.FirstOrDefault()?.Reason ?? "Zuordnung nicht möglich";
+                    return;
+                }
+                ViewModel.Status = $"{result.Changed} Zuordnung(en) zu {ga.Address} ergänzt; bestehende Links erhalten.";
+                dialog.Close(); RefreshWorkspace();
+            }
+            catch (Exception ex) { ViewModel.Status = "Zuordnung fehlgeschlagen: " + ex.Message; }
+        };
+        dialog.ShowDialog(this);
+    }
+
+    private sealed record LinkPreview(WorkbenchRow Row, string? Error, bool AlreadyLinked);
     private sealed record PaletteEntry(string Label, Action Run);
 }

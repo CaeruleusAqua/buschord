@@ -155,7 +155,7 @@ public sealed partial class WorkbenchWorkspace : ObservableObject
         ToolsHeight = Size(data.ToolsHeight, 140, 1000, 242);
         NavigatorVisible = data.NavigatorVisible; InspectorVisible = data.InspectorVisible;
         ToolsVisible = data.ToolsVisible; ToolsMaximized = false;
-        ActiveTool = data.ActiveTool is "monitor" or "queue" or "problems" or "changes" ? data.ActiveTool : "monitor";
+        ActiveTool = data.ActiveTool is "monitor" or "queue" or "programming" or "problems" or "changes" ? data.ActiveTool : "monitor";
         Perspective = Navigators.ContainsKey(data.Perspective ?? "") ? data.Perspective! : "building";
         if (data.ProjectId != ProjectId) return true;
         Tabs.Clear(); ActiveTab = null;

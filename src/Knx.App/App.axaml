@@ -471,5 +471,7 @@
     <Style Selector="ToolChromeControl:active Path">
       <Setter Property="Fill" Value="{DynamicResource EtsOnAccent}" />
     </Style>
+    <!-- Opt-in V4 resources/classes; not applied to legacy panels. -->
+    <StyleInclude Source="avares://BusChord/Workbench/WorkbenchTheme.axaml" />
   </Application.Styles>
 </Application>

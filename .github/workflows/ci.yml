@@ -33,6 +33,11 @@ env:
     tests/Knx.Encryption.Tests
     tests/Knx.Parameter.Tests
     tests/Knx.ParameterUi.Tests
+    tests/Knx.Workbench.Tests
+    tests/Knx.WorkbenchUiState.Tests
+    tests/Knx.WorkbenchSessions.Tests
+    tests/Knx.WorkbenchTheme.Tests
+    tests/Knx.WorkbenchPerformance.Tests
     src/Knx.App.Tests
 
 jobs:
@@ -122,6 +127,8 @@ jobs:
         run: dotnet run --project tests/Knx.ParameterUi.Tests -c Release --no-build -- --native
       - name: Project lifecycle window regressions (Windows only)
         run: dotnet run --project tests/Knx.Shell.Tests -c Release
+      - name: Workbench native self-check (Windows only)
+        run: dotnet run --project src/Knx.App -c Release --no-build -- --workbench-selftest --theme=light
 
   ci:
     name: ci
