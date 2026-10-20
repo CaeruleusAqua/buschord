@@ -498,24 +498,22 @@ beim Anwender.
 
 ## 10. Tastenkürzel
 
-Im Hauptfenster verarbeitet (nicht geraten, sondern im Code von
-`MainWindow.axaml`/`MainWindow.axaml.cs` verdrahtet):
+In der V4-Workbench verdrahtet (`WorkbenchWindow.axaml.cs`):
 
 | Kürzel | Wirkung |
 |---|---|
-| `Strg+N` | Neues Projekt |
-| `Strg+O` | Projekt öffnen |
-| `Strg+S` | Projekt speichern (nur mit vorhandenem Pfad) |
-| `Strg+Z` | Rückgängig |
-| `Strg+Y` | Wiederherstellen |
-| `Strg+G` | Gruppenadresse anlegen |
-| `Strg+Shift+K` | Katalog öffnen |
-| `F5` | Projektprüfung |
-| `F2` | Namensfeld im Eigenschaften-Panel fokussieren |
-| `Entf` | ausgewählte Gruppenadresse löschen |
+| `Strg+B` | Navigator ein-/ausblenden |
+| `Strg+J` | unteres Werkzeug ein-/ausblenden |
+| `Strg+K` | Befehlssuche |
+| `Strg+Tab` | nächster Arbeitsgegenstands-Tab |
+| `Strg+Z` / `Strg+Shift+Z`, `Strg+Y` | Projekt rückgängig / wiederherstellen |
+| `Strg+S` | Projekt speichern (ohne Pfad: Speichern unter) |
+| `Strg+N`, `Strg+O` | Neues Projekt, Projekt öffnen |
+| `Escape` | temporäre Oberfläche/Dialog schließen |
 
-Es gibt **kein** `Strg+Shift+S`; „Projekt speichern unter…“ hat kein Kürzel.
-`Strg+S` ist nur im Hauptfenster verdrahtet.
+Textfelder behalten ihr lokales Undo; `Strg+Z` im Editor ändert nicht zusätzlich das
+Projekt. Das frühere Hauptfenster hat eigene Kürzel (`Strg+G`, `F5`, `F2`) und ist
+nur noch Kompatibilitätsprüfstand.
 
 ## 11. Grenzen und Sicherheit
 

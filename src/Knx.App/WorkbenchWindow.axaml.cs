@@ -1092,6 +1092,7 @@ public partial class WorkbenchWindow : Window
                 case Key.N: _ = GuardAsync(NewProjectAsync); break;
                 case Key.Z when !editingText:
                     if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) ViewModel.RedoCommand.Execute(null); else ViewModel.UndoCommand.Execute(null); break;
+                case Key.Y when !editingText: ViewModel.RedoCommand.Execute(null); break;
                 case Key.Tab:
                     if (Workspace.Tabs.Count > 0) Workspace.ActiveTab = Workspace.Tabs[(Workspace.Tabs.IndexOf(Workspace.ActiveTab!) + 1) % Workspace.Tabs.Count]; break;
                 default: return;
