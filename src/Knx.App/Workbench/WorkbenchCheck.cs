@@ -85,8 +85,10 @@ internal static class WorkbenchCheck
         if (screen.StartsWith("demo", StringComparison.OrdinalIgnoreCase)) LoadDemo(main);
         else LoadFixture(main);
         var small = screen.EndsWith("-small", StringComparison.OrdinalIgnoreCase);
+        var tiny = screen.EndsWith("-tiny", StringComparison.OrdinalIgnoreCase);
+        var view = tiny ? screen[..^5] : small ? screen[..^6] : screen;
         Window window = main;
-        switch ((small ? screen[..^6] : screen).ToLowerInvariant())
+        switch (view.ToLowerInvariant())
         {
             case "parameters": main.SetRepresentation("params"); break;
             case "demoparams": main.SetRepresentation("params"); break;
@@ -106,8 +108,8 @@ internal static class WorkbenchCheck
         var capture = window;
         if (screen is not ("settings" or "new-project"))
         {
-            capture.Width = small ? 1024 : screen == "splash" ? 380 : 1440;
-            capture.Height = small ? 700 : screen == "splash" ? 420 : 900;
+            capture.Width = tiny ? 900 : small ? 1024 : screen == "splash" ? 380 : 1440;
+            capture.Height = tiny ? 600 : small ? 700 : screen == "splash" ? 420 : 900;
         }
         capture.Opened += (_, _) => DispatcherTimer.RunOnce(() =>
         {

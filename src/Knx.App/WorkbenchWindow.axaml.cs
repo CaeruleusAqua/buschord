@@ -426,8 +426,7 @@ public partial class WorkbenchWindow : Window
             Breadcrumb.Text = $"{ViewModel.Project?.Name ?? "Projekt"}  ›  {context}";
             Subtitle.Text = tab is null ? "Ein Projekt öffnen, neu anlegen oder den Produktkatalog durchsuchen."
                 : tool ? "Projektwerkzeug · native Ansicht" : ViewModel.Project is { } p
-                    ? $"{WorkbenchProjection.Devices(p, tab.Target).Count} Geräte im Ausschnitt · gemeinsamer Projektstand"
-                      + (tab.Target.Kind == "room" ? " · Einbauort und relevante externe Kanäle getrennt" : "") : "";
+                    ? $"{WorkbenchProjection.Devices(p, tab.Target).Count} Geräte · Einbauort und Wirkung getrennt" : "";
             Representations.IsVisible = tab is not null && !tool;
             var workItem = tab is not null && !tool && tab.Target.Kind is not "project";
             WatchButton.IsVisible = AddDeviceButton.IsVisible = InspectorButton.IsVisible = workItem;
@@ -447,7 +446,7 @@ public partial class WorkbenchWindow : Window
                 ObjectTable.ItemsSource = rows;
                 if (ObjectTable.SelectedItems is { } selection)
                     foreach (var row in rows.Where(r => tab.SelectedObjectIds.Contains(r.Key))) selection.Add(row);
-                TableFootnote.Text = $"{rows.Count(r => r.Object is not null)} sichtbare Objekte · DPT, Länge und Flags nur bei belegter Herstellerdefinition";
+                TableFootnote.Text = $"{rows.Count(r => r.Object is not null)} sichtbare Objekte · DPT/Länge/Flags nur bei belegter Definition";
                 var current = CurrentDevice();
                 if (ParametersHost.IsVisible)
                 {
@@ -623,7 +622,7 @@ public partial class WorkbenchWindow : Window
         if (selected.Count > 1)
         {
             InspectorBody.Children.Add(Label($"{selected.Count} Zeilen ausgewählt"));
-            InspectorBody.Children.Add(Note("Die Auswahl gilt nur für diesen Arbeitsgegenstand. Geräteübergreifende atomare Zuordnung wird separat integriert."));
+            InspectorBody.Children.Add(Note("Die Mehrfachauswahl gilt nur für diesen Arbeitsgegenstand."));
             return;
         }
         var current = CurrentDevice();
@@ -850,7 +849,7 @@ public partial class WorkbenchWindow : Window
         };
         toolbar.Children.Add(filter);
         toolbar.Children.Add(ActionButton("CSV gefiltert …", () => _ = GuardAsync(ExportFilteredMonitorAsync)));
-        toolbar.Children.Add(ActionButton("Vollaufzeichnung …", () => _ = GuardAsync(ExportFullMonitorAsync), "quiet"));
+        toolbar.Children.Add(ActionButton("Voll-CSV …", () => _ = GuardAsync(ExportFullMonitorAsync), "quiet"));
         toolbar.Children.Add(live);
         var demoBadge = Label("DEMO-Simulation · keine reale Busaufzeichnung"); demoBadge.FontSize = 10;
         demoBadge.Classes.Add("wb-warning");
@@ -1113,7 +1112,7 @@ public partial class WorkbenchWindow : Window
         Editor.IsVisible = !Workspace.ToolsVisible || !Workspace.ToolsMaximized;
         MainColumn.RowDefinitions[1].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(0) : new(1, GridUnitType.Star);
         MainColumn.RowDefinitions[2].Height = new(Workspace.ToolsVisible ? 5 : 0);
-        MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(1, GridUnitType.Star) : new(Workspace.ToolsVisible ? Math.Min(Workspace.ToolsHeight, Bounds.Height is > 0 and < 700 ? 175 : Workspace.ToolsHeight) : 0);
+        MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(1, GridUnitType.Star) : new(Workspace.ToolsVisible ? Math.Min(Workspace.ToolsHeight, Bounds.Height is > 0 and < 700 ? 140 : Workspace.ToolsHeight) : 0);
         if (Workspace.ToolsVisible && ToolHost.Content is null) ToolHost.Content = Workspace.ActiveTool switch
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), "monitor" => CreateMonitorView(),
