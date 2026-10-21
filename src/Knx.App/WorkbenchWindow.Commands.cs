@@ -5,6 +5,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Knx.App.Services;
 using Knx.App.Workbench;
+using Knx.ProjectCompare;
 using Knx.Reports;
 using Knx.Workbench;
 
@@ -28,6 +29,8 @@ public partial class WorkbenchWindow
                 Async(W("ExportTopology"), () => ExportAsync("topologie.csv", ProjectCsvExporter.Topology)),
                 Async(W("ExportReport"), () => ExportAsync("projektbericht.html", p => ProjectReport.Render(p))),
                 Async(W("ExportAssociations"), () => ExportAsync("zuordnungen.csv", AssociationsCsv)),
+                Async(W("CompareProjects"), CompareProjectsAsync),
+                Async(W("ReplaceProduct"), ReplaceProductAsync),
                 Async(W("ExportDemoJson"), ExportDemoJsonAsync),
                 Async(W("ImportDemoJson"), ImportDemoJsonAsync),
                 Async(W("ResetDemo"), ResetDemoAsync),
@@ -197,6 +200,36 @@ public partial class WorkbenchWindow
         if (file?.TryGetLocalPath() is not { } path) return;
         await File.WriteAllTextAsync(path, json, new UTF8Encoding(false));
         ViewModel.Status = W("DemoExported");
+    }
+
+    private async Task CompareProjectsAsync()
+    {
+        if (ViewModel.Project is not { } project) { ViewModel.Status = W("ScanNeedsProject"); return; }
+        var files = await StorageProvider.OpenFilePickerAsync(new() { AllowMultiple = false,
+            Title = W("CompareProjects"), FileTypeFilter = [new("KNX") { Patterns = ["*.knxproj"] }] });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
+        try
+        {
+            var report = ProjectComparer.Compare(project, Knxproj.Load(path));
+            var window = new CompareWindow();
+            window.Load(report);
+            await window.ShowDialog(this);
+            ViewModel.Status = $"Vergleich: {report.AddedCount} + / {report.RemovedCount} − / {report.ChangedCount} ~";
+        }
+        catch (Exception ex) { ViewModel.Status = W("CompareFailed", ex.Message); }
+    }
+
+    private async Task ReplaceProductAsync()
+    {
+        if (ViewModel.Project is null) { ViewModel.Status = W("ScanNeedsProject"); return; }
+        var window = new ReplaceProductWindow(ViewModel.ReplaceProduct);
+        if (ViewModel.SelectedDevice is { } device && device.Device.ProductRefId.Length > 0)
+            window.SetOldReference(device.Device.ProductRefId);
+        if (await window.ShowDialog<bool>(this) == true)
+        {
+            ViewModel.Status = W("ReplaceDone");
+            RefreshWorkspace();
+        }
     }
 
     private async Task ResetDemoAsync()
