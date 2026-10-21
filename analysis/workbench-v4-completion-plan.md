@@ -187,34 +187,34 @@ wenn Implementierung, fokussierter Test und Abnahmeevidenz im Abschnitt
 
 ### H1. Workbench-Shell und Interaktion (Schritte 3, 4, 13)
 
-- [ ] **H1.1 Inspector/Property-Grid:** Abschnitte, Footer, stabile Fokus- und
-  Caret-Rückgabe, schmale Overlay-Komposition bei 1024/900. Im Agentenstand
-  `agents/plan2/workbench-ui` implementiert; Abnahme mit Screenshot und
-  Tastaturpfad steht aus.
-- [ ] **H1.2 Navigations-/Tab-Zustand:** Rail-Aktivfläche, 3-px-Akzent,
+- [x] **H1.1 Inspector/Property-Grid:** Abschnitte, Footer, stabile Fokus- und
+  Caret-Rückgabe, schmale Overlay-Komposition bei 1024/900. (`ac0480a`,
+  `84cb150`; WorkbenchCheck/Fokuspfad)
+- [x] **H1.2 Navigations-/Tab-Zustand:** Rail-Aktivfläche, 3-px-Akzent,
   Trennlinien, Issue-Badge und Monitor-Puls; Dokument-Tab-Akzent oben;
-  Perspektiv-/Tool-Tab-Überlauf bei 900/1024. Rest aus
-  `analysis/ui-consistency/workbench.md` P2-5/P2-6/P2-10.
-- [ ] **H1.3 Objekttabelle:** Auswahl-Checkbox je Zeile, Select-all/Tri-State,
+  Perspektiv-/Tool-Tab-Überlauf bei 900/1024. (`84cb150`, Screenshots
+  1440/1024/900)
+- [x] **H1.3 Objekttabelle:** Auswahl-Checkbox je Zeile, Select-all/Tri-State,
   GA-Chips, Zeilenkontextmenü und Tastaturäquivalenz; 10.000-Objekt-
-  Virtualisierung darf nicht regressieren. Rest aus P2-11 und Statusmatrix 17.
+  Virtualisierung bleibt getestet. (`84cb150`; WorkbenchUiState/Performance)
 - [ ] **H1.4 Shell-Chrome:** Buttons/Felder im Shellfenster auf WbLine/WbPaper/
   WbHover statt ETS-Chrome; Statuszeile mit Projekt-/Issue-Hierarchie;
-  Empty-States mit Icon, Überschrift und Erklärung. Rest aus P2-7/P2-9.
-- [ ] **H1.5 Hilfe/Konzept:** scrollbares, lokalisiertes Hilfefenster statt
+  Empty-States mit Icon, Überschrift und Erklärung. Teilweise in `84cb150`
+  (Status/Empty/Rail); finale visuelle Abnahme offen.
+- [x] **H1.5 Hilfe/Konzept:** scrollbares, lokalisiertes Hilfefenster statt
   Messagebox; alle Help-Abschnitte, F1/Escape, keine abgeschnittenen Texte.
-  Damit auch Statusmatrix 69 und die Dokumentationsaktion schließen.
-- [ ] **H1.6 Tab-Semantik/A11y:** Dokument-, View- und Tool-Tabs als
+  (`84cb150`, HelpWindow)
+- [x] **H1.6 Tab-Semantik/A11y:** Dokument-, View- und Tool-Tabs als
   TabItem-Automation-Peers, ItemStatus, Namen für Icon-Steuerungen und
-  Zeilen; Focus-Trapping im schmalen Inspector. Rest aus
-  `analysis/workbench-v4-a11y-recheck2.md`.
-- [ ] **H1.7 Drag-and-drop-Abnahme:** Geräte-Drop auf Linie/Segment und
+  Zeilen; Focus-Trapping im schmalen Inspector. (`84cb150`;
+  A11y-Recheck2 als Restnachweis für echte UIA)
+- [x] **H1.7 Drag-and-drop-Abnahme:** Geräte-Drop auf Linie/Segment und
   Tabellen-Drop, Undo/Raum-Erhalt, Tastaturweg. Implementiert in
-  `agents/plan2/workbench-ui`; OS-Pointer-Drag ist headless nicht beweisbar,
-  daher Projektions-/Command-Test plus dokumentierte Grenze.
-- [ ] **H1.8 Favoriten/Nebenfenster:** Pinning, Side-by-side-Fenster,
-  Dedup/Refresh/Close-Lebenszyklus. Implementiert; Abnahme und
-  Fenster-Lifecycle-Test fehlen noch.
+  `ac0480a`; OS-Pointer-Drag ist headless nicht beweisbar, daher
+  Projektions-/Command-Test plus dokumentierte Grenze.
+- [x] **H1.8 Favoriten/Nebenfenster:** Pinning, Side-by-side-Fenster,
+  Dedup/Refresh/Close-Lebenszyklus. (`ac0480a`, `84cb150`;
+  WorkbenchCheck-Companion/Pin-Tests)
 
 ### H2. Dialogfamilie und gemeinsame Panes (Schritte 3, 13)
 
