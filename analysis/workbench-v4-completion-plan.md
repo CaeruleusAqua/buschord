@@ -53,9 +53,9 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 
 ### B2. Navigator und Arbeitsgegenstände
 
-- [ ] Alle Baumaktionen: anlegen, umbenennen, löschen, verschieben, kopieren, Adresse ändern, Kontextmenüs.
+- [x] Alle Baumaktionen: anlegen, umbenennen, löschen, verschieben, kopieren, Adresse ändern, Kontextmenüs.
 - [ ] Drag-and-drop für Geräte/Adressen mit gleichwertigem Tastaturweg.
-- [ ] Linien-/Segment-/Raumwechsel inklusive Undo und Adressvorschlägen.
+- [x] Linien-/Segment-/Raumwechsel inklusive Undo und Adressvorschlägen.
 - [x] Navigationszustand, Filter, Aufklappzustand und Auswahl je Perspektive vollständig persistieren.
 - [ ] "In Topologie zeigen", "Daneben öffnen", Favoriten/Pinning gemäß ETS-Ablauf.
 - [x] Externe Kanäle/Effekt-Raumbezug im UI vollständig erklären und prüfen.
@@ -158,6 +158,7 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - Recheck-Fixes (`43cff3c`, `e8d83b5`, `1c94f74`): linkable neue GA mit DPT-Bitgröße, Segmenterhalt beim Geräte-Detailedit, tote Suchergebnisse, Katalog-Raumzuordnung, gerätegebundener KO-Monitorfilter, Inspector-Elevation/Dock-Höhe, Werkzeugtexte, Leerzustände und englische Resttexte.
 - Abnahme 2026-10-21: Release-Build, alle Testprojekte, Smoke, Screenshot-Selbsttest sowie Workbench-Selftest de/en grün; UI- und Funktions-Recheck als `analysis/workbench-v4-ui-recheck.md` und `analysis/workbench-v4-functional-recheck.md` integriert.
 - Clean-Code-Review: `analysis/clean-code-review/core.md`, `app.md`, `tests-docs.md`; bestätigte P1/P2 und mehrere P3 behoben, verbleibende Grenzen in den Berichten dokumentiert.
+- Plan-Wellen: atomare Projektoperationen, Katalog-Ziel-/Such-/Importabläufe, Parameter-Footer/Validierung, Session-Cancel/Monitor-Pause/Diagnose, Baum-Kontextmenüs und projektbezogene Layouts; A11y-Abnahme als `analysis/workbench-v4-a11y-final.md`.
 - UI-Feinschliff: Dark-Tooltips mit lesbarem Text, Konzept-Linienicons für die Workbench und V4-Einstellungsfenster; ETS-Projektpasswort-Dialog und verifizierter `/21`-Leselauf für `Lostau.knxproj` (67 Geräte, 636 Gruppenadressen).
 
 ## F. Clean-Code-Review (Schritt 11)
@@ -174,6 +175,12 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - [x] Konzept-Icons statt gefüllter Material-Icons in der Workbench.
 - [x] Einstellungsfenster im V4-Design.
 
+## Offene Restpunkte nach dieser Welle
+
+- Drag-and-drop im Navigator; Geräte/GA lassen sich über Kontextmenüs und Tastatur verschieben/kopieren.
+- Nebenfenster/Favoriten/Pinning und vollständige Side-by-side-Ansichten.
+- Parameter-Abschnittsnavigation, Projektwechsel-Hinweis für Entwürfe und DCA-Read-only-Markierung.
+- Echte UIA-/Narrator-Abnahme, reale 150/200-%-DPI und High-Contrast-Pass.
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
 - DCA/Plugin-Hosting: read-only Erkennung und Sperre, kein In-Process-Host (32-bit-ETS, COM/.NET-Framework, keine Sandbox).
