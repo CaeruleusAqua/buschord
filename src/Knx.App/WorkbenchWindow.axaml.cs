@@ -788,6 +788,82 @@ public partial class WorkbenchWindow : Window
             Workspace.Navigators[_renderedPerspective].ScrollOffset = scroll.Offset.Y;
     }
 
+    private void BuildDeviceInspector(DeviceRow current)
+    {
+        InspectorBody.Children.Add(Label(current.Name));
+        var name = new TextBox { Text = current.Name };
+        var address = new TextBox { Text = current.AddressText };
+        var project = ViewModel.Project;
+        var lines = project is null ? [] : project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).ToList();
+        var rooms = project is null ? [] : project.Installations.SelectMany(i => i.Locations.AllNodes)
+            .Where(n => n.Kind == SpaceKind.Room).ToList();
+        var lineBox = new ComboBox { ItemsSource = lines };
+        lineBox.ItemTemplate = new FuncDataTemplate<Line>((l, _) => Label(l is null ? "" : $"{l.Address} · {l.Name ?? W("Line")}"));
+        var currentLine = project is null ? null : ProjectQuery.LocateDevice(project, current.Device.Address)?.Line;
+        lineBox.SelectedItem = lines.FirstOrDefault(l => l.Id == currentLine?.Id) ?? lines.FirstOrDefault();
+        var roomBox = new ComboBox { ItemsSource = rooms };
+        roomBox.ItemTemplate = new FuncDataTemplate<SpaceNode>((r, _) => Label(r is null ? "" : r.Path));
+        var currentRoom = project is null ? null : project.Installations.SelectMany(i => i.Locations.AllNodes)
+            .FirstOrDefault(n => n.DeviceRefs.Contains(current.Device.Id));
+        roomBox.SelectedItem = rooms.FirstOrDefault(r => r.Id == currentRoom?.Id);
+        InspectorBody.Children.Add(Note(W("NameLabel"))); InspectorBody.Children.Add(name);
+        InspectorBody.Children.Add(Note(W("ColumnAddress"))); InspectorBody.Children.Add(address);
+        InspectorBody.Children.Add(Note(W("Line"))); InspectorBody.Children.Add(lineBox);
+        InspectorBody.Children.Add(Note(W("RoomOptional"))); InspectorBody.Children.Add(roomBox);
+        var application = current.Device.Hardware2ProgramRefId
+            ?? ViewModel.Project?.Workbench.Devices.GetValueOrDefault(current.Device.Id)?.Application
+            ?? "-";
+        InspectorBody.Children.Add(Note(W("DeviceFacts", current.AddressText, current.Device.ProductRefId, application)));
+        InspectorBody.Children.Add(ActionButton(W("ApplyProperties"), () =>
+        {
+            var error = ViewModel.UpdateDeviceDetails(current.Device, name.Text ?? "",
+                address.Text ?? "", (lineBox.SelectedItem as Line)?.Id, (roomBox.SelectedItem as SpaceNode)?.Id);
+            if (error is not null) ViewModel.Status = error;
+            RefreshWorkspace();
+        }, "primary"));
+        InspectorBody.Children.Add(ActionButton(W("ShowInTopology"), () => { Navigate("topology"); NavSearch.Text = current.AddressText; }));
+        InspectorBody.Children.Add(ActionButton(W("OpenParameters"), () => OpenTarget(new("device", current.Device.Id), "params"), "quiet"));
+    }
+
+    private void BuildProjectInspector(Project project)
+    {
+        var name = new TextBox { Text = project.Name };
+        var comment = new TextBox { Text = project.Comment ?? "", AcceptsReturn = true, MinHeight = 80 };
+        InspectorBody.Children.Add(Label(W("ProjectProperties")));
+        InspectorBody.Children.Add(Note(W("NameLabel"))); InspectorBody.Children.Add(name);
+        InspectorBody.Children.Add(Note(W("Comment"))); InspectorBody.Children.Add(comment);
+        InspectorBody.Children.Add(ActionButton(W("Apply"), () =>
+        {
+            ViewModel.Edit(W("ProjectProperties"), p => { p.Name = name.Text?.Trim() ?? p.Name; p.Comment = comment.Text; });
+            RefreshWorkspace();
+        }, "primary"));
+    }
+
+    private void BuildGroupAddressInspector(GroupAddressEntry ga)
+    {
+        var name = new TextBox { Text = ga.Name };
+        var dpt = new TextBox { Text = ga.DatapointType };
+        InspectorBody.Children.Add(Note(ga.Address.ToString())); InspectorBody.Children.Add(name); InspectorBody.Children.Add(dpt);
+        InspectorBody.Children.Add(ActionButton(W("Apply"), () =>
+        {
+            ViewModel.RenameGroupAddress(new(ga.Address, ga.Name, ga.DatapointType, ga.Id), name.Text ?? "", dpt.Text); RefreshWorkspace();
+        }, "primary"));
+        if (ViewModel.Project is not { } gaProject) return;
+        var linked = ProjectQuery.ComObjectRefs(gaProject).Where(r => r.Ref.Links.Contains(ga.Id)).ToList();
+        InspectorBody.Children.Add(Note(W("GaLinkedCount", linked.Count)));
+        if (linked.Count == 0) InspectorBody.Children.Add(Note(W("GaNoLinks")));
+        foreach (var group in linked.GroupBy(r => r.Device).Take(40))
+        {
+            InspectorBody.Children.Add(ActionButton(W("GaLinkedDevice", group.Key.Address.ToString(),
+                group.Key.Name ?? ""), () => OpenTarget(new("device", group.Key.Id), "relations"), "quiet"));
+            foreach (var (device, comObject) in group.Take(10))
+            {
+                var sending = WorkbenchProject.Metadata(gaProject, new(device.Id, comObject.Id))?.SendingGroupId == ga.Id;
+                InspectorBody.Children.Add(Note($"#{comObject.Number} · {comObject.Text ?? comObject.Id}" + (sending ? " · " + W("SendingBadge") : "")));
+            }
+        }
+    }
+
     private void RefreshInspector()
     {
         InspectorBody.Children.Clear();
@@ -863,78 +939,11 @@ public partial class WorkbenchWindow : Window
             InspectorBody.Children.Add(Note(W("SendingNote")));
         }
         else if (current is not null && !(selected.Count == 0 && tab?.Target.Kind == "ga"))
-        {
-            InspectorBody.Children.Add(Label(current.Name));
-            var name = new TextBox { Text = current.Name };
-            var address = new TextBox { Text = current.AddressText };
-            var project = ViewModel.Project;
-            var lines = project is null ? [] : project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).ToList();
-            var rooms = project is null ? [] : project.Installations.SelectMany(i => i.Locations.AllNodes)
-                .Where(n => n.Kind == SpaceKind.Room).ToList();
-            var lineBox = new ComboBox { ItemsSource = lines };
-            lineBox.ItemTemplate = new FuncDataTemplate<Line>((l, _) => Label(l is null ? "" : $"{l.Address} · {l.Name ?? W("Line")}"));
-            var currentLine = project is null ? null : ProjectQuery.LocateDevice(project, current.Device.Address)?.Line;
-            lineBox.SelectedItem = lines.FirstOrDefault(l => l.Id == currentLine?.Id) ?? lines.FirstOrDefault();
-            var roomBox = new ComboBox { ItemsSource = rooms };
-            roomBox.ItemTemplate = new FuncDataTemplate<SpaceNode>((r, _) => Label(r is null ? "" : r.Path));
-            var currentRoom = project is null ? null : project.Installations.SelectMany(i => i.Locations.AllNodes)
-                .FirstOrDefault(n => n.DeviceRefs.Contains(current.Device.Id));
-            roomBox.SelectedItem = rooms.FirstOrDefault(r => r.Id == currentRoom?.Id);
-            InspectorBody.Children.Add(Note(W("NameLabel"))); InspectorBody.Children.Add(name);
-            InspectorBody.Children.Add(Note(W("ColumnAddress"))); InspectorBody.Children.Add(address);
-            InspectorBody.Children.Add(Note(W("Line"))); InspectorBody.Children.Add(lineBox);
-            InspectorBody.Children.Add(Note(W("RoomOptional"))); InspectorBody.Children.Add(roomBox);
-            var application = current.Device.Hardware2ProgramRefId
-                ?? ViewModel.Project?.Workbench.Devices.GetValueOrDefault(current.Device.Id)?.Application
-                ?? "-";
-            InspectorBody.Children.Add(Note(W("DeviceFacts", current.AddressText, current.Device.ProductRefId, application)));
-            InspectorBody.Children.Add(ActionButton(W("ApplyProperties"), () =>
-            {
-                var error = ViewModel.UpdateDeviceDetails(current.Device, name.Text ?? "",
-                    address.Text ?? "", (lineBox.SelectedItem as Line)?.Id, (roomBox.SelectedItem as SpaceNode)?.Id);
-                if (error is not null) ViewModel.Status = error;
-                RefreshWorkspace();
-            }, "primary"));
-            InspectorBody.Children.Add(ActionButton(W("ShowInTopology"), () => { Navigate("topology"); NavSearch.Text = current.AddressText; }));
-            InspectorBody.Children.Add(ActionButton(W("OpenParameters"), () => OpenTarget(new("device", current.Device.Id), "params"), "quiet"));
-        }
+            BuildDeviceInspector(current);
         else if (tab?.Target.Kind == "project" && WorkbenchProjection.Resolve(ViewModel.Project, tab.Target) is Project project)
-        {
-            var name = new TextBox { Text = project.Name };
-            var comment = new TextBox { Text = project.Comment ?? "", AcceptsReturn = true, MinHeight = 80 };
-            InspectorBody.Children.Add(Label(W("ProjectProperties")));
-            InspectorBody.Children.Add(Note(W("NameLabel"))); InspectorBody.Children.Add(name);
-            InspectorBody.Children.Add(Note(W("Comment"))); InspectorBody.Children.Add(comment);
-            InspectorBody.Children.Add(ActionButton(W("Apply"), () =>
-            {
-                ViewModel.Edit(W("ProjectProperties"), p => { p.Name = name.Text?.Trim() ?? p.Name; p.Comment = comment.Text; });
-                RefreshWorkspace();
-            }, "primary"));
-        }
+            BuildProjectInspector(project);
         else if (tab?.Target.Kind == "ga" && WorkbenchProjection.Resolve(ViewModel.Project, tab.Target) is GroupAddressEntry ga)
-        {            var name = new TextBox { Text = ga.Name }; var dpt = new TextBox { Text = ga.DatapointType };
-            InspectorBody.Children.Add(Note(ga.Address.ToString())); InspectorBody.Children.Add(name); InspectorBody.Children.Add(dpt);
-            InspectorBody.Children.Add(ActionButton(W("Apply"), () =>
-            {
-                ViewModel.RenameGroupAddress(new(ga.Address, ga.Name, ga.DatapointType, ga.Id), name.Text ?? "", dpt.Text); RefreshWorkspace();
-            }, "primary"));
-            if (ViewModel.Project is { } gaProject)
-            {
-                var linked = ProjectQuery.ComObjectRefs(gaProject).Where(r => r.Ref.Links.Contains(ga.Id)).ToList();
-                InspectorBody.Children.Add(Note(W("GaLinkedCount", linked.Count)));
-                if (linked.Count == 0) InspectorBody.Children.Add(Note(W("GaNoLinks")));
-                foreach (var group in linked.GroupBy(r => r.Device).Take(40))
-                {
-                    InspectorBody.Children.Add(ActionButton(W("GaLinkedDevice", group.Key.Address.ToString(),
-                        group.Key.Name ?? ""), () => OpenTarget(new("device", group.Key.Id), "relations"), "quiet"));
-                    foreach (var (device, comObject) in group.Take(10))
-                    {
-                        var sending = WorkbenchProject.Metadata(gaProject, new(device.Id, comObject.Id))?.SendingGroupId == ga.Id;
-                        InspectorBody.Children.Add(Note($"#{comObject.Number} · {comObject.Text ?? comObject.Id}" + (sending ? " · " + W("SendingBadge") : "")));
-                    }
-                }
-            }
-        }
+            BuildGroupAddressInspector(ga);
         else InspectorBody.Children.Add(Note(W("InspectorEmpty")));
     }
 
