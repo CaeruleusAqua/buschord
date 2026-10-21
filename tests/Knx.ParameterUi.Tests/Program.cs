@@ -1,12 +1,13 @@
 using System.IO.Compression;
 using System.Xml.Linq;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Knx;
 using Knx.App.Services;
 using Knx.App.Views;
 using Knx.Catalog;
 
-if (args.Contains("--native")) return NativeDraftChecks.Run();
+if (args.Contains("--native")) return NativeDraftChecks.Run(args.Contains("--shots"));
 
 var failures = 0;
 void Check(string name, bool ok)
@@ -97,12 +98,34 @@ try
     Check("Explicit pane Apply persists and resets dirty state", pane.Apply() && !pane.HasUnappliedChanges
         && vm.Devices[1].Device.ParameterValues["R-N"] == "41");
     pane.Load(vm.Devices[0]); pane.Load(vm.Devices[1]);
-    Check("Applied values do not resurrect an old draft", PaneRows()[0].Value == "41" && !pane.HasUnappliedChanges);
+    Check("Applied values do not resurrect an old draft", PaneRows()[0].Value == "41" && !pane.HasUnappliedChanges
+        && pane.FindControl<TextBlock>("StatusHint")!.IsVisible
+        && !pane.FindControl<Button>("ApplyButton")!.IsEnabled);
     PaneRows()[0].Value = "42"; pane.Load(vm.Devices[0]); PaneRows()[0].Value = "43";
     pane.DiscardDrafts();
     Check("DiscardDrafts resets current editor and every stored draft", !pane.HasUnappliedChanges && PaneRows()[0].Value == "25");
     pane.Load(vm.Devices[1]);
     Check("Discarded hidden-device draft cannot return", PaneRows()[0].Value == "41" && !pane.HasUnappliedChanges);
+    PaneRows()[0].Value = "44";
+    Check("Draft footer names the visible pending change",
+        pane.FindControl<Border>("DraftPill")!.IsVisible && pane.Session.ChangedCount == 1
+        && pane.FindControl<TextBlock>("DraftText")!.Text!.Contains('1'));
+    PaneRows()[0].Value = "101";
+    Check("Invalid field blocks Apply and names the field in the footer summary",
+        pane.Session.HasValidationErrors && pane.Session.ValidationSummary.Contains("Brightness")
+        && pane.FindControl<TextBlock>("ValidationSummary")!.IsVisible
+        && !pane.FindControl<Button>("ApplyButton")!.IsEnabled);
+    Check("Reset-to-default uses the declared default, not the saved baseline",
+        pane.Session.CanReset && PaneRows()[0].Value == "101");
+    pane.Session.ResetToDefaults();
+    Check("Reset-to-default clears the validation error but keeps the unsaved draft",
+        PaneRows()[0].Value == "25" && !pane.Session.HasValidationErrors && pane.HasUnappliedChanges
+        && !pane.Session.CanReset);
+    PaneRows()[0].Value = "44";
+    pane.FindControl<Button>("DiscardButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    Check("Footer discard restores the applied baseline",
+        PaneRows()[0].Value == "41" && !pane.HasUnappliedChanges
+        && !pane.FindControl<Border>("DraftPill")!.IsVisible);
     PaneRows()[0].Value = "44";
     vm.UndoCommand.Execute(null);
     pane.Load(vm.Devices[1]);
@@ -301,10 +324,12 @@ try
     // A replacement project must really have a new identity, even with identical device IDs.
     coldVm.CreateProject(Knxproj.Load(path), null);
     Check("Session dirty query ignores drafts after project replacement", !session.HasUnappliedChanges);
-    Check("Project replacement rejects a stale preview and Apply without a control", !session.ReviewChanges().IsValid && !session.Apply());
+    Check("Project replacement rejects a stale preview and Apply without a control",
+        !session.CanApply && !session.ReviewChanges().IsValid && !session.Apply());
     using var replacementView = new ParameterPane(session);
     Check("Fresh view cannot display an old project's draft", session.Device is null && session.Rows.Length == 0
-        && !session.HasUnappliedChanges);
+        && !session.HasUnappliedChanges && !replacementView.Apply()
+        && !replacementView.FindControl<Button>("ApplyButton")!.IsVisible);
 
 
     var paneType = typeof(Knx.App.Views.ParameterPane);

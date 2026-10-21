@@ -3,12 +3,15 @@
 ```powershell
 dotnet run --project tests/Knx.ParameterUi.Tests -c Release
 dotnet run --project tests/Knx.ParameterUi.Tests -c Release -- --native
+dotnet run --project tests/Knx.ParameterUi.Tests -c Release -- --native --shots
 ```
 
 The default checks use synthetic archive and imported catalogue fixtures. `--native`
 requires a graphical desktop: it opens an actual Avalonia window, exercises TextBox
 undo back to baseline, and switches from A to B synchronously inside Apply's
-`CanUndo` notification (including duplicate device IDs). No bus/router access.
+`CanUndo` notification (including duplicate device IDs). `--shots` additionally
+renders the real pane at 1440×900 and 1024×700 in light and dark under
+`%TEMP%\opencode\param-shots`. No bus/router access.
 
 ## Host API
 
@@ -19,6 +22,11 @@ without a control. Keep calling `Load` on selection and `Refresh` after model or
 catalogue publication. The session does not subscribe to the VM or retain views.
 Detached views unsubscribe; call `Dispose()` when permanently closing a view.
 The parameterless and VM pane constructors and dialog API remain compatible.
+
+The footer reads `ChangedCount`/`DraftText` for the draft pill, `ValidationErrors`/
+`ValidationSummary` for the footer-wide error line and `CanReset`/`ResetToDefaults()`
+for the reset-to-default action. The same core validation drives the per-field error
+under each editor, so hidden or read-only rows are never reported as invalid.
 
 `ReviewChanges()` returns `ParameterChangePreview` (device identity, immutable
 diff records with before/after/error, validity and explicit limitations).

@@ -3,6 +3,9 @@ using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Media.Imaging;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Avalonia.Interactivity;
@@ -13,8 +16,11 @@ using Knx.App.Views;
 
 internal static class NativeDraftChecks
 {
-    public static int Run()
+    private static bool _shots;
+
+    public static int Run(bool shots = false)
     {
+        _shots = shots;
         AppBuilder.Configure<Application>().UsePlatformDetect()
             .AfterSetup(_ => DispatcherTimer.RunOnce(Check, TimeSpan.FromMilliseconds(100)))
             .StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
@@ -36,6 +42,10 @@ internal static class NativeDraftChecks
             typeof(CatalogLibrary).GetField("_store", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                 .SetValue(CatalogLibrary.Shared, new CatalogStore(Path.Combine(root, "catalog")));
             Application.Current.Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
+            Application.Current.Styles.Add(new StyleInclude(new Uri("avares://BusChord/"))
+            {
+                Source = new Uri("avares://BusChord/Workbench/WorkbenchTheme.axaml"),
+            });
             var project = new Project { Id = "P", Name = "Native draft regression" };
             var installation = new Installation { Id = "I" };
             var area = new Area { Id = "A", Address = 1 };
@@ -105,6 +115,14 @@ internal static class NativeDraftChecks
             Row().Value = "101"; Click("ReviewButton");
             Assert("Native invalid preview blocks Apply", !pane.FindControl<Button>("ApplyButton")!.IsEnabled
                 && pane.Session.Preview?.IsValid == false && a.Device.ParameterValues["R-N"] == "70");
+            await Task.Delay(100);
+            var expectedError = pane.Session.ValidationErrors.Single().Error;
+            var fieldError = pane.GetVisualDescendants().OfType<TextBlock>()
+                .FirstOrDefault(t => t.Classes.Contains("wb-error") && t.Text == expectedError);
+            Assert("Native invalid field renders its error and the footer summary",
+                fieldError is not null
+                && pane.FindControl<TextBlock>("ValidationSummary")!.IsVisible
+                && pane.FindControl<Border>("DraftPill")!.IsVisible);
             var editing = pane.Session;
             window.Content = null; pane.Dispose();
             var detachedMessage = pane.FindControl<TextBlock>("MessageText")!.Text;
@@ -124,6 +142,21 @@ internal static class NativeDraftChecks
                 && !editing.HasUnappliedChanges && !pane.FindControl<StackPanel>("PreviewPanel")!.IsVisible);
             vm.UndoCommand.Execute(null);
             Assert("One undo restores reviewed Apply", vm.Devices[0].Device.ParameterValues["R-N"] == "70");
+            if (_shots)
+            {
+                peerWindow.Hide();
+                pane.Load(vm.Devices[0]);
+                await Task.Delay(100);
+                Row().Value = "88";
+                await Task.Delay(100);
+                var shots = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Temp", "opencode", "param-shots");
+                Directory.CreateDirectory(shots);
+                await Capture(window, 1440, 900, ThemeVariant.Light, Path.Combine(shots, "pane-light-1440.png"));
+                await Capture(window, 1024, 700, ThemeVariant.Light, Path.Combine(shots, "pane-light-1024.png"));
+                await Capture(window, 1440, 900, ThemeVariant.Dark, Path.Combine(shots, "pane-dark-1440.png"));
+                await Capture(window, 1024, 700, ThemeVariant.Dark, Path.Combine(shots, "pane-dark-1024.png"));
+            }
             peerWindow.Close();
             pane.Dispose();
             window.Close();
@@ -132,5 +165,18 @@ internal static class NativeDraftChecks
         finally { Directory.Delete(root, true); }
         Console.WriteLine(failures == 0 ? "NATIVE DRAFT CHECKS OK" : $"{failures} native failures");
         lifetime.Shutdown(failures == 0 ? 0 : 1);
+    }
+
+    /// <summary>Optional --shots: renders the real pane at the review sizes for light and dark.</summary>
+    private static async Task Capture(Window window, int width, int height, ThemeVariant theme, string path)
+    {
+        window.RequestedThemeVariant = theme;
+        window.Width = width;
+        window.Height = height;
+        await Task.Delay(250);
+        using var bitmap = new RenderTargetBitmap(new PixelSize(width, height), new Vector(96, 96));
+        bitmap.Render(window);
+        bitmap.Save(path);
+        Console.WriteLine($"Screenshot: {path} ({width}x{height})");
     }
 }

@@ -38,9 +38,63 @@ public sealed class ParameterEditingSession
     public string? EmptyText { get; private set; } = ParameterEmptyState.Text(null, null, 0);
     public string Message { get; private set; } = "";
     public ParameterItemViewModel[] Rows { get; private set; } = [];
-    public bool CanApply => _apply is not null;
+    /// <summary>False as soon as the project or device identity behind the loaded editor is gone.</summary>
+    public bool CanApply => _apply is not null && !IsStale;
     public ParameterChangePreview? Preview { get; private set; }
     private bool IsDirty => _instances.Any(i => i.Value != _baseline.GetValueOrDefault(i.Id));
+    private bool IsStale => _vm is not null && (!ReferenceEquals(_project, _vm.Project) || Device is null
+        || _vm.Project is null || !ProjectQuery.DeviceList(_vm.Project).Any(d => ReferenceEquals(d, Device)));
+
+    /// <summary>Visible rows whose draft value differs from the saved baseline.</summary>
+    public int ChangedCount => Rows.Count(r => r.IsVisible && r.Value != _baseline.GetValueOrDefault(r.Instance.Id));
+
+    /// <summary>Draft indicator text for the footer; counts only this device, never hidden drafts.</summary>
+    public string DraftText => ChangedCount switch
+    {
+        0 => Strings.Language == "en" ? "Unapplied parameter drafts" : "Nicht übernommene Parameterentwürfe",
+        1 => Strings.Language == "en" ? "1 unapplied change" : "1 nicht übernommene Änderung",
+        var count => Strings.Language == "en" ? $"{count} unapplied changes" : $"{count} nicht übernommene Änderungen",
+    };
+
+    /// <summary>Core validation of every visible, editable draft row; field editors show the same errors.</summary>
+    public IReadOnlyList<(string Name, string Error)> ValidationErrors => Rows
+        .Where(r => r.IsVisible && r.IsEnabled)
+        .Select(r => (r.Name, Valid: ParameterValidation.TryValidate(r.Instance, r.Value, out var error), Error: error))
+        .Where(x => !x.Valid)
+        .Select(x => (x.Name, x.Error ?? ""))
+        .ToArray();
+
+    public int ValidationErrorCount => ValidationErrors.Count;
+    public bool HasValidationErrors => ValidationErrorCount > 0;
+    public string ValidationSummary
+    {
+        get
+        {
+            var errors = ValidationErrors;
+            if (errors.Count == 0) return "";
+            var names = string.Join(", ", errors.Take(3).Select(e => e.Name));
+            var more = errors.Count > 3 ? " …" : "";
+            return (Strings.Language, errors.Count) switch
+            {
+                ("en", 1) => $"1 invalid value: {names}",
+                ("en", var count) => $"{count} invalid values: {names}{more}",
+                (_, 1) => $"1 ungültiger Wert: {names}",
+                (_, var count) => $"{count} ungültige Werte: {names}{more}",
+            };
+        }
+    }
+
+    /// <summary>True when a pending draft can be restored to its declared default.</summary>
+    public bool CanReset => HasUnappliedChanges && Rows.Any(r => r.IsVisible && r.IsEnabled
+        && r.Instance.DefaultValue is not null && r.Value != r.Instance.DefaultValue);
+
+    /// <summary>Restores visible editable drafts to the parameter's declared default value.</summary>
+    public void ResetToDefaults()
+    {
+        foreach (var row in Rows)
+            if (row.IsVisible && row.IsEnabled && row.Instance.DefaultValue is { } value && row.Value != value)
+                row.Value = value;
+    }
 
     public bool HasUnappliedChanges
     {
@@ -133,8 +187,7 @@ public sealed class ParameterEditingSession
             ParameterValidation.TryValidate(validation, i.Value, out var error);
             return new ParameterChange(i.Id, i.Name, _baseline.GetValueOrDefault(i.Id), i.Value, error);
         }).ToArray();
-        var stale = _vm is not null && (!ReferenceEquals(_project, _vm.Project) || Device is null
-            || _vm.Project is null || !ProjectQuery.DeviceList(_vm.Project).Any(d => ReferenceEquals(d, Device)));
+        var stale = IsStale;
         var preview = new ParameterChangePreview(Device, changes, Strings.Language == "en"
             ? "Communication-object activation and assignment effects are not evaluated. Existing links are preserved. Unsupported manufacturer dynamics and DCA are not executed."
             : "KO-Aktivierung und Zuordnungswirkungen werden nicht ausgewertet. Bestehende Verknüpfungen bleiben erhalten. Nicht unterstützte Herstellerdynamik und DCA werden nicht ausgeführt.",
@@ -157,7 +210,7 @@ public sealed class ParameterEditingSession
         try
         {
             if (!ReviewChanges().IsValid || !ReferenceEquals(_instances, instances)) return false;
-            apply();
+            if (!apply()) return false;
             foreach (var instance in instances) baseline[instance.Id] = instance.Value;
             if (device is not null && _drafts.TryGetValue(device, out var draft)
                 && ReferenceEquals(draft.Instances, instances)) _drafts.Remove(device);
