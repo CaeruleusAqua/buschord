@@ -6,8 +6,7 @@
         Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
   <DockPanel Margin="14">
     <StackPanel DockPanel.Dock="Top" Spacing="8">
-      <TextBlock Classes="muted" TextWrapping="Wrap"
-                 Text="Alle Geräte eines Produkts umstellen; Verknüpfungen bleiben erhalten." />
+      <TextBlock Classes="muted" TextWrapping="Wrap" Text="{loc:Tr ReplaceHint}" />
       <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto">
         <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr ReplaceOldRef}" VerticalAlignment="Center" />
         <TextBox Grid.Row="0" Grid.Column="1" x:Name="OldBox" Watermark="M-0083_A-008A-25-6CE4" />

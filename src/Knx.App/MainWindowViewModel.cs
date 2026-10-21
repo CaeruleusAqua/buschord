@@ -56,7 +56,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private string _projectPath = "";
 
     public string Title => Project is null
-        ? "BusChord – kein Projekt"
+        ? Strings.Get("TitleNoProject")
         : $"BusChord – {Project.Name}{(_undo.IsDirty ? " *" : "")}";
 
     /// <summary>True when the project differs from the last state written to disk.</summary>
@@ -169,7 +169,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private string _busName = "";
 
     [ObservableProperty]
-    private string _status = "Bereit";
+    private string _status = "";
 
     [ObservableProperty]
     private DeviceRow? _selectedDevice;
@@ -255,7 +255,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _undo = undo;
         RefreshRecents();
         Refresh();
-        Status = $"Projekt geladen: {Project.Name}";
+        Status = WorkbenchStrings.Get("ProjectLoaded", Project.Name);
     }
 
     public void CreateProject(Project project, string? path)
@@ -273,7 +273,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _undo = undo;
         if (path is not null) RefreshRecents();
         Refresh();
-        Status = $"Neues Projekt '{project.Name}' angelegt";
+        Status = WorkbenchStrings.Get("ProjectCreated", project.Name);
     }
 
     private void RememberProject(string path)
@@ -301,7 +301,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _undo.Push(Project);
         _undo.MarkSaved();
         NotifyEditState();
-        Status = "Projekt gespeichert";
+        Status = Strings.Get("StatusProjectSaved");
     }
 
     public void SaveProjectAs(string path)
@@ -314,7 +314,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _undo.Push(Project);
         _undo.MarkSaved();
         NotifyEditState();
-        Status = "Projekt gespeichert";
+        Status = Strings.Get("StatusProjectSaved");
     }
 
     // ---------- editing with undo ----------
@@ -364,8 +364,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Project = restored;
         NotifyEditState();
         Refresh();
-        Status = "Rückgängig";
-        ProjectEdited?.Invoke(this, "Rückgängig");
+        var description = Strings.Get("MenuEditUndo");
+        Status = description;
+        ProjectEdited?.Invoke(this, description);
     }
 
     [RelayCommand]
@@ -375,8 +376,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Project = restored;
         NotifyEditState();
         Refresh();
-        Status = "Wiederhergestellt";
-        ProjectEdited?.Invoke(this, "Wiederhergestellt");
+        var description = Strings.Get("MenuEditRedo");
+        Status = description;
+        ProjectEdited?.Invoke(this, description);
     }
 
     private void NotifyEditState()
@@ -395,7 +397,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         var installation = project.Installations.FirstOrDefault();
         if (installation is null) { Status = Strings.Get("UxNeedsProject"); return; }
 
-        Edit("Gruppenadresse angelegt", p =>
+        Edit(Strings.Get("StatusGroupAddressAdded"), p =>
         {
             var address = ProjectQuery.NextFreeGroupAddress(p, 1, 1);
             var range = EnsureRangeFor(p, installation, address);
@@ -433,7 +435,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             return false;
         }
         var id = "";
-        Edit($"Gruppenadresse {address} angelegt", p =>
+        Edit(WorkbenchStrings.Get("GroupAddressCreated", address.ToString()), p =>
         {
             var range = EnsureRangeFor(p, installation, address);
             id = NextGroupAddressId(p);
@@ -475,7 +477,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (targetInstallation is not null
             && !targetInstallation.Areas.SelectMany(a => a.Lines).Any(l => l.Id == targetLine.Id))
             return WorkbenchStrings.Get("RoomLineInstallationMismatch");
-        Edit($"Gerät {device.Address} bearbeitet", p =>
+        Edit(Strings.Get("StatusDeviceEdited", device.Address.ToString()), p =>
         {
             foreach (var installation in p.Installations)
             {
@@ -509,7 +511,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         if (Project is not { } project) return;
         var id = ProjectQuery.FindGroupAddress(project, row.Address)?.Id;
-        Edit($"Gruppenadresse {row.AddressText} gelöscht", p =>
+        Edit(Strings.Get("StatusGroupAddressDeleted", row.AddressText), p =>
         {
             foreach (var range in p.Installations.SelectMany(i => ProjectQuery.AllRanges(i)))
             {
@@ -527,7 +529,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public void RenameGroupAddress(GroupAddressRow row, string name, string? datapointType)
     {
         if (Project is not { } project) return;
-        Edit("Gruppenadresse geändert", p =>
+        Edit(Strings.Get("StatusGroupAddressChanged"), p =>
         {
             if (ProjectQuery.FindGroupAddress(p, row.Address) is not { } entry) return;
             entry.Name = name;
@@ -542,7 +544,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (Project is not { } project) return;
         var installation = project.Installations.FirstOrDefault();
         if (installation is null) return;
-        Edit("Gerät angelegt", p =>
+        Edit(Strings.Get("StatusDeviceAdded"), p =>
         {
             var address = ProjectQuery.NextFreeDeviceAddress(p, ProjectQuery.FindAreaOf(p, line)?.Address ?? 0, line.Address);
             var device = new DeviceInstance
@@ -559,14 +561,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public void DeleteDevice(DeviceRow row)
     {
         if (Project is not { } project) return;
-        Edit($"Gerät {row.AddressText} gelöscht", p => ProjectQuery.RemoveDevice(p, row.Device));
+        Edit(Strings.Get("StatusDeviceDeleted", row.AddressText), p => ProjectQuery.RemoveDevice(p, row.Device));
     }
 
     /// <summary>Drag &amp; drop: moves a device into another line/segment.</summary>
     public void MoveDevice(DeviceInstance device, Line target)
     {
         if (Project is not { } project) return;
-        Edit($"Gerät {device.Address} verschoben", p =>
+        Edit(Strings.Get("StatusDeviceMoved", device.Address.ToString()), p =>
         {
             ProjectQuery.RemoveDevice(p, device);
             ProjectQuery.AddToLine(target, device);
@@ -576,7 +578,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public void MoveDevice(DeviceInstance device, Segment target)
     {
         if (Project is not { } project) return;
-        Edit($"Gerät {device.Address} verschoben", p =>
+        Edit(Strings.Get("StatusDeviceMoved", device.Address.ToString()), p =>
         {
             ProjectQuery.RemoveDevice(p, device);
             target.Devices.Add(device);
@@ -592,8 +594,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (Project is null) { Status = Strings.Get("UxNeedsProject"); return []; }
         foreach (var finding in ProjectCheck.Run(Project)) Findings.Add(finding);
         Status = Findings.Count == 0
-            ? "Projektprüfung: keine Befunde"
-            : $"Projektprüfung: {Findings.Count} Befunde";
+            ? WorkbenchStrings.Get("CheckClean")
+            : WorkbenchStrings.Get("CheckFindings", Findings.Count);
         OnPropertyChanged(nameof(HasFindings));
         return Findings;
     }
@@ -602,7 +604,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         if (Project is null) { Status = Strings.Get("UxNeedsProject"); return []; }
         var suggestions = SmartLinking.Suggest(Project, DatapointTypeOf, perObject: 1);
-        Status = $"Intelligente Verknüpfung: {suggestions.Count} Vorschläge";
+        Status = Strings.Get("StatusSmartLinkSuggestions", suggestions.Count);
         return suggestions;
     }
 
@@ -610,7 +612,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         var list = suggestions.ToList();
         var count = list.Count;
-        Edit($"{count} Verknüpfung(en) angelegt", p => SmartLinking.Apply(list));
+        Edit(Strings.Get("StatusLinksAdded", count), p => SmartLinking.Apply(list));
         return count;
     }
 
@@ -694,7 +696,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Status = $"Parameter nicht lesbar: {ex.Message}";
+            Status = Strings.Get("StatusParameterUnreadable", ex.Message);
             return ([], []);
         }
     }
@@ -777,7 +779,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _bus ??= new KnxBus();
         DiscoveredDevices.Clear();
         foreach (var device in await _bus.DiscoverAsync(host: Settings.BusInterface)) DiscoveredDevices.Add(device);
-        Status = DiscoveredDevices.Count == 0 ? "keine Geräte gefunden" : $"{DiscoveredDevices.Count} Geräte gefunden";
+        Status = DiscoveredDevices.Count == 0
+            ? Strings.Get("StatusNoDevicesFound")
+            : Strings.Get("StatusDevicesFound", DiscoveredDevices.Count);
     }
 
     [RelayCommand]
@@ -788,7 +792,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             Status = Strings.Get("UxNeedsInterface");
             return;
         }
-        if (SelectedDeviceOnBus is null) { Status = "kein Gerät ausgewählt"; return; }
+        if (SelectedDeviceOnBus is null) { Status = Strings.Get("StatusNoDeviceSelected"); return; }
         _bus ??= new KnxBus();
         _bus.TelegramReceived += OnTelegram;
         var address = IndividualAddress.TryParse(Settings.TunnelAddress, out var ia)
@@ -796,7 +800,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             : new IndividualAddress(1, 1, 250);
         await _bus.ConnectTunnelAsync(SelectedDeviceOnBus, address);
         StateChanged();
-        Status = $"Verbunden mit {SelectedDeviceOnBus.Name}";
+        Status = Strings.Get("StatusConnectedToDevice", SelectedDeviceOnBus.Name);
     }
 
     [RelayCommand]
@@ -808,7 +812,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             await _bus.DisposeAsync();
         }
         StateChanged();
-        Status = "Getrennt";
+        Status = Strings.Get("StatusDisconnected");
     }
 
     [RelayCommand]
@@ -817,7 +821,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (_bus is null || !CanSend) return;
         var row = SelectedGroupAddress!;
         await _bus.GroupValueWriteAsync(row.Address, Dpt.Encode(row.DatapointType, SendValue));
-        Status = $"gesendet {row.AddressText} = {SendValue}";
+        Status = Strings.Get("StatusSentValue", row.AddressText, SendValue);
     }
 
     public async Task DownloadAsync(string imagePath)
@@ -828,7 +832,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         try
         {
             var result = await _bus.DownloadAsync(SelectedDeviceOnBus!, row.Address, new FileProgram(imagePath), progress);
-            Status = result.Success ? "Download OK" : $"Download fehlgeschlagen: {result.Message}";
+            Status = result.Success ? "Download OK" : Strings.Get("StatusDownloadFailed", result.Message);
         }
         catch (NotSupportedException ex)
         {
@@ -860,14 +864,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Recorder.Start();
         Recorded.Clear();
         IsRecording = true;
-        Status = "Aufzeichnung gestartet";
+        Status = Strings.Get("StatusRecordingStarted");
     }
 
     public void StopRecording()
     {
         Recorder.Stop();
         IsRecording = false;
-        Status = $"Aufzeichnung beendet: {Recorder.Count} Telegramme";
+        Status = Strings.Get("StatusRecordingStopped", Recorder.Count);
     }
 
     // ---------- refresh ----------
@@ -903,23 +907,27 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         foreach (var installation in project.Installations)
         {
-            var installationNode = new TreeNode($"Installation {installation.Name}".Trim(), null, "⌂", installation)
+            var installationNode = new TreeNode(
+                Strings.Get("TreeNodeInstallation", installation.Name ?? "").Trim(), null, "⌂", installation)
             {
                 IsExpanded = true,
             };
             foreach (var area in installation.Areas)
             {
-                var areaNode = new TreeNode($"Bereich {area.Address}", area.Name, "▣", area) { IsExpanded = true };
+                var areaNode = new TreeNode(Strings.Get("TreeNodeArea", area.Address), area.Name, "▣", area)
+                    { IsExpanded = true };
                 foreach (var device in area.Devices)
                     areaNode.Children.Add(DeviceNode(device));
                 foreach (var line in area.Lines)
                 {
-                    var lineNode = new TreeNode($"Linie {area.Address}.{line.Address}", line.Name, "≡", line) { IsExpanded = true };
+                    var lineNode = new TreeNode(Strings.Get("TreeNodeLine", $"{area.Address}.{line.Address}"),
+                        line.Name, "≡", line) { IsExpanded = true };
                     foreach (var device in line.Devices)
                         lineNode.Children.Add(DeviceNode(device));
                     foreach (var segment in line.Segments)
                     {
-                        var segmentNode = new TreeNode($"Segment {segment.Address}", segment.Name, "▢", segment);
+                        var segmentNode = new TreeNode(Strings.Get("TreeNodeSegment", segment.Address),
+                            segment.Name, "▢", segment);
                         foreach (var device in segment.Devices)
                             segmentNode.Children.Add(DeviceNode(device));
                         lineNode.Children.Add(segmentNode);
@@ -956,29 +964,30 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (SelectedDevice is { } device)
         {
             EditName = device.Name;
-            Details.Add(new("Adresse", device.AddressText));
-            Details.Add(new("Name", device.Name));
-            Details.Add(new("Beschreibung", device.Device.Description ?? ""));
-            Details.Add(new("Produkt", device.Device.ProductRefId));
-            Details.Add(new("Applikation", device.Device.Hardware2ProgramRefId ?? ""));
-            Details.Add(new("Kommunikationsobjekte", device.Device.ComObjectRefs.Count.ToString()));
-            Details.Add(new("Verknüpfungen", device.Device.ComObjectRefs.Sum(r => r.Links.Count).ToString()));
+            Details.Add(new(Strings.Get("ColAddress"), device.AddressText));
+            Details.Add(new(Strings.Get("ColName"), device.Name));
+            Details.Add(new(Strings.Get("ColMessage"), device.Device.Description ?? ""));
+            Details.Add(new(Strings.Get("PropertyProduct"), device.Device.ProductRefId));
+            Details.Add(new(Strings.Get("CatalogProgram"), device.Device.Hardware2ProgramRefId ?? ""));
+            Details.Add(new(Strings.Get("CommunicationObjects"), device.Device.ComObjectRefs.Count.ToString()));
+            Details.Add(new(Strings.Get("PropertyLinks"),
+                device.Device.ComObjectRefs.Sum(r => r.Links.Count).ToString()));
             return;
         }
         if (SelectedGroupAddress is { } row)
         {
             EditName = row.Name;
             EditDatapointType = row.DatapointType ?? "";
-            Details.Add(new("Adresse", row.AddressText));
-            Details.Add(new("Name", row.Name));
-            Details.Add(new("Datapoint-Typ", row.DatapointType ?? ""));
+            Details.Add(new(Strings.Get("ColAddress"), row.AddressText));
+            Details.Add(new(Strings.Get("ColName"), row.Name));
+            Details.Add(new(Strings.Get("LblDatapointType"), row.DatapointType ?? ""));
             var entry = Project is { } p ? ProjectQuery.FindGroupAddress(p, row.Address) : null;
-            Details.Add(new("Beschreibung", entry?.Description ?? ""));
-            Details.Add(new("Kommentar", entry?.Comment ?? ""));
+            Details.Add(new(Strings.Get("ColMessage"), entry?.Description ?? ""));
+            Details.Add(new(Strings.Get("NewProjectComment"), entry?.Comment ?? ""));
             var links = entry is null || Project is null
                 ? 0
                 : ProjectQuery.ComObjectRefs(Project).Count(r => r.Ref.Links.Contains(entry.Id));
-            Details.Add(new("Verknüpfte Objekte", links.ToString()));
+            Details.Add(new(Strings.Get("PropertyLinkedObjects"), links.ToString()));
         }
     }
 
@@ -1007,7 +1016,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (SelectedGroupAddress is { } row)
             RenameGroupAddress(row, EditName, string.IsNullOrWhiteSpace(EditDatapointType) ? null : EditDatapointType);
         else if (SelectedDevice is { } device && device.Name != EditName && EditName.Trim().Length > 0)
-            Edit($"Gerät {device.AddressText} umbenannt", p =>
+            Edit(Strings.Get("StatusDeviceRenamed", device.AddressText), p =>
             {
                 if (ProjectQuery.FindDevice(p, device.Address) is { } target) target.Name = EditName;
             });
@@ -1015,7 +1024,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public async Task ReadGroupValueAsync(GroupAddressRow row)
     {
-        if (_bus is null) throw new InvalidOperationException("keine Busverbindung");
+        if (_bus is null) throw new InvalidOperationException(Strings.Get("MsgNeedConnection"));
         await _bus.GroupValueReadAsync(row.Address);
     }
 
@@ -1024,7 +1033,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Recorded.Clear();
         foreach (var entry in entries) Recorded.Add(entry);
         RecordedCount = entries.Count;
-        Status = $"{entries.Count} Telegramme geladen";
+        Status = Strings.Get("StatusTelegramsLoaded", entries.Count);
     }
 
     private void StateChanged()

@@ -381,6 +381,16 @@ try
         english.Contains("read-only", StringComparison.Ordinal)
         && CatalogUiText.Reason(CatalogBlockReason.DcaUnsupported) != english
         && CatalogUiText.Reason(CatalogBlockReason.DcaUnsupported).Contains("lesbar", StringComparison.Ordinal));
+
+    var languageVm = new MainWindowViewModel();
+    Strings.Language = "en";
+    Check("catalog failure status follows the UI language",
+        !CatalogBrowser.Insert(languageVm, switcher, null, null, "1.1.1", null, out var englishStatus)
+        && englishStatus == "no project loaded" && englishStatus == Strings.Get("StatusNoProject"));
+    Strings.Language = "de";
+    Check("catalog failure status defaults to German",
+        !CatalogBrowser.Insert(languageVm, switcher, null, null, "1.1.1", null, out var germanStatus)
+        && germanStatus == "kein Projekt geladen");
     Strings.Language = language;
 
     var gateVm = new MainWindowViewModel();

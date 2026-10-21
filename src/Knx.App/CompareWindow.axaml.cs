@@ -18,7 +18,8 @@ public partial class CompareWindow : Window
     public void Load(DifferenceReport report)
     {
         _report = report;
-        SummaryText.Text = $"{report.AddedCount} hinzugefügt · {report.RemovedCount} entfernt · {report.ChangedCount} geändert";
+        SummaryText.Text = Strings.Get("CompareSummary",
+            report.AddedCount, report.RemovedCount, report.ChangedCount);
         ProjectsText.Text = $"{report.LeftProjectName}  ↔  {report.RightProjectName}   ({report.GeneratedAt:dd.MM.yyyy HH:mm})";
         // ListBox-basierte Diff-Anzeige (kein DataGrid-Paket nötig)
         DiffGrid.ItemsSource = report.Items;

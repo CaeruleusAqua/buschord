@@ -69,7 +69,8 @@
             <TextBlock Text="{loc:Tr OptionsBus}" Classes="settings-heading" />
             <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr OptionsInterface}" Classes="settings-label" />
-              <TextBox Grid.Row="0" Grid.Column="1" x:Name="BusInterfaceBox" Watermark="z. B. 192.168.1.10" />
+              <TextBox Grid.Row="0" Grid.Column="1" x:Name="BusInterfaceBox"
+                       Watermark="{loc:Tr SettingsInterfaceExample}" />
 
               <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr OptionsOwnAddress}" Classes="settings-label" />
               <TextBox Grid.Row="1" Grid.Column="1" x:Name="TunnelAddressBox" Watermark="1.1.250" />

@@ -29,8 +29,8 @@ public partial class ReplaceProductWindow : Window
         _preview = _replace(oldRef, newRef, program, true);
         ResultList.ItemsSource = _preview;
         SummaryText.Text = _preview.Count == 0
-            ? "Keine Geräte mit dieser Produkt-RefId gefunden."
-            : $"{_preview.Count} Gerät(e) betroffen, {_preview.Sum(r => r.KeptLinks)} Verknüpfung(en) bleiben erhalten.";
+            ? Strings.Get("ReplaceNoDevices")
+            : Strings.Get("ReplacePreviewSummary", _preview.Count, _preview.Sum(r => r.KeptLinks));
         ApplyButton.IsEnabled = _preview.Count > 0;
     }
 
@@ -38,7 +38,7 @@ public partial class ReplaceProductWindow : Window
     {
         if (!TryReadInput(out var oldRef, out var newRef, out var program)) return;
         var results = _replace(oldRef, newRef, program, false);
-        AppliedMessage = $"{results.Count} Gerät(e) umgestellt";
+        AppliedMessage = Strings.Get("ReplaceApplied", results.Count);
         Close(true);
     }
 
@@ -49,7 +49,7 @@ public partial class ReplaceProductWindow : Window
         program = string.IsNullOrWhiteSpace(ProgramBox.Text) ? null : ProgramBox.Text!.Trim();
         if (oldRef.Length == 0 || newRef.Length == 0)
         {
-            SummaryText.Text = "Alte und neue Produkt-RefId sind Pflichtfelder.";
+            SummaryText.Text = Strings.Get("ReplaceRequiredFields");
             return false;
         }
         return true;

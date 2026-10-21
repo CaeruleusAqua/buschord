@@ -6,6 +6,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Knx;
+using Knx.App.Localization;
 using Knx.App.Workbench;
 
 namespace Knx.App;
@@ -109,7 +110,7 @@ public partial class App : Application
                 {
                     splash.Close();
                     if (loadError is { } error)
-                        _ = ConfirmDialog.ShowMessageAsync(window, "Projekt nicht ladbar", error);
+                        _ = ConfirmDialog.ShowMessageAsync(window, WorkbenchStrings.Get("ProjectLoadFailed"), error);
                 };
                 // The splash must never outlive the main window, not even on a failed start-up.
                 window.Closed += (_, _) => splash.Close();
@@ -118,8 +119,8 @@ public partial class App : Application
                 {
                     if (!File.Exists(path))
                     {
-                        loadError = $"Die Datei '{path}' wurde nicht gefunden.";
-                        window.ViewModel.Status = $"Projekt nicht ladbar: {loadError}";
+                        loadError = Strings.Get("MsgFileNotFound", path);
+                        window.ViewModel.Status = WorkbenchStrings.Get("ProjectLoadFailedStatus", loadError);
                     }
                     else
                     {
@@ -132,7 +133,7 @@ public partial class App : Application
                             // A corrupt project must not take the process down or leave the
                             // topmost splash behind: the app continues without a project.
                             loadError = ex.Message;
-                            window.ViewModel.Status = $"Projekt nicht ladbar: {ex.Message}";
+                            window.ViewModel.Status = WorkbenchStrings.Get("ProjectLoadFailedStatus", ex.Message);
                         }
                     }
                 }

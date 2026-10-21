@@ -68,7 +68,7 @@ public partial class ReportWindow : Window
         }
         catch (Exception ex)
         {
-            await ConfirmDialog.ShowMessageAsync(this, "CSV nicht speicherbar", ex.Message);
+            await ConfirmDialog.ShowMessageAsync(this, Strings.Get("CsvSaveFailed"), ex.Message);
         }
     }
 
