@@ -2,10 +2,10 @@
 
 Stand: 2026-10-21, Basis `ac0480a4710a6a8109b5b54361127cc13debd00d` (Audit-Branch
 `agents/final/acceptance`). **Hinweis:** `development` steht inzwischen auf
-`f9d0e7f` (Dialoge `f605870`, Panes `39be758`, Search-Presenter `ab0f8a4`,
-Kontrast `45f035b`/`f9d0e7f`). Die Tabelle beschreibt weiterhin den gemessenen
-Basisstand; wo ein späterer Commit eine Zeile berührt, steht das im
-Abnahmebericht §1a/§7. Quellen: `src/app.js`-Aktionen aus
+`5183a0f` (Dialoge `f605870`, Panes `39be758`, Search-Presenter `ab0f8a4`,
+Kontrast `45f035b`/`f9d0e7f`, Layout `286c025`, DCA/Help `84cb150`). Die Tabelle
+beschreibt weiterhin den gemessenen Basisstand; wo ein späterer Commit eine Zeile
+berührt, steht das im Nachtrag unten und im Abnahmebericht §1a/§7. Quellen: `src/app.js`-Aktionen aus
 `analysis/workbench-v4-acceptance.md`, aktueller `WorkbenchWindow`-Code, nativer
 Workbench-Selftest sowie die Konsolen-Suiten aus `.github/workflows/ci.yml`.
 Status:
@@ -17,6 +17,23 @@ Ablauf/ eine Affordanz fehlt oder ist nur eingeschränkt erreichbar;
 Jede Zeile nennt jetzt den nativen Ort (`Datei:Zeile`) und, wo vorhanden, den
 Test/ Selftest. Ein `done` behauptet keine ETS-Interoperabilität und keinen
 echten Busverkehr.
+
+## Nachtrag `5183a0f` (Dokumentationswelle)
+
+Die Tabelle bleibt der gemessene Auditstand `ac0480a`. Gegen den integrierten
+Stand `5183a0f` sind diese Zeilen inzwischen überholt:
+
+| Zeile | Korrektur |
+|---|---|
+| 17 | **done**: `BuildObjectRow` hat eine Checkbox-Spalte (`WorkbenchWindow.axaml.cs:1009`), die dieselbe Auswahl wie die Liste spiegelt; Kopf-Checkbox dreiwertig. |
+| 07, 60, 69, E26 | **partial**: `HelpWindow` mit sechs Abschnitten ist vorhanden (`WorkbenchWindow.Commands.cs:91`, `Views/HelpWindow.axaml.cs`); es gibt weiterhin keine eigene Dokumentationsseite im Arbeitsbereich. |
+| E17 | **done**: Darstellungs- und Werkzeug-Tabs sind native `TabItem` (`WorkbenchWindow.axaml.cs:215,226`). |
+| R07 (Kontrast) | aktive Perspektive und Hover sind durch Kontrasttests abgedeckt (`5183a0f`); Tab-Rolle (E17) ist erledigt, der schmale Inspektor bleibt separat zu prüfen. |
+
+Nicht geändert: fehlender gepinnter GA-Vergleich (24/E09), Sammelaktion im
+Inspektor (22), ungefilterter GA-Picker (E03), alte Scan-Ergebnisse beim
+Linienwechsel (E13), reale DPI-/Screenreader-Abnahme (R04) und englische
+Prüf-/Exporttexte (R05).
 
 ## Delta gegenüber `55ff6e1`
 

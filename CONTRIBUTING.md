@@ -20,7 +20,7 @@ the core libraries are plain .NET and should stay portable.
 
 ## Tests
 
-Tests are dependency-free console projects: they print their checks and exit
+Tests are console projects with their own checks: they print each check and exit
 with code 0 on success, non-zero on failure. There is no test framework and no
 `dotnet test` step. Run at least the projects your change touches, and the core
 ones before opening a pull request:
@@ -34,21 +34,58 @@ dotnet run --project tests/Knx.Linking.Tests
 dotnet run --project tests/Knx.Mcp.Tests
 ```
 
-Other console suites: `Knx.Address.Tests`, `Knx.Buildings.Tests`,
-`Knx.Catalog.Tests`, `Knx.CatalogUi.Tests`, `Knx.Diagnostics.Tests`,
-`Knx.Docking.Tests`, `Knx.Encryption.Tests`, `Knx.Icon.Tests`, `Knx.Monitor.Tests`,
-`Knx.Owl.Tests`, `Knx.ParameterUi.Tests`, `Knx.Search.Tests`, `Knx.Shell.Tests`,
-`Knx.SmartLink.Tests`, `Knx.Workbench.Tests`, `Knx.WorkbenchPerformance.Tests`,
-`Knx.WorkbenchSessions.Tests`, `Knx.WorkbenchTheme.Tests` and
-`Knx.WorkbenchUiState.Tests`; `src/Knx.App.Tests` covers report exports. Smoke checks:
+These suites run on Linux and Windows in CI:
 
 ```powershell
-dotnet run --project src/Knx.App -- --smoke
+dotnet run --project tests/Knx.Owl.Tests
+dotnet run --project tests/Knx.Catalog.Tests
+dotnet run --project tests/Knx.Address.Tests
+dotnet run --project tests/Knx.Buildings.Tests
+dotnet run --project tests/Knx.Diagnostics.Tests
+dotnet run --project tests/Knx.Encryption.Tests
+dotnet run --project tests/Knx.Icon.Tests        # needs a display; CI skips it on Linux
+dotnet run --project tests/Knx.Monitor.Tests
+dotnet run --project tests/Knx.Search.Tests
+dotnet run --project tests/Knx.SmartLink.Tests
+dotnet run --project tests/Knx.ParameterUi.Tests
+dotnet run --project tests/Knx.CatalogUi.Tests
+dotnet run --project tests/Knx.Workbench.Tests
+dotnet run --project tests/Knx.WorkbenchPerformance.Tests
+dotnet run --project tests/Knx.WorkbenchSessions.Tests
+dotnet run --project tests/Knx.WorkbenchTheme.Tests
+dotnet run --project tests/Knx.WorkbenchUiState.Tests
+dotnet run --project src/Knx.App.Tests
 dotnet run --project src/Knx.Mcp -- --selftest
 ```
 
+Native-window and app checks require a graphical Windows desktop:
+
+```powershell
+dotnet run --project src/Knx.App -- --smoke
+dotnet run --project src/Knx.App -- --workbench-selftest --theme=light --lang=de
+dotnet run --project src/Knx.App -- --workbench-selftest --theme=dark --lang=en
+dotnet run --project src/Knx.App -- --screenshot-selftest
+dotnet run --project tests/Knx.ParameterUi.Tests -- --native
+dotnet run --project tests/Knx.Docking.Tests
+dotnet run --project tests/Knx.Shell.Tests
+```
+
+`Knx.Docking.Tests` exercises floating and redocking tool windows,
+`Knx.Shell.Tests` covers project lifecycle and shutdown, and the
+`Knx.Workbench*` suites cover domain contracts, sessions, theme, UI state and
+performance. `src/Knx.App.Tests` covers the report/export pipeline.
+
 `tests/Knx.Catalog.Tests` needs real `.knxprod` files; point it at a local folder
 with `KNX_CATALOG_SAMPLES=<folder>` or skip it.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` restores and builds `ets6.sln`, then runs the suites
+above on Ubuntu (`test-linux`) and Windows (`test-windows`). Docking, Shell,
+`ParameterUi --native`, `--smoke`, the Workbench self-checks and
+`--screenshot-selftest` run only on Windows. `cla.yml` enforces the CLA and
+`codeql.yml` runs the security scan. A pull request is not ready while any of
+these checks is red.
 
 Expectations:
 
