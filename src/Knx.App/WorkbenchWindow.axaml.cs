@@ -2406,9 +2406,13 @@ public partial class WorkbenchWindow : Window
         sessions.Monitor.ExportFullCsv(stream);
         ViewModel.Status = W("FullExported");
     }
-    private void ApplyLayout()
+    /// <summary>Applies layout for the real window or a width forced by a deterministic test.</summary>
+    internal void ApplyLayoutForWidth(double width) => ApplyLayout(width);
+
+    private void ApplyLayout(double? widthOverride = null)
     {
-        var narrow = Bounds.Width is > 0 and < 1100;
+        var width = widthOverride ?? Bounds.Width;
+        var narrow = width is > 0 and < 1100;
         var navigationWidth = narrow ? 210 : Workspace.NavigatorWidth;
         Navigator.IsVisible = NavSplitter.IsVisible = Workspace.NavigatorVisible;
         Zones.ColumnDefinitions[1].Width = new(Workspace.NavigatorVisible ? navigationWidth : 0);
@@ -2418,7 +2422,7 @@ public partial class WorkbenchWindow : Window
         {
             // Narrow windows overlay the inspector like the reference instead of squeezing the editor.
             Grid.SetColumn(Inspector, 3);
-            Inspector.Width = Math.Clamp(Bounds.Width - navigationWidth - 47 - 5 - 24, 280, 350);
+            Inspector.Width = Math.Clamp(width - navigationWidth - 47 - 5 - 24, 280, 350);
             Inspector.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
             Inspector.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, OffsetX = -2, Color = Color.Parse("#40000000") });
             Zones.ColumnDefinitions[4].Width = new(0);
@@ -2450,7 +2454,7 @@ public partial class WorkbenchWindow : Window
         KeyboardNavigation.SetTabNavigation(MainColumn, navigation);
         SetCompactToolTabs(narrow);
         var overlayWidth = Workspace.InspectorVisible && narrow ? Inspector.Width : 0;
-        var editorWidth = Bounds.Width - 47 - (Workspace.NavigatorVisible ? navigationWidth : 0) - 5 - overlayWidth
+        var editorWidth = width - 47 - (Workspace.NavigatorVisible ? navigationWidth : 0) - 5 - overlayWidth
             - (Workspace.InspectorVisible && !narrow ? Workspace.InspectorWidth + 5 : 0);
         LayoutObjectToolbar(editorWidth is > 0 and < 620);
         MainColumn.RowDefinitions[1].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(0) : new(1, GridUnitType.Star);

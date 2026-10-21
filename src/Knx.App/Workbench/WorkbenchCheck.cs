@@ -365,14 +365,16 @@ internal static class WorkbenchCheck
                     .Any(name => name is { Length: > 0 } text && (text.EndsWith(",", StringComparison.Ordinal) || text.EndsWith(", ", StringComparison.Ordinal))));
                 window.Width = 1024;
                 var mainColumn = window.FindControl<Grid>("MainColumn")!;
-                var narrow = await WaitUntil(() => window.Bounds.Width is > 0 and < 1100
-                    && KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.None, "narrow layout");
+                // CI runners may clamp the native window to a 1024-wide desktop. Force the
+                // layout width so the narrow/wide contract is deterministic on every host.
+                window.ApplyLayoutForWidth(1024);
+                var narrow = KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.None;
                 Check("narrow inspector overlay keeps covered editor stops out of the tab order",
                     narrow && window.Workspace.InspectorVisible);
-                window.Width = 1440;
-                var wide = await WaitUntil(() => window.Bounds.Width >= 1100
-                    && KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.Continue, "wide layout");
+                window.ApplyLayoutForWidth(1440);
+                var wide = KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.Continue;
                 Check("wide layout restores editor tab navigation", wide);
+                window.ApplyLayoutForWidth(window.Bounds.Width);
                 window.ShowTool("programming");
                 await Task.Delay(60);
                 Check("programming tool renders its list inside one host", window.FindControl<ContentControl>("ToolHost")!.Content is DockPanel);
