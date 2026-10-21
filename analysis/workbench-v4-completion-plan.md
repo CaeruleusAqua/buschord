@@ -322,10 +322,11 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
 
 ### H6. Frameless / keine native Titelleiste (neu, 2026-10-21)
 
-- [ ] **H6.1 Design und API-Nachweis:** `analysis/ui-frameless-window-design.md`
-  mit Wireframe, Avalonia-12-API (`SystemDecorations`,
-  `ExtendClientAreaToDecorationsHint`, ChromeHints), Windows-Hit-Test-/
-  Snap-/Resize-Verhalten und Dialogentscheidung.
+- [x] **H6.1 Design und API-Nachweis:** `analysis/ui-frameless-window-design.md`
+  mit Wireframe, Avalonia-12-API (`WindowDecorations`,
+  `ExtendClientAreaToDecorationsHint`, `ElementRole`), Windows-Hit-Test-/
+  Snap-/Resize-Verhalten und Dialogentscheidung. (`33ee3dc`; S0-Spike
+  `agents/ui/frameless-spike` noch offen)
 - [ ] **H6.2 Shell-Chrome:** Marke, Menüs, Projektsuche, Status und
   Fensteraktionen (Minimieren/Maximieren/Wiederherstellen/Schließen) in
   einem optisch integrierten, fokussierbaren Topstrip; native Titelleiste
@@ -390,8 +391,9 @@ Es gibt noch keine Ressourcendateien, keine dritte Sprache, keine
 Plural-/Format-Infrastruktur, keinen Übersetzer-Workflow und keine vollständige
 automatische Hardcoded-Text-Prüfung.
 
-- [ ] **H9.1 Architektur:** Ressourcenformat, stark typisierte Keys, Fallback,
+- [x] **H9.1 Architektur:** Ressourcenformat, stark typisierte Keys, Fallback,
   Runtime-Sprachwechsel, Reports/CSV, Tests und Trimming/AOT entscheiden.
+  (`da128e5`, `analysis/i18n-architecture-plan.md`)
 - [ ] **H9.2 Inventar:** alle UI-/Report-/CSV-/Fehlertexte mit Datei:Zeile,
   Key-Status und Priorität erfassen; deutsche Pfad-Tokens und dynamische Texte
   getrennt behandeln.
