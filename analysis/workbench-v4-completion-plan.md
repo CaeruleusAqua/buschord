@@ -282,10 +282,18 @@ wenn Implementierung, fokussierter Test und Abnahmeevidenz im Abschnitt
 
 ### H5. Katalog-Ladezeit und Suche (neu, 2026-10-21)
 
-- [ ] **H5.1 Messung:** lokale Bibliothek (124 Dateien, 429,5 MB, größte
-  88,5 MB) kalt/warm messen: Dateiscan, ZIP-Öffnen, XML-Parse,
-  Programminitialisierung, erster Suchlauf, UI-Blockade und Speicher.
-  Nachweis in `analysis/catalog-load-performance.md`.
+**Befund:** Die lokale Bibliothek umfasst 124 Kataloge mit 429,5 MB
+(größter 88,5 MB). `CatalogBrowser.Filter` löst bei jeder Suche für jedes
+Produkt `FindProgramFor` auf (`CatalogBrowser.cs:169`); bei Split-Archiven
+lädt das alle Application-Programme samt `Ksxml.Parse` nach. `CatalogStore.LoadAll`
+parst außerdem beim Start alle Dateien sequenziell neu, ohne persistenten
+Index. `Programs.Any`/`FindProduct` sind lineare Suchen. Das ist der
+Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
+
+- [ ] **H5.1 Messung:** lokale Bibliothek kalt/warm messen: Dateiscan,
+  ZIP-Öffnen, XML-Parse, Programminitialisierung, erster Suchlauf,
+  UI-Blockade und Speicher. Nachweis in
+  `analysis/catalog-load-performance.md`.
 - [ ] **H5.2 Suchpfad entkoppeln:** `CatalogBrowser.Filter` darf nicht für
   jedes Produkt `FindProgramFor` aufrufen und damit alle lazy
   Application-Programme eines Katalogs nachladen. Produkt-/Programm-/COM-
