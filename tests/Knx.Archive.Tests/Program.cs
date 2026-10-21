@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Linq;
 using Knx;
@@ -244,12 +245,97 @@ try
         Check(installationChildren == "Topology,Extra,Locations,GroupAddresses", "new Locations inserted in schema order: " + installationChildren);
     }
 
+    // ETS-1: local backup/recovery independent of undo, layout and background timers.
+    {
+        var backupRoot = Path.Combine(directory, "backups");
+        var backupSource = Path.Combine(directory, "backup-source.knxproj");
+        var opaqueMember = new byte[] { 9, 8, 7, 0, 255, 42 };
+        File.WriteAllBytes(backupSource, Zip(new()
+        {
+            ["0.xml"] = Encoding.UTF8.GetBytes(fixture),
+            ["opaque/member.bin"] = opaqueMember,
+            ["../never-extracted.txt"] = baggage,
+        }));
+        var backupBytes = File.ReadAllBytes(backupSource);
+        var first = ProjectBackup.Create(backupSource, backupRoot);
+        Check(File.Exists(first.BackupPath), "backup archive written");
+        Check(first.Sha256 == Convert.ToHexString(SHA256.HashData(backupBytes)) && first.SizeBytes == backupBytes.Length,
+            "backup manifest SHA-256 and size");
+        Check(first.ProjectId == "P-1" && first.Name == "Original" && first.SourcePath == Path.GetFullPath(backupSource),
+            "backup manifest project metadata");
+        Check(ProjectBackup.List(backupSource, backupRoot).Single().Id == first.Id, "backup listed by project path");
+        Check(ProjectBackup.List(null, backupRoot).Any(b => b.Id == first.Id), "backup listed by root");
+
+        ProjectBackup.Create(backupSource, backupRoot, retention: 2);
+        ProjectBackup.Create(backupSource, backupRoot, retention: 2);
+        ProjectBackup.Create(backupSource, backupRoot, retention: 2);
+        var retained = ProjectBackup.List(backupSource, backupRoot);
+        Check(retained.Count == 2, "retention bounds backups per project");
+        Check(Directory.GetFiles(backupRoot, "*.knxproj").Length == 2 && Directory.GetFiles(backupRoot, "*.json").Length == 2,
+            "retention removes both archive and manifest");
+
+        var restorePath = Path.Combine(directory, "restored.knxproj");
+        ProjectBackup.Restore(retained[0].Id, restorePath, backupRoot);
+        Check(File.ReadAllBytes(restorePath).SequenceEqual(File.ReadAllBytes(retained[0].BackupPath)),
+            "restore copies archive bytes");
+        Check(Unzip(File.ReadAllBytes(restorePath))["opaque/member.bin"].SequenceEqual(opaqueMember),
+            "restore keeps opaque ZIP member");
+        Check(Knxproj.Load(restorePath).Name == "Original", "restore output loads as project");
+        Check(File.ReadAllBytes(backupSource).SequenceEqual(backupBytes), "restore elsewhere leaves original untouched");
+
+        var modified = Knxproj.Load(backupSource);
+        modified.Name = "Modified";
+        Knxproj.Save(modified, backupSource);
+        Check(!File.ReadAllBytes(backupSource).SequenceEqual(backupBytes), "source modified before in-place restore");
+        ProjectBackup.Restore(retained[0].Id, backupSource, backupRoot);
+        Check(File.ReadAllBytes(backupSource).SequenceEqual(File.ReadAllBytes(retained[0].BackupPath)),
+            "in-place restore replaces original atomically");
+
+        var corruptId = retained[0].Id;
+        File.WriteAllBytes(Path.Combine(backupRoot, corruptId + ".knxproj"), Encoding.UTF8.GetBytes("not a zip"));
+        var beforeFailedRestore = File.ReadAllBytes(restorePath);
+        ExpectFailure(() => ProjectBackup.Restore(corruptId, restorePath, backupRoot), "corrupt backup rejected");
+        Check(File.ReadAllBytes(restorePath).SequenceEqual(beforeFailedRestore),
+            "failed restore preserves destination");
+        Check(!Directory.EnumerateFiles(directory, "*.tmp").Any() &&
+              !Directory.EnumerateFiles(backupRoot, "*.tmp").Any(), "failed restore cleans temporary files");
+
+        foreach (var badId in new[] { "../escape", "..\\escape", "sub/dir", "bad:id", "" })
+            ExpectFailure(() => ProjectBackup.Restore(badId, Path.Combine(directory, "escape.knxproj"), backupRoot),
+                "backup ID traversal rejected");
+        Check(!File.Exists(Path.Combine(directory, "escape.knxproj")), "rejected backup ID creates no file");
+        ExpectFailure(() => ProjectBackup.Restore("missing", restorePath, backupRoot), "missing backup rejected");
+        ExpectFailure(() => ProjectBackup.Restore(retained[1].Id, Path.Combine(backupRoot, "inside.knxproj"), backupRoot),
+            "restore into backup root rejected");
+
+        var empty = Path.Combine(directory, "empty.knxproj");
+        File.WriteAllBytes(empty, []);
+        ExpectFailure(() => ProjectBackup.Create(empty, backupRoot), "empty project archive rejected");
+        var junk = Path.Combine(directory, "junk.knxproj");
+        File.WriteAllBytes(junk, [1, 2, 3, 4]);
+        ExpectFailure(() => ProjectBackup.Create(junk, backupRoot), "corrupt project archive rejected");
+        var oversized = Path.Combine(directory, "oversized.knxproj");
+        using (var stream = File.Create(oversized)) stream.SetLength(128L * 1024 * 1024 + 1);
+        ExpectFailure(() => ProjectBackup.Create(oversized, backupRoot), "oversized project archive rejected");
+        File.Delete(oversized);
+
+        var capturedProject = Knxproj.Load(backupSource);
+        capturedProject.Name = "Captured";
+        var captured = ProjectBackup.Capture(capturedProject, backupSource, backupRoot, retention: 2);
+        Check(ProjectBackup.List(backupSource, backupRoot).Any(b => b.Id == captured.Id && b.Name == "Captured"),
+            "explicit capture listed");
+        Check(Knxproj.Load(captured.BackupPath).Name == "Captured", "capture archive loads");
+        ProjectBackup.Delete(captured.Id, backupRoot);
+        Check(!File.Exists(captured.BackupPath) && !File.Exists(Path.ChangeExtension(captured.BackupPath, ".json")),
+            "delete removes archive and manifest");
+        ExpectFailure(() => ProjectBackup.Delete(captured.Id, backupRoot), "delete missing backup is explicit");
+    }
+
     Console.WriteLine($"ALL {checks} ARCHIVE CHECKS PASSED");
 }
 finally
 {
-    foreach (var file in Directory.EnumerateFiles(directory)) File.Delete(file);
-    Directory.Delete(directory);
+    Directory.Delete(directory, true);
 }
 
 void Check(bool condition, string name)
