@@ -19,7 +19,7 @@ werden hier abgehakt, nicht nur im Chat.
 - [ ] 9. Gesamttests, unabhängige Abnahme, Dokumentation und CI abschließen.
 - [ ] 10. Geprüften Stand auf `development` integrieren und veröffentlichen.
 - [x] 11. Clean-Code-Review des gesamten V4-Diffs; bestätigte Befunde beheben und Regressionstests ergänzen.
-- [ ] 12. Dark-Mode-Tooltips, Konzept-Icons, V4-Einstellungsfenster und ETS-Passwortöffnung abnehmen.
+- [x] 12. Dark-Mode-Tooltips, Konzept-Icons, V4-Einstellungsfenster und ETS-Passwortöffnung abnehmen.
 
 ## A. ETS-REA-Analyse (jede Funktion belegen)
 
@@ -158,6 +158,7 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - Recheck-Fixes (`43cff3c`, `e8d83b5`, `1c94f74`): linkable neue GA mit DPT-Bitgröße, Segmenterhalt beim Geräte-Detailedit, tote Suchergebnisse, Katalog-Raumzuordnung, gerätegebundener KO-Monitorfilter, Inspector-Elevation/Dock-Höhe, Werkzeugtexte, Leerzustände und englische Resttexte.
 - Abnahme 2026-10-21: Release-Build, alle Testprojekte, Smoke, Screenshot-Selbsttest sowie Workbench-Selftest de/en grün; UI- und Funktions-Recheck als `analysis/workbench-v4-ui-recheck.md` und `analysis/workbench-v4-functional-recheck.md` integriert.
 - Clean-Code-Review: `analysis/clean-code-review/core.md`, `app.md`, `tests-docs.md`; bestätigte P1/P2 und mehrere P3 behoben, verbleibende Grenzen in den Berichten dokumentiert.
+- UI-Feinschliff: Dark-Tooltips mit lesbarem Text, Konzept-Linienicons für die Workbench und V4-Einstellungsfenster; ETS-Projektpasswort-Dialog und verifizierter `/21`-Leselauf für `Lostau.knxproj` (67 Geräte, 636 Gruppenadressen).
 
 ## F. Clean-Code-Review (Schritt 11)
 
@@ -169,9 +170,9 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 ## G. UI-Feinschliff (Schritt 12)
 
 - [x] ETS-Projektpasswort beim Öffnen abfragen, ZIP-Schlüssel ableiten, `/21` lesen.
-- [ ] Dark-Mode-Tooltips lesbar.
-- [ ] Konzept-Icons statt gefüllter Material-Icons in der Workbench.
-- [ ] Einstellungsfenster im V4-Design.
+- [x] Dark-Mode-Tooltips lesbar.
+- [x] Konzept-Icons statt gefüllter Material-Icons in der Workbench.
+- [x] Einstellungsfenster im V4-Design.
 
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
