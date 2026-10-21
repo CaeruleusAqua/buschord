@@ -420,6 +420,47 @@ public sealed partial class MainWindowViewModel : ObservableObject
         return id.Length > 0;
     }
 
+    /// <summary>Validated device edit: name, address, line and room in one undo step.</summary>
+    public string? UpdateDeviceDetails(DeviceInstance device, string name, string addressText, string? lineId, string? roomId)
+    {
+        if (Project is not { } project) return Strings.Get("UxNeedsProject");
+        if (string.IsNullOrWhiteSpace(name)) return "Gerät braucht einen Namen.";
+        if (!IndividualAddress.TryParse(addressText.Trim(), out var address)) return "Ungültige physikalische Adresse.";
+        if (ProjectQuery.DeviceList(project).Any(d => !ReferenceEquals(d, device) && d.Address == address))
+            return $"Adresse {address} ist bereits vergeben.";
+        var targetLine = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines)
+            .FirstOrDefault(l => l.Id == lineId);
+        if (targetLine is null) return "Ziel-Linie fehlt.";
+        var targetRoom = roomId is null ? null
+            : project.Installations.SelectMany(i => i.Locations.AllNodes).FirstOrDefault(n => n.Id == roomId);
+        if (roomId is not null && targetRoom is null) return "Ziel-Raum fehlt.";
+        Edit($"Gerät {device.Address} bearbeitet", p =>
+        {
+            foreach (var installation in p.Installations)
+            {
+                foreach (var area in installation.Areas)
+                {
+                    area.Devices.RemoveAll(d => ReferenceEquals(d, device) || d.Id == device.Id);
+                    foreach (var line in area.Lines)
+                    {
+                        line.Devices.RemoveAll(d => ReferenceEquals(d, device) || d.Id == device.Id);
+                        foreach (var segment in line.Segments)
+                            segment.Devices.RemoveAll(d => ReferenceEquals(d, device) || d.Id == device.Id);
+                    }
+                }
+                foreach (var node in installation.Locations.AllNodes)
+                    node.DeviceRefs.RemoveAll(id => id == device.Id);
+                if (targetRoom is not null && ReferenceEquals(installation, p.Installations.FirstOrDefault()))
+                    installation.Locations.Find(targetRoom.Id)?.AssignDevice(device);
+            }
+            var destinationLine = p.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).First(l => l.Id == targetLine.Id);
+            destinationLine.Devices.Add(device);
+            device.Address = address;
+            device.Name = name.Trim();
+        });
+        return null;
+    }
+
     public void DeleteGroupAddress(GroupAddressRow row)
     {
         if (Project is not { } project) return;

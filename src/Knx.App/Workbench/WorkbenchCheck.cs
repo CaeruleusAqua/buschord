@@ -178,7 +178,7 @@ internal static class WorkbenchCheck
                 window.Workspace.InspectorVisible = true;
                 Check("inspector reveals native device", window.FindControl<StackPanel>("InspectorBody")!.Children.OfType<TextBlock>().Any(t => t.Text == d.Name));
                 var inspector = window.FindControl<StackPanel>("InspectorBody")!;
-                inspector.Children.OfType<TextBox>().Single().Text = "Tastsensor · bearbeitet";
+                inspector.Children.OfType<TextBox>().First().Text = "Tastsensor · bearbeitet";
                 inspector.Children.OfType<Button>().First(b => Equals(b.Content, WorkbenchStrings.Get("ApplyProperties")))
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Check("native inspector rename refreshes work-item titles", d.Name == "Tastsensor · bearbeitet" && deviceTab.Title == d.Name);
