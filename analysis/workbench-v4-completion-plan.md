@@ -155,3 +155,12 @@ belegten Ablauf, technische API/Dateiformate, FehlerfÃ¤lle, Vertrauensgrad
 - Umgesetzt: Connector-/Adressmodell, Katalogstatus-Metadaten, Importbericht, Download-Sicherheitsgate, simulierte Scan-/Monitorwert-/Änderungswerkzeuge, GA-Formular, Geräte-Detailbearbeitung, Sidebar-Container, englische Shell, Material-Icons, Katalog-V4-Styling, Projektvergleich/Produktaustausch.
 
 - Zusätzlich integriert: Projektbackup/-wiederherstellung, Geräte-Ladezustand, Katalogstatus/Gating, Sidebar-Container, Projektvergleich/Produktaustausch, Labels/Semantik-Export, Projekt-Suche/-Ersetzen, Demo-Reset, Werkzeugübersicht, GA-Gegenansicht, Material-Icons, englische Shell.
+
+## Bewusst nicht nachgebaut (dokumentierte Grenzen)
+
+- DCA/Plugin-Hosting: read-only Erkennung und Sperre, kein In-Process-Host (32-bit-ETS, COM/.NET-Framework, keine Sandbox).
+- Secure-Inbetriebnahme: Keyring-/Zertifikatspruefung und Secure-Download bleiben ausserhalb; keine Schluessel- oder FDSK-Verwaltung.
+- Reale Downloads/Adressschreibung: der bestehende Download-Writer ist gesperrt, bis Descriptor-/Mask-/Programming-Mode-Pruefung implementiert und freigegeben ist.
+- USB/RDAC, Cloud-/IoT-Connectoren, ETS-Local-Store-Versionierung und vollstaendige Multi-Projekt-Tabs: nicht in dieser Ausbaustufe.
+- DCA-/Skript-Dynamik (JavaScript/VBScript/ActiveScript), Module/Allocators/LoadProcedures und vollstaendige Hersteller-Seitenlayouts: opaque erhalten, nicht ausgefuehrt.
+- Online-Katalog/Markt/Signaturpruefung und Produkt-Update per ID: lokaler Store/Import bleibt massgeblich.
