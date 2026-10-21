@@ -162,8 +162,10 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - Clean-Code-Review: `analysis/clean-code-review/core.md`, `app.md`, `tests-docs.md`; bestätigte P1/P2 und mehrere P3 behoben, verbleibende Grenzen in den Berichten dokumentiert.
 - Plan-Wellen: atomare Projektoperationen, Katalog-Ziel-/Such-/Importabläufe, Parameter-Footer/Validierung, Session-Cancel/Monitor-Pause/Diagnose, Baum-Kontextmenüs und projektbezogene Layouts; A11y-Abnahme als `analysis/workbench-v4-a11y-final.md`.
 - Legacy-Bereinigung: MainWindow, GroupLinksPane, ungenutzte Legacy-Panes und Dock-Abhängigkeiten entfernt; Shell-/Docking-Tests laufen jetzt nativ gegen WorkbenchWindow.
-- UI-Konsistenz-Welle: gemeinsame V4-Dialogfamilie (`f605870`), Search-/Parameter-/Catalog-Panes (`39be758`, Presenter-Fix `ab0f8a4`), Tooltips/Spinner/`wb-danger`, Screenshots für Settings/NewProject/Confirm/Splash geprüft; Demo-Parameterform und restliche Shell-P2 bleiben bis zur Shell-Abnahme offen.
+- UI-Konsistenz-Welle: gemeinsame V4-Dialogfamilie (`f605870`), Search-/Parameter-/Catalog-Panes (`39be758`, Presenter-Fix `ab0f8a4`), Tooltips/Spinner/`wb-danger`, Screenshots für Settings/NewProject/Confirm/Splash geprüft; Demo-Parameterform und Shell-P2 in `84cb150`/`6b3fb83` nachgezogen, offene Reste in H1/H4.
 - UI-Feinschliff: Dark-Tooltips mit lesbarem Text, Konzept-Linienicons für die Workbench und V4-Einstellungsfenster; ETS-Projektpasswort-Dialog und verifizierter `/21`-Leselauf für `Lostau.knxproj` (67 Geräte, 636 Gruppenadressen).
+- Shell-Abnahme: Tabellen-Checkboxen, DCA-Read-only, Hilfefenster, Pinned Compare/Dokumentation und deterministischer Layout-Selftest (`84cb150`, `6b3fb83`, `286c025`); Remote-CI für `664fa5b` grün.
+- Security/Lokalisierung: CSV-Formelinjektion behoben (`65c253d`), Projektprüfung/CSV/Report/Owl lokalisiert (`2846c16`, `ba25051`), Security- und i18n-Berichte integriert; Parser-/Cache-Grenzen und Fixture-Provenienz laufen als H10.
 
 ## F. Clean-Code-Review (Schritt 11)
 
@@ -429,9 +431,10 @@ automatische Hardcoded-Text-Prüfung.
 Quelle: `analysis/security-final.md` (`54ecc4a`). Kein P1 gefunden; P2
 SEC-1–SEC-3 sind vor einem Release zu beheben.
 
-- [ ] **H10.1 CSV-Formelinjektion:** gemeinsamer Escaper für alle sechs
+- [x] **H10.1 CSV-Formelinjektion:** gemeinsamer Escaper für alle sechs
   Exporte, Felder mit `= + - @`, Tab/CR und führenden Leerzeichen
-  neutralisieren; Regressionstests.
+  neutralisieren; Regressionstests. (`65c253d`, `src/Knx.Core/Csv.cs`;
+  Tests in App/Core/Bus/Monitor)
 - [ ] **H10.2 Katalog-Parser-Grenzen:** maximale XML-/Archivgröße,
   Verschachtelungstiefe und entpackte Daten begrenzen; Stack-Overflow und
   Speichererschöpfung durch feindliche Kataloge verhindern.
