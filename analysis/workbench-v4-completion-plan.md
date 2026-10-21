@@ -409,6 +409,29 @@ automatische Hardcoded-Text-Prüfung.
   CSV-Werte bleiben Daten, nicht UI-Sprache; DPT-/KNX-Codes werden nicht
   übersetzt.
 
+### H10. Security-Härtung (neu, 2026-10-21)
+
+Quelle: `analysis/security-final.md` (`54ecc4a`). Kein P1 gefunden; P2
+SEC-1–SEC-3 sind vor einem Release zu beheben.
+
+- [ ] **H10.1 CSV-Formelinjektion:** gemeinsamer Escaper für alle sechs
+  Exporte, Felder mit `= + - @`, Tab/CR und führenden Leerzeichen
+  neutralisieren; Regressionstests.
+- [ ] **H10.2 Katalog-Parser-Grenzen:** maximale XML-/Archivgröße,
+  Verschachtelungstiefe und entpackte Daten begrenzen; Stack-Overflow und
+  Speichererschöpfung durch feindliche Kataloge verhindern.
+- [ ] **H10.3 Cache-Vertrauen:** Identität/Hash statt nur mtime+Größe,
+  keine absoluten Pfade aus dem Cache übernehmen, Extraktion begrenzen,
+  Temp-Dateien aufräumen.
+- [ ] **H10.4 DCA-Fallback:** Projekt-XML-Applikationen ohne Katalog dürfen
+  nicht versehentlich editierbar werden; Read-only-Grund erhalten.
+- [ ] **H10.5 Fixtures/Provenienz:** `knx_master.xml`, `.knxproj`-Fixtures
+  und Testkorpora auf Hersteller-/Kundendaten und Lizenz prüfen; durch
+  synthetische Minima ersetzen, wo nötig.
+- [ ] **H10.6 Release-Entscheidung:** verbleibende P3
+  (Klartext-Backups, `CatalogUse.Download`, Import-Atomarität,
+  `.signature`) dokumentieren oder beheben.
+
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
 - DCA/Plugin-Hosting: read-only Erkennung und Sperre, kein In-Process-Host (32-bit-ETS, COM/.NET-Framework, keine Sandbox).
