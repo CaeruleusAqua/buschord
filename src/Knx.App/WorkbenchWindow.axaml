@@ -82,7 +82,7 @@
             <CheckBox x:Name="RelatedBox" Grid.Column="3" Content="{loc:Wb ExternalChannels}" FontSize="11" IsCheckedChanged="OnRelated" Margin="8,0"/>
             <CheckBox x:Name="Unlinked" Grid.Column="4" Content="{loc:Wb WithoutGroupAddress}" FontSize="11" IsCheckedChanged="OnUnlinked" Margin="8,0"/>
             <TextBox x:Name="ObjectSearch" Grid.Column="5" PlaceholderText="{loc:Wb FilterObjects}" TextChanged="OnObjectSearch"/>
-            <Button Grid.Column="6" Content="{loc:Wb ExpandAll}" FontSize="10" Padding="6,0" ToolTip.Tip="{loc:Wb ExpandCollapseAll}" AutomationProperties.Name="{loc:Wb ExpandCollapseAllDevices}" Click="OnExpandAll" Classes="quiet"/>
+            <Button Grid.Column="6" ToolTip.Tip="{loc:Wb ExpandCollapseAll}" AutomationProperties.Name="{loc:Wb ExpandCollapseAllDevices}" Click="OnExpandAll" Classes="quiet"><views:Icon Symbol="UnfoldMore" Width="17" Height="17"/></Button>
           </Grid>
           <Grid Grid.Row="2">
             <ScrollViewer x:Name="TableViewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
@@ -107,16 +107,16 @@
         <GridSplitter x:Name="ToolsSplitter" Grid.Row="2" Height="5" Background="{DynamicResource WbLine}" ResizeDirection="Rows"/>
         <Grid x:Name="Tools" Grid.Row="3" RowDefinitions="35,*" Background="{DynamicResource WbPaper}">
           <Grid ColumnDefinitions="*,Auto,Auto,Auto"><StackPanel x:Name="ToolTabs" Orientation="Horizontal" Margin="12,0" Spacing="20"/>
-            <Button Grid.Column="1" Content="↗" ToolTip.Tip="{loc:Wb ToolFloatTip}" AutomationProperties.Name="{loc:Wb ToolFloatName}" Click="OnFloatTool" Classes="quiet"/>
-            <Button Grid.Column="2" Content="□" ToolTip.Tip="{loc:Wb ToolMaximize}" AutomationProperties.Name="{loc:Wb ToolMaximize}" Click="OnMaximizeTool" Classes="quiet"/>
-            <Button Grid.Column="3" Content="×" ToolTip.Tip="{loc:Wb ToolHide}" AutomationProperties.Name="{loc:Wb ToolHide}" Click="OnHideTool" Classes="quiet"/>
+            <Button Grid.Column="1" ToolTip.Tip="{loc:Wb ToolFloatTip}" AutomationProperties.Name="{loc:Wb ToolFloatName}" Click="OnFloatTool" Classes="quiet"><views:Icon Symbol="OpenInNew" Width="17" Height="17"/></Button>
+            <Button Grid.Column="2" ToolTip.Tip="{loc:Wb ToolMaximize}" AutomationProperties.Name="{loc:Wb ToolMaximize}" Click="OnMaximizeTool" Classes="quiet"><views:Icon Symbol="Fullscreen" Width="17" Height="17"/></Button>
+            <Button Grid.Column="3" ToolTip.Tip="{loc:Wb ToolHide}" AutomationProperties.Name="{loc:Wb ToolHide}" Click="OnHideTool" Classes="quiet"><views:Icon Symbol="Close" Width="17" Height="17"/></Button>
           </Grid>
           <ContentControl x:Name="ToolHost" Grid.Row="1"/>
         </Grid>
       </Grid>
       <GridSplitter x:Name="InspectorSplitter" Grid.Column="4" Width="5" Background="{DynamicResource WbLine}" ResizeDirection="Columns"/>
       <Border x:Name="Inspector" Grid.Column="5" Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}" BorderThickness="1,0,0,0">
-        <Grid RowDefinitions="44,*"><Grid ColumnDefinitions="*,Auto" Margin="15,0"><TextBlock Text="{loc:Wb Properties}" VerticalAlignment="Center" FontWeight="SemiBold"/><Button Grid.Column="1" Content="×" AutomationProperties.Name="{loc:Wb HideProperties}" Click="OnInspector" Classes="quiet"/></Grid>
+        <Grid RowDefinitions="44,*"><Grid ColumnDefinitions="*,Auto" Margin="15,0"><TextBlock Text="{loc:Wb Properties}" VerticalAlignment="Center" FontWeight="SemiBold"/><Button Grid.Column="1" AutomationProperties.Name="{loc:Wb HideProperties}" Click="OnInspector" Classes="quiet"><views:Icon Symbol="Close" Width="17" Height="17"/></Button></Grid>
           <ScrollViewer Grid.Row="1"><StackPanel x:Name="InspectorBody" Margin="15" Spacing="12"/></ScrollViewer>
         </Grid>
       </Border>

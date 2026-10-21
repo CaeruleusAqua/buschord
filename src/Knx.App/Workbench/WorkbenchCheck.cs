@@ -204,7 +204,8 @@ internal static class WorkbenchCheck
                 Check("hiding and recreating monitor retains recorder state", window.ViewModel.IsRecording);
                 for (var cycle = 0; cycle < 3; cycle++)
                 {
-                    window.FindControl<Grid>("Tools")!.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "↗"))
+                    window.FindControl<Grid>("Tools")!.GetVisualDescendants().OfType<Button>()
+                        .First(b => b.Content is Icon icon && icon.Symbol == "OpenInNew")
                         .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     await Task.Delay(30);
                     var floating = desktop.Windows.Single(w => w != window);

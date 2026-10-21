@@ -376,7 +376,9 @@ public partial class WorkbenchWindow : Window
             var activate = ActionButton(tab.Title, () => { CaptureScroll(); Workspace.ActiveTab = tab; }, "quiet");
             activate.MaxWidth = 220; activate.Height = 39; activate.MinWidth = 110;
             header.Children.Add(activate);
-            header.Children.Add(ActionButton("×", () => { Workspace.Close(tab); RefreshWorkspace(); }, "quiet", W("CloseTab", tab.Title)));
+            var close = ActionButton("", () => { Workspace.Close(tab); RefreshWorkspace(); }, "quiet", W("CloseTab", tab.Title));
+            close.Content = new Icon { Symbol = "Close", Width = 14, Height = 14 };
+            header.Children.Add(close);
             var border = new Border { Child = header, Height = 39 };
             border.Classes.Add("wb-doc-tab");
             border.Classes.Set("active", tab == Workspace.ActiveTab);
@@ -497,13 +499,17 @@ public partial class WorkbenchWindow : Window
         var grid = new Grid { ColumnDefinitions = new("22,*,Auto"), Margin = new(entry.Depth * 12, 0, 4, 0), Height = 29 };
         AutomationProperties.SetName(grid, node.Meta.Length > 0 ? $"{node.Name}, {node.Meta}" : node.Name);
         if (Workspace.ActiveTab?.Target is { } activeTarget && node.Target == activeTarget) grid.Classes.Add("wb-row-active");
-        var expand = ActionButton(node.Children.Count == 0 ? "·" : Workspace.Navigators[Workspace.Perspective].ExpandedIds.Contains(node.Key) ? "⌄" : "›", () =>
+        var hasChildren = node.Children.Count > 0;
+        var expanded = Workspace.Navigators[Workspace.Perspective].ExpandedIds.Contains(node.Key);
+        var expand = ActionButton(hasChildren ? "" : "·", () =>
         {
-            var expanded = Workspace.Navigators[Workspace.Perspective].ExpandedIds;
+            var set = Workspace.Navigators[Workspace.Perspective].ExpandedIds;
             CaptureNavigatorScroll();
-            if (!expanded.Add(node.Key)) expanded.Remove(node.Key);
+            if (!set.Add(node.Key)) set.Remove(node.Key);
             RefreshNavigation();
         }, "quiet", W("ExpandCollapse", node.Name));
+        if (hasChildren)
+            expand.Content = new Icon { Symbol = expanded ? "KeyboardArrowDown" : "KeyboardArrowRight", Width = 16, Height = 16 };
         expand.IsEnabled = node.Children.Count > 0; expand.Padding = new(0);
         grid.Children.Add(expand);
         var label = Label(node.Name); label.FontSize = 11; Grid.SetColumn(label, 1); grid.Children.Add(label);
@@ -524,13 +530,14 @@ public partial class WorkbenchWindow : Window
         var name = new Grid { ColumnDefinitions = new("22,Auto,*"), Margin = new(4 + row.Depth * 12, 0, 6, 0) };
         if (row.CanExpand)
         {
-            var expand = ActionButton(row.Expanded ? "⌄" : "›", () =>
+            var expand = ActionButton("", () =>
             {
                 if (Workspace.ActiveTab is not { } t) return;
                 var key = row.Kind == "device" ? row.Device.Id : row.Key;
                 if (!t.CollapsedDeviceIds.Add(key)) t.CollapsedDeviceIds.Remove(key);
                 CaptureScroll(); RefreshEditor();
             }, "quiet", W("ExpandCollapse", row.Name));
+            expand.Content = new Icon { Symbol = row.Expanded ? "KeyboardArrowDown" : "KeyboardArrowRight", Width = 16, Height = 16 };
             expand.Padding = new(0); name.Children.Add(expand);
         }
         var address = Label(row.Address); address.FontSize = 10; address.Classes.Add("wb-subtle"); address.Margin = new(0, 0, 9, 0); Grid.SetColumn(address, 1); name.Children.Add(address);
