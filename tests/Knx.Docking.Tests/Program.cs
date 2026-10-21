@@ -1,24 +1,29 @@
-using System.IO.Compression;
 using System.Reflection;
-using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using Dock.Model.Core;
-using Dock.Model.Mvvm;
 using Knx;
 using Knx.App;
+using Knx.App.Localization;
 using Knx.App.Services;
 using Knx.App.Views;
+using Knx.App.Workbench;
 using Knx.Catalog;
+using Knx.Workbench;
 
-// Real native windows; no router/catalogue access or physical keyboard/pointer automation.
+// Native Workbench floated-tool lifecycle: a fresh tool window, no live-control
+// reparenting, demo traffic that belongs to the session rather than the view,
+// re-dock on close, project undo/redo routed by the shell, and clean shutdown.
+// No Dock model, no bus/router, no OS keyboard/pointer automation.
 internal static class Program
 {
-    private static readonly string Root = Path.Combine(Path.GetTempPath(), "buschord-docking-" + Guid.NewGuid().ToString("N"));
+    private static readonly string Root = Path.Combine(
+        Path.GetTempPath(), "buschord-workbench-docking-" + Guid.NewGuid().ToString("N"));
 
     [STAThread]
     private static int Main()
@@ -26,18 +31,17 @@ internal static class Program
         Directory.CreateDirectory(Root);
         File.WriteAllText(Path.Combine(Root, "settings.json"), "{}");
         Environment.SetEnvironmentVariable("BUSCHORD_SETTINGS", Path.Combine(Root, "settings.json"));
-        typeof(CatalogLibrary).GetField("_store", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .SetValue(CatalogLibrary.Shared, new CatalogStore(Path.Combine(Root, "catalog")));
         App.ForcedLanguage = "en";
-        App.TestWindowFactory = () => new MainWindow();
+        App.TestWindowFactory = () =>
+        {
+            var catalog = new CatalogLibrary(new CatalogStore(Path.Combine(Root, "catalog")));
+            return new WorkbenchWindow(new MainWindowViewModel(catalog), new WorkbenchWorkspace(), catalogLibrary: catalog);
+        };
         AppBuilder.Configure<App>().UsePlatformDetect().WithInterFont()
             .AfterSetup(_ => DispatcherTimer.RunOnce(async () => await Run(), TimeSpan.FromMilliseconds(300)))
             .StartWithClassicDesktopLifetime([]);
         return Environment.ExitCode;
     }
-
-    private static object Field(object instance, string name) => typeof(MainWindow)
-        .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance)!;
 
     private static void Check(string name, bool condition)
     {
@@ -45,75 +49,117 @@ internal static class Program
         Console.WriteLine("PASS " + name);
     }
 
-    private static Task Settle() => Task.Delay(400);
+    private static Task Settle(int milliseconds = 400) => Task.Delay(milliseconds);
 
-    private static KeyEventArgs Key(InputElement target, Key key)
+    private static KeyEventArgs Ctrl(InputElement target, Key key)
     {
         var args = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key, KeyModifiers = KeyModifiers.Control };
         target.RaiseEvent(args);
         return args;
     }
 
+    private static Button ButtonWithText(Control root, string text) =>
+        root.GetLogicalDescendants().OfType<Button>().First(b => Equals(b.Content, text));
+
+    private static int MonitorRows(Control view) =>
+        view.GetLogicalDescendants().OfType<ListBox>().Single().ItemCount;
+
+    /// <summary>Clicks the shell's float button and returns the newly visible native tool window.</summary>
+    private static Window Float(WorkbenchWindow main)
+    {
+        main.FindControl<Grid>("Tools")!.GetVisualDescendants().OfType<Button>()
+            .First(b => b.Content is ConceptIcon { Symbol: "export" })
+            .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        return ((IClassicDesktopStyleApplicationLifetime)Application.Current!.ApplicationLifetime!)
+            .Windows.Single(w => w != main && w.IsVisible);
+    }
+
+    /// <summary>Feeds clearly marked demo telegrams into the live session, as the app's own demo timer does.</summary>
+    private static void EmitDemoTraffic(WorkbenchWindow main, int count)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var sessions = typeof(WorkbenchWindow).GetField("_sessions", flags)!.GetValue(main)!;
+        var monitor = sessions.GetType().GetProperty("Monitor")!.GetValue(sessions)!;
+        var simulate = monitor.GetType().GetMethod("SimulateWrite")!;
+        foreach (var group in ProjectQuery.GroupAddresses(main.ViewModel.Project!).Take(count))
+            simulate.Invoke(monitor, [group.Id, "1", null]);
+        monitor.GetType().GetMethod("FlushDisplay")!.Invoke(monitor, null);
+    }
+
     private static async Task Run()
     {
         var lifetime = (IClassicDesktopStyleApplicationLifetime)Application.Current!.ApplicationLifetime!;
-        var main = (MainWindow)lifetime.MainWindow!;
+        var main = (WorkbenchWindow)lifetime.MainWindow!;
+        // The test closes the shell itself; the process must survive long enough to observe cleanup.
+        lifetime.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         try
         {
-            var project = new Project { Id = "P-Docking", Name = "Synthetic docking regression" };
-            var installation = new Installation { Id = "I" };
-            var area = new Area { Id = "A", Address = 1 };
-            var line = new Line { Id = "L", Address = 1 };
-            line.Devices.Add(new DeviceInstance { Id = "D", Name = "Test", Address = new(1, 1, 1), ProductRefId = "M-000F_A-0001-01-0000" });
-            area.Lines.Add(line); installation.Areas.Add(area); project.Installations.Add(installation);
-            var path = Path.Combine(Root, "synthetic.knxproj");
-            Knxproj.Save(project, path);
-            using (var zip = ZipFile.Open(path, ZipArchiveMode.Update))
-            using (var stream = zip.CreateEntry("M-000F/M-000F_A-0001-01-0000.xml").Open())
-                XDocument.Parse("<KNX><ApplicationProgram><Static><ParameterTypes><ParameterType Id='N' Name='Number'><TypeNumber Type='unsignedInt' SizeInBit='8' minInclusive='0' maxInclusive='100'/></ParameterType></ParameterTypes><Parameters><Parameter Id='P-N' Name='Brightness' ParameterType='N' Value='25'/></Parameters><ParameterRefs><ParameterRef Id='R-N' RefId='P-N'/></ParameterRefs></Static></ApplicationProgram></KNX>").Save(stream);
+            main.ViewModel.CreateProject(WorkbenchJson.CreateDemo(), null);
+            main.RefreshWorkspace();
+            main.ShowTool("monitor");
+            await Settle();
 
-            var vm = main.ViewModel;
-            vm.LoadProject(path);
-            vm.SelectedDevice = vm.Devices[0];
-            var factory = (Factory)Field(main, "_dockFactory");
-            var parameters = (IDockable)Field(main, "_docParameters");
-            var pane = (ParameterPane)Field(main, "_parameters");
-            factory.SetActiveDockable(parameters);
-            await Settle();
-            void Apply(string value)
-            {
-                ((IEnumerable<ParameterItemViewModel>)pane.FindControl<ItemsControl>("ParameterList")!.ItemsSource!).Single().Value = value;
-                Check("apply " + value, pane.Apply());
-            }
-            string Value() => vm.Devices[0].Device.ParameterValues.GetValueOrDefault("R-N", "DEFAULT");
-            Apply("42"); Apply("43");
-            factory.FloatDockable(parameters);
-            await Settle();
-            var floating = lifetime.Windows.Single(window => window != main);
-            Check("native floating window", floating.IsVisible);
-            Check("floating project undo handled", Key(floating, Avalonia.Input.Key.Z).Handled);
-            Check("undo exactly once", Value() == "42" && vm.CanUndo);
-            Key(floating, Avalonia.Input.Key.Y);
-            Check("floating project redo", Value() == "43");
+            var host = main.FindControl<ContentControl>("ToolHost")!;
+            var docked = (Control)host.Content!;
+            Check("monitor is docked inside the workbench shell", TopLevel.GetTopLevel(docked) == main);
 
-            vm.SelectedDevice = vm.Devices[0];
+            var floating = Float(main);
             await Settle();
-            var editor = pane.GetVisualDescendants().OfType<TextBox>().First();
-            editor.Focus();
-            editor.SelectAll();
-            editor.RaiseEvent(new TextInputEventArgs { RoutedEvent = InputElement.TextInputEvent, Text = "51" });
-            Check("local text input", editor.Text == "51");
-            Check("editor undo handled", Key(editor, Avalonia.Input.Key.Z).Handled);
-            Check("local undo does not undo project", editor.Text != "51" && Value() == "43");
+            var floated = (Control)floating.Content!;
+            Check("float opens a native tool window", floating.IsVisible && floating != main);
+            Check("float hosts a freshly created tool view",
+                !ReferenceEquals(floated, docked) && TopLevel.GetTopLevel(floated) == floating);
+            Check("docked tool view is not reparented",
+                ReferenceEquals(host.Content, docked) && TopLevel.GetTopLevel(docked) == main);
+
+            ButtonWithText(floated, WorkbenchStrings.Get("Start")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            EmitDemoTraffic(main, 3);
+            await Settle();
+            var floatedRows = MonitorRows(floated);
+            Check($"demo monitor traffic is recorded while floated ({floatedRows} rows)", floatedRows == 3);
+            Check("docked and floated views share one monitor session", MonitorRows(docked) == floatedRows);
 
             floating.Close();
-            await Settle(); await Settle();
-            Check("float X redocks", lifetime.Windows.Count == 1 && ReferenceEquals(parameters.Owner,
-                ((Dictionary<IDockable, IDock>)Field(main, "_homeDocks"))[parameters]));
-            Key(main, Avalonia.Input.Key.Z);
-            Check("main undo exactly once", Value() == "42");
-            Console.WriteLine("DOCKING KEYBOARD OK");
+            await Settle();
+            Check("closing the float window removes it", !floating.IsVisible && lifetime.Windows.All(w => w == main || !w.IsVisible));
+            var redocked = (Control)host.Content!;
+            Check("closing the float re-docks a fresh tool view",
+                !ReferenceEquals(redocked, floated) && !ReferenceEquals(redocked, docked)
+                && TopLevel.GetTopLevel(redocked) == main);
+            var retained = MonitorRows(redocked);
+            Check($"re-docked view retains the recorded telegrams ({retained}/{floatedRows})",
+                retained > 0 && retained == floatedRows);
+            EmitDemoTraffic(main, 1);
+            await Settle();
+            Check("monitor session keeps recording after re-dock", MonitorRows(redocked) == retained + 1);
+            ButtonWithText(redocked, WorkbenchStrings.Get("Stop")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+            var groupsBefore = ProjectQuery.GroupAddresses(main.ViewModel.Project!).Count();
+            Check("project edit records one undo step",
+                main.ViewModel.CreateGroupAddress(ProjectQuery.NextFreeGroupAddress(main.ViewModel.Project!, 15, 7),
+                    "Docking selftest", "DPST-9-1")
+                && main.ViewModel.CanUndo
+                && ProjectQuery.GroupAddresses(main.ViewModel.Project!).Count() == groupsBefore + 1);
+            main.ShowTool("monitor");
+            var undoFloat = Float(main);
+            await Settle();
+            Console.WriteLine("NOTE floating tool windows have no Ctrl+Z/Ctrl+Y route; undo/redo stays with the shell window");
+            Check("floating tool window ignores the shell undo shortcut",
+                !Ctrl(undoFloat, Key.Z).Handled
+                && ProjectQuery.GroupAddresses(main.ViewModel.Project!).Count() == groupsBefore + 1);
+            Check("Ctrl+Z on the shell undoes exactly one edit while a tool floats",
+                Ctrl(main, Key.Z).Handled
+                && ProjectQuery.GroupAddresses(main.ViewModel.Project!).Count() == groupsBefore);
+            Check("Ctrl+Y on the shell redoes exactly one edit while a tool floats",
+                Ctrl(main, Key.Y).Handled
+                && ProjectQuery.GroupAddresses(main.ViewModel.Project!).Count() == groupsBefore + 1);
+            await Settle();
+
             main.RequestShutdown();
+            main.Close();
+            await Settle();
+            Check("closing the shell closes floated tool windows", !undoFloat.IsVisible);
+            Console.WriteLine("WORKBENCH DOCKING OK");
             lifetime.Shutdown(0);
         }
         catch (Exception exception)
