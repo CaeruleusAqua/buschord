@@ -19,17 +19,17 @@
       <Setter Property="Foreground" Value="{DynamicResource WbText}" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     </Style>
-    <Style Selector="ListBox.wb-rows ListBoxItem:pointerover /template/ ContentPresenter">
+    <Style Selector="ListBox.wb-rows ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource WbHover}" />
     </Style>
-    <Style Selector="ListBox.wb-rows ListBoxItem:selected /template/ ContentPresenter">
+    <Style Selector="ListBox.wb-rows ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource WbSelected}" />
       <Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}" />
     </Style>
     <Style Selector="ListBox.wb-rows ListBoxItem:selected TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
     </Style>
-    <Style Selector="ListBox.wb-rows ListBoxItem:focus-visible /template/ ContentPresenter">
+    <Style Selector="ListBox.wb-rows ListBoxItem:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
       <Setter Property="BorderThickness" Value="2" />
     </Style>
