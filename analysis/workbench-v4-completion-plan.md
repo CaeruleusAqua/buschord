@@ -381,6 +381,33 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   Timeout-/Reconnect-/Schnittstellenkonflikt-Verhalten und dokumentierte
   Grenzen; echte Schreibfreigabe bleibt separat und ausdrücklich.
 
+### H9. Mehrsprachigkeit und Übersetzungsinfrastruktur (neu, 2026-10-21)
+
+**Ist-Stand:** Deutsch ist Vorgabe; Englisch ist über zwei Code-Dictionaries
+(`Knx.Strings`, `WorkbenchStrings`) und `--lang=`/Einstellungen umschaltbar.
+Nach `2846c16` sind Projektprüfung, CSV-Header und HTML-Bericht lokalisiert.
+Es gibt noch keine Ressourcendateien, keine dritte Sprache, keine
+Plural-/Format-Infrastruktur, keinen Übersetzer-Workflow und keine vollständige
+automatische Hardcoded-Text-Prüfung.
+
+- [ ] **H9.1 Architektur:** Ressourcenformat, stark typisierte Keys, Fallback,
+  Runtime-Sprachwechsel, Reports/CSV, Tests und Trimming/AOT entscheiden.
+- [ ] **H9.2 Inventar:** alle UI-/Report-/CSV-/Fehlertexte mit Datei:Zeile,
+  Key-Status und Priorität erfassen; deutsche Pfad-Tokens und dynamische Texte
+  getrennt behandeln.
+- [ ] **H9.3 Workflow:** Übersetzerformat, Glossar, Review, Key-Stabilität,
+  Community-/CLA-Regeln, keine Hersteller-/Kundendaten, unvollständige
+  Sprachen klar kennzeichnen.
+- [ ] **H9.4 CI-Gates:** Key-Parität, leere/verwaiste Keys, Platzhalter,
+  verbotene deutsche Literale in `en`, Pseudo-Lokalisierung, Report-/CSV-
+  Sprachtests und Screenshots.
+- [ ] **H9.5 Pilot:** dritte Sprache (z. B. Französisch oder Niederländisch)
+  end-to-end mit echten Ressourcen, Tests und Abnahme; keine Maschinen-
+  übersetzung ohne Review.
+- [ ] **H9.6 Grenzen:** Projekt-/Gerätenamen, Herstellertexte und technische
+  CSV-Werte bleiben Daten, nicht UI-Sprache; DPT-/KNX-Codes werden nicht
+  übersetzt.
+
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
 - DCA/Plugin-Hosting: read-only Erkennung und Sperre, kein In-Process-Host (32-bit-ETS, COM/.NET-Framework, keine Sandbox).
