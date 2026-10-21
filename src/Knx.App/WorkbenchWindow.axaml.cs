@@ -890,9 +890,21 @@ public partial class WorkbenchWindow : Window
             InspectorBody.Children.Add(ActionButton(W("ShowInTopology"), () => { Navigate("topology"); NavSearch.Text = current.AddressText; }));
             InspectorBody.Children.Add(ActionButton(W("OpenParameters"), () => OpenTarget(new("device", current.Device.Id), "params"), "quiet"));
         }
-        else if (tab?.Target.Kind == "ga" && WorkbenchProjection.Resolve(ViewModel.Project, tab.Target) is GroupAddressEntry ga)
+        else if (tab?.Target.Kind == "project" && WorkbenchProjection.Resolve(ViewModel.Project, tab.Target) is Project project)
         {
-            var name = new TextBox { Text = ga.Name }; var dpt = new TextBox { Text = ga.DatapointType };
+            var name = new TextBox { Text = project.Name };
+            var comment = new TextBox { Text = project.Comment ?? "", AcceptsReturn = true, MinHeight = 80 };
+            InspectorBody.Children.Add(Label(W("ProjectProperties")));
+            InspectorBody.Children.Add(Note(W("NameLabel"))); InspectorBody.Children.Add(name);
+            InspectorBody.Children.Add(Note(W("Comment"))); InspectorBody.Children.Add(comment);
+            InspectorBody.Children.Add(ActionButton(W("Apply"), () =>
+            {
+                ViewModel.Edit(W("ProjectProperties"), p => { p.Name = name.Text?.Trim() ?? p.Name; p.Comment = comment.Text; });
+                RefreshWorkspace();
+            }, "primary"));
+        }
+        else if (tab?.Target.Kind == "ga" && WorkbenchProjection.Resolve(ViewModel.Project, tab.Target) is GroupAddressEntry ga)
+        {            var name = new TextBox { Text = ga.Name }; var dpt = new TextBox { Text = ga.DatapointType };
             InspectorBody.Children.Add(Note(ga.Address.ToString())); InspectorBody.Children.Add(name); InspectorBody.Children.Add(dpt);
             InspectorBody.Children.Add(ActionButton(W("Apply"), () =>
             {

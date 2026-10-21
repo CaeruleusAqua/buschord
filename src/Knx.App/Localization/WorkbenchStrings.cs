@@ -24,6 +24,8 @@ public static class WorkbenchStrings
     {
         // ---- shell, navigation and perspectives ----
         ["Project"] = ("Projekt", "Project"),
+        ["ProjectProperties"] = ("Projekteigenschaften", "Project properties"),
+        ["Comment"] = ("Kommentar", "Comment"),
         ["ProjectOverview"] = ("Projektübersicht", "Project overview"),
         ["ProjectTools"] = ("Projektwerkzeuge", "Project tools"),
         ["ProjectCreated"] = ("Neues Projekt '{0}' angelegt", "New project '{0}' created"),
