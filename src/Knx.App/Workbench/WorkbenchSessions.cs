@@ -11,6 +11,7 @@ public sealed class WorkbenchSessions : IAsyncDisposable
     public InterfaceCoordinator Interfaces { get; } = new();
     public MonitorSession Monitor { get; }
     public ProgrammingSession Programming { get; }
+    public LineScanSession LineScan { get; }
 
     public WorkbenchSessions(Func<Project?> project,
         Func<MonitorFilter, IReadOnlySet<string>>? resolveGroupIds = null,
@@ -20,6 +21,7 @@ public sealed class WorkbenchSessions : IAsyncDisposable
         var scopedProject = new SessionProject(project);
         Monitor = new(Interfaces, scopedProject.Get, resolveGroupIds);
         Programming = new(Interfaces, scopedProject.Get, freezeConfiguration, demoExecutor);
+        LineScan = new(Interfaces, scopedProject.Get);
     }
 
     public async ValueTask DisposeAsync()

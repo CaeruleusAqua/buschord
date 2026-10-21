@@ -240,6 +240,13 @@ PumpContext.Run(async () =>
     await uiQueue.RunAsync();
     Check("async queue notifications return to owning UI context", ownerEventsOnly && job.Status == ProgrammingJobStatus.Done);
 });
+var lineScan = new LineScanSession(coordinator, () => project);
+await lineScan.RunDemoAsync(line.Id);
+Check("line scan returns explicit demo results without transport", lineScan.Results.Count == 1
+    && lineScan.Results[0].Address == "1.1.1" && lineScan.Results[0].Origin == SessionOrigin.Demo
+    && lineScan.Results[0].Detail.Contains("keine reale", StringComparison.OrdinalIgnoreCase) && !lineScan.IsRunning);
+try { await lineScan.RunDemoAsync("missing"); throw new Exception("Expected explicit line failure"); }
+catch (ArgumentException) { Check("line scan rejects unknown line", true); }
 Console.WriteLine($"{checks} checks passed.");
 
 sealed class FakeTelegramSource : IMonitorTelegramSource
