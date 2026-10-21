@@ -1,4 +1,10 @@
-# Workbench V4 — final accessibility and DPI validation
+# Workbench V4 – final accessibility and DPI validation
+
+> **Post-review fixes:** navigator Left/Right now uses a tunnel handler, Settings focuses
+> the theme field and closes with Escape, status text is live and named, tabs/tool tabs
+> carry explicit names and selected status, the Help button is 35×35, and the inspector
+> overlay disables tab navigation in the covered editor. Remaining: real UIA/Narrator,
+> real 150/200% DPI, full tab-control semantics, filter Ctrl+Z and the high-contrast pass.
 
 > Validation-only report. No product source was changed. The only commit on this
 > branch contains this document.

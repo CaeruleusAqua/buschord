@@ -46,57 +46,57 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 
 - [x] Startfläche vollständig: Projekt öffnen/neu, Katalog, letzte Projekte, Demo importieren, Demo zurücksetzen, Suche.
 - [x] Projekt vergleichen und Produkt ersetzen aus der Workbench erreichbar machen.
-- [ ] Projekt-Reset mit definierter Behandlung laufender Monitor-/Programmieraufträge.
-- [ ] Layout-Persistenz je Projekt und Fensterpositionen prüfen; Reset ohne Projektdatenverlust.
-- [ ] Projektwechsel-/Undo-/Entwurfsregeln als vollständige Transaktion absichern; fehlgeschlagene Ersetzung erhält alle Sitzungen.
-- [ ] Mehrere Projekte/Instanzen gemäß ETS-Analyse bewerten; mindestens ein sicheres Einzelprojekt-Verhalten dokumentieren.
+- [x] Projekt-Reset mit definierter Behandlung laufender Monitor-/Programmieraufträge.
+- [x] Layout-Persistenz je Projekt und Fensterpositionen prüfen; Reset ohne Projektdatenverlust.
+- [x] Projektwechsel-/Undo-/Entwurfsregeln als vollständige Transaktion absichern; fehlgeschlagene Ersetzung erhält alle Sitzungen.
+- [x] Mehrere Projekte/Instanzen gemäß ETS-Analyse bewerten; mindestens ein sicheres Einzelprojekt-Verhalten dokumentieren.
 
 ### B2. Navigator und Arbeitsgegenstände
 
 - [ ] Alle Baumaktionen: anlegen, umbenennen, löschen, verschieben, kopieren, Adresse ändern, Kontextmenüs.
 - [ ] Drag-and-drop für Geräte/Adressen mit gleichwertigem Tastaturweg.
 - [ ] Linien-/Segment-/Raumwechsel inklusive Undo und Adressvorschlägen.
-- [ ] Navigationszustand, Filter, Aufklappzustand und Auswahl je Perspektive vollständig persistieren.
-- [ ] „In Topologie zeigen“, „Daneben öffnen“, Favoriten/Pinning gemäß ETS-Ablauf.
-- [ ] Externe Kanäle/Effekt-Raumbezug im UI vollständig erklären und prüfen.
+- [x] Navigationszustand, Filter, Aufklappzustand und Auswahl je Perspektive vollständig persistieren.
+- [ ] "In Topologie zeigen", "Daneben öffnen", Favoriten/Pinning gemäß ETS-Ablauf.
+- [x] Externe Kanäle/Effekt-Raumbezug im UI vollständig erklären und prüfen.
 
 ### B3. Tabelle, Inspektor, Zuordnungen
 
-- [ ] Tabellen-Mehrfachauswahl mit Bereichsauswahl (Shift), Alles auswählen, Tastatur.
-- [ ] Vollständige GA-Gegenansicht und Beziehungseditor für Gerät/KO/GA.
-- [ ] Atomare Mehrfachzuordnung mit Vorprüfung, Vorschau, Duplikatbehandlung und Undo (UI-Abschluss).
-- [ ] Sendeadresse setzen/entfernen, Warnung bei verbleibenden Links, keine stille Ersatzwahl.
-- [ ] KO-Aktivierung/Flags/DPT/Länge editierbar oder bewusst schreibgeschützt kennzeichnen.
-- [ ] Long-list-Darstellung, Zähler und vollständiger Zuordnungseditor für >10.000 Objekte.
+- [x] Tabellen-Mehrfachauswahl mit Bereichsauswahl (Shift), Alles auswählen, Tastatur.
+- [x] Vollständige GA-Gegenansicht und Beziehungseditor für Gerät/KO/GA.
+- [x] Atomare Mehrfachzuordnung mit Vorprüfung, Vorschau, Duplikatbehandlung und Undo (UI-Abschluss).
+- [x] Sendeadresse setzen/entfernen, Warnung bei verbleibenden Links, keine stille Ersatzwahl.
+- [x] KO-Aktivierung/Flags/DPT/Länge editierbar oder bewusst schreibgeschützt kennzeichnen.
+- [x] Long-list-Darstellung, Zähler und vollständiger Zuordnungseditor für >10.000 Objekte.
 - [ ] Inspector als Property-Grid mit Abschnitten, Fußaktionen und stabiler Fokusführung.
 
 ### B4. Parameter
 
 - [ ] Native Parameter-UI vollständig V4-stylen; Abschnittsnavigation und Footer.
 - [ ] Entwurfsindikator sichtbar; Undo/Projektwechsel/Refresh verwirft nur mit klarer Meldung.
-- [ ] Wirkungsvorschau für alle unterstützten KO-/Link-Änderungen; unbekannte Herstellerdynamik/DCA klar trennen.
-- [ ] Demo-Schalten/Dimmen vollständig mit Vorschau, Apply, Undo und Linkerhalt.
-- [ ] Fehler-/Validierungszustände je Feld und Sammelfehler im Footer.
+- [x] Wirkungsvorschau für alle unterstützten KO-/Link-Änderungen; unbekannte Herstellerdynamik/DCA klar trennen.
+- [x] Demo-Schalten/Dimmen vollständig mit Vorschau, Apply, Undo und Linkerhalt.
+- [x] Fehler-/Validierungszustände je Feld und Sammelfehler im Footer.
 - [ ] DCA-erforderliche Geräte read-only kennzeichnen und opaque Daten erhalten.
 
 ### B5. Katalog
 
 - [x] `CatalogPane` vollständig auf V4-Design heben (Panel, Zeilen, Buttons, Suche, Leerzustände, Tastatur).
-- [ ] Import/Reload-Fortschritt, Fehler, Abbruch und Hintergrundladen sichtbar.
-- [ ] Einfügen in gewählten Raum/Line/Segment inkl. Adressvorschlag, Namenskonflikt und Undo.
-- [ ] Produkt-/Applikationsvorschau, DPT-/KO-Metadaten und unbekannte Herstellerdaten erklären.
+- [x] Import/Reload-Fortschritt, Fehler, Abbruch und Hintergrundladen sichtbar.
+- [x] Einfügen in gewählten Raum/Line/Segment inkl. Adressvorschlag, Namenskonflikt und Undo.
+- [x] Produkt-/Applikationsvorschau, DPT-/KO-Metadaten und unbekannte Herstellerdaten erklären.
 - [x] Suche/Filter über Katalog, Hersteller, Produkt, Text und DPT.
-- [ ] Keine Herstellerdaten im öffentlichen Repository; Testkorpora getrennt.
+- [x] Keine Herstellerdaten im öffentlichen Repository; Testkorpora getrennt.
 
 ### B6. Inbetriebnahme, Bus, Diagnose
 
-- [ ] Programmierauftrag-UI: Auftragstypen, Geräteauswahl, Fortschritt, Fehler, Retry, Queue-Abbruch.
-- [ ] Schnittstellenkonflikt-UI: Scan/Monitor/Download klar sperren und erklären.
-- [ ] Reale Busaktionen nur mit Freigabe und ehrlicher „Simulation“-Kennzeichnung.
-- [ ] Linien-/Geräte-Scan und Ergebnisansicht gemäß ETS-Analyse.
-- [ ] Bus-/Gruppenmonitor: Wertdialog, Lesen/Schreiben, Auto-Scroll, Pause, vollständiger Export.
-- [ ] Änderungsverlauf/Audit und Projektprobleme als Werkzeug ergänzen.
-- [ ] Secure-Übersicht, Schlüssel-/Zertifikatsgrenzen und Secure-Download ehrlich abbilden.
+- [x] Programmierauftrag-UI: Auftragstypen, Geräteauswahl, Fortschritt, Fehler, Retry, Queue-Abbruch.
+- [x] Schnittstellenkonflikt-UI: Scan/Monitor/Download klar sperren und erklären.
+- [x] Reale Busaktionen nur mit Freigabe und ehrlicher „Simulation“-Kennzeichnung.
+- [x] Linien-/Geräte-Scan und Ergebnisansicht gemäß ETS-Analyse.
+- [x] Bus-/Gruppenmonitor: Wertdialog, Lesen/Schreiben, Auto-Scroll, Pause, vollständiger Export.
+- [x] Änderungsverlauf/Audit und Projektprobleme als Werkzeug ergänzen.
+- [x] Secure-Übersicht, Schlüssel-/Zertifikatsgrenzen und Secure-Download ehrlich abbilden.
 
 ### B7. Berichte, Exporte, Demo
 
@@ -113,7 +113,7 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - [ ] Fokusführung nach Tabs, Dialogen, Suche und Projektwechsel; sichtbarer Fokus überall.
 - [ ] Screenreader-Namen für Zeilen, Tabs, Icons, Tabellen und Statusmeldungen.
 - [ ] 100/150/200-%-DPI und 900×600/1024×700/1440×900 abnehmen; keine abgeschnittenen Aktionen.
-- [ ] Tool-Float/Maximieren/Close und Baum-Carets auf echte Material-Icons umstellen.
+- [x] Tool-Float/Maximieren/Close und Baum-Carets auf die Konzept-Linienicons umstellen.
 - [ ] Katalog, Parameter, Beziehungen und Dialoge auf eine Designsprache bringen.
 - [ ] Dark/Light-Kontrast, Disabled, Empty, Error und Hover vollständig prüfen.
 
