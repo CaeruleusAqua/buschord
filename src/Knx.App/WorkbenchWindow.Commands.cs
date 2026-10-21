@@ -38,6 +38,8 @@ public partial class WorkbenchWindow
                 Item(W("MenuRedo"), () => ViewModel.RedoCommand.Execute(null)),
                 Item(W("EditLinks"), () => SetRepresentation("relations")),
                 Item(W("LinkSelection"), ShowBatchLinkDialog),
+                Item(W("SelectAll"), SelectAllRows),
+                Item(W("ClearSelection"), ClearSelection),
                 Item(W("Properties"), () => Workspace.InspectorVisible = true)
             } },
             new() { Header = W("MenuView"), ItemsSource = new object[]
@@ -50,6 +52,7 @@ public partial class WorkbenchWindow
             new() { Header = W("MenuTools"), ItemsSource = new object[]
             {
                 Item(W("ProjectCheck"), () => ShowTool("problems")), Item(W("Monitor"), () => ShowTool("monitor")),
+                Item(W("Scan"), () => ShowTool("scan")), Item(W("Changes"), () => ShowTool("changes")),
                 Item(W("Catalog"), ShowCatalog), Async(W("ExportRecording"), ExportRecordingAsync),
                 Item(W("SecureOverview"), ShowSecureOverview),
                 Item(W("HelpTip"), ShowHelp)
@@ -277,6 +280,28 @@ public partial class WorkbenchWindow
         };
         dialog.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Escape) dialog.Close(); else if (e.Key == Avalonia.Input.Key.Enter) Activate(); };
         Filter(); dialog.Opened += (_, _) => query.Focus(); dialog.ShowDialog(this);
+    }
+
+    private void SelectAllRows()
+    {
+        if (Workspace.ActiveTab is not { } tab) return;
+        tab.SelectedObjectIds.Clear();
+        if (ObjectTable.ItemsSource is not IEnumerable<WorkbenchRow> rows) return;
+        ObjectTable.SelectedItems?.Clear();
+        foreach (var row in rows)
+        {
+            tab.SelectedObjectIds.Add(row.Key);
+            ObjectTable.SelectedItems?.Add(row);
+        }
+        if (CurrentDevice() is { } device) ViewModel.SelectedDevice = device;
+        RefreshInspector();
+    }
+
+    private void ClearSelection()
+    {
+        ObjectTable.SelectedItems?.Clear();
+        if (Workspace.ActiveTab is { } tab) tab.SelectedObjectIds.Clear();
+        RefreshInspector();
     }
 
     private void ShowBatchLinkDialog()

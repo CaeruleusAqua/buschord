@@ -28,6 +28,7 @@ public partial class WorkbenchWindow : Window
     private readonly ScrollViewer _modeScroll = new() { VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto };
     private readonly List<Window> _toolWindows = [];
     private readonly Dictionary<string, Button> _railButtons = new(StringComparer.Ordinal);
+    private readonly WorkbenchAudit _audit = new();
     private WorkbenchSessions? _sessions;
     private DispatcherTimer? _sessionTimer;
     private string? _sessionProjectId;
@@ -113,7 +114,7 @@ public partial class WorkbenchWindow : Window
             button.Classes.Add("wb-view-tab");
             Representations.Children.Add(button);
         }
-        foreach (var (key, title) in new[] { ("monitor", W("Monitor")), ("programming", W("ProgrammingTab")), ("problems", W("Problems")) })
+        foreach (var (key, title) in new[] { ("monitor", W("Monitor")), ("programming", W("ProgrammingTab")), ("scan", W("Scan")), ("changes", W("Changes")), ("problems", W("Problems")) })
         {
             var tool = key;
             var button = ActionButton(title, () => ShowTool(tool), "quiet");
@@ -124,6 +125,7 @@ public partial class WorkbenchWindow : Window
         ViewModel.PropertyChanged += OnModelChanged;
         ViewModel.Devices.CollectionChanged += OnDevicesChanged;
         ViewModel.CatalogLoaded += OnCatalogLoaded;
+        ViewModel.ProjectEdited += OnProjectEdited;
         Workspace.PropertyChanged += OnWorkspaceChanged;
         SizeChanged += (_, _) => ApplyLayout();
         KeyDown += OnShellKeyDown;
@@ -138,6 +140,7 @@ public partial class WorkbenchWindow : Window
             ViewModel.PropertyChanged -= OnModelChanged;
             ViewModel.Devices.CollectionChanged -= OnDevicesChanged;
             ViewModel.CatalogLoaded -= OnCatalogLoaded;
+            ViewModel.ProjectEdited -= OnProjectEdited;
             Workspace.PropertyChanged -= OnWorkspaceChanged;
             _sessionTimer?.Stop();
             _parameters.Dispose();
@@ -162,6 +165,15 @@ public partial class WorkbenchWindow : Window
         Dispatcher.UIThread.Post(() => { _refreshScheduled = false; if (!_shuttingDown) RefreshWorkspace(); });
     }
     private void OnCatalogLoaded(object? sender, EventArgs e) => Dispatcher.UIThread.Post(() => _parameterSession.Refresh());
+    private void OnProjectEdited(object? sender, string description)
+    {
+        void Add()
+        {
+            _audit.Add(description);
+            if (Workspace.ToolsVisible && Workspace.ActiveTool == "changes") ShowTool("changes");
+        }
+        if (Dispatcher.UIThread.CheckAccess()) Add(); else Dispatcher.UIThread.Post(Add);
+    }
     private void EnsureSessions()
     {
         var project = ViewModel.Project;
@@ -307,7 +319,7 @@ public partial class WorkbenchWindow : Window
         {
             CaptureNavigatorScroll();
             Title = ViewModel.Title;
-            if (Workspace.ActiveTool is not ("monitor" or "problems" or "programming")) Workspace.ActiveTool = "monitor";
+            if (Workspace.ActiveTool is not ("monitor" or "problems" or "programming" or "scan" or "changes")) Workspace.ActiveTool = "monitor";
             var p = ViewModel.Project;
             if (!ReferenceEquals(_shownProject, p))
             {
@@ -319,7 +331,7 @@ public partial class WorkbenchWindow : Window
             {
                 Workspace.ChangeProject(p.Id);
                 if (_layoutPath is not null) Workspace.TryRestoreLayout(_layoutPath, t => t == new WorkbenchTarget("tool", "catalog") || WorkbenchProjection.Resolve(p, t) is not null);
-                if (Workspace.ActiveTool is not ("monitor" or "problems" or "programming")) Workspace.ActiveTool = "monitor";
+                if (Workspace.ActiveTool is not ("monitor" or "problems" or "programming" or "scan" or "changes")) Workspace.ActiveTool = "monitor";
                 foreach (var nav in Workspace.Navigators.Values) nav.ExpandedIds.Add("project:" + p.Id);
                 foreach (var space in p.Installations.SelectMany(i => i.Locations.Roots)) Workspace.Navigators["building"].ExpandedIds.Add("space:" + space.Id);
             }
@@ -714,7 +726,7 @@ public partial class WorkbenchWindow : Window
 
     public void ShowTool(string tool)
     {
-        if (tool is not ("monitor" or "problems" or "programming")) throw new ArgumentException("Unknown tool.", nameof(tool));
+        if (tool is not ("monitor" or "problems" or "programming" or "scan" or "changes")) throw new ArgumentException("Unknown tool.", nameof(tool));
         EnsureSessions();
         Workspace.ActiveTool = tool;
         Workspace.ToolsVisible = true;
@@ -722,7 +734,8 @@ public partial class WorkbenchWindow : Window
             button.Classes.Set("active", Equals(button.Tag, tool));
         ToolHost.Content = tool switch
         {
-            "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), _ => CreateMonitorView()
+            "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(),
+            "scan" => CreateScanView(), "changes" => CreateChangesView(), _ => CreateMonitorView()
         };
         ApplyLayout();
     }
@@ -805,6 +818,7 @@ public partial class WorkbenchWindow : Window
         }
         toolbar.Children.Add(ActionButton(W("Stop"), () => { sessions.Monitor.Stop(); RefreshState(); }));
         toolbar.Children.Add(ActionButton(W("ClearDisplay"), () => { sessions.Monitor.ClearDisplay(); RefreshState(); }, "quiet"));
+        toolbar.Children.Add(ActionButton(W("MonitorValue"), ShowMonitorValueDialog, "quiet"));
         var mode = new ComboBox { ItemsSource = new[] { W("GroupMonitor"), W("BusMonitor") }, SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0, MinWidth = 130 };
         mode.SelectionChanged += (_, _) =>
         {
@@ -969,6 +983,110 @@ public partial class WorkbenchWindow : Window
         return panel;
     }
 
+    private Control CreateChangesView()
+    {
+        var panel = new DockPanel { Margin = new(12, 6) };
+        var clear = ActionButton(W("ClearDisplay"), () => { _audit.Clear(); ShowTool("changes"); }, "quiet");
+        DockPanel.SetDock(clear, Avalonia.Controls.Dock.Top);
+        panel.Children.Add(clear);
+        var list = new ListBox { ItemsSource = _audit.Entries, Background = Brushes.Transparent };
+        list.ItemTemplate = new FuncDataTemplate<WorkbenchChange>((change, _) => change is null ? new Border()
+            : Label($"{change.At:HH:mm:ss} · {change.Description}"));
+        if (_audit.Count == 0) panel.Children.Add(Note(W("ChangesEmpty")));
+        else panel.Children.Add(list);
+        return panel;
+    }
+
+    private Control CreateScanView()
+    {
+        EnsureSessions();
+        if (_sessions is not { } sessions) return Note(W("ScanNeedsProject"));
+        var panel = new DockPanel { Margin = new(12, 6) };
+        var toolbar = new WrapPanel { Margin = new(0, 0, 0, 6) };
+        var lines = ViewModel.Project is { } project
+            ? project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).ToList()
+            : [];
+        var picker = new ComboBox { ItemsSource = lines, MinWidth = 240, SelectedIndex = lines.Count > 0 ? 0 : -1 };
+        picker.ItemTemplate = new FuncDataTemplate<Line>((line, _) => Label(line is null ? ""
+            : $"{line.Address} · {line.Name ?? W("Line")}"));
+        toolbar.Children.Add(picker);
+        var run = ActionButton(W("ScanStart"), () => _ = GuardAsync(async () =>
+        {
+            if (picker.SelectedItem is not Line line) { ViewModel.Status = W("ScanNeedsProject"); return; }
+            try
+            {
+                ViewModel.Status = W("ScanRunning");
+                await sessions.LineScan.RunDemoAsync(line.Id);
+                ViewModel.Status = sessions.LineScan.LastError ?? W("ScanNote");
+                ToolHost.Content = CreateScanView();
+            }
+            catch (Exception ex) { ViewModel.Status = W("ScanError", ex.Message); }
+        }), "primary");
+        toolbar.Children.Add(run);
+        toolbar.Children.Add(Note(W("ScanNote")));
+        DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top);
+        panel.Children.Add(toolbar);
+        var header = new Grid { ColumnDefinitions = new("100,*,100,*"), Height = 28 };
+        header.Classes.Add("wb-table-header");
+        var headings = new[] { W("ColumnAddress"), W("ColumnDevice"), W("ColumnStatus"), W("ColumnDetail") };
+        for (var i = 0; i < headings.Length; i++)
+        {
+            var text = Label(headings[i]); text.FontSize = 9; text.Classes.Add("wb-muted"); text.Margin = new(6, 0, 0, 0);
+            Grid.SetColumn(text, i); header.Children.Add(text);
+        }
+        DockPanel.SetDock(header, Avalonia.Controls.Dock.Top); panel.Children.Add(header);
+        var results = new ListBox { ItemsSource = sessions.LineScan.Results, Background = Brushes.Transparent };
+        results.ItemTemplate = new FuncDataTemplate<LineScanResult>((result, _) =>
+        {
+            if (result is null) return new Border();
+            var grid = new Grid { ColumnDefinitions = new("100,*,100,*"), Height = 28 };
+            var cells = new[] { result.Address, result.Name, result.Status, result.Detail };
+            for (var i = 0; i < cells.Length; i++)
+            {
+                var cell = Label(cells[i]); cell.FontSize = 10; cell.Margin = new(6, 0, 0, 0);
+                Grid.SetColumn(cell, i); grid.Children.Add(cell);
+            }
+            return grid;
+        });
+        if (sessions.LineScan.Results.Count == 0) panel.Children.Add(Note(W("ScanEmpty")));
+        else panel.Children.Add(results);
+        return panel;
+    }
+
+    private void ShowMonitorValueDialog()
+    {
+        if (_sessions is not { } sessions || ViewModel.Project is not { } project)
+        { ViewModel.Status = W("ScanNeedsProject"); return; }
+        var dialog = new Window { Title = W("ValueTitle"), Width = 420, Height = 240, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
+        var picker = new ComboBox { ItemsSource = groups, SelectedIndex = groups.Count > 0 ? 0 : -1 };
+        picker.ItemTemplate = new FuncDataTemplate<GroupAddressEntry>((g, _) => Label(g is null ? ""
+            : $"{g.Address} · {g.Name} · {g.DatapointType ?? "—"}"));
+        var value = new TextBox { Text = "1", PlaceholderText = W("ValueText") };
+        panel.Children.Add(Label(W("ValueGroupAddress"))); panel.Children.Add(picker);
+        panel.Children.Add(Label(W("ValueText"))); panel.Children.Add(value);
+        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+        actions.Children.Add(ActionButton(W("SimulateRead"), () =>
+        {
+            if (picker.SelectedItem is not GroupAddressEntry ga) return;
+            try { sessions.Monitor.SimulateRead(ga.Id, value.Text ?? ""); ViewModel.Status = W("ValueWritten", ga.Address.ToString()); dialog.Close(); }
+            catch (Exception ex) { ViewModel.Status = ex.Message; }
+        }));
+        actions.Children.Add(ActionButton(W("SimulateWrite"), () =>
+        {
+            if (picker.SelectedItem is not GroupAddressEntry ga) return;
+            try { sessions.Monitor.SimulateWrite(ga.Id, value.Text ?? ""); ViewModel.Status = W("ValueWritten", ga.Address.ToString()); dialog.Close(); }
+            catch (Exception ex) { ViewModel.Status = ex.Message; }
+        }, "primary"));
+        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
+        panel.Children.Add(actions);
+        panel.Children.Add(Note(W("MonitorDemoNote")));
+        dialog.Content = panel;
+        dialog.Opened += (_, _) => picker.Focus();
+        dialog.ShowDialog(this);
+    }
+
     private string? SelectedComObjectId()
     {
         if (ViewModel.Project is not { } project || Workspace.ActiveTab is not { } tab) return null;
@@ -1125,6 +1243,7 @@ public partial class WorkbenchWindow : Window
         if (Workspace.ToolsVisible && ToolHost.Content is null) ToolHost.Content = Workspace.ActiveTool switch
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), "monitor" => CreateMonitorView(),
+            "scan" => CreateScanView(), "changes" => CreateChangesView(),
             _ => Note(W("ToolPlaceholder"))
         };
     }
@@ -1177,9 +1296,15 @@ public partial class WorkbenchWindow : Window
     {
         var content = Workspace.ActiveTool switch
         {
-            "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), _ => CreateMonitorView()
+            "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(),
+            "scan" => CreateScanView(), "changes" => CreateChangesView(), _ => CreateMonitorView()
         };
-        var window = new Window { Title = Workspace.ActiveTool == "problems" ? W("ProblemsWindowTitle") : Workspace.ActiveTool == "programming" ? W("ProgrammingWindowTitle") : W("MonitorWindowTitle"), Width = 1000, Height = 380,
+        var title = Workspace.ActiveTool switch
+        {
+            "problems" => W("ProblemsWindowTitle"), "programming" => W("ProgrammingWindowTitle"),
+            "scan" => W("Scan"), "changes" => W("ChangesWindowTitle"), _ => W("MonitorWindowTitle")
+        };
+        var window = new Window { Title = title, Width = 1000, Height = 380,
             Content = content };
         _toolWindows.Add(window);
         window.Closed += (_, _) =>

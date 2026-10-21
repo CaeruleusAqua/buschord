@@ -51,6 +51,8 @@ public static class WorkbenchStrings
         ["WithoutGroupAddress"] = ("Ohne GA", "No group address"),
         ["FilterObjects"] = ("Objekte filtern …", "Filter objects …"),
         ["ExpandAll"] = ("Alle", "All"),
+        ["SelectAll"] = ("Alles auswählen", "Select all"),
+        ["ClearSelection"] = ("Auswahl aufheben", "Clear selection"),
         ["ExpandCollapseAll"] = ("Alles auf-/zuklappen", "Expand or collapse all"),
         ["ExpandCollapseAllDevices"] = ("Alle Geräte auf- oder zuklappen", "Expand or collapse all devices"),
         ["ColumnObjectFunction"] = ("Objekt / Funktion", "Object / function"),
@@ -173,6 +175,30 @@ public static class WorkbenchStrings
         ["MonitorEmpty"] = ("Noch keine Aufzeichnung. Monitor starten.", "No recording yet. Start the monitor."),
         ["FilteredExported"] = ("Gefilterte Anzeige exportiert", "Filtered view exported"),
         ["FullExported"] = ("Vollständige Aufzeichnung exportiert", "Full recording exported"),
+        ["MonitorValue"] = ("Wert …", "Value …"),
+        ["ValueTitle"] = ("Simulierter Wert", "Simulated value"),
+        ["ValueGroupAddress"] = ("Gruppenadresse", "Group address"),
+        ["ValueText"] = ("Wert", "Value"),
+        ["SimulateRead"] = ("Simuliert lesen", "Simulated read"),
+        ["SimulateWrite"] = ("Simuliert schreiben", "Simulated write"),
+        ["ValueWritten"] = ("Simulierter Wert für {0} aufgezeichnet.", "Simulated value recorded for {0}."),
+
+        // ---- line scan ----
+        ["Scan"] = ("Scan", "Scan"),
+        ["ScanNeedsProject"] = ("Zuerst ein Projekt öffnen.", "Open a project first."),
+        ["ScanLine"] = ("Linie", "Line"),
+        ["ScanStart"] = ("Linie scannen", "Scan line"),
+        ["ScanRunning"] = ("Scan läuft …", "Scan running …"),
+        ["ScanNote"] = ("SIMULATION · keine reale Geräteantwort", "SIMULATION · no real device response"),
+        ["ScanEmpty"] = ("Noch kein Scan ausgeführt.", "No scan has run yet."),
+        ["ScanError"] = ("Scan: {0}", "Scan: {0}"),
+        ["ColumnStatus"] = ("Status", "Status"),
+        ["ColumnDetail"] = ("Hinweis", "Detail"),
+
+        // ---- change history ----
+        ["Changes"] = ("Änderungen", "Changes"),
+        ["ChangesEmpty"] = ("Noch keine Änderungen in diesem Projekt.", "No project changes yet."),
+        ["ChangesWindowTitle"] = ("BusChord · Änderungen", "BusChord · Changes"),
 
         // ---- programming ----
         ["ProgrammingNeedsProject"] = ("Zuerst ein Projekt öffnen.", "Open a project first."),
