@@ -1,0 +1,201 @@
+{
+  "document": "analysis/knx-bus-read-test-plan.md",
+  "baseCommit": "95f842b86a02a0c71c37207a7d9b426a5f323a3c",
+  "branch": "agents/bus/read-test-plan",
+  "date": "2026-10-21",
+  "authorization": {
+    "allowed": ["discovery", "tunnel connect/disconnect", "heartbeat", "passive listen", "read requests"],
+    "forbidden": [
+      "group value write",
+      "individual address write",
+      "memory write",
+      "download",
+      "restart",
+      "device reset",
+      "secure commissioning",
+      "key or FDSK operation",
+      "broadcast individual address read",
+      "full scan"
+    ]
+  },
+  "safetyClasses": {
+    "P": "passive, no frame sent",
+    "R-IP": "read-only IP management, no device or group state change",
+    "R-BUS": "read-only bus frame, elicits responses but changes no state",
+    "BLOCKED": "must not run until the named defect is fixed",
+    "APPROVAL": "needs an explicit user decision"
+  },
+  "tests": [
+    {
+      "id": "R1",
+      "name": "passive routing listen",
+      "class": "P",
+      "command": "external socket joined to 224.0.23.12:3671, no sends",
+      "evidence": "routing frames with reachable hop counts and sources",
+      "preconditions": ["KNX segment reachable", "no conflicting capture tool"],
+      "abort": ["more than 200 frames per second"],
+      "status": "done",
+      "observed": "6 distinct frames in 15 s"
+    },
+    {
+      "id": "R2",
+      "name": "discovery unicast and multicast",
+      "class": "R-IP",
+      "command": "dotnet run --project src/Knx.Mcp -- --bus-probe=<gateway-ip>",
+      "evidence": "DIB name, individual address, MAC, supported families",
+      "preconditions": ["gateway IP known or multicast allowed"],
+      "abort": ["more than 3 retries", "non-KNX datagram storm"],
+      "status": "done",
+      "observed": "MDT SCN-IP100.03, IA 1.0.0, families 2/3/4/5/7"
+    },
+    {
+      "id": "R3",
+      "name": "tunnel connect and disconnect",
+      "class": "R-IP",
+      "command": "dotnet run --project tests/Knx.Bus.Tests -- --live <gateway-ip>",
+      "evidence": "CONNECT channel and assigned address, ACK 0x00, DISCONNECT 0x00",
+      "preconditions": ["no ETS tunnel", "free channel on the gateway"],
+      "abort": ["CONNECT status not 0x00", "no DISCONNECT_RESPONSE"],
+      "status": "done",
+      "observed": "channel 16, assigned 1.0.1, connect 22 ms, clean disconnect"
+    },
+    {
+      "id": "R4",
+      "name": "heartbeat longer than 60 s",
+      "class": "R-IP",
+      "command": "tunnel listen for 75 s, no cEMI",
+      "evidence": "CONNECTIONSTATE_RESPONSE 0x00, state remains Connected",
+      "preconditions": ["R3"],
+      "abort": ["connection state drops", "three consecutive heartbeat failures"],
+      "status": "done",
+      "observed": "response 0x00 at 60 s, 49 forwarded telegrams, clean disconnect"
+    },
+    {
+      "id": "R5",
+      "name": "group monitor via tunnel, listen only",
+      "class": "P",
+      "command": "tunnel listen, no cEMI",
+      "evidence": "forwarded frames decoded to group address, APCI and DPT",
+      "preconditions": ["R3", "defects B1 B2 B3 fixed"],
+      "abort": ["any frame from the tunnel's own assigned address"],
+      "status": "transport done, decoding wrong",
+      "observed": "35 of 49 group frames classified as individual, all writes decoded as reads"
+    },
+    {
+      "id": "R6",
+      "name": "group value read for an approved GA",
+      "class": "R-BUS+APPROVAL",
+      "command": "bus_connect(mode=tunnel); bus_read(group_address=<GA>)",
+      "evidence": "GroupValueResponse from the device, plausible DPT value, 1-3 s",
+      "preconditions": ["user names GA and device", "B3 fixed", "ETS closed"],
+      "abort": ["no response within 3 s", "any unexpected write frame", "more than 3 attempts"],
+      "status": "not run",
+      "blocker": "no GA approved"
+    },
+    {
+      "id": "R7",
+      "name": "device descriptor read",
+      "class": "R-BUS+APPROVAL",
+      "command": "bus_device_info(address=<IA>)",
+      "evidence": "DeviceDescriptorResponse with mask version",
+      "preconditions": ["B4 fixed", "user approves the device"],
+      "abort": ["malformed or negative response", "timeout"],
+      "status": "blocked",
+      "blocker": "B4 descriptor APCI encoding"
+    },
+    {
+      "id": "R8",
+      "name": "individual address read",
+      "class": "R-BUS+APPROVAL",
+      "command": "Management.IndividualAddressRead() broadcast to 0.0.0",
+      "evidence": "IndividualAddressResponse from every device",
+      "preconditions": ["explicit approval", "maintenance window"],
+      "abort": ["responder outside the expected line"],
+      "status": "blocked",
+      "blocker": "broadcast management frame is outside the read-test scope"
+    },
+    {
+      "id": "R9",
+      "name": "line or bus scan",
+      "class": "R-BUS+APPROVAL",
+      "command": "bus_scan(target=<area.line>)",
+      "evidence": "per-device descriptors and address check",
+      "preconditions": ["B4 fixed", "maintenance window", "explicit approval"],
+      "abort": ["more than 50 devices", "bus error burst"],
+      "status": "blocked",
+      "blocker": "B4 and broadcast management frames"
+    },
+    {
+      "id": "R10",
+      "name": "ACK retry and timeout",
+      "class": "R-IP",
+      "command": "loopback test; real read with an unused GA",
+      "evidence": "one repeat with the same sequence, then failure",
+      "preconditions": ["none"],
+      "abort": ["more than 3 retries"],
+      "status": "loopback only",
+      "blocker": "no packet loss injection on real hardware"
+    },
+    {
+      "id": "R11",
+      "name": "interface conflict",
+      "class": "R-IP+APPROVAL",
+      "command": "open a tunnel, then bus_connect again or start an ETS tunnel",
+      "evidence": "CONNECT error status surfaced verbatim",
+      "preconditions": ["user confirms ETS may be interrupted"],
+      "abort": ["an ETS session is dropped"],
+      "status": "not run",
+      "blocker": "avoid disturbing a live ETS session"
+    },
+    {
+      "id": "R12",
+      "name": "routing mode",
+      "class": "R-IP",
+      "command": "bus_connect(mode=routing) and listen",
+      "evidence": "routing frames",
+      "preconditions": ["B5 fixed"],
+      "abort": ["Connected but zero frames in 60 s"],
+      "status": "blocked",
+      "blocker": "B5 KnxRouting does not join the multicast group"
+    }
+  ],
+  "defects": [
+    {
+      "id": "B1",
+      "file": "src/Knx.Bus/Cemi.cs",
+      "summary": "group flag uses (ctrl2 & 0xF0) == 0xE0 instead of (ctrl2 & 0x80) != 0",
+      "impact": "35 of 49 real group frames classified as individual"
+    },
+    {
+      "id": "B2",
+      "file": "src/Knx.Bus/Cemi.cs",
+      "summary": "APCI and payload read from the wrong APDU octets",
+      "impact": "every real group write decoded as GroupValueRead with shifted payload"
+    },
+    {
+      "id": "B3",
+      "file": "src/Knx.Bus/KnxTunnel.cs, src/Knx.Mcp/McpServer.Tools.cs",
+      "summary": "L_Data.con is dispatched as a telegram; bus_read matches any telegram to the GA",
+      "impact": "bus_read returns the confirmation echo after 43 ms"
+    },
+    {
+      "id": "B4",
+      "file": "src/Knx.Bus/Management.cs, src/Knx.Bus/Diagnostics.cs",
+      "summary": "descriptor read encoded as APCI nibble plus a data byte; descriptor type not expressible",
+      "impact": "bus_device_info, bus_scan and Diagnostics are unusable on real hardware"
+    },
+    {
+      "id": "B5",
+      "file": "src/Knx.Bus/KnxRouting.cs",
+      "summary": "OpenAsync never joins 224.0.23.12 and never binds 3671",
+      "impact": "routing mode reports Connected but receives nothing"
+    }
+  ],
+  "approvalsRequired": [
+    "exact GA and device for R6 and R7 with expected DPT",
+    "confirmation that no ETS session is active",
+    "maintenance window for R9",
+    "explicit approval for the first post-fix group read",
+    "explicit approval for the second-tunnel conflict test"
+  ]
+}
