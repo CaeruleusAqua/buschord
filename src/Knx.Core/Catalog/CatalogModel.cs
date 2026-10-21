@@ -55,6 +55,17 @@ public sealed class CatalogApplicationProgram
     public string Name { get; set; } = "";
     public string? ApplicationNumber { get; set; }
     public string? ApplicationVersion { get; set; }
+    /// <summary>ETS product-database schema version of the application declaration, when present.</summary>
+    public string? SchemaVersion { get; set; }
+    /// <summary>ETS marked the application as broken; editing/download must be blocked.</summary>
+    public bool Broken { get; set; }
+    /// <summary>ETS registration status, e.g. registered/certified; displayed read-only.</summary>
+    public string? RegistrationStatus { get; set; }
+    /// <summary>Minimum ETS version declared by the manufacturer.</summary>
+    public string? MinEtsVersion { get; set; }
+    /// <summary>Mask version / management model declared by the application.</summary>
+    public string? MaskVersion { get; set; }
+    public bool DownloadInfoIncomplete { get; set; }
     public List<ComObject> ComObjects { get; } = [];
     public List<ParameterType> ParameterTypes { get; } = [];
     public List<ParameterBlock> ParameterBlocks { get; } = [];
@@ -82,6 +93,8 @@ public sealed class CatalogApplicationProgram
     public bool RequiresDca => _extensions.Any(IsDcaExtension);
     /// <summary>Parameters can be displayed and edited without executing an ETS plug-in.</summary>
     public bool IsStaticallyEditable => !RequiresDca;
+    /// <summary>Broken or incomplete applications must not be edited/downloaded.</summary>
+    public bool IsEditable => !Broken && !DownloadInfoIncomplete && IsStaticallyEditable;
     /// <summary>Parameter id (ParameterRef Id or RefId) -> ParameterRef@Plugin value.</summary>
     public IReadOnlyDictionary<string, string> ParameterPlugins => _parameterPlugins;
     private readonly Dictionary<string, string> _parameterPlugins = new(StringComparer.Ordinal);

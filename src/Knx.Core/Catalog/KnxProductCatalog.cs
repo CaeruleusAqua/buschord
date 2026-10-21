@@ -510,6 +510,12 @@ public sealed class KnxProductCatalog
                 Name = Text(id, "Name", Attr(element, "Name")),
                 ApplicationNumber = Attr(element, "ApplicationNumber"),
                 ApplicationVersion = Attr(element, "ApplicationVersion"),
+                SchemaVersion = Attr(element, "SchemaVersion") ?? Attr(element, "CreatedFromLegacySchemaVersion"),
+                Broken = IsTrue(Attr(element, "Broken")),
+                RegistrationStatus = Attr(element, "RegistrationStatus"),
+                MinEtsVersion = Attr(element, "MinEtsVersion"),
+                MaskVersion = Attr(element, "MaskVersion") ?? Attr(element, "ManagementModel"),
+                DownloadInfoIncomplete = IsTrue(Attr(element, "DownloadInfoIncomplete")),
             };
             var translated = new XElement(element);
             foreach (var declaration in translated.DescendantsAndSelf())

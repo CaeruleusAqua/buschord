@@ -274,7 +274,9 @@ var dcaFixture = """
             </Parameters>
           </Static>
         </ApplicationProgram>
-        <ApplicationProgram Id="M-00FB_A-PLAIN" Name="Plain" ApplicationNumber="0003" ApplicationVersion="1">
+        <ApplicationProgram Id="M-00FB_A-PLAIN" Name="Plain" ApplicationNumber="0003" ApplicationVersion="1"
+                            SchemaVersion="21" Broken="true" RegistrationStatus="Registered"
+                            MinEtsVersion="6.0" MaskVersion="MV-0705" DownloadInfoIncomplete="true">
           <Static>
             <Parameters>
               <Parameter Id="P-3" Name="Level" ParameterType="PT-1" Value="1"/>
@@ -310,6 +312,9 @@ Check("Ohne DCA statisch editierbar", staticProgram.IsStaticallyEditable && !sta
 Check("RequiresExternalSoftware=false", !staticProgram.RequiresExternalSoftware);
 var plainProgram = dcaCatalog.FindProgram("M-00FB_A-PLAIN")!;
 Check("Ohne Extension editierbar", plainProgram.Extensions.Count == 0 && plainProgram.IsStaticallyEditable);
+Check("Broken/incomplete applications are blocked", plainProgram.Broken && plainProgram.DownloadInfoIncomplete && !plainProgram.IsEditable);
+Check("Application metadata is retained", plainProgram.SchemaVersion == "21" && plainProgram.RegistrationStatus == "Registered"
+    && plainProgram.MinEtsVersion == "6.0" && plainProgram.MaskVersion == "MV-0705");
 
 // --- store round trip ---
 var library = Path.Combine(root, "library");
