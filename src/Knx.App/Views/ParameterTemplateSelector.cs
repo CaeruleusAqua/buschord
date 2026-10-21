@@ -50,6 +50,7 @@ public sealed class ParameterTemplateSelector : IDataTemplate
             FormatString = allowDecimal ? "0.###" : "0",
             IsEnabled = vm.IsEnabled,
         };
+        box.Classes.Add("wb-field");
         box.ValueChanged += (_, _) => vm.Value = box.Value?.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return WrapWithUnit(box, vm.Unit);
     }
@@ -63,6 +64,7 @@ public sealed class ParameterTemplateSelector : IDataTemplate
             IsEnabled = vm.IsEnabled,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
         };
+        combo.Classes.Add("wb-field");
         combo.SelectionChanged += (_, _) => vm.Value = (combo.SelectedItem as ParameterChoice)?.Value;
         return combo;
     }
@@ -75,6 +77,7 @@ public sealed class ParameterTemplateSelector : IDataTemplate
             Watermark = watermark,
             IsEnabled = vm.IsEnabled,
         };
+        box.Classes.Add("wb-field");
         box.TextChanged += (_, _) => vm.Value = box.Text;
         return WrapWithUnit(box, vm.Unit);
     }
@@ -82,13 +85,18 @@ public sealed class ParameterTemplateSelector : IDataTemplate
     private static Control BuildColor(ParameterItemViewModel vm)
     {
         // ponytail: placeholder, replace with Avalonia.ColorPicker when the package is added
-        var box = new TextBox { Text = vm.Value, Watermark = "#RRGGBB" };
+        var box = new TextBox { Text = vm.Value, Watermark = "#RRGGBB", IsEnabled = vm.IsEnabled };
+        box.Classes.Add("wb-field");
         box.TextChanged += (_, _) => vm.Value = box.Text;
         return box;
     }
 
     private static Control BuildPicture(ParameterItemViewModel vm)
-        => new TextBlock { Text = $"[Bild: {vm.Value}]", Foreground = Avalonia.Media.Brushes.Gray };
+    {
+        var text = new TextBlock { Text = $"[Bild: {vm.Value}]" };
+        text.Classes.Add("wb-muted");
+        return text;
+    }
 
     private static Control BuildReadOnly(ParameterItemViewModel vm)
         => new TextBlock { Text = vm.Value ?? "", VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
@@ -98,7 +106,9 @@ public sealed class ParameterTemplateSelector : IDataTemplate
         if (string.IsNullOrEmpty(unit)) return control;
         var panel = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
         panel.Children.Add(control);
-        panel.Children.Add(new TextBlock { Text = unit, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+        var label = new TextBlock { Text = unit, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+        label.Classes.Add("wb-muted");
+        panel.Children.Add(label);
         return panel;
     }
 }

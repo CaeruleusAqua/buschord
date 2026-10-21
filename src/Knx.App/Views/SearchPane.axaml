@@ -2,104 +2,181 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="using:Knx.App.Localization"
              xmlns:views="using:Knx.App.Views"
-             x:Class="Knx.App.Views.SearchPane">
-  <Grid>
-    <TextBlock x:Name="EmptyText" Classes="muted" Text="{loc:Tr UxNeedsProject}"
-               TextWrapping="Wrap" Margin="12" IsVisible="False" />
+             x:Class="Knx.App.Views.SearchPane"
+             Classes="wb-root" Background="Transparent">
+  <!-- V4 tool layout: filter and results first, replace collapsed below. The same pane must survive
+       both the maximized host and a 242 px dock, so no panel has a fixed height. -->
+  <UserControl.Styles>
+    <Style Selector="ListBox.wb-rows">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.wb-rows ListBoxItem">
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="Padding" Value="6,3" />
+      <Setter Property="FontSize" Value="{DynamicResource WbFontSizeSmall}" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ListBox.wb-rows ListBoxItem:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbHover}" />
+    </Style>
+    <Style Selector="ListBox.wb-rows ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbSelected}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}" />
+    </Style>
+    <Style Selector="ListBox.wb-rows ListBoxItem:selected TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
+    </Style>
+    <Style Selector="ListBox.wb-rows ListBoxItem:focus-visible /template/ ContentPresenter">
+      <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
+      <Setter Property="BorderThickness" Value="2" />
+    </Style>
+    <!-- wb-button has no checked state; keep the toggle semantics but drop Fluent's accent fill. -->
+    <Style Selector="ToggleButton.wb-button /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.wb-button:checked /template/ ContentPresenter#PART_ContentPresenter,
+                   ToggleButton.wb-button:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter,
+                   ToggleButton.wb-button:checked:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource WbText}" />
+    </Style>
+  </UserControl.Styles>
 
-    <Grid x:Name="Body" RowDefinitions="Auto,*">
-      <Border Classes="panel">
-        <StackPanel Margin="8" Spacing="6">
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBox x:Name="QueryBox" Watermark="{loc:Tr SearchWatermark}" KeyDown="OnQueryKeyDown" />
-            <Button x:Name="SearchButton" Grid.Column="1" Classes="primary" Margin="6,0,0,0"
-                    Click="OnSearch">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <views:Icon Symbol="Search" />
-                <TextBlock Text="{loc:Tr BtnSearch}" />
-              </StackPanel>
-            </Button>
-          </Grid>
-          <StackPanel Orientation="Horizontal" Spacing="12">
-            <TextBlock Text="{loc:Tr SearchScope}" Classes="muted" VerticalAlignment="Center" />
-            <ComboBox x:Name="ScopeBox" MinWidth="180" />
-            <CheckBox x:Name="RegexCheck" Content="{loc:Tr SearchRegex}" />
-            <CheckBox x:Name="CaseCheck" Content="{loc:Tr SearchCase}"
-                      ToolTip.Tip="{loc:Tr SearchCaseTip}" />
+  <Grid Margin="10">
+    <TextBlock x:Name="EmptyText" Classes="wb-muted" Text="{loc:Tr UxNeedsProject}"
+               TextWrapping="Wrap" VerticalAlignment="Top" IsVisible="False" />
+
+    <Grid x:Name="Body">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <!-- Primary action row: the query keeps the full width, search stays next to it. -->
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBox x:Name="QueryBox" Classes="wb-field" Watermark="{loc:Tr SearchWatermark}"
+                 AutomationProperties.Name="{loc:Tr SearchWatermark}" KeyDown="OnQueryKeyDown" />
+        <Button x:Name="SearchButton" Grid.Column="1" Classes="wb-button wb-primary" Margin="6,0,0,0"
+                Click="OnSearch">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <views:ConceptIcon Symbol="search" Width="14" Height="14" />
+            <TextBlock Text="{loc:Tr BtnSearch}" />
           </StackPanel>
-          <TextBlock x:Name="SearchStatus" Classes="muted" TextWrapping="Wrap" IsVisible="False" />
-        </StackPanel>
-      </Border>
+        </Button>
+      </Grid>
 
-      <Grid Grid.Row="1" RowDefinitions="3*,2*" Margin="0,8,0,0">
-        <Border Classes="panel">
-          <DockPanel>
-            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
-              <TextBlock Classes="panelHeader" Text="{loc:Tr SearchResults}" />
-              <TextBlock x:Name="ResultsCount" Grid.Column="1" Classes="muted"
-                         VerticalAlignment="Center" Margin="0,0,8,0" />
-            </Grid>
-            <Grid>
-              <ListBox x:Name="ResultList" SelectionChanged="OnResultSelected">
+      <!-- Secondary options wrap instead of pushing the results out of a narrow dock. -->
+      <WrapPanel Grid.Row="1" Margin="0,6,0,0">
+        <ComboBox x:Name="ScopeBox" Classes="wb-field" MinWidth="130" Margin="0,0,12,0"
+                  AutomationProperties.Name="{loc:Tr SearchScope}" />
+        <CheckBox x:Name="RegexCheck" Content="{loc:Tr SearchRegex}" Margin="0,0,12,0"
+                  VerticalAlignment="Center" />
+        <CheckBox x:Name="CaseCheck" Content="{loc:Tr SearchCase}" VerticalAlignment="Center"
+                  ToolTip.Tip="{loc:Tr SearchCaseTip}"
+                  AutomationProperties.Name="{loc:Tr SearchCaseTip}" />
+      </WrapPanel>
+
+      <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,6,0,0">
+        <TextBlock x:Name="SearchStatus" Classes="wb-muted" TextWrapping="Wrap" IsVisible="False"
+                   AutomationProperties.LiveSetting="Polite" />
+        <TextBlock x:Name="ResultsCount" Grid.Column="1" Classes="wb-muted"
+                   VerticalAlignment="Center" Margin="8,0,0,0"
+                   AutomationProperties.LiveSetting="Polite" />
+      </Grid>
+
+      <Grid x:Name="ResultsArea" Grid.Row="3" Margin="0,4,0,0">
+        <ListBox x:Name="ResultList" Classes="wb-rows" SelectionChanged="OnResultSelected"
+                 AutomationProperties.Name="{loc:Tr SearchResults}">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Spacing="1">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Grid.Column="0" Text="{Binding Path}" FontWeight="SemiBold"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="1" Text="{Binding Field}" Classes="wb-muted" Margin="8,0,0,0" />
+                </Grid>
+                <TextBlock Classes="wb-muted" TextTrimming="CharacterEllipsis">
+                  <TextBlock.Text>
+                    <MultiBinding StringFormat="{}{0} · {1}">
+                      <Binding Path="KindText" />
+                      <Binding Path="Snippet" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock x:Name="ResultsEmpty" Classes="wb-muted" Text="{loc:Tr SearchNoResults}"
+                   TextWrapping="Wrap" TextAlignment="Center" Margin="12"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="False" />
+      </Grid>
+
+      <!-- Replace is a collapsible section, not a second full page squeezed into the dock. -->
+      <Border Grid.Row="4" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0"
+              Padding="0,6,0,0" Margin="0,8,0,0">
+        <StackPanel>
+          <Grid ColumnDefinitions="*,Auto">
+            <ToggleButton x:Name="ReplaceToggle" Classes="wb-button wb-compact wb-quiet"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                          AutomationProperties.Name="{loc:Tr SearchReplace}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <views:ConceptIcon x:Name="ReplaceGlyph" Symbol="chevron" Width="14" Height="14" />
+                <TextBlock Text="{loc:Tr SearchReplace}" />
+              </StackPanel>
+            </ToggleButton>
+            <TextBlock x:Name="PreviewCounts" Grid.Column="1" Classes="wb-muted"
+                       VerticalAlignment="Center" Margin="8,0,0,0" />
+          </Grid>
+
+          <StackPanel x:Name="ReplaceSection" Spacing="6" Margin="0,6,0,0" IsVisible="False">
+            <TextBox x:Name="ReplaceBox" Classes="wb-field"
+                     Watermark="{loc:Tr SearchReplaceWatermark}"
+                     AutomationProperties.Name="{loc:Tr SearchReplaceWatermark}"
+                     KeyDown="OnReplaceKeyDown" />
+            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+              <Button x:Name="PreviewButton" Classes="wb-button" Content="{loc:Tr BtnPreview}"
+                      Click="OnPreview" />
+              <Button x:Name="ApplyButton" Classes="wb-button wb-primary"
+                      Content="{loc:Tr BtnApply}" IsEnabled="False" Click="OnApply" />
+            </StackPanel>
+            <Grid x:Name="PreviewDiff">
+              <ListBox x:Name="PreviewList" Classes="wb-rows" MaxHeight="200"
+                       AutomationProperties.Name="{loc:Tr SearchReplace}">
                 <ListBox.ItemTemplate>
                   <DataTemplate>
-                    <StackPanel Margin="6,2" Spacing="1">
-                      <Grid ColumnDefinitions="110,*,Auto">
-                        <TextBlock Grid.Column="0" Text="{Binding KindText}" Classes="muted" />
-                        <TextBlock Grid.Column="1" Text="{Binding Path}" FontWeight="SemiBold"
-                                   TextTrimming="CharacterEllipsis" />
-                        <TextBlock Grid.Column="2" Text="{Binding Field}" Classes="muted" />
+                    <StackPanel Spacing="1">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="{Binding Path}"
+                                   TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="1" Text="{Binding Field}" Classes="wb-muted"
+                                   Margin="8,0,0,0" />
                       </Grid>
-                      <TextBlock Text="{Binding Snippet}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding ChangeText}" Classes="wb-muted"
+                                 TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                   </DataTemplate>
                 </ListBox.ItemTemplate>
               </ListBox>
-              <TextBlock x:Name="ResultsEmpty" Classes="muted" Text="{loc:Tr SearchNoResults}"
-                         TextWrapping="Wrap" TextAlignment="Center" Margin="12"
-                         HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="False" />
-            </Grid>
-          </DockPanel>
-        </Border>
-
-        <Border Grid.Row="1" Classes="panel" Margin="0,8,0,0">
-          <DockPanel>
-            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="4"
-                        Background="{DynamicResource EtsHeaderRow}">
-              <views:Icon Symbol="NoteAdd" Margin="8,0,0,0" VerticalAlignment="Center" />
-              <TextBlock Classes="panelHeader" Text="{loc:Tr SearchReplace}" />
-            </StackPanel>
-            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="8,6">
-              <TextBox x:Name="ReplaceBox" Watermark="{loc:Tr SearchReplaceWatermark}" />
-              <Button x:Name="PreviewButton" Grid.Column="1" Margin="6,0,0,0" Content="{loc:Tr BtnPreview}"
-                      Click="OnPreview" />
-              <Button x:Name="ApplyButton" Grid.Column="2" Margin="6,0,0,0" Content="{loc:Tr BtnApply}"
-                      IsEnabled="False" Click="OnApply" />
-            </Grid>
-            <TextBlock x:Name="PreviewStatus" DockPanel.Dock="Bottom" Margin="8,0,8,8"
-                       TextWrapping="Wrap" IsVisible="False" />
-            <TextBlock x:Name="PreviewCounts" DockPanel.Dock="Top" Classes="muted"
-                       Margin="8,0,8,4" HorizontalAlignment="Right" />
-            <Grid>
-              <ListBox x:Name="PreviewList">
-                <ListBox.ItemTemplate>
-                  <DataTemplate>
-                    <Grid ColumnDefinitions="*,70,150,150" Margin="6,1">
-                      <TextBlock Grid.Column="0" Text="{Binding Path}" TextTrimming="CharacterEllipsis" />
-                      <TextBlock Grid.Column="1" Text="{Binding Field}" Classes="muted" />
-                      <TextBlock Grid.Column="2" Text="{Binding Before}" TextTrimming="CharacterEllipsis" />
-                      <TextBlock Grid.Column="3" Text="{Binding After}" TextTrimming="CharacterEllipsis" />
-                    </Grid>
-                  </DataTemplate>
-                </ListBox.ItemTemplate>
-              </ListBox>
-              <TextBlock x:Name="PreviewEmpty" Classes="muted" Text="{loc:Tr SearchPreviewNothing}"
+              <TextBlock x:Name="PreviewEmpty" Classes="wb-muted" Text="{loc:Tr SearchPreviewNothing}"
                          TextWrapping="Wrap" TextAlignment="Center" Margin="12"
                          HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="True" />
             </Grid>
-          </DockPanel>
-        </Border>
-      </Grid>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <TextBlock x:Name="PreviewStatus" Grid.Row="5" Classes="wb-muted" FontSize="11"
+                 TextWrapping="Wrap" Margin="0,4,0,0" IsVisible="False"
+                 AutomationProperties.LiveSetting="Polite" />
     </Grid>
   </Grid>
 </UserControl>

@@ -96,10 +96,13 @@
             <ComboBox x:Name="SectionBox" Grid.Column="1" Classes="wb-field" Margin="8,0,0,0"
                       HorizontalAlignment="Stretch" SelectionChanged="OnSectionChanged" />
           </Grid>
-          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="12,0,0,0">
-            <Button x:Name="ImportButton" Classes="wb-button wb-compact" Content="{loc:Tr CatalogImport}" Click="OnImport" />
-            <Button x:Name="ReloadButton" Classes="wb-button wb-compact" Content="{loc:Tr CatalogReload}" Click="OnReload" />
-            <Button x:Name="CloseButton" Classes="wb-button wb-compact wb-quiet"
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="12,0,0,0"
+                      VerticalAlignment="Center">
+            <Button x:Name="ImportButton" Classes="wb-button" Content="{loc:Tr CatalogImport}"
+                    ToolTip.Tip="{loc:Tr CatalogFileTypes}" Click="OnImport" />
+            <Button x:Name="ReloadButton" Classes="wb-button" Content="{loc:Tr CatalogReload}"
+                    ToolTip.Tip="{loc:Tr CatalogTitle}" Click="OnReload" />
+            <Button x:Name="CloseButton" Classes="wb-button wb-quiet"
                     Content="{loc:Tr BtnClose}" Click="OnClose" />
           </StackPanel>
         </Grid>

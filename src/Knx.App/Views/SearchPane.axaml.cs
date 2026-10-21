@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -36,8 +37,25 @@ public partial class SearchPane : UserControl
     {
         _vm = vm;
         InitializeComponent();
+        ReplaceToggle.IsCheckedChanged += (_, _) => UpdateReplaceLayout();
+        SizeChanged += (_, _) => UpdateReplaceLayout();
         FillScopes();
         Refresh();
+    }
+
+    private void UpdateReplaceLayout()
+    {
+        var expanded = ReplaceToggle.IsChecked == true;
+        ReplaceSection.IsVisible = expanded;
+        ReplaceGlyph.Symbol = expanded ? "down" : "chevron";
+        // A 242 px dock cannot show results and the replace form at once: there the section takes
+        // the panel and reports the change count instead of a list barely taller than one row.
+        var alone = expanded && Bounds.Height is > 0 and < 380;
+        ResultsArea.IsVisible = !alone;
+        // Row 3 is the results, row 4 the replace section.
+        Body.RowDefinitions[3].Height = alone ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+        Body.RowDefinitions[4].Height = alone ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+        PreviewDiff.IsVisible = !alone;
     }
 
     /// <summary>Raised when the user picks a result; the dock host navigates to it.</summary>
@@ -102,6 +120,13 @@ public partial class SearchPane : UserControl
         if (e.Key != Key.Enter) return;
         e.Handled = true;
         RunSearch();
+    }
+
+    private void OnReplaceKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        RunPreview();
     }
 
     private void RunSearch()
@@ -345,4 +370,5 @@ public sealed record ReplaceChangeRow(ReplaceChange Change)
     public string Field => Change.Field;
     public string Before => Change.Before;
     public string After => Change.After;
+    public string ChangeText => $"{Change.Before} → {Change.After}";
 }

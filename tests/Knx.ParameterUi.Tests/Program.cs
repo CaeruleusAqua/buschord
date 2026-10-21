@@ -1,7 +1,9 @@
 using System.IO.Compression;
 using System.Xml.Linq;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Knx;
 using Knx.App.Services;
 using Knx.App.Views;
@@ -453,6 +455,31 @@ try
         && paneType.GetMethod("Load", [typeof(DeviceRow)])?.ReturnType == typeof(void)
         && paneType.GetMethod("Refresh", Type.EmptyTypes)?.ReturnType == typeof(void)
         && paneType.GetMethod("Apply", Type.EmptyTypes)?.ReturnType == typeof(bool));
+
+    // V4 pane surfaces: shared classes, the 280-540 field column and the compact search tool.
+    Check("Parameter pane is a V4 root", pane.Classes.Contains("wb-root"));
+    static double FieldWidth(double width) => (double)ParameterFieldWidthConverter.Instance
+        .Convert(width, typeof(double), null, System.Globalization.CultureInfo.InvariantCulture)!;
+    Check("Field column keeps its 280-540 px cap", FieldWidth(200) == 280 && FieldWidth(296) == 292
+        && FieldWidth(900) == 540);
+    var textRow = new ParameterItemViewModel(
+        new ParameterInstance { Id = "I-V4", Name = "Label", Value = "A" },
+        new ParameterType { Id = "T-V4", Name = "Text", DataType = ParameterDataType.Text });
+    Check("Editable fields carry the shared wb-field class",
+        ParameterTemplateSelector.Instance.Build(rows[0]) is NumericUpDown numeric && numeric.Classes.Contains("wb-field")
+        && ParameterTemplateSelector.Instance.Build(textRow) is TextBox text && text.Classes.Contains("wb-field"));
+    var search = new SearchPane(vm);
+    Check("Search pane is a V4 root without legacy panel chrome",
+        search.Classes.Contains("wb-root")
+        && !search.GetLogicalDescendants().OfType<Border>()
+            .Any(b => b.Classes.Contains("panel"))
+        && !search.GetLogicalDescendants().OfType<TextBlock>()
+            .Any(t => t.Classes.Contains("panelHeader") || t.Classes.Contains("columnHeader")));
+    var replaceToggle = search.FindControl<ToggleButton>("ReplaceToggle")!;
+    var replaceSection = search.FindControl<StackPanel>("ReplaceSection")!;
+    Check("Replace section starts collapsed", !replaceSection.IsVisible);
+    replaceToggle.IsChecked = true;
+    Check("Replace section expands from its toggle", replaceSection.IsVisible);
 }
 finally { Directory.Delete(directory, true); }
 Console.WriteLine(failures == 0 ? "PARAMETER UI CHECKS OK" : $"{failures} failures");

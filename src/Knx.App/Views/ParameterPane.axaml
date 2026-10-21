@@ -2,7 +2,24 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Knx.App.Views"
              xmlns:loc="using:Knx.App.Localization"
-             x:Class="Knx.App.Views.ParameterPane">
+             x:Class="Knx.App.Views.ParameterPane"
+             Classes="wb-root" Background="Transparent">
+  <!-- One label hierarchy and one field geometry for the whole editor. wb-label is local until the
+       shared WorkbenchTheme owns it; editors reuse the global wb-field class. -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.wb-label">
+      <Setter Property="FontSize" Value="{DynamicResource WbFontSizeControl}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="NumericUpDown.wb-field">
+      <Setter Property="MinHeight" Value="{DynamicResource WbButtonHeight}" />
+      <Setter Property="Height" Value="{DynamicResource WbButtonHeight}" />
+      <Setter Property="FontSize" Value="{DynamicResource WbFontSizeControl}" />
+    </Style>
+  </UserControl.Styles>
+
   <DockPanel LastChildFill="True" Margin="0">
     <!-- Sticky V4 footer: draft indicator and validation summary on the left, actions on the right. -->
     <Border x:Name="Footer" DockPanel.Dock="Bottom" Background="{DynamicResource WbPaper}"
@@ -12,10 +29,12 @@
           <Border x:Name="DraftPill" Background="{DynamicResource WbTint}" CornerRadius="9"
                   Padding="9,3" IsVisible="False" VerticalAlignment="Center">
             <TextBlock x:Name="DraftText" FontSize="10.5" FontWeight="Medium"
-                       Foreground="{DynamicResource WbSelectedText}" />
+                       Foreground="{DynamicResource WbSelectedText}"
+                       AutomationProperties.LiveSetting="Polite" />
           </Border>
           <TextBlock x:Name="ValidationSummary" Classes="wb-error" FontSize="11" TextWrapping="Wrap"
-                     VerticalAlignment="Center" IsVisible="False" />
+                     VerticalAlignment="Center" IsVisible="False"
+                     AutomationProperties.LiveSetting="Polite" />
           <TextBlock x:Name="StatusHint" Classes="wb-muted" VerticalAlignment="Center" IsVisible="False" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
@@ -28,11 +47,11 @@
                   Classes="wb-button" />
         </StackPanel>
         <TextBlock x:Name="MessageText" Grid.Row="1" Grid.ColumnSpan="2" TextWrapping="Wrap"
-                   Classes="wb-muted" Margin="0,6,0,0" />
+                   Classes="wb-muted" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite" />
       </Grid>
     </Border>
     <StackPanel x:Name="PreviewPanel" DockPanel.Dock="Bottom" IsVisible="False" Spacing="8" Margin="0,12,0,0">
-      <TextBlock x:Name="PreviewSummary" FontWeight="SemiBold" />
+      <TextBlock x:Name="PreviewSummary" Classes="wb-label" />
       <ScrollViewer MaxHeight="180">
         <ItemsControl x:Name="PreviewList">
           <ItemsControl.ItemTemplate>
@@ -46,7 +65,7 @@
     <Border x:Name="NoticePanel" DockPanel.Dock="Top" Classes="wb-panel" CornerRadius="6"
             BorderThickness="1" Padding="10,7" Margin="0,0,0,10" IsVisible="False">
       <StackPanel Spacing="2">
-        <TextBlock Text="{loc:Tr ParameterNoticeShort}" FontWeight="SemiBold" FontSize="11" />
+        <TextBlock Text="{loc:Tr ParameterNoticeShort}" Classes="wb-label" />
         <TextBlock Text="{loc:Tr ParameterStaticNotice}" TextWrapping="Wrap" Classes="wb-muted" />
         <TextBlock x:Name="WarningDetail" IsVisible="False" TextWrapping="Wrap" Classes="wb-warning" />
       </StackPanel>
@@ -54,14 +73,16 @@
     <Border x:Name="ReadOnlyPanel" DockPanel.Dock="Top" Classes="wb-panel" CornerRadius="6"
             BorderThickness="1" Padding="10,7" Margin="0,0,0,10" IsVisible="False">
       <StackPanel Spacing="2">
-        <TextBlock x:Name="ReadOnlyHeading" FontWeight="SemiBold" FontSize="11" />
-        <TextBlock x:Name="ReadOnlyText" TextWrapping="Wrap" Classes="wb-muted" />
+        <TextBlock x:Name="ReadOnlyHeading" Classes="wb-label" />
+        <TextBlock x:Name="ReadOnlyText" TextWrapping="Wrap" Classes="wb-muted"
+                   AutomationProperties.LiveSetting="Polite" />
       </StackPanel>
     </Border>
     <Border x:Name="DraftNoticePanel" DockPanel.Dock="Top" Classes="wb-panel" CornerRadius="6"
             BorderThickness="1" Padding="10,7" Margin="0,0,0,10" IsVisible="False">
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-        <TextBlock x:Name="DraftNoticeText" TextWrapping="Wrap" Classes="wb-warning" VerticalAlignment="Center" />
+        <TextBlock x:Name="DraftNoticeText" TextWrapping="Wrap" Classes="wb-warning" VerticalAlignment="Center"
+                   AutomationProperties.LiveSetting="Polite" />
         <Button x:Name="DismissDraftNoticeButton" Grid.Column="1" Classes="wb-button wb-compact wb-quiet"
                 Click="OnDismissDraftNotice" VerticalAlignment="Center" />
       </Grid>
@@ -86,7 +107,8 @@
                Classes="wb-muted" Margin="0,0,0,8" />
     <TextBlock x:Name="HeaderText" DockPanel.Dock="Top" Classes="wb-heading"
                Margin="0,0,0,6" Text="{loc:Tr ParameterTitle}" TextWrapping="Wrap" />
-    <ScrollViewer x:Name="ParameterScroll" HorizontalScrollBarVisibility="Disabled" Padding="0,2,2,0">
+    <ScrollViewer x:Name="ParameterScroll" HorizontalScrollBarVisibility="Disabled" Padding="0,2,2,0"
+                  AutomationProperties.Name="{loc:Tr ParameterTitle}">
       <ItemsControl x:Name="ParameterList" HorizontalAlignment="Stretch">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
@@ -94,11 +116,12 @@
             <Grid RowDefinitions="Auto,Auto,Auto,Auto" HorizontalAlignment="Left"
                   Width="{Binding $parent[ScrollViewer].Bounds.Width, Converter={x:Static views:ParameterFieldWidthConverter.Instance}}"
                   Margin="0,0,0,14" IsVisible="{Binding IsVisible}">
-              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Name}" Classes="wb-label" />
               <TextBlock Grid.Row="1" Text="{Binding Description}" Classes="wb-muted" TextWrapping="Wrap"
                          IsVisible="{Binding Description, Converter={x:Static ObjectConverters.IsNotNull}}" />
               <ContentControl Grid.Row="2" Content="{Binding}" Margin="0,4,0,0"
                               HorizontalAlignment="Stretch"
+                              AutomationProperties.Name="{Binding Name}"
                               ContentTemplate="{x:Static views:SessionParameterTemplate.Instance}" />
               <TextBlock Grid.Row="3" Classes="wb-error" FontSize="11" TextWrapping="Wrap" Margin="0,3,0,0"
                          IsVisible="{Binding Text, RelativeSource={RelativeSource Self}, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
