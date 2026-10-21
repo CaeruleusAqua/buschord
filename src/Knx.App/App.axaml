@@ -212,6 +212,12 @@
       <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Button.quiet">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
     </Style>
     <Style Selector="Button:not(RepeatButton):not(ToggleButton):pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource EtsButtonHover}" />
@@ -376,11 +382,11 @@
 
     <!-- selection: the Fluent accent purple clashes with EtsAccent, so selected rows use the
          blue family in both themes; keyboard focus keeps a visible EtsAccent ring. -->
-    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
       <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
     </Style>
-    <Style Selector="ListBoxItem:focus-visible /template/ ContentPresenter">
+    <Style Selector="ListBoxItem:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
@@ -395,11 +401,11 @@
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
-    <Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+    <Style Selector="ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
       <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
     </Style>
-    <Style Selector="ComboBoxItem:focus-visible /template/ ContentPresenter">
+    <Style Selector="ComboBoxItem:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
