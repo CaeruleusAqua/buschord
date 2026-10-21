@@ -415,6 +415,12 @@ automatische Hardcoded-Text-Prüfung.
 - [ ] **H9.6 Grenzen:** Projekt-/Gerätenamen, Herstellertexte und technische
   CSV-Werte bleiben Daten, nicht UI-Sprache; DPT-/KNX-Codes werden nicht
   übersetzt.
+- [ ] **H9.7 Live-Sprachwechsel:** `{loc:Tr}`/`{loc:Wb}` sind statische
+  Markup-Extensions; Menüs und Tool-Tabs werden einmalig gebaut. Die
+  Inventur (`5b7bb25`) belegt, dass ein Wechsel im offenen Fenster Teile der
+  Shell nicht aktualisiert. Lösung: bindende Markup-Extensions plus
+  Menu-/Tool-Tab-Refresh oder dokumentierter Neustart; mit Test
+  de→en→de im offenen Fenster.
 
 ### H10. Security-Härtung (neu, 2026-10-21)
 
