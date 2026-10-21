@@ -607,15 +607,18 @@ public partial class WorkbenchWindow : Window
             case Line line:
                 Add(W("NewSegment"), () => _ = CreateSegmentAsync(line));
                 Add(W("Rename"), () => _ = RenameLineAsync(line));
+                Add(W("Move"), () => _ = MoveLineAsync(line));
                 Add(W("Delete"), () => _ = DeleteLineAsync(line));
                 break;
             case Segment segment:
                 Add(W("Rename"), () => _ = RenameSegmentAsync(segment));
+                Add(W("Move"), () => _ = MoveSegmentAsync(segment));
                 Add(W("Delete"), () => _ = DeleteSegmentAsync(segment));
                 break;
             case DeviceInstance device:
                 Add(W("Rename"), () => _ = RenameDeviceAsync(device));
                 Add(W("Copy"), () => _ = CopyDeviceAsync(device));
+                Add(W("Move"), () => _ = MoveDeviceAsync(device));
                 Add(W("Delete"), () => _ = DeleteDeviceAsync(device));
                 break;
             case GroupAddressEntry group:
@@ -690,6 +693,85 @@ public partial class WorkbenchWindow : Window
             .FirstOrDefault(n => n.DeviceRefs.Contains(device.Id));
         ApplyOperation(W("Copy"), p => AsResult(ProjectOperations.CopyDevice(p, device, line, segment, room?.Id,
             (device.Name ?? device.Id) + " (2)")));
+    }
+
+    private async Task MoveDeviceAsync(DeviceInstance device)
+    {
+        if (ViewModel.Project is not { } project) return;
+        var source = ProjectQuery.LocateDevice(project, device.Address);
+        if (source is not { Line: { } sourceLine }) { ViewModel.Status = W("TargetLineMissing"); return; }
+        var lines = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).ToList();
+        var dialog = CreateDialog(W("Move"), 460, 220);
+        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var picker = new ComboBox { ItemsSource = lines, SelectedIndex = Math.Max(0, lines.FindIndex(l => l.Id == sourceLine.Id)) };
+        picker.ItemTemplate = new FuncDataTemplate<Line>((line, _) => Label(line is null ? ""
+            : $"{line.Address} · {line.Name ?? W("Line")}"));
+        panel.Children.Add(Note(W("ChooseLine")));
+        panel.Children.Add(picker);
+        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+        actions.Children.Add(ActionButton(W("Move"), () =>
+        {
+            if (picker.SelectedItem is not Line target) return;
+            var segment = target.Id == sourceLine.Id
+                ? sourceLine.Segments.FirstOrDefault(s => s.Devices.Contains(device)) : null;
+            var room = project.Installations.SelectMany(i => i.Locations.AllNodes)
+                .FirstOrDefault(n => n.DeviceRefs.Contains(device.Id));
+            dialog.Close();
+            ApplyOperation(W("Move"), p => ProjectOperations.MoveDevice(p, device, target, segment, room?.Id));
+        }, "primary"));
+        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
+        panel.Children.Add(actions);
+        dialog.Content = panel;
+        dialog.Opened += (_, _) => picker.Focus();
+        await dialog.ShowDialog(this);
+    }
+
+    private async Task MoveLineAsync(Line line)
+    {
+        if (ViewModel.Project is not { } project || ProjectQuery.FindInstallationOf(project, line) is not { } installation)
+            return;
+        var areas = installation.Areas.ToList();
+        var sourceArea = areas.FirstOrDefault(a => a.Lines.Contains(line) || a.Lines.Any(l => l.Id == line.Id));
+        var dialog = CreateDialog(W("Move"), 460, 220);
+        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var picker = new ComboBox { ItemsSource = areas, SelectedIndex = Math.Max(0, areas.FindIndex(a => a.Id == sourceArea?.Id)) };
+        picker.ItemTemplate = new FuncDataTemplate<Area>((area, _) => Label(area is null ? ""
+            : $"{area.Address} · {area.Name ?? W("AreaNode", area.Address, "")}"));
+        panel.Children.Add(Note(W("Move"))); panel.Children.Add(picker);
+        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+        actions.Children.Add(ActionButton(W("Move"), () =>
+        {
+            if (picker.SelectedItem is not Area target) return;
+            dialog.Close();
+            ApplyOperation(W("Move"), p => ProjectOperations.MoveLine(p, line, target));
+        }, "primary"));
+        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
+        panel.Children.Add(actions); dialog.Content = panel;
+        dialog.Opened += (_, _) => picker.Focus();
+        await dialog.ShowDialog(this);
+    }
+
+    private async Task MoveSegmentAsync(Segment segment)
+    {
+        if (ViewModel.Project is not { } project) return;
+        var lines = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).ToList();
+        var dialog = CreateDialog(W("Move"), 460, 220);
+        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var picker = new ComboBox { ItemsSource = lines, SelectedIndex = 0 };
+        picker.ItemTemplate = new FuncDataTemplate<Line>((line, _) => Label(line is null ? ""
+            : $"{line.Address} · {line.Name ?? W("Line")}"));
+        panel.Children.Add(Note(W("Move"))); panel.Children.Add(picker);
+        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+        actions.Children.Add(ActionButton(W("Move"), () =>
+        {
+            if (picker.SelectedItem is not Line target) return;
+            dialog.Close();
+            ApplyOperation(W("Move"), p => ProjectOperations.MoveSegment(p, segment, target));
+        }, "primary"));
+        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
+        panel.Children.Add(actions); dialog.Content = panel;
+        dialog.Opened += (_, _) => picker.Focus();
+        await dialog.ShowDialog(this);
     }
 
     private async Task DeleteDeviceAsync(DeviceInstance device)

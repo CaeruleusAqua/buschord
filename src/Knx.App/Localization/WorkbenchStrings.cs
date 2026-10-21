@@ -357,6 +357,8 @@ public static class WorkbenchStrings
         ["Delete"] = ("Löschen", "Delete"),
         ["Rename"] = ("Umbenennen", "Rename"),
         ["Copy"] = ("Kopieren", "Copy"),
+        ["Move"] = ("Verschieben …", "Move …"),
+        ["ChooseLine"] = ("Ziellinie wählen", "Choose target line"),
         ["NewLine"] = ("Neue Linie …", "New line …"),
         ["NewSegment"] = ("Neues Segment …", "New segment …"),
         ["NewName"] = ("Neuer Name", "New name"),
