@@ -16,7 +16,7 @@ namespace Knx.Catalog;
 public sealed class CatalogIndexStore
 {
     /// <summary>Bump when the document shape changes; every entry is rebuilt once.</summary>
-    public const int SchemaVersion = 4;
+    public const int SchemaVersion = 5;
 
     /// <summary>Maximum compressed cache document; anything larger is not trusted.</summary>
     public const long MaximumIndexBytes = 64L * 1024 * 1024;
@@ -417,6 +417,16 @@ public sealed partial class KnxProductCatalog
         }
         foreach (var programIndex in document.Programs)
         {
+            // Archived sources are entry names, not file-system paths. Older indexes stored
+            // monolithic entry names in SourceFilePath; normalise them to ProgramSource.Entry
+            // so the lazy parameter model can still reopen the archive after a warm start.
+            var sourceEntry = programIndex.SourceEntry;
+            var sourceFilePath = programIndex.SourceFilePath;
+            if (!isXml || document.BackingArchiveName is not null)
+            {
+                sourceEntry ??= sourceFilePath;
+                sourceFilePath = null;
+            }
             var program = new CatalogApplicationProgram
             {
                 Id = programIndex.Id,
@@ -430,8 +440,7 @@ public sealed partial class KnxProductCatalog
                 MaskVersion = programIndex.MaskVersion,
                 DownloadInfoIncomplete = programIndex.DownloadInfoIncomplete,
                 RequiresExternalSoftware = programIndex.RequiresExternalSoftware,
-                Source = new ProgramSource(programIndex.SourceEntry,
-                    programIndex.SourceFilePath ?? (isXml ? path : null)),
+                Source = new ProgramSource(sourceEntry, sourceFilePath ?? (isXml ? path : null)),
             };
             foreach (var extension in programIndex.Extensions) program.AddExtension(extension);
             foreach (var comObject in programIndex.ComObjects)

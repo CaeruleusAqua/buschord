@@ -197,7 +197,10 @@ internal static class WorkbenchCheck
                 window.OpenTarget(new("device", dcaDevice.Id), "params");
                 window.RefreshWorkspace();
                 var dcaPane = window.ParameterEditor;
-                var dcaReady = await WaitUntil(() => dcaPane.IsReadOnly, "DCA catalogue read-only");
+                // The read-only reason and the reloaded parameter rows arrive through two
+                // dispatcher posts after CatalogLoaded; wait for both before asserting.
+                var dcaReady = await WaitUntil(() => dcaPane.IsReadOnly && dcaPane.Session.Rows.Length > 0,
+                    "DCA catalogue read-only");
                 Check("DCA read-only reason arrives with CatalogLoaded and values stay untouched",
                     dcaReady && dcaPane.Session.Rows.Length > 0 && !dcaPane.Session.CanApply
                     && dcaPane.ReadOnlyReason is { Length: > 0 } && dcaDevice.ParameterValues.Count == 0);

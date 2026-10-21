@@ -216,9 +216,10 @@ entfällt der jeweilige Satz.
 
 ## Benötigte Testdaten
 
-1. **Öffentliches ETS6-Original**: `xknxproject`-Fixture `testprojekt-ets6.knxproj`
-   (Passwort `test`, Schema 21) für Interop. Lizenz prüfen (Repo GPL-2.0); nicht
-   ungeprüft vendorn, sondern als externer Test/Download.
+1. **Öffentliches ETS6-Original**: Das früher getrackte `xknxproject`-Fixture
+   `testprojekt-ets6.knxproj` wurde in `171ebca` aus dem Repository entfernt
+   (GPL-2.0/Herstellerdaten und eingebettete Zugangsdaten). Für Interop nur als
+   externer Test/Download verwenden, niemals vendorn oder committen.
 2. **Eigene synthetische Fixtures**: äußeres ZIP + `P-XXXX.zip` mit `0.xml`/`project.xml`,
    AES-256/AE-1, abgeleitetes Passwort. Fälle: richtig, falsch, korrupter MAC, AE-2,
    mehrere Einträge. Diese Fixtures prüfen nur die eigene Implementierung, nicht
