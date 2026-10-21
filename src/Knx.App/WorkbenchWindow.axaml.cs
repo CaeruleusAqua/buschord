@@ -129,6 +129,8 @@ public partial class WorkbenchWindow : Window
         Workspace.PropertyChanged += OnWorkspaceChanged;
         SizeChanged += (_, _) => ApplyLayout();
         AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Tunnel);
+        NavTree.KeyDown += OnNavigatorKeyDown;
+        ObjectTable.KeyDown += OnTableKeyDown;
         Closing += OnClosing;
         foreach (var splitter in new[] { NavSplitter, InspectorSplitter, ToolsSplitter })
         {
@@ -583,8 +585,25 @@ public partial class WorkbenchWindow : Window
         return grid;
     }
 
-    private void OnNavSelected(object? sender, SelectionChangedEventArgs e)
+    private void OnNavigatorKeyDown(object? sender, KeyEventArgs e)
     {
+        if (NavTree.SelectedItem is not NavEntry entry || !entry.Node.Children.Any()) return;
+        var set = Workspace.Navigators[Workspace.Perspective].ExpandedIds;
+        if (e.Key == Key.Right) { set.Add(entry.Node.Key); CaptureNavigatorScroll(); RefreshNavigation(); e.Handled = true; }
+        else if (e.Key == Key.Left) { set.Remove(entry.Node.Key); CaptureNavigatorScroll(); RefreshNavigation(); e.Handled = true; }
+    }
+
+    private void OnTableKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Left or Key.Right) || ObjectTable.SelectedItem is not WorkbenchRow row
+            || Workspace.ActiveTab is not { } tab || !row.CanExpand) return;
+        var key = row.Kind == "device" ? row.Device.Id : row.Key;
+        if (e.Key == Key.Left) tab.CollapsedDeviceIds.Add(key); else tab.CollapsedDeviceIds.Remove(key);
+        RefreshEditor();
+        e.Handled = true;
+    }
+
+    private void OnNavSelected(object? sender, SelectionChangedEventArgs e)    {
         if (_refreshing || NavTree.SelectedItem is not NavEntry entry) return;
         Workspace.Navigators[Workspace.Perspective].SelectedId = entry.Node.Key;
         if (entry.Node.Target is { } target) OpenTarget(target);
