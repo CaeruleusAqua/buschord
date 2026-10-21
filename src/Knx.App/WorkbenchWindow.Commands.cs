@@ -29,6 +29,9 @@ public partial class WorkbenchWindow
                 Async(W("ExportTopology"), () => ExportAsync("topologie.csv", ProjectCsvExporter.Topology)),
                 Async(W("ExportReport"), () => ExportAsync("projektbericht.html", p => ProjectReport.Render(p))),
                 Async(W("ExportAssociations"), () => ExportAsync("zuordnungen.csv", AssociationsCsv)),
+                Async(W("ExportLabels"), ExportLabelsAsync),
+                Async(W("ExportSemanticTtl"), () => ExportSemanticAsync(SemanticExport.SemanticFormat.Turtle, "semantik.ttl", "ttl")),
+                Async(W("ExportSemanticJsonLd"), () => ExportSemanticAsync(SemanticExport.SemanticFormat.JsonLd, "semantik.jsonld", "jsonld")),
                 Async(W("CompareProjects"), CompareProjectsAsync),
                 Async(W("ReplaceProduct"), ReplaceProductAsync),
                 Async(W("ExportDemoJson"), ExportDemoJsonAsync),
@@ -202,6 +205,25 @@ public partial class WorkbenchWindow
         if (file?.TryGetLocalPath() is not { } path) return;
         await File.WriteAllTextAsync(path, json, new UTF8Encoding(false));
         ViewModel.Status = W("DemoExported");
+    }
+
+    private async Task ExportLabelsAsync()
+    {
+        var options = new LabelOptions { SheetTitle = ViewModel.Project?.Name ?? "Etiketten" };
+        await ExportAsync("etiketten.html", p => LabelCreator.ToHtml(LabelCreator.GroupAddressLabels(p, options), options));
+    }
+
+    private async Task ExportSemanticAsync(SemanticExport.SemanticFormat format, string fileName, string extension)
+    {
+        if (ViewModel.Project is not { } project) { ViewModel.Status = W("ScanNeedsProject"); return; }
+        var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = fileName, DefaultExtension = extension });
+        if (file?.TryGetLocalPath() is not { } path) return;
+        try
+        {
+            SemanticExport.Export(project, path, format);
+            ViewModel.Status = W("SemanticExported", Path.GetFileName(path));
+        }
+        catch (Exception ex) { ViewModel.Status = W("CompareFailed", ex.Message); }
     }
 
     private async Task CompareProjectsAsync()
