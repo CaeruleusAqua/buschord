@@ -21,6 +21,10 @@ public sealed class KnxProductCatalog
     private readonly Dictionary<string, Dictionary<string, Dictionary<string, string>>> _translations =
         new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<string>> _hardware2Programs = new(StringComparer.Ordinal);
+    // Catalogue items resolve their product once per section; keep both lookups O(1) instead of
+    // scanning the full product/program lists for every declaration.
+    private readonly Dictionary<string, CatalogProduct> _productsById = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CatalogApplicationProgram> _programsById = new(StringComparer.Ordinal);
 
     // Split archives (the layout every shipped .knxprod we have seen uses) keep the
     // application programs in separate parts; they are loaded on demand by program id.
@@ -261,7 +265,8 @@ public sealed class KnxProductCatalog
         }
     }
 
-    public CatalogProduct? FindProduct(string productId) =>        Products.FirstOrDefault(p => string.Equals(p.Id, productId, StringComparison.Ordinal));
+    public CatalogProduct? FindProduct(string productId) =>
+        _productsById.GetValueOrDefault(productId);
 
     /// <summary>Finds a program by its own id or by a Hardware2Program id that references it.</summary>
     public CatalogApplicationProgram? FindProgram(string programRefId)
@@ -290,13 +295,12 @@ public sealed class KnxProductCatalog
 
     private CatalogApplicationProgram? FindProgramById(string id)
     {
-        var found = Programs.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.Ordinal));
-        if (found is not null) return found;
+        if (_programsById.GetValueOrDefault(id) is { } found) return found;
 
         // Split archives: pull the part that holds this program, once.
         if (!_partByName.TryGetValue(id, out var location) || !_loadedParts.Add(id)) return null;
         LoadPart(location);
-        return Programs.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.Ordinal));
+        return _programsById.GetValueOrDefault(id);
     }
 
     private void Parse(XDocument document)
@@ -439,6 +443,7 @@ public sealed class KnxProductCatalog
                     if (linkId.Length > 0 && !product.Hardware2ProgramIds.Contains(linkId))
                         product.Hardware2ProgramIds.Add(linkId);
                 Products.Add(product);
+                _productsById.TryAdd(product.Id, product);
             }
         }
     }
@@ -502,7 +507,7 @@ public sealed class KnxProductCatalog
                      .Where(e => e.Name.LocalName == "ApplicationProgram" && Attr(e, "Id") is not null))
         {
             var id = Attr(element, "Id")!;
-            if (Programs.Any(p => p.Id == id)) continue;
+            if (_programsById.ContainsKey(id)) continue;
 
             var program = new CatalogApplicationProgram
             {
@@ -554,6 +559,7 @@ public sealed class KnxProductCatalog
             }
 
             Programs.Add(program);
+            _programsById[program.Id] = program;
         }
     }
 
