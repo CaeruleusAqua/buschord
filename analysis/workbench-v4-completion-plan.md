@@ -395,9 +395,10 @@ automatische Hardcoded-Text-Prüfung.
 - [ ] **H9.2 Inventar:** alle UI-/Report-/CSV-/Fehlertexte mit Datei:Zeile,
   Key-Status und Priorität erfassen; deutsche Pfad-Tokens und dynamische Texte
   getrennt behandeln.
-- [ ] **H9.3 Workflow:** Übersetzerformat, Glossar, Review, Key-Stabilität,
+- [x] **H9.3 Workflow:** Übersetzerformat, Glossar, Review, Key-Stabilität,
   Community-/CLA-Regeln, keine Hersteller-/Kundendaten, unvollständige
-  Sprachen klar kennzeichnen.
+  Sprachen klar kennzeichnen. (`cb7e996`,
+  `analysis/i18n-translation-workflow.md`; offene Produktentscheidungen dort)
 - [ ] **H9.4 CI-Gates:** Key-Parität, leere/verwaiste Keys, Platzhalter,
   verbotene deutsche Literale in `en`, Pseudo-Lokalisierung, Report-/CSV-
   Sprachtests und Screenshots.
