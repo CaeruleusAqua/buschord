@@ -1,4 +1,4 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -28,6 +28,10 @@ public partial class CatalogPane : UserControl
     private CancellationTokenSource? _operation;
     private bool _watchingBackground;
     private bool _busy;
+    private int _filterGeneration;
+    private CancellationTokenSource? _filterOperation;
+    private bool _bindScheduled;
+    private CatalogSnapshot? _latestSnapshot;
 
     public CatalogPane() : this(new MainWindowViewModel()) { }
 
@@ -40,7 +44,11 @@ public partial class CatalogPane : UserControl
         ToolTip.SetTip(RemoveCatalogButton, CatalogUiText.Get("RemoveCatalogTip"));
         SegmentCaption.Text = CatalogUiText.Get("TargetSegment");
         Loaded += OnLoaded;
-        DetachedFromVisualTree += (_, _) => UnwatchBackground();
+        DetachedFromVisualTree += (_, _) =>
+        {
+            UnwatchBackground();
+            _filterOperation?.Cancel();
+        };
         FillLines();
         UpdateRoomContext();
     }
@@ -113,6 +121,9 @@ public partial class CatalogPane : UserControl
         var operation = new CancellationTokenSource();
         _operation = operation;
         SetLoading(true);
+        // Progressive snapshots keep the list usable while the index fills in; the pane binds
+        // them as soon as they arrive and replaces them with the stable snapshot at the end.
+        _library.SnapshotPublished += OnSnapshotPublished;
         try
         {
             var progress = new Progress<CatalogProgress>(ShowProgress);
@@ -132,12 +143,25 @@ public partial class CatalogPane : UserControl
         }
         finally
         {
+            _library.SnapshotPublished -= OnSnapshotPublished;
             _busy = false;
             if (ReferenceEquals(_operation, operation)) _operation = null;
             operation.Dispose();
             SetLoading(false);
             _ready.TrySetResult();
         }
+    }
+
+    /// <summary>Binds a partial library view; bindings are coalesced on the UI thread.</summary>
+    private void OnSnapshotPublished(object? sender, CatalogSnapshot snapshot)
+    {
+        _latestSnapshot = snapshot;
+        if (Interlocked.Exchange(ref _bindScheduled, true)) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            Interlocked.Exchange(ref _bindScheduled, false);
+            if (_latestSnapshot is { } latest) Bind(latest, live: true);
+        });
     }
 
     private void SetLoading(bool loading)
@@ -192,11 +216,11 @@ public partial class CatalogPane : UserControl
         _library.Changed -= OnBackgroundLoaded;
     }
 
-    private void Bind(CatalogSnapshot? snapshot, IEnumerable<string>? importErrors = null)
+    private void Bind(CatalogSnapshot? snapshot, IEnumerable<string>? importErrors = null, bool live = false)
     {
-        // The service snapshot is always the newest (it may include an import that finished
-        // while this bind was scheduled); fall back to the caller's when it is still loading.
-        snapshot = _library.Current ?? snapshot;
+        // The stable service snapshot always wins; a live partial snapshot is shown while the
+        // first load fills in (and is replaced when the stable one is published).
+        snapshot = live ? snapshot : _library.Current ?? snapshot;
         if (snapshot is null) return;
         _catalogs = snapshot.Catalogs.ToList();
         LibraryHeader.Text = $"{Strings.Get("CatalogLibrary")} · {_catalogs.Count}";
@@ -211,6 +235,8 @@ public partial class CatalogPane : UserControl
             : _catalogs.FirstOrDefault();
         RemoveCatalogButton.IsEnabled = SelectedCatalog is not null;
         if (_catalogs.Count == 0) RefreshSections();
+        // Same selection but enriched metadata: refresh the product list and details.
+        else if (ReferenceEquals(previous, SelectedCatalog)) ApplyFilters();
         ShowImportReport();
     }
 
@@ -318,6 +344,7 @@ public partial class CatalogPane : UserControl
             var operation = new CancellationTokenSource();
             _operation = operation;
             SetLoading(true);
+            var needsProgramMetadata = false;
             try
             {
                 var progress = new Progress<CatalogImportProgress>(item =>
@@ -326,6 +353,9 @@ public partial class CatalogPane : UserControl
                 errors.AddRange(result.Errors.Select(error =>
                     Strings.Get("CatalogLoadError", Path.GetFileName(error.File) + ": " + error.Message)));
                 Bind(result.Snapshot, errors);
+                // Split archives import with product metadata only; the follow-up read indexes
+                // their program metadata so search covers program names and datapoint types.
+                needsProgramMetadata = result.Catalogs.Any(catalog => !catalog.MetadataComplete);
                 if (result.Canceled)
                     AddError(CatalogUiText.Get("ImportCancelled", result.Catalogs.Count, paths.Count));
                 else if (result.Catalogs.Count > 0 && errors.Count == 0)
@@ -342,6 +372,7 @@ public partial class CatalogPane : UserControl
                 operation.Dispose();
                 SetLoading(false);
             }
+            if (needsProgramMetadata) await LoadAsync(reload: true);
         }
         catch (Exception ex)
         {
@@ -412,10 +443,35 @@ public partial class CatalogPane : UserControl
     private void ApplyFilters()
     {
         if (ProductList is null || SectionBox is null) return;
-        var products = SelectedCatalog?.Products ?? [];
+        var generation = Interlocked.Increment(ref _filterGeneration);
+        _filterOperation?.Cancel();
+        _filterOperation?.Dispose();
+        var operation = new CancellationTokenSource();
+        _filterOperation = operation;
+        var catalog = SelectedCatalog;
+        var query = SearchBox?.Text;
+        var section = SectionBox.SelectedIndex > 0 ? SectionBox.SelectedItem as string : null;
+
+        _ = Task.Run(async () =>
+        {
+            // Debounce and filter off the UI thread; a newer keystroke cancels this request.
+            var result = await CatalogSearch.RunAsync(catalog, query, section, 90, operation.Token)
+                .ConfigureAwait(false);
+            if (result is null || generation != Volatile.Read(ref _filterGeneration)) return;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (generation != _filterGeneration) return;
+                PublishFiltered(catalog, result.Products);
+            });
+        });
+    }
+
+    /// <summary>Applies a finished background search to the lists; stale results never arrive here.</summary>
+    private void PublishFiltered(KnxProductCatalog? catalog, IReadOnlyList<CatalogProduct> filtered)
+    {
+        if (ProductList is null) return;
+        var products = catalog?.Products ?? [];
         var previous = SelectedProduct;
-        var filtered = CatalogBrowser.Filter(SelectedCatalog, SearchBox?.Text,
-            SectionBox.SelectedIndex > 0 ? SectionBox.SelectedItem as string : null);
         ProductList.ItemsSource = filtered;
         ProductList.SelectedItem = previous is not null && filtered.Contains(previous) ? previous : filtered.FirstOrDefault();
         ProductsHeader.Text = $"{Strings.Get("CatalogProducts")} · {filtered.Count}";
@@ -450,7 +506,7 @@ public partial class CatalogPane : UserControl
         UxProduct.Text = product?.Name ?? "";
         DetailsEmpty.IsVisible = product is null;
         if (product is null || SelectedCatalog is not { } catalog) return;
-        var program = FindProgram(catalog, product);
+        var program = FindProgramSummary(catalog, product);
         Add(Strings.Get("CatalogManufacturer"),
             catalog.Manufacturer?.Name ?? CatalogUiText.Get("UnknownManufacturer"));
         Add(Strings.Get("ColName"), product.Name);
@@ -566,9 +622,9 @@ public partial class CatalogPane : UserControl
         }
     }
 
-    private CatalogApplicationProgram? FindProgram(KnxProductCatalog catalog, CatalogProduct product)
+    private CatalogApplicationProgram? FindProgramSummary(KnxProductCatalog catalog, CatalogProduct product)
     {
-        try { return catalog.FindProgramFor(product); }
+        try { return catalog.FindProgramSummaryFor(product); }
         catch (Exception ex)
         {
             AddError(Strings.Get("CatalogLoadError", product.Name + ": " + ex.Message));
@@ -612,8 +668,8 @@ public partial class CatalogPane : UserControl
     {
         if (_vm.Project is not { } project) return null;
         if (SelectedProduct is null) return Strings.Get("CatalogNeedProduct");
-        // Broken or incomplete applications must not enter the project at all.
-        var program = SelectedCatalog is { } catalog ? FindProgram(catalog, SelectedProduct) : null;
+        // Broken or incomplete applications must not enter the project at all (metadata only).
+        var program = SelectedCatalog is { } catalog ? FindProgramSummary(catalog, SelectedProduct) : null;
         var blocked = CatalogBrowser.Blocked(program, CatalogUse.Insert);
         if (blocked != CatalogBlockReason.None) return CatalogUiText.Reason(blocked);
         if (LineBox.SelectedItem is not LineChoice choice || ResolveLine(choice) is not { } target)
@@ -663,14 +719,8 @@ public partial class CatalogPane : UserControl
     private void OnInsert(object? sender, RoutedEventArgs e)
     {
         var product = SelectedProduct;
-        CatalogApplicationProgram? program;
-        try { program = product is null ? null : SelectedCatalog?.FindProgramFor(product); }
-        catch (Exception ex)
-        {
-            _vm.Status = Strings.Get("CatalogLoadError", ex.Message);
-            SetInsertStatus(_vm.Status, error: true);
-            return;
-        }
+        CatalogApplicationProgram? program = null;
+        if (product is not null && SelectedCatalog is { } catalog) program = FindProgramSummary(catalog, product);
         var inserted = CatalogBrowser.Insert(_vm, product, program, LineBox.SelectedItem as LineChoice,
             AddressBox.Text, NameBox.Text, out var message, PreferredRoomId,
             (SegmentBox.SelectedItem as SegmentChoice)?.Id);

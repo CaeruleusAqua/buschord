@@ -190,9 +190,7 @@ try
 }
 finally
 {
-    foreach (var file in Directory.GetFiles(scratch, "*", SearchOption.AllDirectories)) File.Delete(file);
-    foreach (var dir in Directory.GetDirectories(scratch).OrderByDescending(p => p.Length)) Directory.Delete(dir);
-    Directory.Delete(scratch);
+    if (Directory.Exists(scratch)) Directory.Delete(scratch, recursive: true);
 }
 
 // ---- CatalogLibrary: session-wide cached loader (shared, single-flight, reload, imports) ----
@@ -422,9 +420,145 @@ try
 }
 finally
 {
-    foreach (var file in Directory.GetFiles(gateRoot, "*", SearchOption.AllDirectories)) File.Delete(file);
-    foreach (var dir in Directory.GetDirectories(gateRoot).OrderByDescending(p => p.Length)) Directory.Delete(dir);
-    Directory.Delete(gateRoot);
+    if (Directory.Exists(gateRoot)) Directory.Delete(gateRoot, recursive: true);
+}
+
+// ---- catalogue search index: program/COM/DPT metadata without parsing a program part ----
+var searchRoot = Path.Combine(Path.GetTempPath(), "catalog-search-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(searchRoot);
+try
+{
+    var lazyPath = Path.Combine(searchRoot, "lazy.knxprod");
+    using (var zip = ZipFile.Open(lazyPath, ZipArchiveMode.Create))
+    {
+        void Part(string name, string content)
+        {
+            using var writer = new StreamWriter(zip.CreateEntry(name).Open());
+            writer.Write(content);
+        }
+        Part("M-LAZY/Hardware.xml", """
+            <KNX><ManufacturerData><Manufacturer RefId="M-LAZY"><Hardware>
+            <Hardware Id="H-LAZY"><Products><Product Id="P-LAZY" Text="Lazy device" OrderNumber="LZ-1"/></Products>
+            <Hardware2Programs><Hardware2Program Id="HP-LAZY"><ApplicationProgramRef RefId="A-LAZY"/></Hardware2Program></Hardware2Programs>
+            </Hardware></Hardware></Manufacturer></ManufacturerData></KNX>
+            """);
+        Part("M-LAZY/Catalog.xml", """
+            <KNX><ManufacturerData><Manufacturer RefId="M-LAZY"><Catalog>
+            <CatalogSection Id="CS-LAZY" Name="Lazy section"><CatalogItem Id="CI-LAZY" Name="Lazy entry"
+            ProductRefId="P-LAZY" Hardware2ProgramRefId="HP-LAZY"/></CatalogSection>
+            </Catalog></Manufacturer></ManufacturerData></KNX>
+            """);
+        Part("M-LAZY/M-LAZY_A-LAZY.xml", """
+            <KNX><ManufacturerData><Manufacturer RefId="M-LAZY"><ApplicationPrograms>
+            <ApplicationProgram Id="A-LAZY" Name="Needle application" ApplicationNumber="00AB" ApplicationVersion="3">
+            <Static><ParameterTypes><ParameterType Id="PT-L" Name="Level" SizeInBit="8" DataType="Number"/></ParameterTypes>
+            <Parameters><Parameter Id="P-L" Name="Level" ParameterType="PT-L" Text="Level" Value="1"/></Parameters>
+            <ComObjectTable><ComObject Id="CO-L" Name="Needle object" Text="Needle object" Number="1"
+            ObjectSize="1 Bit" DatapointType="DPST-1-1"/></ComObjectTable></Static>
+            </ApplicationProgram></ApplicationPrograms></Manufacturer></ManufacturerData></KNX>
+            """);
+    }
+
+    var lazyCatalog = KnxProductCatalog.Open(lazyPath);
+    var lazyProduct = lazyCatalog.Products.Single();
+    Check("search finds the product before enrichment",
+        CatalogBrowser.Filter(lazyCatalog, "LAZY DEVICE", null).SequenceEqual([lazyProduct]));
+    Check("search does not parse a program part",
+        lazyCatalog.Programs.Count == 0 && lazyCatalog.LoadedProgramModels == 0);
+    Check("program metadata is not invented before enrichment",
+        CatalogBrowser.Filter(lazyCatalog, "Needle application", null).Count == 0
+        && CatalogBrowser.Filter(lazyCatalog, "DPST-1-1", null).Count == 0);
+
+    lazyCatalog.LoadProgramMetadata();
+    foreach (var query in new[] { "Needle application", "A-LAZY", "00AB", "Needle object", "CO-L", "DPST-1-1", "1.001", "DPT-1" })
+        Check("metadata search " + query,
+            CatalogBrowser.Filter(lazyCatalog, query, null).SequenceEqual([lazyProduct]));
+    Check("metadata search keeps the section filter",
+        CatalogBrowser.Filter(lazyCatalog, "1.001", "Missing").Count == 0);
+    Check("metadata search built no parameter model", lazyCatalog.LoadedProgramModels == 0);
+    var lazyStopwatch = System.Diagnostics.Stopwatch.StartNew();
+    for (var run = 0; run < 20; run++) _ = CatalogBrowser.Filter(lazyCatalog, "zzz-no-match", null);
+    lazyStopwatch.Stop();
+    var lazyAverage = lazyStopwatch.Elapsed.TotalMilliseconds / 20;
+    Console.WriteLine($"  INFO lazy metadata search: {lazyAverage:0.00} ms per query");
+    Check("metadata search stays responsive", lazyAverage < 100);
+    Check("opening the product still parses the model once",
+        lazyCatalog.FindProgramFor(lazyProduct)?.ParameterInstances.Count == 1
+        && lazyCatalog.LoadedProgramModels == 1);
+
+    // 10,000 products: the scan stays a string comparison, no XML and no per-product arrays.
+    var many = new List<CatalogProduct>();
+    for (var i = 0; i < 10000; i++)
+        many.Add(new CatalogProduct
+        {
+            Id = "P-" + i,
+            Name = "Product " + i,
+            SearchText = "product " + i + "\np-" + i,
+        });
+    var manyStopwatch = System.Diagnostics.Stopwatch.StartNew();
+    var manyMatches = CatalogBrowser.Filter(many, "zzz-no-match", null);
+    manyStopwatch.Stop();
+    Console.WriteLine($"  INFO 10k product filter: {manyStopwatch.Elapsed.TotalMilliseconds:0.0} ms");
+    Check("10k products return no false matches", manyMatches.Count == 0);
+    Check($"10k product filter stays under 500 ms ({manyStopwatch.Elapsed.TotalMilliseconds:0.0} ms)",
+        manyStopwatch.Elapsed.TotalMilliseconds < 500);
+
+    // Cancelled/debounced searches yield no stale result; versions increase.
+    using (var cancelledSearch = new CancellationTokenSource())
+    {
+        var pendingSearch = CatalogSearch.RunAsync(lazyCatalog, "zzz", null, 500, cancelledSearch.Token);
+        cancelledSearch.Cancel();
+        Check("cancelled search returns no result", await pendingSearch is null);
+    }
+    var firstSearch = await CatalogSearch.RunAsync(lazyCatalog, "needle", null, 0, CancellationToken.None);
+    var secondSearch = await CatalogSearch.RunAsync(lazyCatalog, "needle", null, 0, CancellationToken.None);
+    Check("search results are versioned",
+        firstSearch is not null && secondSearch is not null
+        && secondSearch.Version > firstSearch.Version
+        && secondSearch.Products.SequenceEqual([lazyProduct]));
+}
+finally
+{
+    if (Directory.Exists(searchRoot)) Directory.Delete(searchRoot, recursive: true);
+}
+
+// ---- CatalogLibrary: progressive partial snapshots never replace the stable snapshot ----
+var progressiveRoot = Path.Combine(Path.GetTempPath(), "catalog-progressive-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(progressiveRoot);
+try
+{
+    var progressiveLibrary = new CatalogLibrary(new CatalogStore(Path.Combine(progressiveRoot, "library")));
+    string WriteProgressive(string name, string productId)
+    {
+        var path = Path.Combine(progressiveRoot, name + ".knxprod");
+        using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
+        using var writer = new StreamWriter(zip.CreateEntry("knxprod.xml").Open());
+        writer.Write($"""
+            <KNX><ManufacturerData><Manufacturer RefId="M-{name}"><Hardware><Hardware Id="H-{name}"><Products>
+            <Product Id="{productId}" Text="{name}" OrderNumber="{name}" />
+            </Products></Hardware></Hardware></Manufacturer></ManufacturerData></KNX>
+            """);
+        return path;
+    }
+    progressiveLibrary.Store.Import(WriteProgressive("first", "P-1"));
+    progressiveLibrary.Store.Import(WriteProgressive("second", "P-2"));
+    var partials = new List<int>();
+    var stableSnapshotStayedEmpty = true;
+    progressiveLibrary.SnapshotPublished += (_, snapshot) =>
+    {
+        partials.Add(snapshot.Catalogs.Count);
+        if (progressiveLibrary.Current is not null) stableSnapshotStayedEmpty = false;
+    };
+    var stable = await progressiveLibrary.GetAsync();
+    Check("progressive snapshots are published before completion",
+        partials.Count > 0 && partials.All(count => count is > 0 and <= 2));
+    Check("partial snapshots never become the stable snapshot",
+        stableSnapshotStayedEmpty && stable.Catalogs.Count == 2 && progressiveLibrary.Current?.Catalogs.Count == 2);
+    Check("progressive snapshots end at the full library", partials.Contains(2));
+}
+finally
+{
+    if (Directory.Exists(progressiveRoot)) Directory.Delete(progressiveRoot, recursive: true);
 }
 
 Console.WriteLine($"CATALOG UI OK ({checks} checks; headless, no visual validation)");

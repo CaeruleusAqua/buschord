@@ -22,10 +22,11 @@ public sealed record CatalogImportResult(
     CatalogSnapshot? Snapshot);
 
 /// <summary>
-/// Session-wide cached loader for the local catalogue library. Parses the library once on a
-/// background thread, hands every caller the same snapshot, and merges imports without parsing
-/// the whole library again. No Avalonia types, so it also runs headless; progress callbacks are
-/// reported on the loading thread, callers marshal to their UI with <see cref="Progress{T}"/>.
+/// Session-wide cached loader for the local catalogue library. Reads the library once on a
+/// background thread through the metadata cache, hands every caller the same snapshot, and
+/// merges imports without parsing the whole library again. No Avalonia types, so it also runs
+/// headless; progress callbacks are reported on the loading thread, callers marshal to their UI
+/// with <see cref="Progress{T}"/>.
 /// </summary>
 public sealed class CatalogLibrary
 {
@@ -42,8 +43,15 @@ public sealed class CatalogLibrary
 
     public CatalogStore Store => _store;
 
-    /// <summary>Raised after a new snapshot was published (load, reload, import), on the loading thread.</summary>
+    /// <summary>Raised after a new stable snapshot was published (load, reload, import), on the loading thread.</summary>
     public event EventHandler? Changed;
+
+    /// <summary>
+    /// Raised while the first load fills in, once per catalogue and again when its program
+    /// metadata is indexed. The snapshot is a valid partial view, not the official
+    /// <see cref="Current"/>: a cancelled load never replaces the last good snapshot with it.
+    /// </summary>
+    public event EventHandler<CatalogSnapshot>? SnapshotPublished;
 
     public CatalogSnapshot? Current
     {
@@ -51,9 +59,9 @@ public sealed class CatalogLibrary
     }
 
     /// <summary>
-    /// The loaded snapshot; the first call starts <see cref="CatalogStore.LoadAll()"/> on a
-    /// background thread, concurrent calls share that one load. Cancelling only stops this caller
-    /// from waiting, the shared load keeps going for the other callers.
+    /// The loaded snapshot; the first call starts the library read on a background thread,
+    /// concurrent calls share that one load. Cancelling only stops this caller from waiting,
+    /// the shared load keeps going for the other callers.
     /// </summary>
     public Task<CatalogSnapshot> GetAsync(IProgress<CatalogProgress>? progress = null,
         CancellationToken cancellationToken = default)
@@ -66,15 +74,16 @@ public sealed class CatalogLibrary
         {
             if (_snapshot is { } ready) return Task.FromResult(ready);
             if (progress is not null) _sinks.Add(progress);
-            load = _loading ??= LoadAsync();
+            load = _loading ??= LoadAsync(progressive: true);
         }
         return cancellationToken.CanBeCanceled ? load.WaitAsync(cancellationToken) : load;
     }
 
     /// <summary>
-    /// Forces a fresh parse; waits for an in-flight load first, then reports the new snapshot.
-    /// Cancelling only abandons this waiter: the parse keeps running, the old snapshot stays
-    /// readable until the new one is published, and no cached state is discarded.
+    /// Forces a fresh read; waits for an in-flight load first, then reports the new snapshot.
+    /// Cancelling only abandons this waiter: the read keeps running, the old snapshot stays
+    /// readable until the new one is published, and no cached state is discarded. A reload never
+    /// publishes partial snapshots, so the pane cannot end up with a smaller library.
     /// </summary>
     public async Task<CatalogSnapshot> ReloadAsync(IProgress<CatalogProgress>? progress = null,
         CancellationToken cancellationToken = default)
@@ -96,9 +105,9 @@ public sealed class CatalogLibrary
         lock (_gate)
         {
             if (progress is not null) _sinks.Add(progress);
-            // Do not clear _snapshot: until the new parse publishes, Current keeps serving the
+            // Do not clear _snapshot: until the new read publishes, Current keeps serving the
             // last good library, so a cancelled reload cannot leave the pane empty.
-            reload = _loading ??= LoadAsync();
+            reload = _loading ??= LoadAsync(progressive: false);
         }
         return cancellationToken.CanBeCanceled
             ? await reload.WaitAsync(cancellationToken).ConfigureAwait(false)
@@ -163,12 +172,12 @@ public sealed class CatalogLibrary
         return merged;
     }
 
-    private async Task<CatalogSnapshot> LoadAsync()
+    private async Task<CatalogSnapshot> LoadAsync(bool progressive)
     {
         try
         {
-            // Task.Run keeps the parse off the caller's thread (the UI thread in the app).
-            var snapshot = await Task.Run(Load).ConfigureAwait(false);
+            // Task.Run keeps the read off the caller's thread (the UI thread in the app).
+            var snapshot = await Task.Run(() => Load(progressive)).ConfigureAwait(false);
             lock (_gate) _snapshot = snapshot;
             Changed?.Invoke(this, EventArgs.Empty);
             return snapshot;
@@ -183,13 +192,35 @@ public sealed class CatalogLibrary
         }
     }
 
-    private CatalogSnapshot Load()
+    private CatalogSnapshot Load(bool progressive)
     {
+        var catalogs = new List<KnxProductCatalog>();
+        var sync = new object();
         // The fan-out always exists so a caller that joins later still sees the remaining progress.
-        var catalogs = _store.LoadAll(new Fanout(this));
-        var errors = _store.LoadErrors.ToList();
-        return new CatalogSnapshot(catalogs, errors, catalogs.Sum(catalog => catalog.Products.Count));
+        var loaded = _store.LoadAll(new Fanout(this), catalog =>
+        {
+            CatalogSnapshot? partial = null;
+            lock (sync)
+            {
+                var existing = catalogs.FindIndex(item =>
+                    string.Equals(item.Path, catalog.Path, StringComparison.OrdinalIgnoreCase));
+                if (existing >= 0) catalogs[existing] = catalog;
+                else catalogs.Add(catalog);
+                if (progressive) partial = Snapshot(catalogs);
+            }
+            if (partial is null) return;
+            try { SnapshotPublished?.Invoke(this, partial); }
+            catch (Exception) { /* a UI subscriber must not abort the library read */ }
+        });
+        catalogs.Clear();
+        catalogs.AddRange(loaded);
+        return Snapshot(catalogs);
     }
+
+    private CatalogSnapshot Snapshot(List<KnxProductCatalog> catalogs) => new(
+        catalogs.OrderBy(catalog => catalog.Path, StringComparer.OrdinalIgnoreCase).ToList(),
+        _store.LoadErrors.ToList(),
+        catalogs.Sum(catalog => catalog.Products.Count));
 
     /// <summary>Forwards loader progress to every caller waiting for this load.</summary>
     private sealed class Fanout(CatalogLibrary owner) : IProgress<CatalogLoadProgress>

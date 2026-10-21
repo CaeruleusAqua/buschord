@@ -399,6 +399,249 @@ Check("Device ohne Links", device.ComObjectRefs.All(r => r.Links.Count == 0));
 var withoutProgram = CatalogInstaller.CreateDevice(product2!, null, new IndividualAddress(1, 2, 4), "Dimmer");
 Check("Device ohne Applikation", withoutProgram.ComObjectRefs.Count == 0 && !string.IsNullOrEmpty(withoutProgram.ProductRefId));
 
+// --- lazy parameter model (monolithic) ---
+var lazyMonolithic = KnxProductCatalog.Open(archive);
+Check("Monolithische Metadaten ohne Parameter",
+    lazyMonolithic.Programs.Count == 2 && lazyMonolithic.MetadataComplete && lazyMonolithic.LoadedProgramModels == 0,
+    $"programs={lazyMonolithic.Programs.Count} models={lazyMonolithic.LoadedProgramModels}");
+Check("Monolithische Parameter erst bei Bedarf",
+    lazyMonolithic.FindProgram("M-00FA_A-1") is { ParameterInstances.Count: 2 }
+    && lazyMonolithic.LoadedProgramModels == 1);
+
+// --- persistent metadata index: cold/warm, invalidation, corruption ---
+var indexRoot = Path.Combine(root, "index");
+var indexLibrary = Path.Combine(indexRoot, "library");
+var indexCache = Path.Combine(indexRoot, "cache");
+Directory.CreateDirectory(indexLibrary);
+var indexFile = Path.Combine(indexLibrary, "indexed.knxprod");
+File.Copy(archive, indexFile);
+
+var coldStore = new CatalogStore(indexLibrary, indexCache);
+var cold = coldStore.LoadAll();
+Check("Index: kalter Lauf parst XML",
+    coldStore.LastIndexStatistics is { IndexHits: 0, IndexMisses: 1, XmlCatalogFiles: 1 } && cold.Count == 1,
+    coldStore.LastIndexStatistics?.ToString());
+Check("Index: Cache wird geschrieben", File.Exists(coldStore.Index.IndexPathFor(indexFile)));
+
+var warmStore = new CatalogStore(indexLibrary, indexCache);
+var warm = warmStore.LoadAll();
+Check("Index: warmer Lauf parst kein XML",
+    warmStore.LastIndexStatistics is { IndexHits: 1, IndexMisses: 0, XmlCatalogFiles: 0, XmlProgramParts: 0 }
+    && warm.Count == 1,
+    warmStore.LastIndexStatistics?.ToString());
+var warmProduct = warm[0].Products.Single(product => product.Id == "M-00FA_H-1_P-1");
+Check("Index: Produktmetadaten aus dem Cache",
+    warmProduct.Name == "Schaltaktor 4-fach" && warmProduct.OrderNumber == "AX-4"
+    && warm[0].CatalogSections.Count == 2 && warm[0].Programs.Count == 2);
+Check("Index: Suche aus dem Cache",
+    warmProduct.SearchText.Contains("schaltaktor", StringComparison.Ordinal)
+    && warm[0].Programs.Single(program => program.Id == "M-00FA_A-1").NormalizedDatapointTypes.Contains(";dpst-1-1;"));
+var warmProgram = warm[0].FindProgramFor(warmProduct)!;
+Check("Index: Programmparameter weiterhin lazy",
+    warmProgram.ParameterInstances.Count == 2 && warmProgram.ComObjects.Count == 2
+    && warm[0].LoadedProgramModels == 1);
+var warmDevice = CatalogInstaller.CreateDevice(warmProduct, warmProgram, new IndividualAddress(1, 1, 5), "Warm");
+Check("Index: Gerätetexte aus dem Cache",
+    warmDevice.ComObjectRefs[0].Text == "Schalten"
+    && warmDevice.ComObjectRefs[0].FunctionText == "Schaltfunktion",
+    warmDevice.ComObjectRefs[0].Text);
+
+File.SetLastWriteTimeUtc(indexFile, DateTime.UtcNow.AddMinutes(1));
+var touchedStore = new CatalogStore(indexLibrary, indexCache);
+_ = touchedStore.LoadAll();
+Check("Index: Änderungszeit invalidiert",
+    touchedStore.LastIndexStatistics is { IndexMisses: 1, XmlCatalogFiles: 1 },
+    touchedStore.LastIndexStatistics?.ToString());
+
+var corruptFile = Path.Combine(indexLibrary, "corrupt.knxprod");
+File.Copy(archive, corruptFile);
+var corruptSeed = new CatalogStore(indexLibrary, indexCache);
+_ = corruptSeed.LoadAll();
+var corruptIndex = corruptSeed.Index.IndexPathFor(corruptFile);
+File.WriteAllText(corruptIndex, "kein gzip/json");
+var corruptStore = new CatalogStore(indexLibrary, indexCache);
+var rebuilt = corruptStore.LoadAll();
+Check("Index: defekter Cache wird neu gebaut",
+    corruptStore.LastIndexStatistics is { XmlCatalogFiles: >= 1 } && rebuilt.Count == 2,
+    corruptStore.LastIndexStatistics?.ToString());
+
+var removeStore = new CatalogStore(indexLibrary, indexCache);
+var removedIndex = removeStore.Index.IndexPathFor(corruptFile);
+Check("Index: Entfernen löscht den Cache",
+    removeStore.Remove(corruptFile) && !File.Exists(removedIndex));
+if (Directory.Exists(indexLibrary))
+{
+    foreach (var file in Directory.GetFiles(indexLibrary)) File.Delete(file);
+}
+
+// --- split archives: metadata part, no parameter model until requested ---
+var splitZipPath = Path.Combine(root, "split-lazy.knxprod");
+using (var zip = ZipFile.Open(splitZipPath, ZipArchiveMode.Create))
+{
+    void Part(string name, string content)
+    {
+        using var writer = new StreamWriter(zip.CreateEntry(name).Open(), new UTF8Encoding(false));
+        writer.Write(content);
+    }
+    Part("M-00FA/Hardware.xml", """
+        <KNX><ManufacturerData><Manufacturer RefId="M-00FA"><Hardware>
+        <Hardware Id="H-SPLIT"><Products><Product Id="P-SPLIT" Text="Split device" OrderNumber="SP-1"/></Products>
+        <Hardware2Programs><Hardware2Program Id="HP-SPLIT"><ApplicationProgramRef RefId="A-SPLIT"/></Hardware2Program></Hardware2Programs>
+        </Hardware></Hardware></Manufacturer></ManufacturerData></KNX>
+        """);
+    Part("M-00FA/Catalog.xml", """
+        <KNX><ManufacturerData><Manufacturer RefId="M-00FA"><Catalog>
+        <CatalogSection Id="CS-SPLIT" Name="Split section"><CatalogItem Id="CI-SPLIT" Name="Split entry"
+        ProductRefId="P-SPLIT" Hardware2ProgramRefId="HP-SPLIT"/></CatalogSection>
+        </Catalog></Manufacturer></ManufacturerData></KNX>
+        """);
+    Part("M-00FA/M-00FA_A-SPLIT.xml", """
+        <KNX><ManufacturerData><Manufacturer RefId="M-00FA"><ApplicationPrograms>
+        <ApplicationProgram Id="A-SPLIT" Name="Split application" ApplicationNumber="00AA" ApplicationVersion="7"
+        MaskVersion="MV-0705"><Static>
+        <ParameterTypes><ParameterType Id="PT-S" Name="Level" SizeInBit="8" DataType="Number"/></ParameterTypes>
+        <Parameters><Parameter Id="P-S" Name="Level" ParameterType="PT-S" Text="Level" Value="1"/></Parameters>
+        <ComObjectTable><ComObject Id="CO-S" Name="Switch" Text="Switch" Number="1"
+        ObjectSize="1 Bit" DatapointType="DPST-1-1"/></ComObjectTable>
+        </Static></ApplicationProgram></ApplicationPrograms>
+        <Languages><Language Identifier="de-DE"><TranslationUnit RefId="M-00FA">
+        <TranslationElement RefId="A-SPLIT"><Translation AttributeName="Name" Text="Split-Applikation"/></TranslationElement>
+        </TranslationUnit></Language></Languages></Manufacturer></ManufacturerData></KNX>
+        """);
+}
+
+var split = KnxProductCatalog.Open(splitZipPath);
+var splitProduct = split.Products.Single();
+Check("Split: Produktmetadaten ohne Programmpart",
+    split.Products.Count == 1 && split.Programs.Count == 0 && !split.MetadataComplete
+    && split.LoadedProgramModels == 0);
+Check("Split: Suche hat vor dem Index keine Programmdaten",
+    split.FindProgramSummaryFor(splitProduct) is null);
+var splitParts = split.LoadProgramMetadata();
+var splitSummary = split.FindProgramSummaryFor(splitProduct);
+Check("Split: Metadatenpart wird gelesen",
+    splitParts == 1 && split.MetadataComplete && split.Programs.Count == 1
+    && splitSummary is { Name: "Split-Applikation", ApplicationNumber: "00AA", ApplicationVersion: "7", MaskVersion: "MV-0705" },
+    splitSummary?.Name);
+Check("Split: Suchtext enthält COM/DPT",
+    splitSummary!.SearchText.Contains("switch", StringComparison.Ordinal)
+    && splitSummary.NormalizedDatapointTypes.Contains(";dpst-1-1;"));
+Check("Split: Parameter bleiben lazy", split.LoadedProgramModels == 0);
+var splitFull = split.FindProgramFor(splitProduct)!;
+Check("Split: Parameter erst beim Öffnen",
+    splitFull.ParameterInstances.Count == 1 && splitFull.ParameterTypes.Count == 1
+    && split.LoadedProgramModels == 1);
+
+// Split cold/warm: the index carries the program part and its metadata.
+var splitLibrary = Path.Combine(indexRoot, "split-library");
+var splitCache = Path.Combine(indexRoot, "split-cache");
+Directory.CreateDirectory(splitLibrary);
+var splitLibraryFile = Path.Combine(splitLibrary, "split.knxprod");
+File.Copy(splitZipPath, splitLibraryFile);
+var splitColdStore = new CatalogStore(splitLibrary, splitCache);
+var splitCold = splitColdStore.LoadAll();
+Check("Split-Index: kalter Lauf liest Basis und Programmpart",
+    splitColdStore.LastIndexStatistics is { XmlCatalogFiles: 1, XmlProgramParts: 1 }
+    && splitCold.Single().Programs.Count == 1,
+    splitColdStore.LastIndexStatistics?.ToString());
+var splitWarmStore = new CatalogStore(splitLibrary, splitCache);
+var splitWarm = splitWarmStore.LoadAll();
+var splitWarmProgram = splitWarm.Single().FindProgramSummaryFor(splitWarm.Single().Products.Single());
+Check("Split-Index: warmer Lauf parst kein XML",
+    splitWarmStore.LastIndexStatistics is { IndexHits: 1, XmlCatalogFiles: 0, XmlProgramParts: 0 }
+    && splitWarmProgram is { Name: "Split-Applikation" }
+    && splitWarm.Single().LoadedProgramModels == 0,
+    splitWarmStore.LastIndexStatistics?.ToString());
+Check("Split-Index: volles Modell weiterhin aus dem Archiv",
+    splitWarm.Single().FindProgramFor(splitWarm.Single().Products.Single())?.ParameterInstances.Count == 1);
+
+// DCA/plug-in metadata survives the index; the full model re-reads the per-parameter plug-ins.
+var pluginLibrary = Path.Combine(indexRoot, "plugin-library");
+var pluginCache = Path.Combine(indexRoot, "plugin-cache");
+Directory.CreateDirectory(pluginLibrary);
+var pluginFile = Path.Combine(pluginLibrary, "dca.knxprod");
+File.Copy(dcaPath, pluginFile);
+var pluginCold = new CatalogStore(pluginLibrary, pluginCache);
+_ = pluginCold.LoadAll();
+var pluginWarmCatalog = new CatalogStore(pluginLibrary, pluginCache).LoadAll().Single();
+var pluginWarmProgram = pluginWarmCatalog.FindProgram("M-00FB_A-DCA")!;
+Check("Index: DCA-Metadaten aus dem Cache",
+    pluginWarmProgram.RequiresDca && pluginWarmProgram.Extensions.Contains("EtsUiPlugin")
+    && pluginWarmProgram.PluginIdFor("P-1") == "Vendor.ParameterEditor, Vendor",
+    pluginWarmProgram.PluginIdFor("P-1"));
+
+// A tampered cache is rejected even when name, size and mtime still match.
+var hashLibrary = Path.Combine(indexRoot, "hash-library");
+var hashCache = Path.Combine(indexRoot, "hash-cache");
+Directory.CreateDirectory(hashLibrary);
+var hashFile = Path.Combine(hashLibrary, "hashed.knxprod");
+File.Copy(archive, hashFile);
+var hashStore = new CatalogStore(hashLibrary, hashCache);
+_ = hashStore.LoadAll();
+var hashIndex = hashStore.Index.IndexPathFor(hashFile);
+string tamperedJson;
+using (var input = File.OpenRead(hashIndex))
+using (var gzip = new GZipStream(input, CompressionMode.Decompress))
+using (var reader = new StreamReader(gzip))
+    tamperedJson = reader.ReadToEnd();
+{
+    var marker = "\"ContentHash\":\"";
+    var start = tamperedJson.IndexOf(marker, StringComparison.Ordinal);
+    if (start < 0) throw new Exception("cache document has no content hash");
+    start += marker.Length;
+    tamperedJson = tamperedJson[..start] + new string('0', 64) + tamperedJson[(start + 64)..];
+}
+using (var output = File.Create(hashIndex))
+using (var gzip = new GZipStream(output, CompressionLevel.Fastest))
+using (var writer = new StreamWriter(gzip))
+    writer.Write(tamperedJson);
+var tamperedStore = new CatalogStore(hashLibrary, hashCache);
+_ = tamperedStore.LoadAll();
+Check("Index: Inhalt-Hash wird geprüft",
+    tamperedStore.LastIndexStatistics is { IndexMisses: 1, XmlCatalogFiles: 1 },
+    tamperedStore.LastIndexStatistics?.ToString());
+
+// --- hostile XML: bounded section depth, bounded entry size (no real catalogue data) ---
+var deepSections = new System.Text.StringBuilder();
+deepSections.Append(
+    "<KNX><ManufacturerData><Manufacturer RefId=\"M-DEEP\"><Catalog>");
+for (var level = 0; level < 5000; level++)
+    deepSections.Append($"<CatalogSection Id=\"CS-{level}\" Name=\"Level {level}\">");
+for (var level = 0; level < 5000; level++) deepSections.Append("</CatalogSection>");
+deepSections.Append("</Catalog></Manufacturer></ManufacturerData></KNX>");
+var deepPath = Path.Combine(root, "deep-sections.knxprod");
+using (var zip = ZipFile.Open(deepPath, ZipArchiveMode.Create))
+using (var writer = new StreamWriter(zip.CreateEntry("knxprod.xml").Open()))
+    writer.Write(deepSections.ToString());
+try
+{
+    KnxProductCatalog.Open(deepPath);
+    Check("Tiefe Katalogbereiche werden abgelehnt", false, "kein Fehler");
+}
+catch (InvalidDataException)
+{
+    Check("Tiefe Katalogbereiche werden abgelehnt", true);
+}
+
+var oversizedPath = Path.Combine(root, "oversized-entry.knxprod");
+using (var zip = ZipFile.Open(oversizedPath, ZipArchiveMode.Create))
+using (var writer = new StreamWriter(zip.CreateEntry("knxprod.xml").Open()))
+{
+    writer.Write("<KNX><ManufacturerData><Manufacturer RefId=\"M-BIG\"><Hardware/></Manufacturer></ManufacturerData><!--");
+    var chunk = new string('a', 1 << 20);
+    for (var megabyte = 0; megabyte < 260; megabyte++) writer.Write(chunk);
+    writer.Write("--></KNX>");
+}
+try
+{
+    KnxProductCatalog.Open(oversizedPath);
+    Check("Übergroße XML-Einträge werden abgelehnt", false, "kein Fehler");
+}
+catch (InvalidDataException)
+{
+    Check("Übergroße XML-Einträge werden abgelehnt", true);
+}
+
 // --- real catalogues, when a corpus is available ---
 // A corpus is never part of the repository: point KNX_CATALOG_SAMPLES at a folder of
 // *.knxprod files (vendor downloads) to run the real-file regression.

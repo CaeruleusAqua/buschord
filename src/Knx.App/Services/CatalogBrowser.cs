@@ -143,6 +143,7 @@ public static class CatalogBrowser
     /// <summary>
     /// Filter with catalogue context, so the search also covers manufacturer, catalogue name,
     /// application text and communication-object datapoint types (e.g. "1.001" or "DPST-1-1").
+    /// Scans the precomputed search text only: never parses a program part or builds a parameter model.
     /// </summary>
     public static List<CatalogProduct> Filter(KnxProductCatalog? catalog, string? search, string? section) =>
         Filter(catalog?.Products ?? [], search, section, catalog);
@@ -151,52 +152,44 @@ public static class CatalogBrowser
         string? section, KnxProductCatalog? catalog)
     {
         var query = search?.Trim() ?? "";
-        return products.Where(product =>
-            (string.IsNullOrEmpty(section) || product.CatalogPaths.Contains(section)) &&
-            (query.Length == 0 || Matches(product, query, catalog))).ToList();
+        var normalized = CatalogSearchText.Normalize(query);
+        var datapoint = normalized.Length == 0 ? null : CatalogSearchText.TryNormalizeDatapoint(normalized);
+        var matches = new List<CatalogProduct>();
+        foreach (var product in products)
+        {
+            if (!string.IsNullOrEmpty(section) && !product.CatalogPaths.Contains(section)) continue;
+            if (normalized.Length == 0 || Matches(product, normalized, datapoint, catalog))
+                matches.Add(product);
+        }
+        return matches;
     }
 
-    private static bool Matches(CatalogProduct product, string query, KnxProductCatalog? catalog)
+    private static bool Matches(CatalogProduct product, string query, string? datapoint, KnxProductCatalog? catalog)
     {
-        if (new[] { product.Name, product.OrderNumber, product.Id, product.Description, catalog?.Name,
-                    catalog?.Manufacturer?.Id, catalog?.Manufacturer?.Name }
-                .Any(text => text?.Contains(query, StringComparison.OrdinalIgnoreCase) == true))
-            return true;
+        var productText = product.SearchText.Length > 0
+            ? product.SearchText
+            : CatalogSearchText.Product(product, catalog);
+        if (productText.Contains(query, StringComparison.Ordinal)) return true;
         if (catalog is null) return false;
-        CatalogApplicationProgram? program;
-        // ponytail: the first search may resolve lazy split-archive parts on the caller thread;
-        // build a background search index if that ever becomes noticeable on large catalogues.
-        try { program = catalog.FindProgramFor(product); }
-        catch (Exception) { return false; }
+
+        // Metadata only: a split archive's program part is never pulled in by a keystroke.
+        var program = catalog.FindProgramSummaryFor(product);
         if (program is null) return false;
-        if (new[] { program.Name, program.Id, program.ApplicationNumber, program.ApplicationVersion,
-                    program.RegistrationStatus, program.MaskVersion }
-                .Any(text => text?.Contains(query, StringComparison.OrdinalIgnoreCase) == true))
-            return true;
-        if (program.ComObjects.Any(comObject =>
-                new[] { comObject.Name, comObject.Id }
-                    .Any(text => text?.Contains(query, StringComparison.OrdinalIgnoreCase) == true) ||
-                MatchesDatapointType(comObject.DatapointType, query)))
-            return true;
-        return product.ProgramRefIds.Any(text => text.Contains(query, StringComparison.OrdinalIgnoreCase));
+        var programText = program.SearchText.Length > 0
+            ? program.SearchText
+            : CatalogSearchText.Program(program);
+        if (programText.Contains(query, StringComparison.Ordinal)) return true;
+        return datapoint is { Length: > 0 } && program.NormalizedDatapointTypes.Length > 0
+            && program.NormalizedDatapointTypes.Contains(";" + datapoint + ";", StringComparison.Ordinal);
     }
 
-    /// <summary>Datapoint search accepts the ETS id and the dotted/short forms ("DPST-1-1", "1.001", "DPT-1").</summary>
-    private static bool MatchesDatapointType(string? datapointType, string query)
-    {
-        if (string.IsNullOrWhiteSpace(datapointType)) return false;
-        if (datapointType.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
-        try { return ProjectWizard.NormaliseDpt(datapointType) == ProjectWizard.NormaliseDpt(query); }
-        catch (Exception) { return false; }
-    }
-
-    /// <summary>Distinct datapoint types declared by the product's application program.</summary>
+    /// <summary>Distinct datapoint types declared by the product's application program (metadata only).</summary>
     public static List<string> DatapointTypes(KnxProductCatalog? catalog, CatalogProduct? product)
     {
         if (catalog is null || product is null) return [];
         try
         {
-            return catalog.FindProgramFor(product)?.ComObjects
+            return catalog.FindProgramSummaryFor(product)?.ComObjects
                 .Select(comObject => comObject.DatapointType)
                 .Where(type => !string.IsNullOrWhiteSpace(type))
                 .Select(type => type!)
@@ -341,5 +334,38 @@ public static class CatalogBrowser
         if (!string.Equals(finalName, requestedName, StringComparison.Ordinal))
             message += " · " + CatalogUiText.Get("NameAdjusted", finalName);
         return true;
+    }
+}
+
+/// <summary>Result of one background catalogue search; <see cref="Version"/> rejects stale results.</summary>
+public sealed record CatalogSearchResult(int Version, IReadOnlyList<CatalogProduct> Products);
+
+/// <summary>
+/// Debounced, versioned search for the catalogue pane. Filtering and the debounce run off the
+/// caller's thread (the UI thread), and a superseded request returns null instead of results.
+/// </summary>
+public static class CatalogSearch
+{
+    private static int _nextVersion;
+
+    public static async Task<CatalogSearchResult?> RunAsync(KnxProductCatalog? catalog, string? query,
+        string? section, int debounceMilliseconds, CancellationToken cancellationToken)
+    {
+        var version = Interlocked.Increment(ref _nextVersion);
+        try
+        {
+            if (debounceMilliseconds > 0)
+                await Task.Delay(debounceMilliseconds, cancellationToken).ConfigureAwait(false);
+            if (cancellationToken.IsCancellationRequested) return null;
+            var products = await Task.Run(() => CatalogBrowser.Filter(catalog, query, section),
+                cancellationToken).ConfigureAwait(false);
+            return cancellationToken.IsCancellationRequested
+                ? null
+                : new CatalogSearchResult(version, products);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
     }
 }

@@ -1,5 +1,8 @@
 namespace Knx.Catalog;
 
+/// <summary>Location of an application program's full XML, for the lazy parameter model.</summary>
+internal sealed record ProgramSource(string? Entry, string? FilePath);
+
 /// <summary>Manufacturer of a product database (prod: Manufacturer@RefId, name from the translation unit).</summary>
 public sealed record CatalogManufacturer(string Id, string Name);
 
@@ -15,6 +18,11 @@ public sealed class CatalogProduct
     public string? OrderNumber { get; set; }
     public string? HardwareRefId { get; set; }
     public string? Description { get; set; }
+    /// <summary>
+    /// Lowercase search text of the product and its catalogue, maintained by the reader/index.
+    /// Empty for a hand-built product; the browser then composes it on demand.
+    /// </summary>
+    public string SearchText { get; set; } = "";
     public List<string> ProgramRefIds { get; } = [];
     /// <summary>Section path(s) where the product is listed, e.g. "Beleuchtung/Schaltaktoren".</summary>
     public List<string> CatalogPaths { get; } = [];
@@ -55,6 +63,14 @@ public sealed class CatalogApplicationProgram
     public string Name { get; set; } = "";
     public string? ApplicationNumber { get; set; }
     public string? ApplicationVersion { get; set; }
+    /// <summary>Lowercase search text (program and communication-object metadata) for the catalogue browser.</summary>
+    public string SearchText { get; set; } = "";
+    /// <summary>Normalised datapoint ids surrounded by ';', e.g. ";dpst-1-1;dpst-1-2;".</summary>
+    public string NormalizedDatapointTypes { get; set; } = "";
+    /// <summary>Where the full KSXML parameter model can be read; null once it is materialised.</summary>
+    internal ProgramSource? Source { get; set; }
+    /// <summary>The KSXML parameter model was built; listing and search never build it.</summary>
+    internal bool ModelLoaded { get; set; }
     /// <summary>ETS product-database schema version of the application declaration, when present.</summary>
     public string? SchemaVersion { get; set; }
     /// <summary>ETS marked the application as broken; editing/download must be blocked.</summary>
