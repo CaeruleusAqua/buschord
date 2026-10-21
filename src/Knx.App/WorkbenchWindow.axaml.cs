@@ -44,6 +44,7 @@ public partial class WorkbenchWindow : Window
     private WorkbenchTab? _renderedTab;
     private string _renderedPerspective = "building";
     private string _sidebarMode = "properties";
+    private bool _simulateProgrammingFailure;
     private int _scrollRestoreVersion;
     private bool _scrollRestorePending;
     private int _navRestoreVersion;
@@ -209,7 +210,12 @@ public partial class WorkbenchWindow : Window
             filter => ResolveMonitorIds(filter),
             (p, device) => new FrozenConfiguration(
                 WorkbenchProject.ConfigurationSignature(p, device.Id),
-                DeviceConfigurationSnapshot.Freeze(p, device).PayloadJson));
+                DeviceConfigurationSnapshot.Freeze(p, device).PayloadJson),
+            async (_, token) =>
+            {
+                await Task.Delay(120, token);
+                if (_simulateProgrammingFailure) throw new InvalidOperationException(W("SimulatedFailure"));
+            });
         _monitorScope = MonitorScope.All; _monitorScopeId = null;
         _sessionTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _sessionTimer.Tick -= OnSessionTick;
@@ -1200,6 +1206,9 @@ public partial class WorkbenchWindow : Window
             }
             catch (Exception ex) { ViewModel.Status = ex.Message; }
         }, "quiet"));
+        var fail = new CheckBox { Content = W("SimulateFailure"), IsChecked = _simulateProgrammingFailure, FontSize = 11, Margin = new(8, 0) };
+        fail.IsCheckedChanged += (_, _) => _simulateProgrammingFailure = fail.IsChecked == true;
+        toolbar.Children.Add(fail);
         toolbar.Children.Add(Note(W("ProgrammingDemoNote")));
         DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top); panel.Children.Add(toolbar);
         var needing = devices.Count(d => sessions.Programming.NeedsProgramming(d.Device.Id));

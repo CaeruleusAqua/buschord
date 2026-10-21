@@ -228,6 +228,8 @@ public static class WorkbenchStrings
         ["ProgrammingFailed"] = ("Programmierung: {0}", "Programming: {0}"),
         ["ProgrammingEmpty"] = ("Noch keine Programmieraufträge. Gerät wählen und einreihen.", "No programming jobs yet. Choose a device and enqueue it."),
         ["ProgrammingRunning"] = ("Programmierung läuft …", "Programming running …"),
+        ["SimulateFailure"] = ("Demo-Fehler", "Demo failure"),
+        ["SimulatedFailure"] = ("Simulierter Programmierfehler (Demo).", "Simulated programming failure (demo)."),
         ["RetryFailed"] = ("Fehlgeschlagene wiederholen", "Retry failed"),
         ["JobsRequeued"] = ("Fehlgeschlagene Demo-Aufträge erneut eingereiht.",
                              "Failed demo jobs queued again."),
