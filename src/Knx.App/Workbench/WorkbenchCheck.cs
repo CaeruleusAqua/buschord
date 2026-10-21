@@ -212,8 +212,11 @@ internal static class WorkbenchCheck
                 window.Workspace.NavigatorWidth = 300;
                 await Task.Delay(40);
                 window.SaveLayout(layout);
+                var savedNavigatorWidth = window.Workspace.NavigatorWidth;
                 var restored = new WorkbenchWorkspace(p.Id);
-                Check("saved layout restores tabs and visibility without project mutation", restored.TryRestoreLayout(layout) && restored.InspectorVisible && restored.NavigatorWidth == 300 && restored.Tabs.Count == window.Workspace.Tabs.Count);
+                Check("saved layout restores tabs and visibility without project mutation", restored.TryRestoreLayout(layout)
+                    && restored.InspectorVisible && restored.NavigatorWidth == savedNavigatorWidth
+                    && restored.Tabs.Count == window.Workspace.Tabs.Count);
                 var navBefore = window.Workspace.NavigatorVisible;
                 window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.B, KeyModifiers = KeyModifiers.Control });
                 Check("Ctrl+B toggles the navigator", window.Workspace.NavigatorVisible != navBefore);
