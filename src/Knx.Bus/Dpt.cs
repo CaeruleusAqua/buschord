@@ -29,9 +29,10 @@ public static class Dpt
         bits = 0;
         if (string.IsNullOrWhiteSpace(datapointType)) return false;
         var text = datapointType.Trim().ToUpperInvariant();
-        var main = text.StartsWith("DPST-", StringComparison.Ordinal)
-            ? text[5..].Split('-')[0]
-            : text.Split('.')[0];
+        var main = text.StartsWith("DPST-", StringComparison.Ordinal) ? text[5..]
+            : text.StartsWith("DPT-", StringComparison.Ordinal) ? text[4..]
+            : text;
+        main = main.Split('.', '-')[0];
         bits = main switch
         {
             "1" => 1, "2" => 2, "3" => 4,

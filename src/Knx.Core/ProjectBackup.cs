@@ -94,8 +94,24 @@ public static class ProjectBackup
                 throw new ArgumentException("Project path must not be empty.", nameof(projectPath));
             identity = IdentityForPath(Path.GetFullPath(projectPath));
         }
-        return Manifests(root)
-            .Where(m => identity is null || m.Identity == identity)
+        var manifests = Manifests(root);
+        var matches = identity is null ? manifests : manifests.Where(m => m.Identity == identity).ToList();
+        if (projectPath is not null && matches.Count == 0)
+        {
+            // A renamed/moved project keeps its stored GUID; use it before hiding old backups.
+            try
+            {
+                var current = Knxproj.Load(Path.GetFullPath(projectPath));
+                matches = manifests.Where(m => current.Guid is { Length: > 0 } guid
+                    ? m.ProjectGuid == guid
+                    : current.Id.Length > 0 && m.ProjectId == current.Id).ToList();
+            }
+            catch
+            {
+                matches = [];
+            }
+        }
+        return matches
             .OrderByDescending(m => m.CreatedUtc)
             .ThenByDescending(m => m.Id, StringComparer.Ordinal)
             .Select(m => ToInfo(m, Path.Combine(root, m.Id + ".knxproj")))

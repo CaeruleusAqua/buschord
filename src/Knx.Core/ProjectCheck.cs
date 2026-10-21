@@ -131,6 +131,9 @@ public static class ProjectCheck
                             $"Linienadresse {area.Address}.{line.Address} ist im Bereich {area.Address} mehrfach vergeben."));
 
                     if (line.Segments.Count > 1)
+                        findings.Add(new(CheckSeverity.Warning, "P012", $"Linie {area.Address}.{line.Address}",
+                            $"Linie hat {line.Segments.Count} Segmente; die Kopplerbestückung ist nicht modelliert."));
+                    if (line.Segments.Count > 1)
                         findings.Add(new(CheckSeverity.Info, "P014", $"Linie {area.Address}.{line.Address}",
                             $"Linie hat {line.Segments.Count} Segmente; zwischen Segmenten sind Segmentkoppler nötig. " +
                             "Das Projektmodell führt keine Kopplerbestückung, die Prüfung ist nicht möglich."));
@@ -142,7 +145,7 @@ public static class ProjectCheck
                             findings.Add(new(CheckSeverity.Error, "P013", $"Segment {area.Address}.{line.Address}.{segment.Address}",
                                 "Segmentadresse muss zwischen 0 und 15 liegen."));
                         else if (!segmentAddresses.Add(segment.Address))
-                            findings.Add(new(CheckSeverity.Warning, "P012", $"Segment {area.Address}.{line.Address}.{segment.Address}",
+                            findings.Add(new(CheckSeverity.Warning, "P073", $"Segment {area.Address}.{line.Address}.{segment.Address}",
                                 $"Segmentadresse {segment.Address} ist in der Linie {area.Address}.{line.Address} mehrfach vergeben."));
                     }
 
@@ -238,7 +241,7 @@ public static class ProjectCheck
         // ETS stores range bounds either as absolute 16-bit values (knxproj, workbench JSON) or as
         // offsets inside the parent. Only a value outside both readings is an inconsistency.
         foreach (var entry in range.Addresses)
-            if (range.RangeEnd > 0 && !Covers(range, entry.Address, installation.GroupAddressStyle))
+            if (range.RangeEnd > 0 && !Covers(range, entry.Address))
                 findings.Add(new(CheckSeverity.Warning, "P033", entry.Address.ToString(),
                     $"Adresse liegt außerhalb des Bereichs '{path}' ({range.RangeStart}..{range.RangeEnd})."));
 
@@ -261,16 +264,13 @@ public static class ProjectCheck
         foreach (var child in range.Ranges) CheckRange(installation, child, depth + 1, findings);
     }
 
-    private static bool Covers(GroupRange range, GroupAddress address, GroupAddressStyle style)
+    private static bool Covers(GroupRange range, GroupAddress address)
     {
-        var relative = style switch
-        {
-            GroupAddressStyle.TwoLevel => address.Raw & 0x7FF,
-            GroupAddressStyle.Free => address.Raw,
-            _ => address.Sub,
-        };
-        return address.Raw >= range.RangeStart && address.Raw <= range.RangeEnd
-            || relative >= range.RangeStart && relative <= range.RangeEnd;
+        // ETS and the native importer store bounds both as absolute 16-bit values and as
+        // parent-relative main/middle numbers. A warning is only justified when none of the
+        // plausible readings matches; false negatives are preferable to noisy P033 findings.
+        bool InRange(int value) => value >= range.RangeStart && value <= range.RangeEnd;
+        return InRange(address.Raw) || InRange(address.Main) || InRange(address.Middle) || InRange(address.Sub);
     }
 
     private static void CheckLinks(Project project, List<CheckFinding> findings)
@@ -304,15 +304,14 @@ public static class ProjectCheck
     /// <summary>Building-tree references to devices that no longer exist break the room assignment.</summary>
     private static void CheckLocations(Project project, List<CheckFinding> findings)
     {
+        var known = ProjectQuery.Devices(project).Select(d => d.Device.Id).ToHashSet(StringComparer.Ordinal);
         foreach (var installation in project.Installations)
         {
-            var known = ProjectQuery.Devices(project).Where(d => ReferenceEquals(d.Installation, installation))
-                .Select(d => d.Device.Id).ToHashSet(StringComparer.Ordinal);
             foreach (var node in installation.Locations.AllNodes)
                 foreach (var id in node.DeviceRefs)
                     if (!known.Contains(id))
                         findings.Add(new(CheckSeverity.Error, "P043", $"{node.Path} [{id}]",
-                            $"Gebäudeknoten '{node.Path}' verweist auf das Gerät '{id}', das in der Installation nicht existiert."));
+                            $"Gebäudeknoten '{node.Path}' verweist auf das Gerät '{id}', das im Projekt nicht existiert."));
         }
     }
 
@@ -364,8 +363,9 @@ public static class ProjectCheck
                 findings.Add(new(CheckSeverity.Error, "P070", path,
                     $"Applikationsprogramm von '{device.Name}' ist als defekt markiert; Bearbeiten und Download sind gesperrt."));
             if (program.DownloadInfoIncomplete)
-                findings.Add(new(CheckSeverity.Warning, "P071", path,
-                    $"Download-Information des Applikationsprogramms von '{device.Name}' ist unvollständig."));
+                findings.Add(new(CheckSeverity.Error, "P071", path,
+                    $"Download-Information des Applikationsprogramms von '{device.Name}' ist unvollständig; " +
+                    "Einfügen, Bearbeiten und Download sind gesperrt."));
         }
     }
 

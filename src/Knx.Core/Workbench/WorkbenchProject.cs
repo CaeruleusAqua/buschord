@@ -172,7 +172,13 @@ public static class WorkbenchProject
     {
         var row = ScopeObjects(project, new(IncludeInactive: true)).SingleOrDefault(r => r.Key == key);
         if (row is null) return new(false, 0, [new(key, "Object does not exist.")], []);
-        if (!row.Object.Links.Contains(groupId)) return new(true, 0, [], []);
+        if (!row.Object.Links.Contains(groupId))
+        {
+            if (row.Metadata is not { } stale || !stale.Connectors.Remove(groupId)) return new(true, 0, [], []);
+            if (stale.SendingGroupId == groupId) stale.SendingGroupId = null;
+            undo?.Push(project);
+            return new(true, 1, [], []);
+        }
         GroupLinks.Unlink(project, row.Device, key.ObjectRefId, groupId);
         var warnings = new List<string>();
         if (row.Metadata is { } metadata)
@@ -229,10 +235,15 @@ public static class WorkbenchProject
             {
                 var m = Metadata(project, new(deviceId, o.Id));
                 return new { o.Id, o.ComObjectId, o.Number, m?.Dpt, m?.Bits, m?.Flags, m?.Active,
-                    Links = o.Links.Distinct().Order(StringComparer.Ordinal).Select(id => new { Id = id,
-                        Address = groups.GetValueOrDefault(id)?.Address.ToString(), Dpt = groups.GetValueOrDefault(id)?.DatapointType,
-                        project.Workbench.Groups.GetValueOrDefault(id)?.Secure, project.Workbench.Groups.GetValueOrDefault(id)?.Bits,
-                        Sending = m?.SendingGroupId == id }).ToArray() };
+                    Links = o.Links.Distinct().Order(StringComparer.Ordinal).Select(id =>
+                    {
+                        var connector = m?.Connector(id);
+                        return new { Id = id,
+                            Address = groups.GetValueOrDefault(id)?.Address.ToString(), Dpt = groups.GetValueOrDefault(id)?.DatapointType,
+                            project.Workbench.Groups.GetValueOrDefault(id)?.Secure, project.Workbench.Groups.GetValueOrDefault(id)?.Bits,
+                            Sending = connector?.Send == true, Acknowledge = connector?.Acknowledge,
+                            Priority = connector?.Priority, Slot = connector?.Slot };
+                    }).ToArray() };
             }).ToArray()
         };
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(config))));

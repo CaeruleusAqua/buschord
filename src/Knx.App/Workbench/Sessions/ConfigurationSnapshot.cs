@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Knx.Workbench;
 
@@ -36,7 +34,7 @@ public static class DeviceConfigurationSnapshot
                 }).ToArray(),
             }).ToArray(),
         });
-        return new(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))), payload);
+        return new(WorkbenchProject.ConfigurationSignature(project, device.Id), payload);
     }
 
     /// <summary>

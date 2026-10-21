@@ -191,8 +191,14 @@ public static class DeviceProgrammingStates
     public static string Serialize(string? projectId, IEnumerable<DeviceProgrammingState> states)
     {
         ArgumentNullException.ThrowIfNull(states);
-        var ordered = states.OrderBy(s => s.DeviceId, StringComparer.Ordinal).ToArray();
-        foreach (var state in ordered) state.Validate();
+        var byId = new Dictionary<string, DeviceProgrammingState>(StringComparer.Ordinal);
+        foreach (var state in states)
+        {
+            state.Validate();
+            if (!byId.TryAdd(state.DeviceId, state))
+                throw new InvalidDataException($"Device programming state repeats '{state.DeviceId}'.");
+        }
+        var ordered = byId.Values.OrderBy(s => s.DeviceId, StringComparer.Ordinal).ToArray();
         return JsonSerializer.Serialize(new Envelope(Version, projectId, ordered));
     }
 

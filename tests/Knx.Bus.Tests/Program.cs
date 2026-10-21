@@ -213,6 +213,7 @@ if (args is ["--live", var liveHost, ..])
     Check("raw hex", Dpt.Decode(null, [0xAB, 0xCD]) == "AB-CD");
     Check("DPT bit sizes cover project and human ids", Dpt.TryBitSize("DPST-1-1", out var b1) && b1 == 1
         && Dpt.TryBitSize("9.001", out var b9) && b9 == 16
+        && Dpt.TryBitSize("DPT-1-1", out var bd) && bd == 1
         && Dpt.TryBitSize("DPST-5-1", out var b5) && b5 == 8
         && !Dpt.TryBitSize("not-a-dpt", out _) && !Dpt.TryBitSize(null, out _));
 }

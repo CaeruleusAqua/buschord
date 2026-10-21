@@ -126,6 +126,11 @@ Check(WorkbenchProject.ConfigurationSignature(project, roomDevice.Id) != sig, "b
 sig = WorkbenchProject.ConfigurationSignature(project, roomDevice.Id);
 ProjectQuery.FindGroupAddressById(project, "living-switch")!.Address = GroupAddress.Parse("1/0/200");
 Check(WorkbenchProject.ConfigurationSignature(project, roomDevice.Id) != sig, "actual linked GA address included");
+sig = WorkbenchProject.ConfigurationSignature(project, roomDevice.Id);
+var connector = WorkbenchProject.Metadata(project, key)!.Connector("living-switch");
+Check(WorkbenchProject.SetConnector(project, key, "living-switch", connector with { Acknowledge = true }).Ok
+    && WorkbenchProject.ConfigurationSignature(project, roomDevice.Id) != sig,
+    "connector facts included in configuration signature");
 var native = new Project { Id = "Native", Name = "Native" };
 Check(!WorkbenchProject.PreviewMode(native, "unknown", "dim").Supported, "unknown native dynamics unsupported");
 var metadata = WorkbenchProject.Metadata(project, key)!;
@@ -322,6 +327,13 @@ rangedMain.Addresses.Add(new GroupAddressEntry { Id = "GA-3", Name = "three", Ad
 rangedInstallation.MainRanges.Add(rangedMain);
 Check(AddressStrategy.TryNextGroup(rangedInstallation, out var rangedGap) && rangedGap == GroupAddress.ThreeLevel(0, 0, 2),
     "group allocation bridges an occupied address gap");
+var wizardRange = new Installation { Id = "I-WIZARD" };
+var wizardMain = new GroupRange { Id = "R-WIZARD", RangeStart = 3, RangeEnd = 3 };
+wizardMain.Ranges.Add(new GroupRange { Id = "R-WIZARD-M", RangeStart = 3, RangeEnd = 3 });
+wizardRange.MainRanges.Add(wizardMain);
+Check(AddressStrategy.TryNextGroup(wizardRange, out var wizardGroup)
+    && wizardGroup == GroupAddress.ThreeLevel(3, 3, 1),
+    "group allocation respects parent-relative main/middle ranges");
 var fullRange = new Installation { Id = "I-GAFULL" };
 var fullGroupRange = new GroupRange { Id = "R-GAFULL", RangeStart = 0, RangeEnd = 3 };
 for (var sub = 1; sub <= 3; sub++)
@@ -371,6 +383,12 @@ Check(resetProgramming.Flags == DeviceLoadFlags.None && resetProgramming.LastSuc
 var stateJson = DeviceProgrammingStates.Serialize("P", [programming]);
 var stateParsed = DeviceProgrammingStates.Parse(stateJson, "P");
 Check(stateParsed["device"] == programming, "programming state JSON roundtrip");
+try
+{
+    DeviceProgrammingStates.Serialize("P", [programming, programming]);
+    throw new Exception("FAIL duplicate programming state accepted on write");
+}
+catch (InvalidDataException) { Check(true, "duplicate programming state rejected on write"); }
 try
 {
     DeviceProgrammingStates.Parse(stateJson.Replace("\"ProjectId\":\"P\"", "\"ProjectId\":\"Q\""), "P");
@@ -477,7 +495,9 @@ Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoad
     segmentLine.Segments.Add(new Segment { Id = "S-A", Address = 2 });
     segmentLine.Segments.Add(new Segment { Id = "S-B", Address = 2 });
     var duplicateSegmentFindings = ProjectCheck.Run(duplicateSegment);
-    Check(Has(duplicateSegmentFindings, "P012", CheckSeverity.Warning), "project check: duplicate segment address");
+    Check(Has(duplicateSegmentFindings, "P073", CheckSeverity.Warning), "project check: duplicate segment address");
+    Check(Has(duplicateSegmentFindings, "P012", CheckSeverity.Warning),
+        "project check: multi-segment line keeps its established warning code");
     Check(Has(duplicateSegmentFindings, "P014", CheckSeverity.Info),
         "project check: multi-segment line reports missing coupler evidence as info");
 
@@ -499,6 +519,21 @@ Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoad
     absoluteMiddle.RangeEnd = 0x9FF;
     Check(!Has(ProjectCheck.Run(absoluteBounds), "P033", CheckSeverity.Warning),
         "project check: absolute range bounds are not a false positive");
+
+    var relativeMiddle = CleanProject();
+    var relativeRange = relativeMiddle.Installations[0].MainRanges[0].Ranges[0];
+    relativeRange.RangeStart = 2;
+    relativeRange.RangeEnd = 2;
+    relativeRange.Addresses[0].Address = GroupAddress.Parse("1/2/5");
+    Check(!Has(ProjectCheck.Run(relativeMiddle), "P033", CheckSeverity.Warning),
+        "project check: parent-relative middle bounds are not a false positive");
+
+    var crossInstallation = CleanProject();
+    var partial = new Installation { Id = "I-PART", Type = InstallationType.Partial };
+    partial.Locations.Add(null, "Partial", SpaceKind.Building, "B-PART").DeviceRefs.Add("D-1");
+    crossInstallation.Installations.Add(partial);
+    Check(!Has(ProjectCheck.Run(crossInstallation), "P043", CheckSeverity.Error),
+        "project check: building reference to a device in another installation");
 
     var offsetBounds = CleanProject();
     var offsetMiddle = offsetBounds.Installations[0].MainRanges[0].Ranges[0];
@@ -569,7 +604,7 @@ Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoad
         "project check: no catalogue means no application findings");
     var withCatalogue = ProjectCheck.Run(applications, catalogue);
     Check(Has(withCatalogue, "P070", CheckSeverity.Error), "project check: broken application program");
-    Check(Has(withCatalogue, "P071", CheckSeverity.Warning), "project check: incomplete download information");
+    Check(Has(withCatalogue, "P071", CheckSeverity.Error), "project check: incomplete download information");
     Check(Has(withCatalogue, "P072", CheckSeverity.Info), "project check: unregistered application program");
 
     var demoFindings = ProjectCheck.Run(WorkbenchJson.CreateDemo());
@@ -605,15 +640,11 @@ Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoad
     Check(malformedFindings.All(f => !string.IsNullOrWhiteSpace(f.Code) && !string.IsNullOrWhiteSpace(f.Path)
             && !string.IsNullOrWhiteSpace(f.Message)),
         "project check: every finding carries code, path and reason");
-    Check(ParseSeverities(malformedFindings), "project check: every finding has a known severity");
     Check(ProjectCheck.Count(malformedFindings, CheckSeverity.Error) > 0
           && ProjectCheck.Count(malformedFindings, CheckSeverity.Error)
           + ProjectCheck.Count(malformedFindings, CheckSeverity.Warning)
           + ProjectCheck.Count(malformedFindings, CheckSeverity.Info) == malformedFindings.Count,
         "project check: severity counters cover all findings");
-
-    static bool ParseSeverities(IEnumerable<CheckFinding> findings)
-        => findings.All(f => f.Severity is CheckSeverity.Info or CheckSeverity.Warning or CheckSeverity.Error);
 }
 
 Console.WriteLine("Workbench checks OK: identity, strict JSON, scope, atomic links, connector metadata/sending invariant, typed validation, address allocation, mode preview, signatures, native extension/archive, undo and project check.");

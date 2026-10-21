@@ -265,6 +265,10 @@ try
             "backup manifest project metadata");
         Check(ProjectBackup.List(backupSource, backupRoot).Single().Id == first.Id, "backup listed by project path");
         Check(ProjectBackup.List(null, backupRoot).Any(b => b.Id == first.Id), "backup listed by root");
+        var renamedSource = Path.Combine(directory, "renamed.knxproj");
+        File.Copy(backupSource, renamedSource);
+        Check(ProjectBackup.List(renamedSource, backupRoot).Any(b => b.Id == first.Id),
+            "backup follows the stored project GUID after rename");
 
         ProjectBackup.Create(backupSource, backupRoot, retention: 2);
         ProjectBackup.Create(backupSource, backupRoot, retention: 2);
