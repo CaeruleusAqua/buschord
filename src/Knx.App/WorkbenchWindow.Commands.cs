@@ -5,6 +5,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Knx.App.Services;
+using Knx.App.Views;
 using Knx.App.Workbench;
 using Knx.ProjectCompare;
 using Knx.Reports;
@@ -14,6 +15,7 @@ namespace Knx.App;
 
 public partial class WorkbenchWindow
 {
+    private HelpWindow? _helpWindow;
     private void BuildMenus()
     {
         MenuItem Item(string title, Action action) { var item = new MenuItem { Header = title }; item.Click += (_, _) => action(); return item; }
@@ -88,13 +90,18 @@ public partial class WorkbenchWindow
 
     public void ShowCatalog() => OpenTarget(new("tool", "catalog"));
     private void ShowSettings() => _ = GuardAsync(async () => await new SettingsWindow(ViewModel.Settings).ShowDialog(this));
-    private void ShowHelp() => _ = ConfirmDialog.ShowMessageAsync(this, "BusChord · Workbench V4",
-        W("HelpIntro") +
-        W("HelpShortcuts") +
-        W("HelpLinks") +
-        W("HelpParameters") +
-        W("HelpSessions") +
-        W("HelpBoundaries"));
+    private void ShowHelp()
+    {
+        if (_helpWindow is { } open)
+        {
+            open.Activate();
+            return;
+        }
+        var help = new HelpWindow();
+        _helpWindow = help;
+        help.Closed += (_, _) => { if (ReferenceEquals(_helpWindow, help)) _helpWindow = null; };
+        _ = GuardAsync(async () => await help.ShowDialog(this));
+    }
 
     private async Task OpenProjectAsync()
     {
@@ -506,20 +513,32 @@ public partial class WorkbenchWindow
         if (Workspace.ActiveTab is not { } tab) return;
         tab.SelectedObjectIds.Clear();
         if (ObjectTable.ItemsSource is not IEnumerable<WorkbenchRow> rows) return;
-        ObjectTable.SelectedItems?.Clear();
-        foreach (var row in rows)
+        _syncingSelection = true;
+        try
         {
-            tab.SelectedObjectIds.Add(row.Key);
-            ObjectTable.SelectedItems?.Add(row);
+            ObjectTable.SelectedItems?.Clear();
+            foreach (var row in rows)
+            {
+                tab.SelectedObjectIds.Add(row.Key);
+                ObjectTable.SelectedItems?.Add(row);
+            }
         }
+        finally { _syncingSelection = false; }
         if (CurrentDevice() is { } device) ViewModel.SelectedDevice = device;
+        UpdateSelectionState();
         RefreshInspector();
     }
 
     private void ClearSelection()
     {
-        ObjectTable.SelectedItems?.Clear();
-        if (Workspace.ActiveTab is { } tab) tab.SelectedObjectIds.Clear();
+        _syncingSelection = true;
+        try
+        {
+            ObjectTable.SelectedItems?.Clear();
+            if (Workspace.ActiveTab is { } tab) tab.SelectedObjectIds.Clear();
+        }
+        finally { _syncingSelection = false; }
+        UpdateSelectionState();
         RefreshInspector();
     }
 
@@ -560,11 +579,20 @@ public partial class WorkbenchWindow
         dialog.ShowDialog(this);
     }
 
+    /// <summary>
+    /// Immutable batch snapshot taken when the dialog opens: later row/selection changes cannot
+    /// add, remove or reorder batch members. Keys are validated again against the live project.
+    /// </summary>
+    internal static IReadOnlyList<BatchLinkItem> BatchSelection(Knx.Project project, WorkbenchTab tab) =>
+        WorkbenchProjection.Rows(project, tab)
+            .Where(r => r.Object is not null && tab.SelectedObjectIds.Contains(r.Key))
+            .Select(r => new BatchLinkItem(r.Device.Id, r.Object!.Id, r.Name))
+            .ToArray();
+
     private void ShowBatchLinkDialog()
     {
         if (ViewModel.Project is not { } project || Workspace.ActiveTab is not { } tab) return;
-        var selected = WorkbenchProjection.Rows(project, tab)
-            .Where(r => r.Object is not null && tab.SelectedObjectIds.Contains(r.Key)).ToList();
+        var selected = BatchSelection(project, tab);
         if (selected.Count == 0) { ViewModel.Status = W("BatchNeedSelection"); return; }
         var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
         var dialog = CreateDialog(W("BatchTitle", selected.Count), 720, 560);
@@ -591,15 +619,18 @@ public partial class WorkbenchWindow
         void Validate()
         {
             if (picker.SelectedItem is not GroupAddressEntry ga) { preview.ItemsSource = null; errors.Text = ""; add.IsEnabled = false; return; }
-            var results = selected.Select(r =>
+            var live = ViewModel.Project;
+            var results = selected.Select(item =>
             {
-                var reason = WorkbenchProject.ValidateLink(project, new(r.Device.Id, r.Object!.Id), ga.Id);
-                var already = r.Object.Links.Contains(ga.Id);
-                return new LinkPreview(r, reason, already);
+                var key = new ObjectKey(item.DeviceId, item.ObjectId);
+                var reason = live is null ? W("LinkProjectChanged") : WorkbenchProject.ValidateLink(live, key, ga.Id);
+                var already = live is not null && ProjectQuery.ComObjectRefs(live)
+                    .Any(r => r.Device.Id == item.DeviceId && r.Ref.Id == item.ObjectId && r.Ref.Links.Contains(ga.Id));
+                return new LinkPreview(item, reason, already);
             }).ToList();
             preview.ItemsSource = results;
             preview.ItemTemplate = new FuncDataTemplate<LinkPreview>((p, _) => Label(
-                p is null ? "" : $"{(p.AlreadyLinked ? W("AlreadyLinked") : p.Error is null ? W("Ready") : W("Incompatible"))} · {p.Row.Name}"
+                p is null ? "" : $"{(p.AlreadyLinked ? W("AlreadyLinked") : p.Error is null ? W("Ready") : W("Incompatible"))} · {p.Item.Name}"
                 + (p.Error is null ? "" : " — " + p.Error)));
             var invalid = results.Where(r => r.Error is not null).ToList();
             add.IsEnabled = invalid.Count == 0;
@@ -615,7 +646,7 @@ public partial class WorkbenchWindow
             if (picker.SelectedItem is not GroupAddressEntry ga) return;
             try
             {
-                var keys = selected.Select(r => new Knx.Workbench.ObjectKey(r.Device.Id, r.Object!.Id)).ToList();
+                var keys = selected.Select(r => new ObjectKey(r.DeviceId, r.ObjectId)).ToList();
                 MutationResult result = new(false, 0, [], []);
                 ViewModel.Edit(W("EditLink", ga.Address), p => result = WorkbenchProject.AddLinks(p, keys, ga.Id));
                 if (!result.Ok)
@@ -738,6 +769,6 @@ public partial class WorkbenchWindow
         return new ScrollViewer { Content = panel };
     }
 
-    private sealed record LinkPreview(WorkbenchRow Row, string? Error, bool AlreadyLinked);
+    private sealed record LinkPreview(BatchLinkItem Item, string? Error, bool AlreadyLinked);
     private sealed record PaletteEntry(string Label, Action Run);
 }

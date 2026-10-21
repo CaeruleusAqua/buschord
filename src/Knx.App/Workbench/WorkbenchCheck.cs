@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Collections;
 using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Automation;
@@ -131,6 +132,7 @@ internal static class WorkbenchCheck
             void Check(string name, bool value) { Console.WriteLine($"{(value ? "PASS" : "FAIL")} {name}"); if (!value) failures.Add(name); }
             try
             {
+                WriteDcaCatalog();
                 Check("empty workbench offers project start actions", window.FindControl<ContentControl>("ToolPageHost")?.Content is StackPanel start
                     && start.Children.OfType<Button>().Any(b => Equals(b.Content, WorkbenchStrings.Get("OpenProjectEllipsis"))));
                 await Task.Delay(100);
@@ -139,9 +141,61 @@ internal static class WorkbenchCheck
                     .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text.Text));
                 Check("tooltip content is wrapped in a themed TextBlock",
                     themedTip is not null && !string.IsNullOrWhiteSpace(themedTip.Text));
+                IEnumerable<MenuItem> MenuItems(IEnumerable? items) => items?.OfType<MenuItem>()
+                    .SelectMany(item => new[] { item }.Concat(MenuItems(item.ItemsSource))) ?? [];
+                var helpItem = MenuItems(window.FindControl<Menu>("MainMenu")!.ItemsSource)
+                    .First(item => Equals(item.Header, WorkbenchStrings.Get("HelpTip")));
+                helpItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                HelpWindow? help = null;
+                for (var attempt = 0; attempt < 100 && help is null; attempt++)
+                {
+                    help = desktop.Windows.OfType<HelpWindow>().FirstOrDefault();
+                    if (help is null) await Task.Delay(20);
+                }
+                Check("help opens a localized V4 window", help is { } helpWindow
+                    && helpWindow.Title == WorkbenchStrings.Get("HelpTitle")
+                    && helpWindow.GetVisualDescendants().OfType<TextBlock>()
+                        .Any(text => text.Text == WorkbenchStrings.Get("HelpSectionBoundaries")));
+                if (help is { } openHelp)
+                {
+                    openHelp.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape });
+                    await Task.Delay(60);
+                    Check("help closes with Escape", !openHelp.IsVisible);
+                }
+                // Cold catalogue: the DCA reason arrives only via CatalogLoaded, then the pane is read-only.
+                var dcaProject = new Project { Id = "P-DCA-UI", Name = "DCA shell" };
+                var dcaInstallation = new Installation { Id = "I-DCA-UI" };
+                var dcaArea = new Area { Id = "A-DCA-UI", Address = 1 };
+                var dcaLine = new Line { Id = "L-DCA-UI", Address = 1 };
+                var dcaDevice = new DeviceInstance { Id = "D-DCA-UI", Name = "DCA panel", Address = new(1, 1, 7),
+                    ProductRefId = "M-DCAUI_H-1_P-1" };
+                dcaLine.Devices.Add(dcaDevice);
+                dcaArea.Lines.Add(dcaLine); dcaInstallation.Areas.Add(dcaArea); dcaProject.Installations.Add(dcaInstallation);
+                window.ViewModel.CreateProject(dcaProject, null);
+                Check("DCA shell reason stays null while the catalogue is cold",
+                    window.ViewModel.ParameterReadOnlyReason(dcaDevice) is null);
+                window.OpenTarget(new("device", dcaDevice.Id), "params");
+                window.RefreshWorkspace();
+                var dcaPane = window.ParameterEditor;
+                var dcaReady = await WaitUntil(() => dcaPane.IsReadOnly, "DCA catalogue read-only");
+                Check("DCA read-only reason arrives with CatalogLoaded and values stay untouched",
+                    dcaReady && dcaPane.Session.Rows.Length > 0 && !dcaPane.Session.CanApply
+                    && dcaPane.ReadOnlyReason is { Length: > 0 } && dcaDevice.ParameterValues.Count == 0);
                 LoadFixture(window);
                 var p = window.ViewModel.Project!;
                 var d = ProjectQuery.DeviceList(p).First();
+                var docStrip = window.FindControl<StackPanel>("ObjectTabs")!;
+                var viewStrip = window.FindControl<StackPanel>("Representations")!;
+                var toolStrip = window.FindControl<StackPanel>("ToolTabs")!;
+                Check("doc/view/tool tab strips expose named TabItem semantics",
+                    docStrip.Children.OfType<TabItem>().Any(t => AutomationProperties.GetName(t)?.Length > 0)
+                    && viewStrip.Children.OfType<TabItem>().Count() == 4
+                    && toolStrip.Children.OfType<TabItem>().Count() >= 6
+                    && docStrip.Children.OfType<TabItem>().Concat(viewStrip.Children.OfType<TabItem>())
+                        .Concat(toolStrip.Children.OfType<TabItem>())
+                        .All(t => AutomationProperties.GetName(t)?.Length > 0));
+                Check("active view tab exposes selected item status", viewStrip.Children.OfType<TabItem>()
+                    .Any(t => t.IsSelected && AutomationProperties.GetItemStatus(t) == WorkbenchStrings.Get("Selected")));
                 var room = window.Workspace.ActiveTab!;
                 foreach (var perspective in new[] { "building", "topology", "groups" })
                 {
@@ -161,7 +215,10 @@ internal static class WorkbenchCheck
                 window.OpenSearchHit(new(ProjectSearch.GroupAddressKind, searchGa.Id, searchGa.Address.ToString(), "name", searchGa.Name, ""));
                 Check("search hit opens the group address", window.Workspace.ActiveTab?.Target == new WorkbenchTarget("ga", searchGa.Id));
                 window.OpenSearchHit(new(ProjectSearch.CommunicationObjectKind, d.ComObjectRefs[0].Id, "", "text", "", ""));
-                Check("search hit opens the owning device relations", window.Workspace.ActiveTab?.Target == new WorkbenchTarget("device", d.Id));
+                Check("search hit reveals the communication object in its device table",
+                    window.Workspace.ActiveTab?.Target == new WorkbenchTarget("device", d.Id)
+                    && window.Workspace.ActiveTab?.View == "objects"
+                    && window.Workspace.ActiveTab!.SelectedObjectIds.Contains(WorkbenchProjection.ObjectKey(d, d.ComObjectRefs[0])));
                 window.OpenTarget(room.Target);
                 var table = window.FindControl<ListBox>("ObjectTable")!;
                 var row = ((IEnumerable<WorkbenchRow>)table.ItemsSource!).First(r => r.Object is not null);
@@ -171,12 +228,49 @@ internal static class WorkbenchCheck
                 window.FindControl<TextBox>("ObjectSearch")!.Text = "LED";
                 await Task.Delay(50); // Avalonia delivers TextChanged at the next dispatcher turn.
                 var deviceTab = window.OpenTarget(new("device", d.Id));
-                Check("new object tab has independent filter and selection", deviceTab.Filter == "" && deviceTab.SelectedObjectIds.Count == 0);
+                var freshTab = window.OpenTarget(new("device", ProjectQuery.DeviceList(p).First(x => x.Id != d.Id).Id));
+                Check("new object tab has independent filter and selection", freshTab.Filter == "" && freshTab.SelectedObjectIds.Count == 0);
                 window.OpenTarget(room.Target);
                 Check($"room filter and selection survive tab switch (filter={room.Filter}, selection={string.Join(',', room.SelectedObjectIds)})", room.Filter == "LED" && room.SelectedObjectIds.SequenceEqual(selected));
                 window.FindControl<TextBox>("ObjectSearch")!.Text = "";
+                await Task.Delay(60); // TextChanged is delivered at the next dispatcher turn.
                 var rows = WorkbenchProjection.Rows(p, room);
                 Check("device, channel, object hierarchy shares a table", rows.Any(r => r.Kind == "device") && rows.Any(r => r.Kind == "channel") && rows.Any(r => r.Object is not null));
+                var linkedRow = rows.FirstOrDefault(r => r.Object is { Links.Count: > 0 });
+                if (linkedRow is not null)
+                {
+                    table.ScrollIntoView(linkedRow);
+                    await Task.Delay(60);
+                    var chipAddress = ProjectQuery.GroupAddresses(p)
+                        .First(group => linkedRow.Object!.Links.Contains(group.Id)).Address.ToString();
+                    Check("group addresses render as compact chips", table.GetVisualDescendants().OfType<Border>()
+                        .Any(border => border.Child is TextBlock text && text.Text == chipAddress));
+                }
+                var rowMenu = table.GetVisualDescendants().OfType<Grid>().FirstOrDefault(grid => grid.ContextMenu is not null);
+                Check("object rows expose open/relations/favorite/delete actions", rowMenu?.ContextMenu?.Items.Count == 4);
+                var frozenRows = rows.Where(r => r.Object is not null).Take(2).ToArray();
+                room.SelectedObjectIds.Clear();
+                foreach (var frozenRow in frozenRows) room.SelectedObjectIds.Add(frozenRow.Key);
+                var batch = WorkbenchWindow.BatchSelection(p, room);
+                room.SelectedObjectIds.Clear();
+                room.SelectedObjectIds.Add(frozenRows[0].Key);
+                Check("batch link snapshot freezes members at dialog open", batch.Count == 2
+                    && batch.Select(b => b.ObjectId).SequenceEqual(frozenRows.Select(r => r.Object!.Id)));
+                room.SelectedObjectIds.Clear();
+                var selectAll = window.FindControl<CheckBox>("SelectAllBox")!;
+                selectAll.IsChecked = true;
+                await Task.Delay(40);
+                var tableKeys = table.SelectedItems!.OfType<WorkbenchRow>().Select(row => row.Key).ToHashSet();
+                Check($"header select-all mirrors the table multi-selection ({room.SelectedObjectIds.Count}/{tableKeys.Count}/{rows.Count})",
+                    room.SelectedObjectIds.Count == rows.Count
+                    && room.SelectedObjectIds.Distinct().Count() == rows.Count
+                    && tableKeys.SetEquals(rows.Select(row => row.Key)));
+                selectAll.IsChecked = false;
+                await Task.Delay(40);
+                Check("header clear clears the table multi-selection",
+                    room.SelectedObjectIds.Count == 0 && table.SelectedItems!.Count == 0);
+                room.SelectedObjectIds.Clear();
+                foreach (var key in selected) room.SelectedObjectIds.Add(key);
                 room.CollapsedDeviceIds.Add(d.Id); window.RefreshWorkspace();
                 Check("device collapse hides children, not siblings", !WorkbenchProjection.Rows(p, room).Any(r => r.Device == d && r.Object is not null) && WorkbenchProjection.Rows(p, room).Any(r => r.Device != d && r.Object is not null));
                 room.CollapsedDeviceIds.Clear();
@@ -189,6 +283,8 @@ internal static class WorkbenchCheck
                 Check("parameter draft survives representation switch", pane.HasUnappliedChanges);
                 pane.FindControl<Button>("ApplyButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Check("routed explicit Apply uses existing validation and undo", d.ParameterValues.GetValueOrDefault("R-N") == "44" && window.ViewModel.IsDirty);
+                deviceTab.SelectedObjectIds.Clear();
+                window.RefreshWorkspace();
                 window.Workspace.InspectorVisible = true;
                 var inspectorBody = window.FindControl<StackPanel>("InspectorBody")!;
                 var inspectorFooter = window.FindControl<StackPanel>("InspectorFooter")!;
@@ -268,14 +364,15 @@ internal static class WorkbenchCheck
                     .GetVisualDescendants().OfType<Grid>().Select(AutomationProperties.GetName)
                     .Any(name => name is { Length: > 0 } text && (text.EndsWith(",", StringComparison.Ordinal) || text.EndsWith(", ", StringComparison.Ordinal))));
                 window.Width = 1024;
-                await Task.Delay(150);
                 var mainColumn = window.FindControl<Grid>("MainColumn")!;
+                var narrow = await WaitUntil(() => window.Bounds.Width is > 0 and < 1100
+                    && KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.None, "narrow layout");
                 Check("narrow inspector overlay keeps covered editor stops out of the tab order",
-                    window.Workspace.InspectorVisible && KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.None);
+                    narrow && window.Workspace.InspectorVisible);
                 window.Width = 1440;
-                await Task.Delay(150);
-                Check("wide layout restores editor tab navigation",
-                    KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.Continue);
+                var wide = await WaitUntil(() => window.Bounds.Width >= 1100
+                    && KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.Continue, "wide layout");
+                Check("wide layout restores editor tab navigation", wide);
                 window.ShowTool("programming");
                 await Task.Delay(60);
                 Check("programming tool renders its list inside one host", window.FindControl<ContentControl>("ToolHost")!.Content is DockPanel);
@@ -411,6 +508,60 @@ internal static class WorkbenchCheck
         }, TimeSpan.FromMilliseconds(300));
     }
 
+    /// <summary>Writes the synthetic DCA catalogue before any parameter lookup warms the shared library.</summary>
+    private static void WriteDcaCatalog()
+    {
+        var directory = Path.Combine(TestDirectory!, "catalog");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "dca-selftest.knxprod"), """
+            <?xml version="1.0" encoding="utf-8"?>
+            <KNX xmlns="http://knx.org/xml/prod/20">
+              <ManufacturerData>
+                <Manufacturer RefId="M-DCAUI">
+                  <Hardware>
+                    <Hardware Id="M-DCAUI_H-1" Name="Panel" SerialNumber="1" VersionNumber="1"
+                              HasIndividualAddress="true" HasApplicationProgram="true">
+                      <Products><Product Id="M-DCAUI_H-1_P-1" Text="DCA panel" OrderNumber="DCA-UI"/></Products>
+                      <Hardware2Programs>
+                        <Hardware2Program Id="M-DCAUI_H-1_HP-1"><ApplicationProgramRef RefId="M-DCAUI_A-1"/></Hardware2Program>
+                      </Hardware2Programs>
+                    </Hardware>
+                  </Hardware>
+                  <ApplicationPrograms>
+                    <ApplicationProgram Id="M-DCAUI_A-1" Name="DCA panel" ApplicationNumber="1" ApplicationVersion="1">
+                      <Static>
+                        <Extension EtsUiPlugin="{22222222-2222-2222-2222-222222222222}"/>
+                        <ParameterTypes>
+                          <ParameterType Id="PT-1" Name="Brightness" SizeInBit="8" DataType="Number"/>
+                        </ParameterTypes>
+                        <Parameters>
+                          <Parameter Id="P-1" Name="Brightness" ParameterType="PT-1" Value="50"/>
+                        </Parameters>
+                        <ParameterRefs>
+                          <ParameterRef Id="PR-1" RefId="P-1"/>
+                        </ParameterRefs>
+                      </Static>
+                    </ApplicationProgram>
+                  </ApplicationPrograms>
+                </Manufacturer>
+              </ManufacturerData>
+            </KNX>
+            """, new System.Text.UTF8Encoding(false));
+    }
+
     private static IEnumerable<WorkbenchNavNode> Flatten(IEnumerable<WorkbenchNavNode> nodes)
         => nodes.SelectMany(n => new[] { n }.Concat(Flatten(n.Children)));
+
+    /// <summary>Polls layout/automation state instead of assuming one fixed delay is enough on slow agents.</summary>
+    private static async Task<bool> WaitUntil(Func<bool> condition, string what, int timeoutMs = 5000)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        while (watch.ElapsedMilliseconds < timeoutMs)
+        {
+            if (condition()) return true;
+            await Task.Delay(20);
+        }
+        if (!condition()) Console.WriteLine($"WAIT TIMEOUT: {what}");
+        return condition();
+    }
 }

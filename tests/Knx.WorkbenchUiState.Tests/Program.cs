@@ -1,5 +1,6 @@
 using Knx;
 using Knx.App.Workbench;
+using System.Text;
 
 var checks = 0;
 void Check(string name, bool value)
@@ -146,6 +147,69 @@ try
         && dropRoom.DeviceRefs.Contains(dropDevice.Id) && dropDevice.Address.Line == 2);
     Check("Dropping the moved device back onto its line is a no-op",
         WorkbenchProjection.ResolveDeviceDrop(dropProject, dropDevice.Id, new("line", "L-2")).Status == DeviceDropStatus.AlreadyThere);
+
+    // DCA/plug-in catalogue applications must surface a read-only reason and never touch values.
+    var dcaRoot = Path.Combine(root, "dca-catalog");
+    Directory.CreateDirectory(dcaRoot);
+    File.WriteAllText(Path.Combine(dcaRoot, "dca.knxprod"), """
+        <?xml version="1.0" encoding="utf-8"?>
+        <KNX xmlns="http://knx.org/xml/prod/20">
+          <ManufacturerData>
+            <Manufacturer RefId="M-DCA">
+              <Hardware>
+                <Hardware Id="M-DCA_H-1" Name="Panel" SerialNumber="1" VersionNumber="1"
+                          HasIndividualAddress="true" HasApplicationProgram="true">
+                  <Products><Product Id="M-DCA_H-1_P-1" Text="DCA panel" OrderNumber="DCA-1"/></Products>
+                  <Hardware2Programs>
+                    <Hardware2Program Id="M-DCA_H-1_HP-1"><ApplicationProgramRef RefId="M-DCA_A-1"/></Hardware2Program>
+                  </Hardware2Programs>
+                </Hardware>
+              </Hardware>
+              <ApplicationPrograms>
+                <ApplicationProgram Id="M-DCA_A-1" Name="DCA panel" ApplicationNumber="1" ApplicationVersion="1">
+                  <Static>
+                    <Extension EtsUiPlugin="{11111111-1111-1111-1111-111111111111}"/>
+                    <ParameterTypes>
+                      <ParameterType Id="PT-1" Name="Brightness" SizeInBit="8" DataType="Number"/>
+                    </ParameterTypes>
+                    <Parameters>
+                      <Parameter Id="P-1" Name="Brightness" ParameterType="PT-1" Value="50"/>
+                    </Parameters>
+                    <ParameterRefs>
+                      <ParameterRef Id="PR-1" RefId="P-1"/>
+                    </ParameterRefs>
+                  </Static>
+                </ApplicationProgram>
+              </ApplicationPrograms>
+            </Manufacturer>
+          </ManufacturerData>
+        </KNX>
+        """, new UTF8Encoding(false));
+    var dcaLibrary = new Knx.App.Services.CatalogLibrary(new Knx.Catalog.CatalogStore(dcaRoot));
+    var dcaVm = new Knx.App.Services.MainWindowViewModel(dcaLibrary);
+    var dcaProject = new Project { Id = "P-DCA", Name = "DCA project" };
+    var dcaInstallation = new Installation { Id = "I-DCA" };
+    var dcaArea = new Area { Id = "A-DCA", Address = 1 };
+    var dcaLine = new Line { Id = "L-DCA", Address = 1 };
+    var dcaDevice = new DeviceInstance { Id = "D-DCA", Name = "Panel", ProductRefId = "M-DCA_H-1_P-1", Address = new(1, 1, 5) };
+    dcaLine.Devices.Add(dcaDevice);
+    dcaArea.Lines.Add(dcaLine); dcaInstallation.Areas.Add(dcaArea); dcaProject.Installations.Add(dcaInstallation);
+    dcaVm.CreateProject(dcaProject, null);
+    Check("DCA read-only reason stays null while the catalogue is cold",
+        dcaVm.ParameterReadOnlyReason(dcaDevice) is null);
+    await dcaLibrary.GetAsync();
+    var dcaReason = dcaVm.ParameterReadOnlyReason(dcaDevice);
+    Check("DCA catalogue program yields a localized read-only reason",
+        dcaReason is { Length: > 0 } text && text.Contains("DCA", StringComparison.Ordinal));
+    var dcaSession = new Knx.App.Services.ParameterEditingSession(dcaVm);
+    dcaSession.Load(dcaVm.Devices[0]);
+    var dcaValues = dcaSession.Rows.Select(r => r.Value).ToArray();
+    dcaSession.SetReadOnly(dcaReason);
+    Check("DCA parameter editors are read-only and cannot apply", dcaSession.Rows.Length > 0
+        && dcaSession.IsReadOnly && !dcaSession.CanApply && !dcaSession.CanReset);
+    dcaSession.ResetToDefaults();
+    Check("DCA apply and reset leave saved values untouched", !dcaSession.Apply()
+        && dcaSession.Rows.Select(r => r.Value).SequenceEqual(dcaValues) && dcaDevice.ParameterValues.Count == 0);
 
     Console.WriteLine($"WORKBENCH UI STATE OK ({checks})");
 }

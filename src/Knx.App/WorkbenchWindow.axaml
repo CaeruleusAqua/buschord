@@ -17,13 +17,8 @@
     <Style Selector="Grid.wb-row-active TextBlock"><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
     <Style Selector="Border.wb-action-footer"><Setter Property="Background" Value="{DynamicResource WbPaper}"/><Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/><Setter Property="BorderThickness" Value="0,1,0,0"/></Style>
     <Style Selector="Button.rail-active"><Setter Property="Background" Value="{DynamicResource WbTint}"/><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/></Style>
-    <Style Selector="Button.wb-view-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="34"/><Setter Property="Padding" Value="0"/><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{DynamicResource WbMuted}"/></Style>
-    <Style Selector="Button.wb-view-tab.active"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
-    <Style Selector="Button.wb-tool-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="35"/><Setter Property="Padding" Value="0,0,0,0"/></Style>
-    <Style Selector="Button.wb-tool-tab.active"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
-    <Style Selector="Border.wb-doc-tab"><Setter Property="Background" Value="{DynamicResource WbTabbar}"/><Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/><Setter Property="BorderThickness" Value="0,2,1,0"/></Style>
-    <Style Selector="Border.wb-doc-tab.active"><Setter Property="Background" Value="{DynamicResource WbPaper}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/><Setter Property="BorderThickness" Value="0,2,1,0"/></Style>
-    <Style Selector="Button.wb-doc-tab"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="CornerRadius" Value="0"/><Setter Property="Height" Value="38"/><Setter Property="MinWidth" Value="130"/><Setter Property="Padding" Value="10,0"/></Style>
+    <Style Selector="TabItem.wb-doc-tab"><Setter Property="MinWidth" Value="130"/><Setter Property="MaxWidth" Value="240"/><Setter Property="Padding" Value="10,0"/></Style>
+    <Style Selector="TabItem.wb-tool-tab"><Setter Property="MinHeight" Value="35"/><Setter Property="Padding" Value="12,0"/></Style>
     <Style Selector="Grid.wb-table-header"><Setter Property="Background" Value="{DynamicResource WbPanel}"/></Style>
     <Style Selector="Grid.wb-drop-target"><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
     <Style Selector="Grid.wb-device"><Setter Property="Background" Value="{DynamicResource WbHover}"/></Style>
@@ -89,13 +84,18 @@
           </Grid>
           <Grid Grid.Row="2">
             <ScrollViewer x:Name="TableViewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <Grid x:Name="TableHost" RowDefinitions="31,*,27" Margin="24,0,24,0" MinWidth="540">
+            <Grid x:Name="TableHost" RowDefinitions="31,*,27" Margin="24,0,24,0" MinWidth="568">
               <Border Grid.Row="0" Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}"
                       BorderThickness="0,0,0,1" Margin="0,0,12,0">
-                <Grid ColumnDefinitions="*,80,50,50,170">
-                  <TextBlock Text="{loc:Wb ColumnObjectFunction}" Margin="8,8" Classes="muted"/><TextBlock Grid.Column="1" Text="DPT" Margin="0,8" Classes="muted"/>
-                  <TextBlock Grid.Column="2" Text="{loc:Wb ColumnLength}" Margin="0,8" Classes="muted"/><TextBlock Grid.Column="3" Text="Flags" Margin="0,8" Classes="muted"/>
-                  <TextBlock Grid.Column="4" Text="{loc:Wb GroupAddresses}" Margin="0,8" Classes="muted"/>
+                <Grid ColumnDefinitions="28,*,80,50,50,170">
+                  <CheckBox x:Name="SelectAllBox" IsThreeState="True" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            MinWidth="0" Padding="0" IsCheckedChanged="OnSelectAll"
+                            AutomationProperties.Name="{loc:Wb SelectAllObjects}"/>
+                  <TextBlock Grid.Column="1" Text="{loc:Wb ColumnObjectFunction}" Margin="8,8" Classes="muted"/>
+                  <TextBlock Grid.Column="2" Text="DPT" Margin="0,8" Classes="muted"/>
+                  <TextBlock Grid.Column="3" Text="{loc:Wb ColumnLength}" Margin="0,8" Classes="muted"/>
+                  <TextBlock Grid.Column="4" Text="Flags" Margin="0,8" Classes="muted"/>
+                  <TextBlock Grid.Column="5" Text="{loc:Wb GroupAddresses}" Margin="0,8" Classes="muted"/>
                 </Grid>
               </Border>
               <ListBox x:Name="ObjectTable" Grid.Row="1" SelectionMode="Multiple" Background="Transparent" SelectionChanged="OnObjectSelected" AutomationProperties.Name="{loc:Wb ObjectsTable}"/>
@@ -135,7 +135,12 @@
       </Border>
     </Grid>
     <Border Grid.Row="2" Background="{DynamicResource WbStatusbar}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="*,Auto" Margin="12,0"><TextBlock x:Name="StatusText" Text="{Binding Status}" FontSize="10" VerticalAlignment="Center" Foreground="{DynamicResource WbMuted}" AutomationProperties.Name="{loc:Wb Status}" AutomationProperties.LiveSetting="Polite"/>
+      <Grid ColumnDefinitions="*,Auto" Margin="12,0">
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Border Width="3" Height="13" CornerRadius="1" Background="{DynamicResource WbAccent}"/>
+          <TextBlock x:Name="StatusProject" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource WbSelectedText}" VerticalAlignment="Center"/>
+          <TextBlock x:Name="StatusText" Text="{Binding Status}" FontSize="10" VerticalAlignment="Center" Foreground="{DynamicResource WbMuted}" AutomationProperties.Name="{loc:Wb Status}" AutomationProperties.LiveSetting="Polite"/>
+        </StackPanel>
         <TextBlock Grid.Column="1" Text="{loc:Wb StatusLocalOnly}" Classes="muted" VerticalAlignment="Center" AutomationProperties.LiveSetting="Off"/>
       </Grid>
     </Border>

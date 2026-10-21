@@ -702,6 +702,18 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Localized reason why the catalogue application forbids local parameter editing, or null
+    /// when editing is allowed or the catalogue snapshot is still cold. The caller re-evaluates it
+    /// on <see cref="CatalogLoaded"/>.
+    /// </summary>
+    public string? ParameterReadOnlyReason(DeviceInstance device)
+    {
+        var program = CatalogProgram(device);
+        var reason = CatalogBrowser.Blocked(program, CatalogUse.EditParameters);
+        return reason == CatalogBlockReason.None ? null : CatalogUiText.Reason(reason);
+    }
+
+    /// <summary>
     /// Resolves the device's application program from the shared catalogue snapshot. With a cold
     /// library the background parse starts once and this returns null immediately: the pane shows
     /// its empty state and <see cref="CatalogLoaded"/> reloads it when the snapshot is published.
