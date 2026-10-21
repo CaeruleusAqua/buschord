@@ -325,8 +325,10 @@ public static class ProjectCheck
         if (workbench.IsEmpty) return;
 
         var devices = ProjectQuery.DeviceList(project).Select(d => d.Id).ToHashSet(StringComparer.Ordinal);
-        var objects = ProjectQuery.ComObjectRefs(project)
-            .Select(p => new Knx.Workbench.ObjectKey(p.Device.Id, p.Ref.Id).ToString()).ToHashSet(StringComparer.Ordinal);
+        var objectLinks = ProjectQuery.ComObjectRefs(project)
+            .ToDictionary(p => new Knx.Workbench.ObjectKey(p.Device.Id, p.Ref.Id).ToString(),
+                p => p.Ref.Links.ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
+        var objects = objectLinks.Keys.ToHashSet(StringComparer.Ordinal);
         var groups = ProjectQuery.GroupAddresses(project).Select(g => g.Id).ToHashSet(StringComparer.Ordinal);
 
         foreach (var id in workbench.Devices.Keys.Where(id => !devices.Contains(id)))
@@ -335,15 +337,25 @@ public static class ProjectCheck
         foreach (var key in workbench.Objects.Keys.Where(key => !objects.Contains(key)))
             findings.Add(new(CheckSeverity.Warning, "P052", key,
                 "Arbeitsbereichs-Metadaten verweisen auf ein unbekanntes Kommunikationsobjekt."));
+        foreach (var (key, metadata) in workbench.Objects)
+        {
+            if (!objectLinks.TryGetValue(key, out var links)) continue;
+            foreach (var groupId in metadata.Connectors.Keys.Where(id => !links.Contains(id)))
+                findings.Add(new(CheckSeverity.Warning, "P052", $"{key} → {groupId}",
+                    "Connector-Metadaten verweisen auf eine nicht mehr verknüpfte Gruppenadresse."));
+            if (metadata.SendingGroupId is { } sending && !links.Contains(sending))
+                findings.Add(new(CheckSeverity.Warning, "P052", $"{key} → {sending}",
+                    "Sendeadresse verweist auf eine nicht mehr verknüpfte Gruppenadresse."));
+        }
         foreach (var id in workbench.Groups.Keys.Where(id => !groups.Contains(id)))
             findings.Add(new(CheckSeverity.Warning, "P052", id,
                 $"Arbeitsbereichs-Metadaten verweisen auf die unbekannte Gruppenadresse '{id}'."));
     }
 
     /// <summary>
-    /// Application-program status from catalogue data. A broken program blocks editing and download
-    /// (Error); incomplete download information only warns; an unresolved reference stays Info
-    /// because the loaded catalogue may simply be incomplete.
+    /// Application-program status from catalogue data. Broken and incomplete download data both
+    /// block editing/download (Error); an unresolved reference stays Info because the loaded
+    /// catalogue may simply be incomplete.
     /// </summary>
     private static void CheckApplications(Project project,
         IReadOnlyDictionary<string, CatalogApplicationProgram> applications, List<CheckFinding> findings)

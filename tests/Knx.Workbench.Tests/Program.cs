@@ -584,6 +584,14 @@ Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoad
     Check(staleFindings.Count(f => f.Code == "P052" && f.Severity == CheckSeverity.Warning) == 3,
         "project check: stale workbench metadata references -> " + Describe(staleFindings));
 
+    var staleConnector = CleanProject();
+    staleConnector.Workbench.Objects[new ObjectKey("D-1", "O-1").ToString()] = new ObjectMetadata
+    {
+        Connectors = { ["missing-group"] = new ConnectorMetadata { Acknowledge = true } }
+    };
+    Check(Has(ProjectCheck.Run(staleConnector), "P052", CheckSeverity.Warning),
+        "project check: connector metadata for an unlinked group address");
+
     var ipLine = CleanProject();
     ipLine.Installations[0].Areas[0].Lines[0].MediumTypeRefId = "MT-5";
     Check(Has(ProjectCheck.Run(ipLine), "P060", CheckSeverity.Info),
