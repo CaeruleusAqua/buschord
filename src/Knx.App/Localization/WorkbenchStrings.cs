@@ -199,6 +199,16 @@ public static class WorkbenchStrings
         ["Changes"] = ("Änderungen", "Changes"),
         ["ChangesEmpty"] = ("Noch keine Änderungen in diesem Projekt.", "No project changes yet."),
         ["ChangesWindowTitle"] = ("BusChord · Änderungen", "BusChord · Changes"),
+        ["SidebarProperties"] = ("Eigenschaften", "Properties"),
+        ["SidebarGroups"] = ("Gruppen", "Groups"),
+        ["SidebarSearch"] = ("Suche", "Search"),
+        ["SidebarWorkspaces"] = ("Arbeitsbereiche", "Workspaces"),
+        ["SidebarOperations"] = ("Vorgänge", "Operations"),
+        ["SaveWorkspace"] = ("Layout speichern …", "Save layout …"),
+        ["RestoreWorkspace"] = ("Layout laden …", "Load layout …"),
+        ["WorkspaceName"] = ("Name des Arbeitsbereichs", "Workspace name"),
+        ["NoWorkspaces"] = ("Noch keine gespeicherten Arbeitsbereiche.", "No saved workspaces yet."),
+        ["NoOperations"] = ("Keine laufenden Sitzungen.", "No running sessions."),
 
         // ---- programming ----
         ["ProgrammingNeedsProject"] = ("Zuerst ein Projekt öffnen.", "Open a project first."),

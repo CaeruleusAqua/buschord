@@ -116,7 +116,11 @@
       </Grid>
       <GridSplitter x:Name="InspectorSplitter" Grid.Column="4" Width="5" Background="{DynamicResource WbLine}" ResizeDirection="Columns"/>
       <Border x:Name="Inspector" Grid.Column="5" Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}" BorderThickness="1,0,0,0">
-        <Grid RowDefinitions="44,*"><Grid ColumnDefinitions="*,Auto" Margin="15,0"><TextBlock Text="{loc:Wb Properties}" VerticalAlignment="Center" FontWeight="SemiBold"/><Button Grid.Column="1" AutomationProperties.Name="{loc:Wb HideProperties}" Click="OnInspector" Classes="quiet"><views:Icon Symbol="Close" Width="17" Height="17"/></Button></Grid>
+        <Grid RowDefinitions="44,*"><Grid ColumnDefinitions="*,Auto,Auto" Margin="15,0">
+            <TextBlock x:Name="InspectorTitle" Text="{loc:Wb Properties}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+            <ComboBox x:Name="SidebarMode" Grid.Column="1" MinWidth="120" FontSize="10" Margin="0,0,6,0"/>
+            <Button Grid.Column="2" AutomationProperties.Name="{loc:Wb HideProperties}" Click="OnInspector" Classes="quiet"><views:Icon Symbol="Close" Width="17" Height="17"/></Button>
+          </Grid>
           <ScrollViewer Grid.Row="1"><StackPanel x:Name="InspectorBody" Margin="15" Spacing="12"/></ScrollViewer>
         </Grid>
       </Border>

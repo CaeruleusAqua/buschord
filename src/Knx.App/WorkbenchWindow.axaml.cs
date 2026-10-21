@@ -43,6 +43,7 @@ public partial class WorkbenchWindow : Window
     private Project? _shownProject;
     private WorkbenchTab? _renderedTab;
     private string _renderedPerspective = "building";
+    private string _sidebarMode = "properties";
     private int _scrollRestoreVersion;
     private bool _scrollRestorePending;
     private int _navRestoreVersion;
@@ -83,6 +84,20 @@ public partial class WorkbenchWindow : Window
         };
         NavTree.ItemTemplate = new FuncDataTemplate<NavEntry>((entry, _) => entry is null ? new Border() : BuildNavRow(entry));
         ObjectTable.ItemTemplate = new FuncDataTemplate<WorkbenchRow>((row, _) => row is null ? new Border() : BuildObjectRow(row));
+        SidebarMode.ItemsSource = new[]
+        {
+            W("SidebarProperties"), W("SidebarGroups"), W("SidebarSearch"), W("SidebarWorkspaces"), W("SidebarOperations")
+        };
+        SidebarMode.SelectedIndex = 0;
+        SidebarMode.SelectionChanged += (_, _) =>
+        {
+            if (_refreshing || SidebarMode.SelectedIndex < 0) return;
+            _sidebarMode = SidebarMode.SelectedIndex switch
+            {
+                1 => "groups", 2 => "search", 3 => "workspaces", 4 => "operations", _ => "properties"
+            };
+            RefreshInspector();
+        };
         BuildMenus();
         foreach (var (key, title, glyph) in new[] { ("building", W("PerspectiveBuilding"), "Category"), ("topology", W("PerspectiveTopology"), "AccountTree"), ("groups", W("PerspectiveGroups"), "FormatListBulleted") })
         {
@@ -603,6 +618,111 @@ public partial class WorkbenchWindow : Window
         e.Handled = true;
     }
 
+    private void FillGroupSidebar()
+    {
+        if (ViewModel.Project is not { } project) { InspectorBody.Children.Add(Note(W("ScanNeedsProject"))); return; }
+        var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
+        InspectorBody.Children.Add(Note($"{groups.Count} Gruppenadressen"));
+        foreach (var ga in groups.Take(250))
+            InspectorBody.Children.Add(ActionButton($"{ga.Address} · {ga.Name}",
+                () => OpenTarget(new("ga", ga.Id)), "quiet"));
+        if (groups.Count > 250) InspectorBody.Children.Add(Note("…"));
+    }
+
+    private void FillSearchSidebar()
+    {
+        var query = new TextBox { PlaceholderText = W("PaletteWatermark") };
+        var results = new StackPanel { Spacing = 4 };
+        void Search()
+        {
+            results.Children.Clear();
+            if (ViewModel.Project is not { } project) return;
+            var text = query.Text?.Trim() ?? "";
+            if (text.Length == 0) return;
+            foreach (var d in ProjectQuery.DeviceList(project)
+                         .Where(d => (d.Name ?? "").Contains(text, StringComparison.OrdinalIgnoreCase)
+                             || d.Address.ToString().Contains(text, StringComparison.OrdinalIgnoreCase)).Take(40))
+                results.Children.Add(ActionButton($"{d.Address} · {d.Name}", () => OpenTarget(new("device", d.Id)), "quiet"));
+            foreach (var g in ProjectQuery.GroupAddresses(project)
+                         .Where(g => g.Name.Contains(text, StringComparison.OrdinalIgnoreCase)
+                             || g.Address.ToString().Contains(text, StringComparison.OrdinalIgnoreCase)).Take(40))
+                results.Children.Add(ActionButton($"{g.Address} · {g.Name}", () => OpenTarget(new("ga", g.Id)), "quiet"));
+        }
+        query.TextChanged += (_, _) => Search();
+        InspectorBody.Children.Add(query);
+        InspectorBody.Children.Add(results);
+        Search();
+    }
+
+    private static string WorkspaceDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BusChord", "workspaces");
+
+    private void FillWorkspacesSidebar()
+    {
+        InspectorBody.Children.Add(ActionButton(W("SaveWorkspace"), () => _ = SaveNamedWorkspaceAsync(), "primary"));
+        InspectorBody.Children.Add(ActionButton(W("RestoreWorkspace"), () => _ = LoadNamedWorkspaceAsync(), "quiet"));
+        var files = Directory.Exists(WorkspaceDirectory)
+            ? Directory.EnumerateFiles(WorkspaceDirectory, "*.json").OrderBy(f => f).ToList()
+            : [];
+        if (files.Count == 0) InspectorBody.Children.Add(Note(W("NoWorkspaces")));
+        foreach (var file in files)
+        {
+            var name = Path.GetFileNameWithoutExtension(file);
+            InspectorBody.Children.Add(ActionButton(name, () =>
+            {
+                try { Workspace.TryRestoreLayout(file); RefreshWorkspace(); }
+                catch (Exception ex) { ViewModel.Status = ex.Message; }
+            }, "quiet"));
+        }
+    }
+
+    private async Task SaveNamedWorkspaceAsync()
+    {
+        var name = await PromptTextAsync(W("WorkspaceName"));
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var safe = string.Concat(name.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or ' ')).Trim();
+        if (safe.Length == 0) return;
+        Directory.CreateDirectory(WorkspaceDirectory);
+        SaveLayout(Path.Combine(WorkspaceDirectory, safe + ".json"));
+        FillWorkspacesSidebar();
+        ViewModel.Status = $"{W("SidebarWorkspaces")}: {safe}";
+    }
+
+    private async Task LoadNamedWorkspaceAsync()
+    {
+        var name = await PromptTextAsync(W("WorkspaceName"));
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var path = Path.Combine(WorkspaceDirectory, name + ".json");
+        if (!File.Exists(path)) { ViewModel.Status = W("NoWorkspaces"); return; }
+        if (!Workspace.TryRestoreLayout(path)) { ViewModel.Status = W("NoWorkspaces"); return; }
+        RefreshWorkspace();
+    }
+
+    private async Task<string?> PromptTextAsync(string title)
+    {
+        var dialog = new Window { Title = title, Width = 420, Height = 180, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var box = new TextBox { Watermark = title };
+        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+        string? result = null;
+        actions.Children.Add(ActionButton(W("Create"), () => { result = box.Text; dialog.Close(); }, "primary"));
+        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
+        panel.Children.Add(box); panel.Children.Add(actions); dialog.Content = panel;
+        dialog.Opened += (_, _) => box.Focus();
+        await dialog.ShowDialog(this);
+        return result;
+    }
+
+    private void FillOperationsSidebar()
+    {
+        if (_sessions is not { } sessions) { InspectorBody.Children.Add(Note(W("NoOperations"))); return; }
+        InspectorBody.Children.Add(Note($"{W("Monitor")}: {(sessions.Monitor.IsRunning ? W("MonitorRunning", sessions.Monitor.RecordedCount, sessions.Monitor.FilteredRows.Count) : W("MonitorStopped", sessions.Monitor.RecordedCount))}"));
+        InspectorBody.Children.Add(ActionButton(W("Monitor"), () => ShowTool("monitor"), "quiet"));
+        InspectorBody.Children.Add(Note($"{W("ProgrammingTab")}: {(sessions.Programming.IsRunning ? W("ScanRunning") : W("NoOperations"))}"));
+        InspectorBody.Children.Add(ActionButton(W("ProgrammingTab"), () => ShowTool("programming"), "quiet"));
+        InspectorBody.Children.Add(ActionButton(W("Scan"), () => ShowTool("scan"), "quiet"));
+    }
+
     private void OnNavSelected(object? sender, SelectionChangedEventArgs e)    {
         if (_refreshing || NavTree.SelectedItem is not NavEntry entry) return;
         Workspace.Navigators[Workspace.Perspective].SelectedId = entry.Node.Key;
@@ -661,6 +781,18 @@ public partial class WorkbenchWindow : Window
     private void RefreshInspector()
     {
         InspectorBody.Children.Clear();
+        InspectorTitle.Text = SidebarMode.SelectedItem as string ?? W("SidebarProperties");
+        if (_sidebarMode != "properties")
+        {
+            switch (_sidebarMode)
+            {
+                case "groups": FillGroupSidebar(); break;
+                case "search": FillSearchSidebar(); break;
+                case "workspaces": FillWorkspacesSidebar(); break;
+                case "operations": FillOperationsSidebar(); break;
+            }
+            return;
+        }
         var tab = Workspace.ActiveTab;
         var selected = ViewModel.Project is { } p && tab is not null
             ? WorkbenchProjection.Rows(p, tab).Where(r => tab.SelectedObjectIds.Contains(r.Key)).ToList() : [];
