@@ -37,6 +37,11 @@ foreach (var id in new[] { "I-1", "I-2" })
     line.Segments.Add(new Segment { Id = "S-1" });
     area.Lines.Add(line);
     installation.Areas.Add(area);
+    if (id == "I-2")
+    {
+        var room = new SpaceNode { Id = "R-1", Kind = SpaceKind.Room, Name = "Room" };
+        installation.Locations.Roots.Add(room);
+    }
     project.Installations.Add(installation);
 }
 vm.CreateProject(project, null);
@@ -50,9 +55,10 @@ foreach (var invalid in new[] { "1.2.1", "2.1.1", "1.1.0", "16.1.1", "17.1.1", "
     Check("reject without mutation " + invalid,
         !CatalogBrowser.Insert(vm, switcher, program, choice, invalid, null, out _)
         && !ProjectQuery.DeviceList(project).Any() && !vm.CanUndo && vm.SelectedDevice is null);
-Check("insert into selected installation", CatalogBrowser.Insert(vm, switcher, program, choice, "1.1.1", " First ", out _)
+Check("insert into selected installation and room", CatalogBrowser.Insert(vm, switcher, program, choice, "1.1.1", " First ", out _, "R-1")
     && !project.Installations[0].Areas[0].Lines[0].Segments[0].Devices.Any()
-    && project.Installations[1].Areas[0].Lines[0].Segments[0].Devices.Count == 1);
+    && project.Installations[1].Areas[0].Lines[0].Segments[0].Devices.Count == 1
+    && project.Installations[1].Locations.Roots.Single().DeviceRefs.Contains("1.1.1"));
 var selected = vm.SelectedDevice;
 Check("name and communication objects", selected?.Device.Name == "First" && selected.Device.ComObjectRefs.Count == 1);
 Check("suggestion skips existing address", CatalogBrowser.SuggestAddress(project, choice) == "1.1.2");
