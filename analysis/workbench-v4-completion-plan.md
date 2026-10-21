@@ -290,10 +290,12 @@ parst außerdem beim Start alle Dateien sequenziell neu, ohne persistenten
 Index. `Programs.Any`/`FindProduct` sind lineare Suchen. Das ist der
 Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
 
-- [ ] **H5.1 Messung:** lokale Bibliothek kalt/warm messen: Dateiscan,
+- [x] **H5.1 Messung:** lokale Bibliothek kalt/warm messen: Dateiscan,
   ZIP-Öffnen, XML-Parse, Programminitialisierung, erster Suchlauf,
   UI-Blockade und Speicher. Nachweis in
-  `analysis/catalog-load-performance.md`.
+  `analysis/catalog-load-performance.md` (`c84cb29`): erster Suchlauf
+  2,4–4,8 s und 559 MB, `LoadAll` 124 Dateien kalt 11,2 s, warm 1,2–1,9 s,
+  Programmteil 0,6–1,9 s/140 MB.
 - [ ] **H5.2 Suchpfad entkoppeln:** `CatalogBrowser.Filter` darf nicht für
   jedes Produkt `FindProgramFor` aufrufen und damit alle lazy
   Application-Programme eines Katalogs nachladen. Produkt-/Programm-/COM-
