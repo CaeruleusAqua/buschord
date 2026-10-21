@@ -35,6 +35,7 @@ public partial class WorkbenchWindow
                 Async(W("CompareProjects"), CompareProjectsAsync),
                 Async(W("ReplaceProduct"), ReplaceProductAsync),
                 Item(W("CreateBackup"), CreateBackup),
+                Async(W("Backups"), ShowBackupsAsync),
                 Async(W("ExportDemoJson"), ExportDemoJsonAsync),
                 Async(W("ImportDemoJson"), ImportDemoJsonAsync),
                 Async(W("ResetDemo"), ResetDemoAsync),
@@ -211,6 +212,40 @@ public partial class WorkbenchWindow
         if (file?.TryGetLocalPath() is not { } path) return;
         await File.WriteAllTextAsync(path, json, new UTF8Encoding(false));
         ViewModel.Status = W("DemoExported");
+    }
+
+    private async Task ShowBackupsAsync()
+    {
+        var path = ViewModel.ProjectPath.Length == 0 ? null : ViewModel.ProjectPath;
+        var backups = ProjectBackup.List(path);
+        var dialog = new Window { Title = W("Backups"), Width = 720, Height = 460, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var panel = new StackPanel { Margin = new(16), Spacing = 8 };
+        panel.Children.Add(Note(path ?? W("NoWorkspaces")));
+        if (backups.Count == 0) panel.Children.Add(Note(W("NoWorkspaces")));
+        foreach (var backup in backups)
+        {
+            var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+            row.Children.Add(Label($"{backup.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss} · {backup.Name} · {backup.SizeBytes / 1024} KiB"));
+            row.Children.Add(ActionButton(W("Restore"), () => _ = RestoreBackupAsync(dialog, backup), "quiet"));
+            panel.Children.Add(row);
+        }
+        panel.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
+        dialog.Content = new ScrollViewer { Content = panel };
+        await dialog.ShowDialog(this);
+    }
+
+    private async Task RestoreBackupAsync(Window dialog, ProjectBackupInfo backup)
+    {
+        if (!await ConfirmDialog.AskRestoreAsync(this)) return;
+        var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = backup.Name + "-restored.knxproj", DefaultExtension = "knxproj" });
+        if (file?.TryGetLocalPath() is not { } path) return;
+        try
+        {
+            ProjectBackup.Restore(backup.Id, path);
+            ViewModel.Status = W("RestoreDone", path);
+            dialog.Close();
+        }
+        catch (Exception ex) { ViewModel.Status = W("BackupFailed", ex.Message); }
     }
 
     private void CreateBackup()

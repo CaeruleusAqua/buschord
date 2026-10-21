@@ -100,9 +100,15 @@ public sealed class ConfirmDialog : Window
             (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, true),
             ("Zurücksetzen", ConfirmChoice.Yes, false)) == ConfirmChoice.Yes;
 
+    /// <summary>Restoring a backup never overwrites the original without consent.</summary>
+    public static async Task<bool> AskRestoreAsync(Window owner)
+        => await ShowAsync(owner, "Sicherung wiederherstellen",
+            "Die ausgewählte Sicherung wird in eine gewählte Datei geschrieben. Die aktuelle Datei bleibt unverändert, solange ein anderer Zielpfad gewählt wird.\n\nFortfahren?",
+            (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, true),
+            ("Wiederherstellen", ConfirmChoice.Yes, false)) == ConfirmChoice.Yes;
+
     /// <summary>Draft consent is separate from project Save and never applies the editor.</summary>
-    public static async Task<bool> AskDiscardDraftsAsync(Window owner)
-        => await ShowAsync(owner, "Nicht übernommene Parameter",
+    public static async Task<bool> AskDiscardDraftsAsync(Window owner)        => await ShowAsync(owner, "Nicht übernommene Parameter",
             "Parameterentwürfe wurden noch nicht übernommen. Projekt speichern speichert diese Entwürfe nicht.\n\nEntwürfe verwerfen und fortfahren?",
             (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, true),
             ("Entwürfe verwerfen", ConfirmChoice.Discard, false)) == ConfirmChoice.Discard;
