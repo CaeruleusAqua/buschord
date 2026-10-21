@@ -1,5 +1,6 @@
 using Knx;
 using Knx.Bus;
+using Knx.Workbench;
 
 // ============ Self-Checks fuer Bus-Diagnose ohne Hardware ============
 // Fake-Session statt UDP: Scan, Descriptor-Parsing, Adressabgleich, Statistik-Fenster.
@@ -171,6 +172,66 @@ void Check(string name, bool ok, string? detail = null)
         new ScanOptions { ResponseTimeout = TimeSpan.FromMilliseconds(10) });
     Check("empty: stille Zeile ohne Geraete", scan.Devices.Count == 0 && scan.Responders.Count == 0);
     Check("empty: IA-Read wurde gesendet", silent.Sends(Apci.IndividualAddressRead) == 1);
+}
+
+// ---- 8. Projektdiagnose: Programmierbedarf, Schnittstellenkonflikte, Secure-Grenzen ----
+{
+    var diagnosticsProject = new Project { Id = "DIAG", Name = "Diagnose" };
+    var diagnosticsInstallation = new Installation { Id = "DIAG-I" };
+    var diagnosticsArea = new Area { Id = "DIAG-A", Address = 1 };
+    var diagnosticsLine = new Line { Id = "DIAG-L", Address = 1 };
+    var secureDevice = new DeviceInstance
+    {
+        Id = "SD", ProductRefId = "Product", Address = new(1, 1, 1), Name = "Secure device",
+    };
+    var plainDevice = new DeviceInstance
+    {
+        Id = "PD", ProductRefId = "Product", Address = new(1, 1, 2), Name = "Plain device",
+    };
+    secureDevice.ComObjectRefs.Add(new() { Id = "O1", ComObjectId = "C1", Number = 1, Links = { "SG" } });
+    plainDevice.ComObjectRefs.Add(new() { Id = "O2", ComObjectId = "C2", Number = 1, Links = { "SG" } });
+    diagnosticsLine.Devices.Add(secureDevice);
+    diagnosticsLine.Devices.Add(plainDevice);
+    diagnosticsArea.Lines.Add(diagnosticsLine);
+    diagnosticsInstallation.Areas.Add(diagnosticsArea);
+    diagnosticsProject.Installations.Add(diagnosticsInstallation);
+    var diagnosticsRange = new GroupRange { Id = "DIAG-R" };
+    diagnosticsRange.Addresses.Add(new()
+    {
+        Id = "SG", Name = "Secure group", Address = GroupAddress.ThreeLevel(1, 1, 1), DatapointType = "DPST-1-1",
+    });
+    diagnosticsInstallation.MainRanges.Add(diagnosticsRange);
+    diagnosticsProject.Workbench.Devices["SD"] = new() { SecureCapable = true };
+    diagnosticsProject.Workbench.Devices["PD"] = new() { SecureCapable = false };
+    diagnosticsProject.Workbench.Groups["SG"] = new() { Secure = true, Bits = 1 };
+
+    var states = new Dictionary<string, DeviceProgrammingState>
+    {
+        ["SD"] = DeviceProgrammingState.Empty("SD").ApplySuccess(DeviceLoadFlags.All,
+            "hash", DateTimeOffset.UnixEpoch, "diag-ip", ProgrammingOrigin.Demo),
+    };
+    var report = DeviceProgrammingReport.Check(diagnosticsProject, states, static (_, _) => "hash");
+    var interfaces = new[]
+    {
+        new WorkbenchInterfaceStatus("diag-ip", ["GroupMonitor"], ["BusMonitor", "Scan", "Programming"]),
+    };
+    var summary = WorkbenchDiagnostics.Summarize(diagnosticsProject, report, interfaces, DateTimeOffset.UnixEpoch);
+
+    Check("diagnostics: loaded device needs no programming",
+        !summary.Programming.DevicesNeedingProgramming.Any(d => d.DeviceId == "SD"));
+    Check("diagnostics: unloaded device is reported",
+        summary.Programming.DeviceCount == 2 && summary.Programming.NeedsProgrammingCount == 1
+        && summary.Programming.DevicesNeedingProgramming.Single().DeviceId == "PD");
+    Check("diagnostics: interface conflict is carried through",
+        summary.HasInterfaceConflicts && summary.Interfaces.Single().BlockedActivities.Contains("Scan"));
+    Check("diagnostics: secure counts and insecure-device gap",
+        summary.Secure.SecureDeviceCount == 1 && summary.Secure.SecureGroupCount == 1
+        && summary.Secure.SecureLinkCount == 2 && summary.Secure.UnsupportedSecureLinkCount == 1
+        && summary.Secure.Gaps.Single().DeviceId == "PD" && !summary.Secure.Complete);
+    Check("diagnostics: key management and secure download are explicit limits",
+        !summary.Secure.KeyManagementAvailable && !summary.Secure.SecureDownloadAvailable
+        && summary.Secure.Limits.Contains("No keyring"));
+    Check("diagnostics: generated timestamp is deterministic", summary.GeneratedAt == DateTimeOffset.UnixEpoch);
 }
 
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");

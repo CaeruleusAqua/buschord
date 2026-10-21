@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Knx.Bus\Knx.Bus.csproj" />
+    <ProjectReference Include="..\..\src\Knx.Core\Knx.Core.csproj" />
   </ItemGroup>
 </Project>

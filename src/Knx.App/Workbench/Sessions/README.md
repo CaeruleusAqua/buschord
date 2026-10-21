@@ -5,9 +5,11 @@ the UI synchronization context; keep it in application/view-model state, never a
 Undo may replace the project instance with the same ID. Before switching project IDs,
 explicitly stop/dispose the previous sessions (and offer recording export).
 
-- Bind `Monitor.Rows` / `FilteredRows`, `IsRunning`, `Origin`, `LastError`.
+- Bind `Monitor.Rows` / `FilteredRows`, `IsRunning`, `IsPaused`, `Origin`, `LastError`.
   `Configure(mode, origin, interfaceId, bus)` / `Start()` / `Stop()` are explicit.
-  A real adapter borrows an already connected `KnxBus`; it does not connect or send.
+  `Pause()` freezes capture without releasing the interface; `Resume()` continues it.
+  `AutoScroll` is a presentation flag only. A real adapter borrows an already connected
+  `KnxBus`; it does not connect or send.
   `ConfigureReal(interfaceId, IMonitorTelegramSource)` is the receive-only test/adapter seam.
   Real hardware bus-monitor mode is rejected because the existing facade does not support it.
 - An **application-owned UI timer**, independent of pane visibility, calls
@@ -21,12 +23,16 @@ explicitly stop/dispose the previous sessions (and offer recording export).
   Missing KO selection matches nothing.
 - Display is the latest 500 telegrams, not the recording. `ExportFilteredCsv()` exports
   the current filtered display; `ExportFullCsv(Stream)` copies the independent disk-backed
-  full CSV stream. `ClearDisplay()` never clears the full recording. Explicit session
-  disposal deletes its temporary recording; hiding/closing/recreating panes does not.
-- Bind `Programming.Jobs` and `.Downloaded`. `Enqueue(deviceId, operation, interfaceId)`
-  freezes `FrozenConfiguration(Signature, PayloadJson)`, then `await RunAsync()`.
-  `Retry(job)` requeues the identical frozen job; call `RunAsync()` again.
-  Every job/result is explicitly `Demo`; no real programming executor is exposed.
+  full CSV stream and `ExportFullCsv()` returns it as text. Pausing drops incoming rows
+  from both the display and the recording. `ClearDisplay()` never clears the full recording.
+  Explicit session disposal deletes its temporary recording; hiding/closing/recreating panes does not.
+- Bind `Programming.Jobs`, `.ActiveJob` and `.Downloaded`. `Enqueue(deviceId, operation, interfaceId, origin)`
+  freezes `FrozenConfiguration(Signature, PayloadJson)`, then `await RunAsync()`. Jobs expose
+  `Type`, `Progress` (executor calls `ReportProgress(0–100)`) and an explicit `Origin`.
+  `Retry(job)` requeues a failed or cancelled job; `CancelJob(job)` cancels queued or running work;
+  `CancelQueued()` cancels all queued jobs; `ClearHistory()` removes terminal jobs.
+  The queue executes exactly one job at a time. Real jobs are rejected unless the host
+  injected an explicit `realExecutor`; the session itself never opens a bus or downloads.
 - Inject `freezeConfiguration(Project, DeviceInstance)` to include new domain extension
   metadata (activation, flags, sending GA, security). The default is a deterministic
   SHA-256 of **known native fields**, not an application image or full ETS fingerprint.
@@ -39,8 +45,14 @@ explicitly stop/dispose the previous sessions (and offer recording export).
   `ImportDownloadedJson`. The versioned/project-bound file contains hashes/timestamps/
   origin only, never frozen payloads or keys. Layout reset must not call these methods.
 - Scan/other interface consumers use the **same** `Interfaces.TryAcquire(id, activity,
-  out lease)` and dispose the lease. Bus monitor excludes every other consumer;
-  scans/programming exclude each other. Group monitoring may coexist with them.
+  out lease)` and dispose the lease. `Interfaces.StatusSnapshot()` reports active and blocked
+  activities for diagnostics. Bus monitor excludes every other consumer; scans/programming
+  exclude each other. Group monitoring may coexist with them.
+- `WorkbenchSessions.BuildDiagnosticSummary()` returns project-level programming needs,
+  active/blocked interface activities and the project's Secure capability limits. Secure
+  links are validated from metadata only; keyring, FDSK and secure download are unavailable.
+- Scan results (`LineScanResult`) carry `Timestamp`, `DeviceId`, `LineId` and explicit
+  `Origin`; `LineScanSession.LastLineId` / `LastScanAt` describe the last run.
 - UI-context mutators are verified. Without a synchronization context (console tests),
   the caller serializes mutations/awaits. Executors receive a cancellation token;
   application shutdown `await sessions.DisposeAsync()` cancels and joins the queue.

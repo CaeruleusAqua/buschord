@@ -32,6 +32,8 @@ var range = new GroupRange { Id = "Range" };
 range.Addresses.Add(new() { Id = "G1", Name = "Light", Address = GroupAddress.ThreeLevel(1, 1, 1), DatapointType = "DPST-1-1" });
 range.Addresses.Add(new() { Id = "G2", Name = "Status", Address = GroupAddress.ThreeLevel(1, 1, 2), DatapointType = "DPST-1-1" });
 installation.MainRanges.Add(range);
+project.Workbench.Devices[device.Id] = new() { SecureCapable = true };
+project.Workbench.Groups["G1"] = new() { Secure = true, Bits = 1 };
 var coordinator = new InterfaceCoordinator();
 var realSource = new FakeTelegramSource();
 using (var realMonitor = new MonitorSession(coordinator, () => project))
@@ -367,7 +369,7 @@ var cancelled = new ProgrammingSession(coordinator, () => project, demoExecutor:
 });
 var cancelledJob = cancelled.Enqueue(device.Id); var pending = cancelled.RunAsync(); await cancellationEntered.Task;
 await cancelled.DisposeAsync(); await pending;
-Check("explicit async dispose cancels and joins owned queue", cancelledJob.Status == ProgrammingJobStatus.Failed && !cancelled.IsRunning && cancelled.Downloaded.Count == 0);
+Check("explicit async dispose cancels and joins owned queue", cancelledJob.Status == ProgrammingJobStatus.Cancelled && !cancelled.IsRunning && cancelled.Downloaded.Count == 0);
 Check("cancelled queue releases interface", coordinator.TryAcquire("demo-ip", InterfaceActivity.Scan, out var lastLease)); lastLease?.Dispose();
 
 Project? current = project;
@@ -419,10 +421,207 @@ await lineScan.RunDemoAsync(line.Id);
 Check("line scan returns explicit demo results without transport", lineScan.Results.Count == 1
     && lineScan.Results[0].Address == "1.1.1" && lineScan.Results[0].Origin == SessionOrigin.Demo
     && lineScan.Results[0].Detail.Length > 0 && !lineScan.IsRunning);
+var lineResult = lineScan.Results[0];
+Check("line scan result carries device id, line id and timestamp", lineResult.DeviceId == device.Id
+    && lineResult.LineId == line.Id && lineResult.Timestamp != default
+    && lineScan.LastLineId == line.Id && lineScan.LastScanAt is not null);
+await lineScan.RunDemoDeviceAsync(device.Id);
+Check("device scan result carries ids and explicit origin", lineScan.Results.Count == 1
+    && lineScan.Results[0].DeviceId == device.Id && lineScan.Results[0].LineId == line.Id
+    && lineScan.Results[0].Origin == SessionOrigin.Demo && lineScan.Results[0].Timestamp != default);
 var lineScanRejected = false;
 try { await lineScan.RunDemoAsync("missing"); }
 catch (ArgumentException) { lineScanRejected = true; }
 Check("line scan rejects unknown line", lineScanRejected);
+var deviceScanRejected = false;
+try { await lineScan.RunDemoDeviceAsync("missing"); }
+catch (ArgumentException) { deviceScanRejected = true; }
+Check("device scan rejects unknown device", deviceScanRejected);
+
+// ---- B6: job type/progress/origin, queue cancellation, retry/clear history ----
+await using (var typedQueue = new ProgrammingSession(coordinator, () => project))
+{
+    var parametersJob = typedQueue.Enqueue(device.Id, "parameters");
+    var unknownJob = typedQueue.Enqueue(device.Id, "future-operation");
+    Check("job type is explicit and unknown operations stay full loads",
+        parametersJob.Type == ProgrammingJobType.Parameters && unknownJob.Type == ProgrammingJobType.Full
+        && parametersJob.Origin == SessionOrigin.Demo);
+    var realGated = false;
+    try { typedQueue.Enqueue(device.Id, origin: SessionOrigin.Real); }
+    catch (NotSupportedException) { realGated = true; }
+    Check("real programming jobs stay behind the safety gate",
+        realGated && !typedQueue.RealExecutionConfigured);
+    Check("queued job can be cancelled before it runs", typedQueue.CancelJob(typedQueue.Jobs[1])
+        && typedQueue.Jobs[1].Status == ProgrammingJobStatus.Cancelled);
+    typedQueue.Retry(typedQueue.Jobs[1]);
+    Check("cancelled job can be retried through the identical frozen job",
+        typedQueue.Jobs[1].Status == ProgrammingJobStatus.Queued && typedQueue.Jobs[1].Attempts == 0);
+    await typedQueue.RunAsync();
+    Check("retried and partial jobs complete", typedQueue.Jobs[0].Status == ProgrammingJobStatus.Done
+        && typedQueue.Jobs[1].Status == ProgrammingJobStatus.Done
+        && typedQueue.Jobs[0].Progress == 100 && typedQueue.Jobs[1].Progress == 100);
+}
+
+var explicitRealRuns = 0;
+await using (var explicitRealQueue = new ProgrammingSession(coordinator, () => project,
+    realExecutor: (_, _) => { explicitRealRuns++; return Task.CompletedTask; }))
+{
+    var explicitRealJob = explicitRealQueue.Enqueue(device.Id, origin: SessionOrigin.Real);
+    await explicitRealQueue.RunAsync();
+    Check("explicit real origin uses only the injected executor and is recorded honestly",
+        explicitRealQueue.RealExecutionConfigured && explicitRealRuns == 1
+        && explicitRealJob.Origin == SessionOrigin.Real && explicitRealJob.Status == ProgrammingJobStatus.Done
+        && explicitRealQueue.DeviceState(device.Id)!.Origin == ProgrammingOrigin.Real
+        && explicitRealQueue.Downloaded.Single().Origin == SessionOrigin.Real);
+}
+
+var progressSession = new ProgrammingSession(coordinator, () => project, demoExecutor: async (job, token) =>
+{
+    job.ReportProgress(40); await Task.Yield();
+    job.ReportProgress(80); await Task.Yield();
+});
+var progressJob = progressSession.Enqueue(device.Id);
+var reportedProgress = new List<int>();
+progressJob.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ProgrammingJob.Progress)) reportedProgress.Add(progressJob.Progress); };
+await progressSession.RunAsync();
+Check("executor progress is observable and a success ends at 100",
+    reportedProgress.Contains(40) && reportedProgress.Contains(80) && reportedProgress[^1] == 100
+    && progressJob.Progress == 100);
+await progressSession.DisposeAsync();
+
+var firstJobEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var cancelExecutions = 0;
+await using (var cancelQueue = new ProgrammingSession(coordinator, () => project, demoExecutor: async (job, token) =>
+{
+    if (Interlocked.Increment(ref cancelExecutions) == 1)
+    {
+        firstJobEntered.SetResult();
+        await Task.Delay(Timeout.Infinite, token);
+    }
+}))
+{
+    var runningJob = cancelQueue.Enqueue(device.Id);
+    var queuedJob = cancelQueue.Enqueue(device.Id);
+    var followerJob = cancelQueue.Enqueue(device.Id);
+    var run = cancelQueue.RunAsync(); await firstJobEntered.Task;
+    Check("exactly one job runs at a time", cancelQueue.ActiveJob == runningJob
+        && runningJob.Status == ProgrammingJobStatus.Running && queuedJob.Status == ProgrammingJobStatus.Queued);
+    Check("queued job cancellation does not stop the active job",
+        cancelQueue.CancelJob(queuedJob) && queuedJob.Status == ProgrammingJobStatus.Cancelled
+        && runningJob.Status == ProgrammingJobStatus.Running);
+    Check("running job can be cancelled explicitly", cancelQueue.CancelJob(runningJob));
+    await run;
+    Check("cancelling the running job continues with the next queued job",
+        runningJob.Status == ProgrammingJobStatus.Cancelled && followerJob.Status == ProgrammingJobStatus.Done
+        && cancelExecutions == 2);
+    Check("cancellation records no failure and keeps successful state",
+        runningJob.Error is not null && cancelQueue.DeviceState(device.Id)!.LastError is null
+        && cancelQueue.Downloaded.Count == 1);
+}
+
+await using (var clearQueue = new ProgrammingSession(coordinator, () => project))
+{
+    var finished = clearQueue.Enqueue(device.Id);
+    await clearQueue.RunAsync();
+    var stillQueued = clearQueue.Enqueue(device.Id);
+    Check("clear history removes terminal jobs and keeps queued work",
+        clearQueue.ClearHistory() == 1 && clearQueue.Jobs.Count == 1 && clearQueue.Jobs[0] == stillQueued
+        && finished.Status == ProgrammingJobStatus.Done && stillQueued.Status == ProgrammingJobStatus.Queued);
+    Check("bulk cancel marks all queued jobs cancelled", clearQueue.CancelQueued() == 1
+        && stillQueued.Status == ProgrammingJobStatus.Cancelled);
+    Check("clear history removes cancelled jobs too", clearQueue.ClearHistory() == 1 && clearQueue.Jobs.Count == 0);
+}
+
+var queueCancelEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var queueCancel = new ProgrammingSession(coordinator, () => project, demoExecutor: async (_, token) =>
+{
+    queueCancelEntered.SetResult();
+    await Task.Delay(Timeout.Infinite, token);
+});
+var queueCancelRunning = queueCancel.Enqueue(device.Id);
+var queueCancelWaiting = queueCancel.Enqueue(device.Id);
+var queueCancelRun = queueCancel.RunAsync(); await queueCancelEntered.Task;
+queueCancel.Cancel(); await queueCancelRun;
+Check("cancelling the queue marks the running job and retains queued work",
+    queueCancelRunning.Status == ProgrammingJobStatus.Cancelled
+    && queueCancelWaiting.Status == ProgrammingJobStatus.Queued && !queueCancel.IsRunning);
+await queueCancel.DisposeAsync();
+
+// ---- B6: monitor pause, auto-scroll and full export ----
+using (var pausedMonitor = new MonitorSession(coordinator, () => project))
+{
+    pausedMonitor.Start();
+    pausedMonitor.TickDemo(new(DateTimeOffset.UnixEpoch, "1.1.1", "1/1/1", "GroupValueWrite",
+        "DPST-1-1", "on", SessionOrigin.Demo, "G1", device.Id));
+    pausedMonitor.Pause();
+    Check("pause keeps the interface lease and marks the session paused",
+        pausedMonitor.IsPaused && pausedMonitor.IsRunning
+        && !coordinator.TryAcquire("demo-ip", InterfaceActivity.BusMonitor, out _));
+    pausedMonitor.TickDemo(new(DateTimeOffset.UnixEpoch.AddSeconds(1), "1.1.1", "1/1/2", "GroupValueWrite",
+        "DPST-1-1", "off", SessionOrigin.Demo, "G2", device.Id));
+    pausedMonitor.Resume();
+    pausedMonitor.TickDemo(new(DateTimeOffset.UnixEpoch.AddSeconds(2), "1.1.1", "1/1/2", "GroupValueWrite",
+        "DPST-1-1", "off", SessionOrigin.Demo, "G2", device.Id));
+    pausedMonitor.FlushDisplay();
+    Check("paused telegrams are dropped and resume captures again", !pausedMonitor.IsPaused
+        && pausedMonitor.RecordedCount == 2 && pausedMonitor.Rows.Count == 2);
+    Check("auto-scroll is an explicit presentation flag", pausedMonitor.AutoScroll);
+    pausedMonitor.AutoScroll = false;
+    Check("auto-scroll can be disabled", !pausedMonitor.AutoScroll);
+    var fullText = pausedMonitor.ExportFullCsv();
+    Check("full text export contains rows beyond the display tail",
+        fullText.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length == 3
+        && fullText.Contains(",Demo,", StringComparison.Ordinal));
+    pausedMonitor.Stop();
+}
+
+// ---- B6: project diagnostic summary ----
+await using (var diagnostic = new WorkbenchSessions(() => project))
+{
+    diagnostic.Monitor.Configure(WorkbenchMonitorMode.Bus, SessionOrigin.Demo, "diag-ip");
+    diagnostic.Monitor.Start();
+    var summary = diagnostic.BuildDiagnosticSummary();
+    var diagInterface = summary.Interfaces.Single(i => i.InterfaceId == "diag-ip");
+    Check("diagnostic summary reports project and programming needs",
+        summary.ProjectId == project.Id && summary.Programming.DeviceCount == 1
+        && summary.Programming.NeedsProgrammingCount == 1 && !summary.Programming.AllLoaded);
+    Check("diagnostic summary reports blocked interface activities",
+        diagInterface.ActiveActivities.Contains("BusMonitor")
+        && diagInterface.BlockedActivities.Contains("Scan")
+        && diagInterface.BlockedActivities.Contains("Programming")
+        && summary.HasInterfaceConflicts && diagInterface.HasConflict);
+    Check("diagnostic summary exposes secure capability limits and counts",
+        summary.Secure.SecureDeviceCount == 1 && summary.Secure.SecureGroupCount == 1
+        && summary.Secure.SecureLinkCount == 1 && summary.Secure.UnsupportedSecureLinkCount == 0
+        && !summary.Secure.KeyManagementAvailable && !summary.Secure.SecureDownloadAvailable
+        && summary.Secure.Limits.Length > 0);
+    diagnostic.Monitor.Stop();
+    var relaxed = diagnostic.BuildDiagnosticSummary();
+    Check("released interface disappears from the diagnostic summary",
+        !relaxed.HasInterfaceConflicts && relaxed.Interfaces.Count == 0);
+}
+
+// ---- B6: project switch requires disposing the previous sessions ----
+Project? switchProject = project;
+var oldSessions = new WorkbenchSessions(() => switchProject);
+oldSessions.Monitor.Start();
+oldSessions.Programming.Enqueue(device.Id);
+await oldSessions.DisposeAsync();
+Check("disposing old sessions releases their interface lease",
+    coordinator.TryAcquire("demo-ip", InterfaceActivity.BusMonitor, out var releasedLease));
+releasedLease?.Dispose();
+switchProject = new Project { Id = "P-switch", Name = "Other project" };
+await using (var freshSessions = new WorkbenchSessions(() => switchProject))
+{
+    freshSessions.Monitor.Configure(WorkbenchMonitorMode.Group, SessionOrigin.Demo, "switch-ip");
+    freshSessions.Monitor.Start();
+    Check("fresh sessions bind the switched project", freshSessions.BuildDiagnosticSummary().ProjectId == "P-switch");
+}
+try { oldSessions.Monitor.Start(); throw new Exception("Expected disposed monitor"); }
+catch (ObjectDisposedException) { Check("disposed sessions cannot service the old project", true); }
+try { oldSessions.Programming.Enqueue(device.Id); throw new Exception("Expected disposed programming session"); }
+catch (ObjectDisposedException) { Check("disposed programming queue rejects new jobs", true); }
+
 Console.WriteLine($"{checks} checks passed.");
 
 sealed class FakeTelegramSource : IMonitorTelegramSource

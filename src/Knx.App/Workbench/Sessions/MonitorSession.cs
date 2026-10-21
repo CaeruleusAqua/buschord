@@ -54,7 +54,7 @@ public sealed class MonitorSession : SessionState, IDisposable
     private Action<BusTelegram>? _receive;
     private long _generation;
     private string? _error;
-    private bool _running, _disposed, _follow;
+    private bool _running, _disposed, _follow, _paused, _autoScroll = true;
     private long _count, _publishedCount = -1;
     private MonitorFilter _filter = new(MonitorScope.All);
 
@@ -73,6 +73,20 @@ public sealed class MonitorSession : SessionState, IDisposable
     public ReadOnlyObservableCollection<WorkbenchTelegram> Rows { get; }
     public ReadOnlyObservableCollection<WorkbenchTelegram> FilteredRows { get; }
     public bool IsRunning { get { lock (_gate) return _running; } }
+    /// <summary>Paused sessions keep their interface lease but drop incoming telegrams.</summary>
+    public bool IsPaused { get { lock (_gate) return _paused; } }
+    /// <summary>Whether the shell should keep the newest row visible. Presentation only; capture is unaffected.</summary>
+    public bool AutoScroll
+    {
+        get => _autoScroll;
+        set
+        {
+            VerifyAccess(); ThrowIfDisposed();
+            if (_autoScroll == value) return;
+            _autoScroll = value;
+            OnPropertyChanged(nameof(AutoScroll));
+        }
+    }
     public bool FollowSelection => _follow;
     public MonitorFilter Filter => _filter;
     public WorkbenchMonitorMode Mode { get; private set; }
@@ -97,7 +111,9 @@ public sealed class MonitorSession : SessionState, IDisposable
         if (origin == SessionOrigin.Real && source is null) throw new ArgumentNullException(nameof(source));
         ReleaseInterface();
         Mode = mode; Origin = origin; InterfaceId = interfaceId; _bus = source;
+        lock (_gate) _paused = false;
         OnPropertyChanged(nameof(Mode)); OnPropertyChanged(nameof(Origin)); OnPropertyChanged(nameof(InterfaceId));
+        OnPropertyChanged(nameof(IsPaused));
     }
 
     public void ConfigureReal(string interfaceId, IMonitorTelegramSource source)
@@ -117,7 +133,7 @@ public sealed class MonitorSession : SessionState, IDisposable
         if (!_interfaces.TryAcquire(InterfaceId, Mode == WorkbenchMonitorMode.Bus
                 ? InterfaceActivity.BusMonitor : InterfaceActivity.GroupMonitor, out _lease))
             throw new InvalidOperationException("The interface is occupied by a conflicting operation.");
-        lock (_gate) { _running = true; _error = null; _generation++; }
+        lock (_gate) { _running = true; _error = null; _paused = false; _generation++; }
         try
         {
             if (Origin == SessionOrigin.Real)
@@ -135,15 +151,40 @@ public sealed class MonitorSession : SessionState, IDisposable
         }
         OnPropertyChanged(nameof(LastError));
         OnPropertyChanged(nameof(IsRunning));
+        OnPropertyChanged(nameof(IsPaused));
     }
 
     public void Stop()
     {
         VerifyAccess();
-        lock (_gate) { _running = false; _generation++; }
+        lock (_gate) { _running = false; _paused = false; _generation++; }
         ReleaseInterface();
         OnPropertyChanged(nameof(IsRunning));
+        OnPropertyChanged(nameof(IsPaused));
         if (!_disposed) FlushDisplay();
+    }
+
+    /// <summary>Freezes capture without releasing the interface. Telegrams arriving while paused are dropped.</summary>
+    public void Pause()
+    {
+        VerifyAccess(); ThrowIfDisposed();
+        lock (_gate)
+        {
+            if (_paused) return;
+            _paused = true;
+        }
+        OnPropertyChanged(nameof(IsPaused));
+    }
+
+    public void Resume()
+    {
+        VerifyAccess(); ThrowIfDisposed();
+        lock (_gate)
+        {
+            if (!_paused) return;
+            _paused = false;
+        }
+        OnPropertyChanged(nameof(IsPaused));
     }
 
     private void ReleaseInterface()
@@ -212,6 +253,7 @@ public sealed class MonitorSession : SessionState, IDisposable
 
     private void Append(WorkbenchTelegram telegram)
     {
+        if (_paused) return;
         try { _writer.Write(CsvRow(telegram)); }
         catch (IOException ex)
         {
@@ -316,6 +358,7 @@ public sealed class MonitorSession : SessionState, IDisposable
     public void ExportFullCsv(Stream destination)
     {
         VerifyAccess(); ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(destination);
         lock (_gate)
         {
             _writer.Flush();
@@ -323,6 +366,15 @@ public sealed class MonitorSession : SessionState, IDisposable
             try { _recording.Position = 0; _recording.CopyTo(destination); }
             finally { _recording.Position = position; }
         }
+    }
+
+    /// <summary>Full disk-backed recording as text, including rows no longer in the display tail.</summary>
+    public string ExportFullCsv()
+    {
+        VerifyAccess(); ThrowIfDisposed();
+        using var buffer = new MemoryStream();
+        ExportFullCsv(buffer);
+        return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     private static string CsvRow(WorkbenchTelegram r) => string.Join(',', new[]
