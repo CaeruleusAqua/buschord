@@ -280,7 +280,36 @@ wenn Implementierung, fokussierter Test und Abnahmeevidenz im Abschnitt
   aktuellen Stand bringen; veraltete „partial/missing“-Zeilen (u. a. 34, 64)
   nur mit Testbeleg schließen.
 
-### H5. Veröffentlichung (Schritt 10, R08)
+### H5. Katalog-Ladezeit und Suche (neu, 2026-10-21)
+
+- [ ] **H5.1 Messung:** lokale Bibliothek (124 Dateien, 429,5 MB, größte
+  88,5 MB) kalt/warm messen: Dateiscan, ZIP-Öffnen, XML-Parse,
+  Programminitialisierung, erster Suchlauf, UI-Blockade und Speicher.
+  Nachweis in `analysis/catalog-load-performance.md`.
+- [ ] **H5.2 Suchpfad entkoppeln:** `CatalogBrowser.Filter` darf nicht für
+  jedes Produkt `FindProgramFor` aufrufen und damit alle lazy
+  Application-Programme eines Katalogs nachladen. Produkt-/Programm-/COM-
+  Metadaten in einen Suchindex aufnehmen; DPT-/COM-Suche daraus bedienen.
+- [ ] **H5.3 Persistenter Index:** kalten Snapshot nicht bei jedem Start aus
+  429 MB XML neu aufbauen. Metadatenindex (Katalog, Hersteller, Produkt,
+  Programm, COM/DPT, Sektionen) mit Datei-Identität (Größe + Änderungszeit +
+  Schema-Version) cachen; Invalidierung und atomisches Schreiben festlegen.
+  IndexedDB ist im nativen Avalonia/.NET-Kontext nicht verfügbar; Äquivalent
+  ist ein lokaler Datei-/SQLite-Index.
+- [ ] **H5.4 Lazy Programs:** Programme/Parameter erst beim Öffnen eines
+  Produkts vollständig parsen; Metadaten getrennt von `Ksxml.Parse` laden.
+  Split- und Monolith-Archive gleich behandeln.
+- [ ] **H5.5 Progressive UI:** Katalogliste/Index sofort binden, pro Datei
+  Fortschritt zeigen, Suche während des Indexaufbaus nutzbar halten;
+  Abbruch/Reload dürfen keinen halben Snapshot veröffentlichen.
+- [ ] **H5.6 Algorithmik:** `Programs.Any`, `FindProduct`-Linearsuche und
+  wiederholte XML-Scans durch Dictionaries ersetzen; Dateien mit begrenzter
+  Parallelität parsen, ohne UI-Thread oder Speicher zu überlasten.
+- [ ] **H5.7 Abnahme:** Kaltstart- und Warmstart-Zielwerte, erster Suchlauf,
+  Speicherverbrauch und 10.000-Objekt-Pfad testen; Cache-Invalidierung nach
+  Import/Entfernen/Änderung nachweisen.
+
+### H6. Veröffentlichung (Schritt 10, R08)
 
 - [ ] **H5.1** Alle Commits nach `origin/development` pushen; Remote-CI und
   CodeQL abwarten und Ergebnisse hier eintragen.
