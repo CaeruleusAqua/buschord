@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Knx;
+using Knx.App.Localization;
 using Knx.Bus;
 using Knx.Catalog;
 
@@ -396,18 +397,18 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (installation is null) { Status = Strings.Get("UxNeedsProject"); return false; }
         if (address.Raw == 0 || ProjectQuery.FindGroupAddress(project, address) is not null)
         {
-            Status = $"Gruppenadresse {address} ist bereits vergeben.";
+            Status = WorkbenchStrings.Get("GroupAddressInUse", address.ToString());
             return false;
         }
         if (string.IsNullOrWhiteSpace(name))
         {
-            Status = "Gruppenadresse braucht einen Namen.";
+            Status = WorkbenchStrings.Get("GroupAddressNeedsName");
             return false;
         }
         var dpt = string.IsNullOrWhiteSpace(datapointType) ? null : datapointType.Trim();
         if (dpt is null || !Dpt.TryBitSize(dpt, out var bits))
         {
-            Status = "Gruppenadresse braucht einen unterstützten Datentyp (z. B. DPST-1-1).";
+            Status = WorkbenchStrings.Get("GroupAddressNeedsDpt");
             return false;
         }
         var id = "";
@@ -425,7 +426,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 Bits = bits, Secure = false, EffectRoomId = effectRoomId,
             };
         });
-        Status = $"Gruppenadresse {address} angelegt";
+        Status = WorkbenchStrings.Get("GroupAddressCreated", address.ToString());
         return id.Length > 0;
     }
 
@@ -433,20 +434,26 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public string? UpdateDeviceDetails(DeviceInstance device, string name, string addressText, string? lineId, string? roomId)
     {
         if (Project is not { } project) return Strings.Get("UxNeedsProject");
-        if (string.IsNullOrWhiteSpace(name)) return "Gerät braucht einen Namen.";
-        if (!IndividualAddress.TryParse(addressText.Trim(), out var address)) return "Ungültige physikalische Adresse.";
+        if (string.IsNullOrWhiteSpace(name)) return WorkbenchStrings.Get("DeviceNeedsName");
+        if (!IndividualAddress.TryParse(addressText.Trim(), out var address)) return WorkbenchStrings.Get("InvalidIndividualAddress");
         if (ProjectQuery.DeviceList(project).Any(d => !ReferenceEquals(d, device) && d.Address == address))
-            return $"Adresse {address} ist bereits vergeben.";
+            return WorkbenchStrings.Get("AddressInUse", address.ToString());
         var targetLine = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines)
             .FirstOrDefault(l => l.Id == lineId);
-        if (targetLine is null) return "Ziel-Linie fehlt.";
+        if (targetLine is null) return WorkbenchStrings.Get("TargetLineMissing");
         var sourceLine = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines)
             .FirstOrDefault(l => l.Devices.Contains(device) || l.Segments.Any(s => s.Devices.Contains(device)));
         var sourceSegmentId = sourceLine?.Segments.FirstOrDefault(s => s.Devices.Contains(device))?.Id;
         var keepSegment = sourceLine is not null && sourceLine.Id == targetLine.Id && sourceSegmentId is not null;
         var targetRoom = roomId is null ? null
-            : project.Installations.SelectMany(i => i.Locations.AllNodes).FirstOrDefault(n => n.Id == roomId);
-        if (roomId is not null && targetRoom is null) return "Ziel-Raum fehlt.";
+            : project.Installations.SelectMany(i => i.Locations.AllNodes)
+                .FirstOrDefault(n => n.Id == roomId && n.Kind == SpaceKind.Room);
+        if (roomId is not null && targetRoom is null) return WorkbenchStrings.Get("TargetRoomMissing");
+        var targetInstallation = targetRoom is null ? null
+            : project.Installations.FirstOrDefault(i => i.Locations.AllNodes.Any(n => n.Id == targetRoom.Id));
+        if (targetInstallation is not null
+            && !targetInstallation.Areas.SelectMany(a => a.Lines).Any(l => l.Id == targetLine.Id))
+            return WorkbenchStrings.Get("RoomLineInstallationMismatch");
         Edit($"Gerät {device.Address} bearbeitet", p =>
         {
             foreach (var installation in p.Installations)
@@ -463,7 +470,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 }
                 foreach (var node in installation.Locations.AllNodes)
                     node.DeviceRefs.RemoveAll(id => id == device.Id);
-                if (targetRoom is not null && ReferenceEquals(installation, p.Installations.FirstOrDefault()))
+                if (targetRoom is not null && targetInstallation is not null && ReferenceEquals(installation, targetInstallation))
                     installation.Locations.Find(targetRoom.Id)?.AssignDevice(device);
             }
             var destinationLine = p.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).First(l => l.Id == targetLine.Id);

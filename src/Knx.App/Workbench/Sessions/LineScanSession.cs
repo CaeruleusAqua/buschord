@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Knx.App.Localization;
 
 namespace Knx.App.Workbench;
 
@@ -40,16 +41,17 @@ public sealed class LineScanSession : SessionState
             var devices = line.Devices.Concat(line.Segments.SelectMany(s => s.Devices))
                 .OrderBy(d => d.Address.Device).ToList();
             if (devices.Count == 0)
-                _results.Add(new("—", "Keine Geräte auf dieser Linie", "leer", "Demo-Scan; keine Busaktion"));
+                _results.Add(new("—", WorkbenchStrings.Get("ScanNoDevices"), "leer",
+                    WorkbenchStrings.Get("ScanDetailEmpty")));
             foreach (var device in devices)
             {
                 ct.ThrowIfCancellationRequested();
                 await Task.Delay(20, ct);
-                _results.Add(new(device.Address.ToString(), device.Name ?? "(ohne Namen)",
-                    "ok", "Demo-Scan; keine reale Geräteantwort", SessionOrigin.Demo));
+                _results.Add(new(device.Address.ToString(), device.Name ?? WorkbenchStrings.Get("Unnamed"),
+                    "ok", WorkbenchStrings.Get("ScanDetailDemo"), SessionOrigin.Demo));
             }
         }
-        catch (OperationCanceledException) { _lastError = "Scan abgebrochen; keine realen Geräte geprüft."; }
+        catch (OperationCanceledException) { _lastError = WorkbenchStrings.Get("ScanCancelled"); }
         finally
         {
             lease?.Dispose();

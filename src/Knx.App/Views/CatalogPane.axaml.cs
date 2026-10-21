@@ -19,7 +19,6 @@ public partial class CatalogPane : UserControl
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private List<KnxProductCatalog> _catalogs = [];
     private CatalogProduct? _shownProduct;
-    private CatalogApplicationProgram? _shownProgram;
     private string? _suggestion;
     private Line? _preferredLine;
     private bool _busy;
@@ -335,11 +334,8 @@ public partial class CatalogPane : UserControl
         Details.Children.Clear();
         UxProduct.Text = product?.Name ?? "";
         DetailsEmpty.IsVisible = product is null;
-        _shownProgram = null;
         if (product is null || SelectedCatalog is not { } catalog) return;
-
         var program = FindProgram(catalog, product);
-        _shownProgram = program;
         Add(Strings.Get("CatalogManufacturer"), catalog.Manufacturer?.Name);
         Add(Strings.Get("ColName"), product.Name);
         Add(Strings.Get("ColMessage"), product.Description);
@@ -444,7 +440,8 @@ public partial class CatalogPane : UserControl
         if (_vm.Project is not { } project) return null;
         if (SelectedProduct is null) return Strings.Get("CatalogNeedProduct");
         // Broken or incomplete applications must not enter the project at all.
-        var blocked = CatalogBrowser.Blocked(_shownProgram, CatalogUse.Insert);
+        var program = SelectedCatalog is { } catalog ? FindProgram(catalog, SelectedProduct) : null;
+        var blocked = CatalogBrowser.Blocked(program, CatalogUse.Insert);
         if (blocked != CatalogBlockReason.None) return CatalogUiText.Reason(blocked);
         if (LineBox.SelectedItem is not LineChoice choice || ResolveLine(choice) is not { } target)
             return Strings.Get("CatalogNeedLine");

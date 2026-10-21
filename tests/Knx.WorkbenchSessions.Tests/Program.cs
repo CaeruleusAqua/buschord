@@ -418,9 +418,11 @@ var lineScan = new LineScanSession(coordinator, () => project);
 await lineScan.RunDemoAsync(line.Id);
 Check("line scan returns explicit demo results without transport", lineScan.Results.Count == 1
     && lineScan.Results[0].Address == "1.1.1" && lineScan.Results[0].Origin == SessionOrigin.Demo
-    && lineScan.Results[0].Detail.Contains("keine reale", StringComparison.OrdinalIgnoreCase) && !lineScan.IsRunning);
-try { await lineScan.RunDemoAsync("missing"); throw new Exception("Expected explicit line failure"); }
-catch (ArgumentException) { Check("line scan rejects unknown line", true); }
+    && lineScan.Results[0].Detail.Length > 0 && !lineScan.IsRunning);
+var lineScanRejected = false;
+try { await lineScan.RunDemoAsync("missing"); }
+catch (ArgumentException) { lineScanRejected = true; }
+Check("line scan rejects unknown line", lineScanRejected);
 Console.WriteLine($"{checks} checks passed.");
 
 sealed class FakeTelegramSource : IMonitorTelegramSource

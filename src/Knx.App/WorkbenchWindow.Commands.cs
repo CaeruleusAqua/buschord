@@ -71,6 +71,14 @@ public partial class WorkbenchWindow
         };
     }
 
+    private Window CreateDialog(string title, double width, double height) => new()
+    {
+        Title = title,
+        Width = width,
+        Height = height,
+        WindowStartupLocation = WindowStartupLocation.CenterOwner
+    };
+
     private async Task GuardAsync(Func<Task> action)
     {
         try { await action(); }
@@ -118,21 +126,28 @@ public partial class WorkbenchWindow
     private async Task<bool> SaveAsync(bool saveAs = false)
     {
         if (ViewModel.Project is not { } project) return false;
+        string? backupWarning = null;
+        void TryBackup(string path)
+        {
+            try { ProjectBackup.Create(path); }
+            catch (Exception ex) { backupWarning = W("BackupFailed", ex.Message); }
+        }
         try
         {
             if (saveAs || ViewModel.ProjectPath.Length == 0)
             {
                 var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = project.Name + ".knxproj", DefaultExtension = "knxproj" });
                 if (file?.TryGetLocalPath() is not { } path) return false;
-                if (File.Exists(path)) ProjectBackup.Create(path);
+                if (File.Exists(path)) TryBackup(path);
                 ViewModel.SaveProjectAs(path);
             }
             else
             {
-                if (File.Exists(ViewModel.ProjectPath)) ProjectBackup.Create(ViewModel.ProjectPath);
+                if (File.Exists(ViewModel.ProjectPath)) TryBackup(ViewModel.ProjectPath);
                 ViewModel.SaveProject();
             }
-            if (_parameters.HasUnappliedChanges) ViewModel.Status = W("SavedWithDrafts");
+            if (backupWarning is not null) ViewModel.Status = backupWarning;
+            else if (_parameters.HasUnappliedChanges) ViewModel.Status = W("SavedWithDrafts");
             return true;
         }
         catch (Exception ex) { ViewModel.Status = W("SaveFailedStatus", ex.Message); await ConfirmDialog.ShowMessageAsync(this, W("SaveFailed"), ex.Message); return false; }
@@ -218,9 +233,9 @@ public partial class WorkbenchWindow
     {
         var path = ViewModel.ProjectPath.Length == 0 ? null : ViewModel.ProjectPath;
         var backups = ProjectBackup.List(path);
-        var dialog = new Window { Title = W("Backups"), Width = 720, Height = 460, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var dialog = CreateDialog(W("Backups"), 720, 460);
         var panel = new StackPanel { Margin = new(16), Spacing = 8 };
-        panel.Children.Add(Note(path ?? W("NoBackups")));
+        if (path is not null) panel.Children.Add(Note(path));
         if (backups.Count == 0) panel.Children.Add(Note(W("NoBackups")));
         foreach (var backup in backups)
         {
@@ -250,7 +265,7 @@ public partial class WorkbenchWindow
 
     private void CreateBackup()
     {
-        if (ViewModel.Project is not { } project) { ViewModel.Status = W("ScanNeedsProject"); return; }
+        if (ViewModel.Project is not { } project) { ViewModel.Status = W("NoProjectLoaded"); return; }
         try
         {
             var info = ProjectBackup.Capture(project, ViewModel.ProjectPath.Length == 0 ? null : ViewModel.ProjectPath);
@@ -267,7 +282,7 @@ public partial class WorkbenchWindow
 
     private async Task ExportSemanticAsync(SemanticExport.SemanticFormat format, string fileName, string extension)
     {
-        if (ViewModel.Project is not { } project) { ViewModel.Status = W("ScanNeedsProject"); return; }
+        if (ViewModel.Project is not { } project) { ViewModel.Status = W("NoProjectLoaded"); return; }
         var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = fileName, DefaultExtension = extension });
         if (file?.TryGetLocalPath() is not { } path) return;
         try
@@ -275,12 +290,12 @@ public partial class WorkbenchWindow
             SemanticExport.Export(project, path, format);
             ViewModel.Status = W("SemanticExported", Path.GetFileName(path));
         }
-        catch (Exception ex) { ViewModel.Status = W("CompareFailed", ex.Message); }
+        catch (Exception ex) { ViewModel.Status = W("ExportFailed", ex.Message); }
     }
 
     private async Task CompareProjectsAsync()
     {
-        if (ViewModel.Project is not { } project) { ViewModel.Status = W("ScanNeedsProject"); return; }
+        if (ViewModel.Project is not { } project) { ViewModel.Status = W("NoProjectLoaded"); return; }
         var files = await StorageProvider.OpenFilePickerAsync(new() { AllowMultiple = false,
             Title = W("CompareProjects"), FileTypeFilter = [new("KNX") { Patterns = ["*.knxproj"] }] });
         if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
@@ -297,7 +312,7 @@ public partial class WorkbenchWindow
 
     private async Task ReplaceProductAsync()
     {
-        if (ViewModel.Project is null) { ViewModel.Status = W("ScanNeedsProject"); return; }
+        if (ViewModel.Project is null) { ViewModel.Status = W("NoProjectLoaded"); return; }
         var window = new ReplaceProductWindow(ViewModel.ReplaceProduct);
         if (ViewModel.SelectedDevice is { } device && device.Device.ProductRefId.Length > 0)
             window.SetOldReference(device.Device.ProductRefId);
@@ -344,7 +359,7 @@ public partial class WorkbenchWindow
 
     private void ShowToolsOverview()
     {
-        var dialog = new Window { Title = W("ToolsOverview"), Width = 620, Height = 420, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var dialog = CreateDialog(W("ToolsOverview"), 620, 420);
         var panel = new StackPanel { Margin = new(16), Spacing = 10 };
         void Add(string title, Action run) => panel.Children.Add(ActionButton(title, () => { dialog.Close(); run(); }, "quiet"));
         Add(W("Monitor"), () => ShowTool("monitor"));
@@ -378,7 +393,7 @@ public partial class WorkbenchWindow
 
     private void ShowPalette()
     {
-        var dialog = new Window { Title = W("FindWorkItemOrCommand"), Width = 660, Height = 480, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var dialog = CreateDialog(W("FindWorkItemOrCommand"), 660, 480);
         var panel = new DockPanel { Margin = new(16) };
         var query = new TextBox { PlaceholderText = W("PaletteWatermark"), Margin = new(0, 0, 0, 12) };
         var list = new ListBox { Focusable = true };
@@ -447,8 +462,8 @@ public partial class WorkbenchWindow
 
     private void ShowNewGroupAddressDialog()
     {
-        if (ViewModel.Project is not { } project) { ViewModel.Status = W("ScanNeedsProject"); return; }
-        var dialog = new Window { Title = W("NewGroupAddress"), Width = 480, Height = 360, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        if (ViewModel.Project is not { } project) { ViewModel.Status = W("NoProjectLoaded"); return; }
+        var dialog = CreateDialog(W("NewGroupAddress"), 480, 360);
         var panel = new StackPanel { Margin = new(16), Spacing = 10 };
         var address = new TextBox { Text = ProjectQuery.NextFreeGroupAddress(project, 1, 1).ToString() };
         var name = new TextBox();
@@ -489,7 +504,7 @@ public partial class WorkbenchWindow
             .Where(r => r.Object is not null && tab.SelectedObjectIds.Contains(r.Key)).ToList();
         if (selected.Count == 0) { ViewModel.Status = W("BatchNeedSelection"); return; }
         var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
-        var dialog = new Window { Title = W("BatchTitle", selected.Count), Width = 720, Height = 560, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var dialog = CreateDialog(W("BatchTitle", selected.Count), 720, 560);
         var panel = new DockPanel { Margin = new(16) };
         var top = new StackPanel { Spacing = 8 };
         var picker = new ComboBox { ItemsSource = groups, MinWidth = 420, PlaceholderText = W("ChooseGroupAddress") };

@@ -31,10 +31,9 @@ public partial class WorkbenchWindow : Window
     private readonly WorkbenchAudit _audit = new();
     private WorkbenchSessions? _sessions;
     private DispatcherTimer? _sessionTimer;
-    private string? _sessionProjectId;
+    private Project? _sessionProject;
     private int _demoTick;
     private MonitorScope _monitorScope = MonitorScope.All;
-    private string? _monitorScopeId;
     private bool _refreshing;
     private bool _shuttingDown;
     private bool _confirmingClose;
@@ -199,13 +198,13 @@ public partial class WorkbenchWindow : Window
         {
             _sessionTimer?.Stop();
             if (_sessions is not null) { _ = DisposeSessionsAsync(); }
-            _sessionProjectId = null;
+            _sessionProject = null;
             ToolHost.Content = null;
             return;
         }
-        if (_sessions is not null && _sessionProjectId == project.Id) return;
+        if (_sessions is not null && ReferenceEquals(_sessionProject, project)) return;
         _ = DisposeSessionsAsync();
-        _sessionProjectId = project.Id;
+        _sessionProject = project;
         _sessions = new(() => ViewModel.Project,
             filter => ResolveMonitorIds(filter),
             (p, device) => new FrozenConfiguration(
@@ -216,7 +215,7 @@ public partial class WorkbenchWindow : Window
                 await Task.Delay(120, token);
                 if (_simulateProgrammingFailure) throw new InvalidOperationException(W("SimulatedFailure"));
             });
-        _monitorScope = MonitorScope.All; _monitorScopeId = null;
+        _monitorScope = MonitorScope.All;
         _sessionTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _sessionTimer.Tick -= OnSessionTick;
         _sessionTimer.Tick += OnSessionTick;
@@ -230,6 +229,7 @@ public partial class WorkbenchWindow : Window
     {
         var sessions = _sessions;
         _sessions = null;
+        _sessionProject = null;
         if (sessions is null) return;
         try { await sessions.DisposeAsync(); }
         catch (Exception ex) { ViewModel.Status = W("ToolSessionEnded", ex.Message); }
@@ -239,6 +239,7 @@ public partial class WorkbenchWindow : Window
     {
         _sessionTimer?.Stop();
         ToolHost.Content = null;
+        _audit.Clear();
         await DisposeSessionsAsync();
     }
 
@@ -342,7 +343,7 @@ public partial class WorkbenchWindow : Window
         {
             CaptureNavigatorScroll();
             Title = ViewModel.Title;
-            if (Workspace.ActiveTool is not ("monitor" or "problems" or "programming" or "scan" or "changes" or "search")) Workspace.ActiveTool = "monitor";
+            if (!WorkbenchTools.IsKnown(Workspace.ActiveTool)) Workspace.ActiveTool = "monitor";
             var p = ViewModel.Project;
             if (!ReferenceEquals(_shownProject, p))
             {
@@ -354,7 +355,7 @@ public partial class WorkbenchWindow : Window
             {
                 Workspace.ChangeProject(p.Id);
                 if (_layoutPath is not null) Workspace.TryRestoreLayout(_layoutPath, t => t == new WorkbenchTarget("tool", "catalog") || WorkbenchProjection.Resolve(p, t) is not null);
-                if (Workspace.ActiveTool is not ("monitor" or "problems" or "programming" or "scan" or "changes" or "search")) Workspace.ActiveTool = "monitor";
+                if (!WorkbenchTools.IsKnown(Workspace.ActiveTool)) Workspace.ActiveTool = "monitor";
                 foreach (var nav in Workspace.Navigators.Values) nav.ExpandedIds.Add("project:" + p.Id);
                 foreach (var space in p.Installations.SelectMany(i => i.Locations.Roots)) Workspace.Navigators["building"].ExpandedIds.Add("space:" + space.Id);
             }
@@ -685,7 +686,7 @@ public partial class WorkbenchWindow : Window
 
     private async Task SaveNamedWorkspaceAsync()
     {
-        var name = await PromptTextAsync(W("WorkspaceName"));
+        var name = await PromptTextAsync(W("WorkspaceName"), W("Save"));
         if (string.IsNullOrWhiteSpace(name)) return;
         var safe = string.Concat(name.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or ' ')).Trim();
         if (safe.Length == 0) return;
@@ -697,7 +698,7 @@ public partial class WorkbenchWindow : Window
 
     private async Task LoadNamedWorkspaceAsync()
     {
-        var name = await PromptTextAsync(W("WorkspaceName"));
+        var name = await PromptTextAsync(W("WorkspaceName"), W("Load"));
         if (string.IsNullOrWhiteSpace(name)) return;
         var safe = string.Concat(name.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or ' ')).Trim();
         if (safe.Length == 0) return;
@@ -707,14 +708,14 @@ public partial class WorkbenchWindow : Window
         RefreshWorkspace();
     }
 
-    private async Task<string?> PromptTextAsync(string title)
+    private async Task<string?> PromptTextAsync(string title, string primary)
     {
-        var dialog = new Window { Title = title, Width = 420, Height = 180, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var dialog = CreateDialog(title, 420, 180);
         var panel = new StackPanel { Margin = new(16), Spacing = 10 };
         var box = new TextBox { Watermark = title };
         var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
         string? result = null;
-        actions.Children.Add(ActionButton(W("Create"), () => { result = box.Text; dialog.Close(); }, "primary"));
+        actions.Children.Add(ActionButton(primary, () => { result = box.Text; dialog.Close(); }, "primary"));
         actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
         panel.Children.Add(box); panel.Children.Add(actions); dialog.Content = panel;
         dialog.Opened += (_, _) => box.Focus();
@@ -939,20 +940,35 @@ public partial class WorkbenchWindow : Window
 
     public void ShowTool(string tool)
     {
-        if (tool is not ("monitor" or "problems" or "programming" or "scan" or "changes" or "search" or "search")) throw new ArgumentException("Unknown tool.", nameof(tool));
+        if (!WorkbenchTools.IsKnown(tool)) throw new ArgumentException("Unknown tool.", nameof(tool));
         EnsureSessions();
         Workspace.ActiveTool = tool;
         Workspace.ToolsVisible = true;
         foreach (var button in ToolTabs.Children.OfType<Button>())
             button.Classes.Set("active", Equals(button.Tag, tool));
-        ToolHost.Content = tool switch
-        {
-            "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(),
-            "scan" => CreateScanView(), "changes" => CreateChangesView(),
-            "search" => CreateSearchView(), _ => CreateMonitorView()
-        };
+        ToolHost.Content = CreateToolView(tool);
         ApplyLayout();
     }
+
+    private Control CreateToolView(string tool) => tool switch
+    {
+        "problems" => CreateProblemsView(),
+        "programming" => CreateProgrammingView(),
+        "scan" => CreateScanView(),
+        "changes" => CreateChangesView(),
+        "search" => CreateSearchView(),
+        "monitor" => CreateMonitorView(),
+        _ => Note(W("ToolPlaceholder"))
+    };
+
+    private string ToolWindowTitle(string tool) => tool switch
+    {
+        "problems" => W("ProblemsWindowTitle"),
+        "programming" => W("ProgrammingWindowTitle"),
+        "scan" => W("Scan"),
+        "changes" => W("ChangesWindowTitle"),
+        _ => W("MonitorWindowTitle")
+    };
     private Control CreateRelationsView()
     {
         if (ViewModel.Project is not { } project || Workspace.ActiveTab is not { } tab)
@@ -1008,10 +1024,15 @@ public partial class WorkbenchWindow : Window
     private Control CreateProblemsView()
     {
         ViewModel.RunCheck();
-        ViewModel.Status = ViewModel.Findings.Count == 0 ? W("CheckClean") : W("CheckFindings", ViewModel.Findings.Count);
+        var panel = new DockPanel();
+        var summary = Note(ViewModel.Findings.Count == 0 ? W("CheckClean") : W("CheckFindings", ViewModel.Findings.Count));
+        summary.Margin = new(12, 6);
+        DockPanel.SetDock(summary, Avalonia.Controls.Dock.Top);
+        panel.Children.Add(summary);
         var list = new ListBox { ItemsSource = ViewModel.Findings, Background = Brushes.Transparent };
         list.ItemTemplate = new FuncDataTemplate<CheckFinding>((f, _) => Note(f is null ? "" : $"{f.Severity} · {f.Code} · {f.Path}\n{f.Message}"));
-        return list;
+        panel.Children.Add(list);
+        return panel;
     }
     private SearchPane CreateSearchView()
     {
@@ -1020,7 +1041,7 @@ public partial class WorkbenchWindow : Window
         return pane;
     }
 
-    private void OpenSearchHit(SearchHit hit)
+    internal void OpenSearchHit(SearchHit hit)
     {
         if (ViewModel.Project is not { } project) return;
         switch (hit.Kind)
@@ -1329,7 +1350,7 @@ public partial class WorkbenchWindow : Window
     {
         if (_sessions is not { } sessions || ViewModel.Project is not { } project)
         { ViewModel.Status = W("ScanNeedsProject"); return; }
-        var dialog = new Window { Title = W("ValueTitle"), Width = 420, Height = 240, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var dialog = CreateDialog(W("ValueTitle"), 420, 240);
         var panel = new StackPanel { Margin = new(16), Spacing = 10 };
         var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
         var picker = new ComboBox { ItemsSource = groups, SelectedIndex = groups.Count > 0 ? 0 : -1 };
@@ -1514,13 +1535,8 @@ public partial class WorkbenchWindow : Window
         MainColumn.RowDefinitions[1].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(0) : new(1, GridUnitType.Star);
         MainColumn.RowDefinitions[2].Height = new(Workspace.ToolsVisible ? 5 : 0);
         MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(1, GridUnitType.Star) : new(Workspace.ToolsVisible ? Math.Min(Workspace.ToolsHeight, Bounds.Height is > 0 and < 740 ? 140 : Workspace.ToolsHeight) : 0);
-        if (Workspace.ToolsVisible && ToolHost.Content is null) ToolHost.Content = Workspace.ActiveTool switch
-        {
-            "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), "monitor" => CreateMonitorView(),
-            "scan" => CreateScanView(), "changes" => CreateChangesView(),
-            "search" => CreateSearchView(),
-            _ => Note(W("ToolPlaceholder"))
-        };
+        if (Workspace.ToolsVisible && ToolHost.Content is null)
+            ToolHost.Content = CreateToolView(Workspace.ActiveTool);
     }
     public void SaveLayout(string path)
     {
@@ -1569,18 +1585,8 @@ public partial class WorkbenchWindow : Window
     private void OnHideTool(object? sender, RoutedEventArgs e) => Workspace.ToolsVisible = false;
     private void OnFloatTool(object? sender, RoutedEventArgs e)
     {
-        var content = Workspace.ActiveTool switch
-        {
-            "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(),
-            "scan" => CreateScanView(), "changes" => CreateChangesView(),
-            "search" => CreateSearchView(), _ => CreateMonitorView()
-        };
-        var title = Workspace.ActiveTool switch
-        {
-            "problems" => W("ProblemsWindowTitle"), "programming" => W("ProgrammingWindowTitle"),
-            "scan" => W("Scan"), "changes" => W("ChangesWindowTitle"), _ => W("MonitorWindowTitle")
-        };
-        var window = new Window { Title = title, Width = 1000, Height = 380,
+        var content = CreateToolView(Workspace.ActiveTool);
+        var window = new Window { Title = ToolWindowTitle(Workspace.ActiveTool), Width = 1000, Height = 380,
             Content = content };
         _toolWindows.Add(window);
         window.Closed += (_, _) =>

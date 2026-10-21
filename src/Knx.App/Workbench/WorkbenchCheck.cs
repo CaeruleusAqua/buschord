@@ -148,6 +148,13 @@ internal static class WorkbenchCheck
                     Check(perspective + " native navigator opens the common work item", window.Workspace.ActiveTab?.Target == new WorkbenchTarget("device", d.Id));
                 }
                 window.Navigate("building");
+                var searchGa = ProjectQuery.GroupAddresses(p).First();
+                window.OpenSearchHit(new(ProjectSearch.DeviceKind, d.Id, d.Name ?? "", "name", d.Name ?? "", ""));
+                Check("search hit opens the device", window.Workspace.ActiveTab?.Target == new WorkbenchTarget("device", d.Id));
+                window.OpenSearchHit(new(ProjectSearch.GroupAddressKind, searchGa.Id, searchGa.Address.ToString(), "name", searchGa.Name, ""));
+                Check("search hit opens the group address", window.Workspace.ActiveTab?.Target == new WorkbenchTarget("ga", searchGa.Id));
+                window.OpenSearchHit(new(ProjectSearch.CommunicationObjectKind, d.ComObjectRefs[0].Id, "", "text", "", ""));
+                Check("search hit opens the owning device relations", window.Workspace.ActiveTab?.Target == new WorkbenchTarget("device", d.Id));
                 window.OpenTarget(room.Target);
                 var table = window.FindControl<ListBox>("ObjectTable")!;
                 var row = ((IEnumerable<WorkbenchRow>)table.ItemsSource!).First(r => r.Object is not null);
@@ -182,6 +189,15 @@ internal static class WorkbenchCheck
                 inspector.Children.OfType<Button>().First(b => Equals(b.Content, WorkbenchStrings.Get("ApplyProperties")))
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Check("native inspector rename refreshes work-item titles", d.Name == "Tastsensor · bearbeitet" && deviceTab.Title == d.Name);
+                var checkLine = p.Installations[0].Areas[0].Lines[0];
+                var checkSegment = new Segment { Id = "S-CHECK", Address = 1 };
+                checkSegment.Devices.Add(d);
+                checkLine.Devices.Remove(d);
+                checkLine.Segments.Add(checkSegment);
+                var editError = window.ViewModel.UpdateDeviceDetails(d, d.Name, d.Address.ToString(), checkLine.Id, "R-1");
+                Check("device edit preserves the segment and assigns the room", editError is null
+                    && checkSegment.Devices.Contains(d) && !checkLine.Devices.Contains(d)
+                    && p.Installations[0].Locations.Find("R-1")!.DeviceRefs.Contains(d.Id));
                 window.SetRepresentation("relations");
                 Check("relations view uses domain-validated links", window.FindControl<ContentControl>("RelationsHost")!.Content is ScrollViewer
                     && window.ViewModel.Project is { } relationProject && Knx.Workbench.WorkbenchProject.Associations(relationProject).Count > 0);

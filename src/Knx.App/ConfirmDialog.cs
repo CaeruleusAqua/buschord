@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Knx;
@@ -61,12 +60,14 @@ public sealed class ConfirmDialog : Window
         body.Children.Add(row);
         Content = body;
         var first = row.Children.OfType<Button>().FirstOrDefault();
+        var escapeChoice = buttons.Any(b => b.Choice == ConfirmChoice.Cancel)
+            ? ConfirmChoice.Cancel
+            : buttons.FirstOrDefault().Choice;
         Opened += (_, _) => first?.Focus();
         KeyDown += (_, e) =>
         {
             if (e.Key != Key.Escape) return;
-            var cancel = row.Children.OfType<Button>().FirstOrDefault(b => b.IsCancel);
-            (cancel ?? first)?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Choose(escapeChoice);
             e.Handled = true;
         };
         Closed += (_, _) => _chosen ??= ConfirmChoice.Cancel;
