@@ -20,6 +20,7 @@ public partial class CatalogPane : UserControl
     private List<KnxProductCatalog> _catalogs = [];
     private CatalogProduct? _shownProduct;
     private string? _suggestion;
+    private string _message = "";
     private Line? _preferredLine;
     private bool _busy;
 
@@ -477,22 +478,15 @@ public partial class CatalogPane : UserControl
 
     private void SetMessage(string text)
     {
+        _message = text;
         ErrorText.Text = text.ReplaceLineEndings(" · ");
         ErrorText.IsVisible = ErrorText.Text.Length > 0;
         ToolTip.SetTip(ErrorText, text);
     }
 
-    private void AddError(string error)
-    {
-        var existing = ToolTip.GetTip(ErrorText) switch
-        {
-            string text => text,
-            TextBlock block => block.Text,
-            _ => null
-        };
-        SetMessage(string.Join(Environment.NewLine, new[] { existing, error }
+    private void AddError(string error) => SetMessage(
+        string.Join(Environment.NewLine, new[] { _message, error }
             .Where(text => !string.IsNullOrWhiteSpace(text))));
-    }
 
     private void OnInsert(object? sender, RoutedEventArgs e)
     {
