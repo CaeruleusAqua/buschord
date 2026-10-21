@@ -370,14 +370,18 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
 
 ### H8. Reale KNX-Bus-Lesetests (neue Freigabe, 2026-10-21)
 
-- [ ] **H8.1 Testplan:** passive Discovery, Tunnel-Verbindung, Geräte-/Adresslesen,
+- [x] **H8.1 Testplan:** passive Discovery, Tunnel-Verbindung, Geräte-/Adresslesen,
   passiver Gruppenmonitor und explizites Gruppenwert-Lesen mit Abbruchkriterien,
   Wiederholungen und Evidenz. Nur Lesen; keine Downloads, Programmierung,
   Adressschreibung, Gruppenwert-Schreibung, Resets oder Secure-Inbetriebnahme.
-- [ ] **H8.2 Schnittstelle:** lokale Konfiguration/Gateway prüfen, private
+  (`664fa5b`, `analysis/knx-bus-read-test-plan.md`)
+- [x] **H8.2 Schnittstelle:** lokale Konfiguration/Gateway prüfen, private
   Adressen in Commits redigieren, keine Passwörter/Tokens protokollieren.
-- [ ] **H8.3 Ist-Abgleich:** reale Bus-APIs gegen Workbench-Diagnose, Monitor,
+  (`664fa5b`; Gateway erkannt, Adressen redigiert)
+- [x] **H8.3 Ist-Abgleich:** reale Bus-APIs gegen Workbench-Diagnose, Monitor,
   Scan und Programmierung abgleichen; Demo-only-Pfade klar kennzeichnen.
+  (`664fa5b`; P0-CEMI/APCI/Descriptor/Routing-Gaps dokumentiert,
+  Fixagent `agents/bus/cemi-fix`)
 - [ ] **H8.4 Abnahme:** reproduzierbare Read-only-Ergebnisse,
   Timeout-/Reconnect-/Schnittstellenkonflikt-Verhalten und dokumentierte
   Grenzen; echte Schreibfreigabe bleibt separat und ausdrücklich.
@@ -394,9 +398,10 @@ automatische Hardcoded-Text-Prüfung.
 - [x] **H9.1 Architektur:** Ressourcenformat, stark typisierte Keys, Fallback,
   Runtime-Sprachwechsel, Reports/CSV, Tests und Trimming/AOT entscheiden.
   (`da128e5`, `analysis/i18n-architecture-plan.md`)
-- [ ] **H9.2 Inventar:** alle UI-/Report-/CSV-/Fehlertexte mit Datei:Zeile,
+- [x] **H9.2 Inventar:** alle UI-/Report-/CSV-/Fehlertexte mit Datei:Zeile,
   Key-Status und Priorität erfassen; deutsche Pfad-Tokens und dynamische Texte
-  getrennt behandeln.
+  getrennt behandeln. (`5b7bb25`, `analysis/i18n-text-inventory.md`:
+  908 Keys, 155 tote Keys, 4 Kollisionen, Sprachwechsel-Gap)
 - [x] **H9.3 Workflow:** Übersetzerformat, Glossar, Review, Key-Stabilität,
   Community-/CLA-Regeln, keine Hersteller-/Kundendaten, unvollständige
   Sprachen klar kennzeichnen. (`cb7e996`,
