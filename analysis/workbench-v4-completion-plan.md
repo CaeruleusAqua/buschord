@@ -367,6 +367,20 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   `analysis/workbench-v4-ui-recheck.md`: historische P1/P2; nur noch offene
   Punkte übernehmen, bereits belegte nicht erneut öffnen.
 
+### H8. Reale KNX-Bus-Lesetests (neue Freigabe, 2026-10-21)
+
+- [ ] **H8.1 Testplan:** passive Discovery, Tunnel-Verbindung, Geräte-/Adresslesen,
+  passiver Gruppenmonitor und explizites Gruppenwert-Lesen mit Abbruchkriterien,
+  Wiederholungen und Evidenz. Nur Lesen; keine Downloads, Programmierung,
+  Adressschreibung, Gruppenwert-Schreibung, Resets oder Secure-Inbetriebnahme.
+- [ ] **H8.2 Schnittstelle:** lokale Konfiguration/Gateway prüfen, private
+  Adressen in Commits redigieren, keine Passwörter/Tokens protokollieren.
+- [ ] **H8.3 Ist-Abgleich:** reale Bus-APIs gegen Workbench-Diagnose, Monitor,
+  Scan und Programmierung abgleichen; Demo-only-Pfade klar kennzeichnen.
+- [ ] **H8.4 Abnahme:** reproduzierbare Read-only-Ergebnisse,
+  Timeout-/Reconnect-/Schnittstellenkonflikt-Verhalten und dokumentierte
+  Grenzen; echte Schreibfreigabe bleibt separat und ausdrücklich.
+
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
 - DCA/Plugin-Hosting: read-only Erkennung und Sperre, kein In-Process-Host (32-bit-ETS, COM/.NET-Framework, keine Sandbox).
