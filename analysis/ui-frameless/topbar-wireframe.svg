@@ -1,0 +1,232 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="760" viewBox="0 0 1480 760" font-family="Segoe UI, Inter, Arial, sans-serif">
+  <rect width="1480" height="760" fill="#f7f8fa"/>
+  <title>BusChord frameless title strip — wireframe</title>
+  <desc>Static design reference: 49 px topbar, 46×49 window controls, light/dark tokens, hit-role map and 900 px layout. Not production code.</desc>
+
+  <style>
+    .h1 { font-size: 17px; font-weight: 600; fill: #202c3c; }
+    .h2 { font-size: 12px; font-weight: 600; fill: #202c3c; }
+    .note { font-size: 10.5px; fill: #5f6b7d; }
+    .tiny { font-size: 9px; fill: #5f6b7d; }
+    .mono { font-family: Consolas, monospace; font-size: 9.5px; fill: #5f6b7d; }
+    .label { font-size: 11px; fill: #202c3c; }
+    .label-dark { font-size: 11px; fill: #e5ebf3; }
+    .dim { stroke: #9aa6b5; stroke-width: 1; fill: none; }
+    .dimText { font-size: 9px; fill: #5f6b7d; }
+    .glyph { stroke: #5f6b7d; stroke-width: 1.2; fill: none; stroke-linecap: square; }
+    .glyph-dark { stroke: #b0bdce; stroke-width: 1.2; fill: none; stroke-linecap: square; }
+    .glyph-white { stroke: #ffffff; stroke-width: 1.2; fill: none; stroke-linecap: square; }
+  </style>
+
+  <!-- ============ heading ============ -->
+  <text x="20" y="26" class="h1">BusChord — frameless title strip (Variant A)</text>
+  <text x="20" y="43" class="note">49 px topbar, flush 46 × 49 window controls, native caption semantics via WindowDecorationProperties.ElementRole. Static reference only.</text>
+
+  <!-- ============ LIGHT ============ -->
+  <text x="20" y="72" class="h2">Light · 1440 × 49</text>
+
+  <g id="light-bar">
+    <rect x="20" y="80" width="1440" height="49" fill="#ffffff"/>
+    <line x1="20" y1="128.5" x2="1302" y2="128.5" stroke="#e1e5eb" stroke-width="1"/>
+
+    <!-- brand mark 28×28 -->
+    <rect x="32" y="90.5" width="28" height="28" rx="6" fill="#087e81"/>
+    <path d="M38 108 V100 L46 94 L54 100 V108" fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linejoin="round"/>
+    <rect x="43" y="102" width="6" height="6" fill="#ffffff"/>
+
+    <text x="68" y="110" font-size="12" font-weight="700" fill="#202c3c" letter-spacing="0.6">BUSCHORD</text>
+    <line x1="150" y1="94" x2="150" y2="115" stroke="#e1e5eb"/>
+    <text x="162" y="109" font-size="11" fill="#5f6b7d">Demo-Projekt *</text>
+
+    <!-- menus -->
+    <text x="352" y="109" font-size="12" fill="#202c3c">Projekt</text>
+    <text x="428" y="109" font-size="12" fill="#202c3c">Bearbeiten</text>
+    <text x="524" y="109" font-size="12" fill="#202c3c">Ansicht</text>
+    <text x="600" y="109" font-size="12" fill="#202c3c">Werkzeuge</text>
+
+    <!-- search -->
+    <rect x="690" y="89.5" width="260" height="30" rx="5" fill="#f5f6f8"/>
+    <circle cx="708" cy="103" r="4.5" fill="none" stroke="#5f6b7d" stroke-width="1.2"/>
+    <line x1="711.5" y1="106.5" x2="715" y2="110" stroke="#5f6b7d" stroke-width="1.2"/>
+    <text x="724" y="108" font-size="11" fill="#5f6b7d">Projekt durchsuchen</text>
+    <text x="930" y="108" font-size="9" fill="#5f6b7d" text-anchor="end">Ctrl K</text>
+
+    <!-- status + primary -->
+    <text x="1136" y="108" font-size="10" fill="#996415" letter-spacing="0.5">OFFLINE</text>
+    <rect x="1180" y="89.5" width="112" height="30" rx="5" fill="#087e81"/>
+    <text x="1236" y="108" font-size="11" fill="#ffffff" text-anchor="middle">Programmieren</text>
+
+    <!-- caption buttons -->
+    <line x1="1320" y1="104" x2="1330" y2="104" class="glyph"/>
+    <rect x="1366" y="99" width="10" height="10" class="glyph"/>
+    <line x1="1411" y1="99" x2="1421" y2="109" class="glyph"/>
+    <line x1="1421" y1="99" x2="1411" y2="109" class="glyph"/>
+  </g>
+
+  <!-- light dimensions -->
+  <g>
+    <line x1="20" y1="138" x2="32" y2="138" class="dim"/>
+    <text x="26" y="150" class="dimText" text-anchor="middle">12</text>
+    <line x1="32" y1="138" x2="60" y2="138" class="dim"/>
+    <text x="46" y="150" class="dimText" text-anchor="middle">28</text>
+    <line x1="60" y1="138" x2="68" y2="138" class="dim"/>
+    <text x="64" y="150" class="dimText" text-anchor="middle">8</text>
+
+    <line x1="162" y1="138" x2="342" y2="138" class="dim" stroke-dasharray="3 3"/>
+    <text x="252" y="150" class="dimText" text-anchor="middle">title max 180 (hidden &lt; 1280)</text>
+
+    <line x1="690" y1="138" x2="950" y2="138" class="dim"/>
+    <text x="820" y="150" class="dimText" text-anchor="middle">search 260 × 30 (icon-only &lt; 1040)</text>
+
+    <line x1="1180" y1="138" x2="1292" y2="138" class="dim"/>
+    <text x="1236" y="150" class="dimText" text-anchor="middle">112 × 30</text>
+
+    <line x1="1302" y1="138" x2="1440" y2="138" class="dim"/>
+    <text x="1371" y="150" class="dimText" text-anchor="middle">3 × 46 = 138</text>
+
+    <text x="20" y="170" class="note">Topbar: 12 px left inset, brand block unchanged (28 px mark, 8 px gap, 16 px to menu). Close button is flush with the window edge; no outer right padding.</text>
+  </g>
+
+  <!-- ============ DARK ============ -->
+  <text x="20" y="196" class="h2">Dark · 1440 × 49</text>
+  <g id="dark-bar">
+    <rect x="20" y="204" width="1440" height="49" fill="#202833"/>
+    <line x1="20" y1="252.5" x2="1302" y2="252.5" stroke="#3c4858"/>
+
+    <rect x="32" y="214.5" width="28" height="28" rx="6" fill="#62d1cd"/>
+    <path d="M38 232 V224 L46 218 L54 224 V232" fill="none" stroke="#12292a" stroke-width="1.7" stroke-linejoin="round"/>
+    <rect x="43" y="226" width="6" height="6" fill="#12292a"/>
+
+    <text x="68" y="234" font-size="12" font-weight="700" fill="#e5ebf3" letter-spacing="0.6">BUSCHORD</text>
+    <line x1="150" y1="218" x2="150" y2="239" stroke="#3c4858"/>
+    <text x="162" y="233" font-size="11" fill="#b0bdce">Demo-Projekt *</text>
+
+    <text x="352" y="233" font-size="12" fill="#e5ebf3">Projekt</text>
+    <text x="428" y="233" font-size="12" fill="#e5ebf3">Bearbeiten</text>
+    <text x="524" y="233" font-size="12" fill="#e5ebf3">Ansicht</text>
+    <text x="600" y="233" font-size="12" fill="#e5ebf3">Werkzeuge</text>
+
+    <rect x="690" y="213.5" width="260" height="30" rx="5" fill="#171d25"/>
+    <circle cx="708" cy="227" r="4.5" fill="none" stroke="#b0bdce" stroke-width="1.2"/>
+    <line x1="711.5" y1="230.5" x2="715" y2="234" stroke="#b0bdce" stroke-width="1.2"/>
+    <text x="724" y="232" font-size="11" fill="#b0bdce">Projekt durchsuchen</text>
+    <text x="930" y="232" font-size="9" fill="#b0bdce" text-anchor="end">Ctrl K</text>
+
+    <text x="1136" y="232" font-size="10" fill="#edc27c" letter-spacing="0.5">OFFLINE</text>
+    <rect x="1180" y="213.5" width="112" height="30" rx="5" fill="#62d1cd"/>
+    <text x="1236" y="232" font-size="11" fill="#12292a" text-anchor="middle">Programmieren</text>
+
+    <line x1="1320" y1="228" x2="1330" y2="228" class="glyph-dark"/>
+    <rect x="1366" y="223" width="10" height="10" class="glyph-dark"/>
+    <line x1="1411" y1="223" x2="1421" y2="233" class="glyph-dark"/>
+    <line x1="1421" y1="223" x2="1411" y2="233" class="glyph-dark"/>
+  </g>
+
+  <!-- ============ STATES ============ -->
+  <text x="20" y="286" class="h2">Window-control states · 46 × 49 target</text>
+  <g id="states">
+    <!-- default -->
+    <rect x="20" y="298" width="46" height="49" fill="#ffffff"/>
+    <line x1="38" y1="322" x2="48" y2="322" class="glyph"/>
+    <text x="43" y="362" class="tiny" text-anchor="middle">default</text>
+
+    <!-- hover -->
+    <rect x="88" y="298" width="46" height="49" fill="#f0f4f5"/>
+    <rect x="122" y="317" width="10" height="10" class="glyph" stroke="#202c3c"/>
+    <text x="111" y="362" class="tiny" text-anchor="middle">hover</text>
+
+    <!-- pressed -->
+    <rect x="156" y="298" width="46" height="49" fill="#e4f2f1"/>
+    <line x1="174" y1="322" x2="184" y2="322" class="glyph" stroke="#087e81"/>
+    <text x="179" y="362" class="tiny" text-anchor="middle">pressed</text>
+
+    <!-- close hover -->
+    <rect x="224" y="298" width="46" height="49" fill="#c42b1c"/>
+    <line x1="242" y1="317" x2="252" y2="327" class="glyph-white"/>
+    <line x1="252" y1="317" x2="242" y2="327" class="glyph-white"/>
+    <text x="247" y="362" class="tiny" text-anchor="middle">close hover</text>
+    <text x="247" y="374" class="tiny" text-anchor="middle">#c42b1c</text>
+
+    <!-- disabled -->
+    <rect x="292" y="298" width="46" height="49" fill="#ffffff"/>
+    <rect x="310" y="317" width="10" height="10" fill="none" stroke="#5f6b7d" stroke-width="1.2"/>
+    <text x="315" y="362" class="tiny" text-anchor="middle">disabled</text>
+    <text x="315" y="374" class="tiny" text-anchor="middle">opacity 1, muted</text>
+
+    <!-- focus -->
+    <rect x="360" y="298" width="46" height="49" fill="#ffffff"/>
+    <rect x="363" y="301" width="40" height="43" fill="none" stroke="#087e81" stroke-width="2"/>
+    <line x1="378" y1="322" x2="388" y2="322" class="glyph"/>
+    <text x="383" y="362" class="tiny" text-anchor="middle">focus-visible</text>
+    <text x="383" y="374" class="tiny" text-anchor="middle">2 px inset</text>
+  </g>
+
+  <!-- ============ ROLE MAP ============ -->
+  <text x="20" y="404" class="h2">Hit-role map · WindowDecorationProperties.ElementRole</text>
+  <g id="roles">
+    <rect x="20" y="414" width="1440" height="49" fill="#ffffff" stroke="#e1e5eb"/>
+
+    <rect x="20" y="414" width="332" height="49" fill="#087e81" opacity="0.14"/>
+    <rect x="352" y="414" width="298" height="49" fill="#345caa" opacity="0.14"/>
+    <rect x="690" y="414" width="260" height="49" fill="#345caa" opacity="0.14"/>
+    <rect x="1136" y="414" width="44" height="49" fill="#087e81" opacity="0.14"/>
+    <rect x="1180" y="414" width="112" height="49" fill="#345caa" opacity="0.14"/>
+    <rect x="1302" y="414" width="138" height="49" fill="#996415" opacity="0.20"/>
+
+    <text x="186" y="443" font-size="10" fill="#176b6e" text-anchor="middle">TitleBar → HTCAPTION</text>
+    <text x="501" y="443" font-size="10" fill="#345caa" text-anchor="middle">User → HTCLIENT</text>
+    <text x="820" y="443" font-size="10" fill="#345caa" text-anchor="middle">User</text>
+    <text x="1158" y="443" font-size="9" fill="#176b6e" text-anchor="middle">drag</text>
+    <text x="1236" y="443" font-size="10" fill="#345caa" text-anchor="middle">User</text>
+    <text x="1371" y="437" font-size="9" fill="#7a5200" text-anchor="middle">HTMIN / HTMAX / HTCLOSE</text>
+    <text x="1371" y="449" font-size="9" fill="#7a5200" text-anchor="middle">roles per button</text>
+
+    <text x="20" y="482" class="note">Every interactive child inside a TitleBar region needs an explicit <tspan class="mono">User</tspan> role. The hit test takes the nearest ancestor role, so an unmarked Button would resolve to TitleBar and start a window drag.</text>
+    <rect x="20" y="490" width="12" height="12" fill="#087e81" opacity="0.14" stroke="#087e81" stroke-opacity="0.4"/>
+    <text x="38" y="500" class="tiny">drag strip (TitleBar)</text>
+    <rect x="180" y="490" width="12" height="12" fill="#345caa" opacity="0.14" stroke="#345caa" stroke-opacity="0.4"/>
+    <text x="198" y="500" class="tiny">interactive (User)</text>
+    <rect x="340" y="490" width="12" height="12" fill="#996415" opacity="0.20" stroke="#996415" stroke-opacity="0.4"/>
+    <text x="358" y="500" class="tiny">caption button role (NC system behavior)</text>
+  </g>
+
+  <!-- ============ NARROW ============ -->
+  <text x="20" y="540" class="h2">Narrow · 900 px (MinWidth) — title hidden, search collapsed</text>
+  <g id="narrow">
+    <rect x="20" y="550" width="900" height="49" fill="#ffffff" stroke="#e1e5eb"/>
+
+    <rect x="32" y="560.5" width="28" height="28" rx="6" fill="#087e81"/>
+    <path d="M38 578 V570 L46 564 L54 570 V578" fill="none" stroke="#ffffff" stroke-width="1.7"/>
+    <text x="68" y="580" font-size="12" font-weight="700" fill="#202c3c" letter-spacing="0.6">BUSCHORD</text>
+
+    <text x="196" y="579" font-size="12" fill="#202c3c">Projekt</text>
+    <text x="268" y="579" font-size="12" fill="#202c3c">Bearbeiten</text>
+    <text x="364" y="579" font-size="12" fill="#202c3c">Ansicht</text>
+    <text x="436" y="579" font-size="12" fill="#202c3c">Werkzeuge</text>
+
+    <rect x="550" y="558.5" width="36" height="32" rx="5" fill="#f5f6f8"/>
+    <circle cx="566" cy="573.5" r="4.5" fill="none" stroke="#5f6b7d" stroke-width="1.2"/>
+    <line x1="569.5" y1="577" x2="573" y2="580.5" stroke="#5f6b7d" stroke-width="1.2"/>
+
+    <text x="598" y="578" font-size="10" fill="#996415" letter-spacing="0.3">OFFLINE</text>
+    <rect x="650" y="559.5" width="112" height="30" rx="5" fill="#087e81"/>
+    <text x="706" y="578" font-size="11" fill="#ffffff" text-anchor="middle">Programmieren</text>
+
+    <line x1="798" y1="574" x2="808" y2="574" class="glyph"/>
+    <rect x="844" y="569" width="10" height="10" class="glyph"/>
+    <line x1="889" y1="569" x2="899" y2="579" class="glyph"/>
+    <line x1="899" y1="569" x2="889" y2="579" class="glyph"/>
+
+    <text x="20" y="618" class="note">At 900 px: brand + 4 menus + 36 × 32 search icon + status + primary + 138 px controls fit with 20 px to spare. Ctrl+K still opens the palette.</text>
+  </g>
+
+  <!-- ============ NOTES ============ -->
+  <g id="notes">
+    <text x="20" y="654" class="h2">Contract</text>
+    <text x="20" y="672" class="note">Native: WS_CAPTION + WS_SYSMENU + WS_THICKFRAME kept (WindowDecorations="Full"); DWM frame, shadow, resize borders, animations, drag, double-click, snap, system menu, taskbar title/icon.</text>
+    <text x="20" y="688" class="note">Drawn by Avalonia: nothing visible in the caption strip — the custom WindowDecorationsTheme has no template. Buttons are client controls with NC roles; no fake floating window chrome.</text>
+    <text x="20" y="704" class="note">Caption glyphs 10 × 10, 1.2 px square stroke, centered in 46 × 49; default #5f6b7d / #b0bdce, hover #202c3c / #e5ebf3.</text>
+    <text x="20" y="720" class="note">Tokens: WbPaper / WbLine / WbText / WbMuted / WbHover / WbTint / WbAccent; close hover #c42b1c (pressed #a32416) with #ffffff glyph.</text>
+    <text x="20" y="742" class="note">All sizes are DIPs at 100 %; Avalonia scales the native caption strip and the topbar together at 150 / 200 %.</text>
+  </g>
+</svg>
