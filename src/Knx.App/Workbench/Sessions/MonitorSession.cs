@@ -186,6 +186,30 @@ public sealed class MonitorSession : SessionState, IDisposable
         }
     }
 
+    /// <summary>Appends a clearly marked simulated read response for a project group address.</summary>
+    public WorkbenchTelegram SimulateRead(string groupId, string value, string? deviceId = null)
+        => Simulate(groupId, value, deviceId, "GroupValueResponse");
+
+    /// <summary>Appends a clearly marked simulated write; no transport is opened.</summary>
+    public WorkbenchTelegram SimulateWrite(string groupId, string value, string? deviceId = null)
+        => Simulate(groupId, value, deviceId, "GroupValueWrite");
+
+    private WorkbenchTelegram Simulate(string groupId, string value, string? deviceId, string service)
+    {
+        VerifyAccess(); ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        var project = _project() ?? throw new InvalidOperationException("No project is open.");
+        var group = ProjectQuery.GroupAddresses(project).SingleOrDefault(g => g.Id == groupId)
+            ?? throw new ArgumentException("Group address is not in the current project.", nameof(groupId));
+        var source = deviceId is null ? "1.1.250" : ProjectQuery.DeviceList(project)
+            .FirstOrDefault(d => d.Id == deviceId)?.Address.ToString() ?? "1.1.250";
+        var telegram = new WorkbenchTelegram(DateTimeOffset.Now, source, group.Address.ToString(), service,
+            group.DatapointType, value.Trim(), SessionOrigin.Demo, group.Id, deviceId);
+        TickDemo(telegram);
+        return telegram;
+    }
+
     private void Append(WorkbenchTelegram telegram)
     {
         try { _writer.Write(CsvRow(telegram)); }

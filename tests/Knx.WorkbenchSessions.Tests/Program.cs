@@ -88,6 +88,12 @@ using (var monitor = new MonitorSession(coordinator, () => project))
     Check("CSV includes explicit origin", filteredCsv.Contains(",Demo,"));
     Reject("cannot switch live interface", () => monitor.Configure(WorkbenchMonitorMode.Bus, SessionOrigin.Demo, "demo-usb"));
     monitor.ClearDisplay(); Check("clearing display preserves full recording", monitor.Rows.Count == 0 && monitor.RecordedCount == 600);
+    var simulated = monitor.SimulateWrite("G1", "on", device.Id);
+    monitor.FlushDisplay();
+    Check("simulated value is explicit Demo and resolves GA/device", simulated.Origin == SessionOrigin.Demo
+        && simulated.Service == "GroupValueWrite" && simulated.GroupAddressId == "G1" && simulated.DeviceId == device.Id
+        && monitor.Rows.Count == 1);
+    Reject("simulated value requires a running demo session", () => { monitor.Stop(); monitor.SimulateRead("G1", "off"); });
     monitor.Stop(); monitor.Configure(WorkbenchMonitorMode.Bus, SessionOrigin.Demo, "demo-ip"); monitor.Start();
     Check("bus monitor excludes programming", !coordinator.TryAcquire("demo-ip", InterfaceActivity.Programming, out _));
     Check("bus monitor excludes scans", !coordinator.TryAcquire("demo-ip", InterfaceActivity.Scan, out _));
