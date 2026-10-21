@@ -33,6 +33,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// <summary>Raised off the UI thread when the catalogue snapshot finally arrived.</summary>
     public event EventHandler? CatalogLoaded;
 
+    /// <summary>Raised after an edit/undo/redo with a human-readable description.</summary>
+    public event EventHandler<string>? ProjectEdited;
+
     /// <summary>True while a parameter lookup waits for the first catalogue snapshot.</summary>
     public bool IsAwaitingCatalog => _awaitingCatalog;
 
@@ -329,6 +332,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         NotifyEditState();
         Refresh();
         Status = description;
+        ProjectEdited?.Invoke(this, description);
     }
 
     [RelayCommand]
@@ -339,6 +343,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         NotifyEditState();
         Refresh();
         Status = "Rückgängig";
+        ProjectEdited?.Invoke(this, "Rückgängig");
     }
 
     [RelayCommand]
@@ -349,6 +354,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         NotifyEditState();
         Refresh();
         Status = "Wiederhergestellt";
+        ProjectEdited?.Invoke(this, "Wiederhergestellt");
     }
 
     private void NotifyEditState()

@@ -58,6 +58,12 @@ try
     workspace.NavigatorWidth = double.NaN; workspace.SaveLayout(path);
     Check("Invalid splitter geometry is normalized", restored.TryRestoreLayout(path) && restored.NavigatorWidth == 272);
     Check("No partial layout files remain", !Directory.EnumerateFiles(root, "*.tmp").Any());
+    var audit = new WorkbenchAudit();
+    for (var i = 0; i < 620; i++) audit.Add("change " + i, DateTimeOffset.UnixEpoch.AddSeconds(i));
+    Check("Change history is bounded and newest-first", audit.Count == WorkbenchAudit.Capacity
+        && audit.Entries[0].Description == "change 619" && audit.Entries[^1].Description == "change 120");
+    audit.Clear();
+    Check("Change history clears without touching project/layout", audit.Count == 0 && workspace.Tabs.Count == 0);
     Console.WriteLine($"WORKBENCH UI STATE OK ({checks})");
 }
 finally { Directory.Delete(root, recursive: true); }
