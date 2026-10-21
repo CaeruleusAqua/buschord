@@ -54,12 +54,12 @@ public static class ProjectReport
 
         var html = new StringBuilder(32 * 1024);
         html.AppendLine("<!DOCTYPE html>");
-        html.AppendLine("<html lang=\"de\">");
+        html.AppendLine($"<html lang=\"{(Strings.Language == "en" ? "en" : "de")}\">");
         html.AppendLine("<head>");
         html.AppendLine("<meta charset=\"utf-8\">");
         html.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         html.AppendLine("<meta name=\"generator\" content=\"BusChord\">");
-        html.AppendLine($"<title>{Escape(title)} – Projektdokumentation</title>");
+        html.AppendLine($"<title>{Escape(title)} – {Escape(Strings.Get("ReportDocumentation"))}</title>");
         html.AppendLine("<style>");
         AppendStyle(html, options.PaperSize, title, date);
         html.AppendLine("</style>");
@@ -68,15 +68,15 @@ public static class ProjectReport
 
         if (options.IncludeTitlePage) AppendTitlePage(html, project, title, date, dashboard, findings);
         if (options.IncludeTopology)
-            AppendSection(html, "topology", "Topologie und Geräte", TopologyBody(project));
+            AppendSection(html, "topology", Strings.Get("ReportTopology"), TopologyBody(project));
         if (options.IncludeGroupAddresses)
-            AppendSection(html, "group-addresses", "Gruppenadressen", GroupAddressBody(project));
+            AppendSection(html, "group-addresses", Strings.Get("ReportGroupAddresses"), GroupAddressBody(project));
         if (options.IncludeComObjects)
-            AppendSection(html, "com-objects", "Kommunikationsobjekte", ComObjectBody(project));
+            AppendSection(html, "com-objects", Strings.Get("ReportComObjects"), ComObjectBody(project));
         if (options.IncludeLinkMatrix)
-            AppendSection(html, "link-matrix", "Verknüpfungsmatrix", LinkMatrixBody(project));
+            AppendSection(html, "link-matrix", Strings.Get("ReportLinkMatrix"), LinkMatrixBody(project));
         if (options.IncludeFindings)
-            AppendSection(html, "findings", "Projektprüfung", FindingsBody(findings));
+            AppendSection(html, "findings", Strings.Get("ReportFindings"), FindingsBody(findings));
 
         html.AppendLine($"<div class=\"page-footer\"><span>{Escape(title)}</span><span>{date}</span></div>");
         html.AppendLine("</body>");
@@ -127,32 +127,32 @@ public static class ProjectReport
         DashboardStats dashboard, IReadOnlyList<CheckFinding> findings)
     {
         html.AppendLine("<section class=\"title-page\">");
-        html.AppendLine("<p class=\"kicker\">Projektdokumentation</p>");
+        html.AppendLine($"<p class=\"kicker\">{Escape(Strings.Get("ReportDocumentation"))}</p>");
         html.AppendLine($"<h1>{Escape(title)}</h1>");
         if (!string.IsNullOrWhiteSpace(project.Comment))
             html.AppendLine($"<p class=\"lead\">{Escape(project.Comment)}</p>");
 
         html.AppendLine("<table class=\"facts\">");
-        AppendFact(html, "Projekt-ID", project.Id);
-        AppendFact(html, "Erstellt am", date);
+        AppendFact(html, Strings.Get("ReportFactId"), project.Id);
+        AppendFact(html, Strings.Get("ReportFactCreated"), date);
         if (project.ProjectStart is { } start)
-            AppendFact(html, "Projektbeginn", start.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture));
-        if (!string.IsNullOrWhiteSpace(project.Guid)) AppendFact(html, "Projekt-GUID", project.Guid!);
+            AppendFact(html, Strings.Get("ReportFactStart"), start.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture));
+        if (!string.IsNullOrWhiteSpace(project.Guid)) AppendFact(html, Strings.Get("ReportFactGuid"), project.Guid!);
         html.AppendLine("</table>");
 
         html.AppendLine("<div class=\"figures\">");
-        AppendFigure(html, dashboard.Installations, "Installationen");
-        AppendFigure(html, dashboard.Areas, "Bereiche");
-        AppendFigure(html, dashboard.Lines, "Linien");
-        AppendFigure(html, dashboard.Devices, "Geräte");
-        AppendFigure(html, dashboard.GroupAddresses, "Gruppenadressen");
-        AppendFigure(html, dashboard.GroupAddressesWithDpt, "davon mit DPT");
-        AppendFigure(html, dashboard.ComObjects, "Kommunikationsobjekte");
-        AppendFigure(html, dashboard.LinkedGroupAddresses, "verknüpfte Gruppenadressen");
-        AppendFigure(html, dashboard.DptTypes, "Datapoint-Typen");
-        AppendFigure(html, ProjectCheck.Count(findings, CheckSeverity.Error), "Fehler");
-        AppendFigure(html, ProjectCheck.Count(findings, CheckSeverity.Warning), "Warnungen");
-        AppendFigure(html, ProjectCheck.Count(findings, CheckSeverity.Info), "Hinweise");
+        AppendFigure(html, dashboard.Installations, Strings.Get("ReportFigureInstallations"));
+        AppendFigure(html, dashboard.Areas, Strings.Get("ReportFigureAreas"));
+        AppendFigure(html, dashboard.Lines, Strings.Get("ReportFigureLines"));
+        AppendFigure(html, dashboard.Devices, Strings.Get("ReportFigureDevices"));
+        AppendFigure(html, dashboard.GroupAddresses, Strings.Get("ReportFigureGroupAddresses"));
+        AppendFigure(html, dashboard.GroupAddressesWithDpt, Strings.Get("ReportFigureWithDpt"));
+        AppendFigure(html, dashboard.ComObjects, Strings.Get("ReportFigureComObjects"));
+        AppendFigure(html, dashboard.LinkedGroupAddresses, Strings.Get("ReportFigureLinked"));
+        AppendFigure(html, dashboard.DptTypes, Strings.Get("ReportFigureDptTypes"));
+        AppendFigure(html, ProjectCheck.Count(findings, CheckSeverity.Error), Strings.Get("ReportFigureErrors"));
+        AppendFigure(html, ProjectCheck.Count(findings, CheckSeverity.Warning), Strings.Get("ReportFigureWarnings"));
+        AppendFigure(html, ProjectCheck.Count(findings, CheckSeverity.Info), Strings.Get("ReportFigureInfos"));
         html.AppendLine("</div>");
         html.AppendLine("</section>");
     }
@@ -162,24 +162,24 @@ public static class ProjectReport
         var html = new StringBuilder();
         if (!ProjectQuery.DeviceList(project).Any())
         {
-            html.AppendLine("<p class=\"empty\">Keine Geräte im Projekt.</p>");
+            html.AppendLine($"<p class=\"empty\">{Escape(Strings.Get("ReportNoDevices"))}</p>");
             return html.ToString();
         }
 
         foreach (var installation in project.Installations)
         {
-            html.AppendLine($"<h3>{Titled("Installation", installation.Name)}</h3>");
+            html.AppendLine($"<h3>{Titled(Strings.Get("ReportInstallationTitle"), installation.Name)}</h3>");
             foreach (var area in installation.Areas)
             {
-                html.AppendLine($"<h3>{Titled($"Bereich {area.Address}", area.Name)}</h3>");
+                html.AppendLine($"<h3>{Titled(Strings.Get("ReportAreaTitle", area.Address), area.Name)}</h3>");
                 if (area.Devices.Count > 0) html.Append(DeviceTable(area.Devices));
                 foreach (var line in area.Lines)
                 {
-                    html.AppendLine($"<h4>{Titled($"Linie {area.Address}.{line.Address}", line.Name)}</h4>");
+                    html.AppendLine($"<h4>{Titled(Strings.Get("ReportLineTitle", $"{area.Address}.{line.Address}"), line.Name)}</h4>");
                     if (line.Devices.Count > 0) html.Append(DeviceTable(line.Devices));
                     foreach (var segment in line.Segments)
                     {
-                        html.AppendLine($"<h5>{Titled($"Segment {area.Address}.{line.Address}.{segment.Address}", segment.Name)}</h5>");
+                        html.AppendLine($"<h5>{Titled(Strings.Get("ReportSegmentTitle", $"{area.Address}.{line.Address}.{segment.Address}"), segment.Name)}</h5>");
                         if (segment.Devices.Count > 0) html.Append(DeviceTable(segment.Devices));
                     }
                 }
@@ -191,8 +191,10 @@ public static class ProjectReport
     private static string DeviceTable(IEnumerable<DeviceInstance> devices)
     {
         var html = new StringBuilder();
-        html.AppendLine("<table><thead><tr><th scope=\"col\">Adresse</th><th scope=\"col\">Gerät</th>" +
-                        "<th scope=\"col\">Produkt-Referenz</th><th scope=\"col\">Beschreibung</th></tr></thead><tbody>");
+        html.AppendLine($"<table><thead><tr><th scope=\"col\">{Escape(Strings.Get("ReportColAddress"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColDevice"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColProductRef"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColDescription"))}</th></tr></thead><tbody>");
         foreach (var device in devices.OrderBy(d => d.Address.Raw))
             html.AppendLine("<tr>" +
                             $"<td class=\"mono\">{device.Address}</td>" +
@@ -210,7 +212,7 @@ public static class ProjectReport
         var addresses = ProjectQuery.GroupAddresses(project).OrderBy(a => a.Address.Raw).ToList();
         if (addresses.Count == 0)
         {
-            html.AppendLine("<p class=\"empty\">Keine Gruppenadressen im Projekt.</p>");
+            html.AppendLine($"<p class=\"empty\">{Escape(Strings.Get("ReportNoGroupAddresses"))}</p>");
             return html.ToString();
         }
 
@@ -228,9 +230,11 @@ public static class ProjectReport
                 list.Add($"{device.Address} · {comObject.Text ?? comObject.ComObjectId}");
             }
 
-        html.AppendLine("<table><thead><tr><th scope=\"col\">Adresse</th><th scope=\"col\">Name</th>" +
-                        "<th scope=\"col\">Datapoint-Typ</th><th scope=\"col\">Bereich</th>" +
-                        "<th scope=\"col\">Verknüpfungen</th></tr></thead><tbody>");
+        html.AppendLine($"<table><thead><tr><th scope=\"col\">{Escape(Strings.Get("ReportColAddress"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColName"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColDpt"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColRange"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColLinks"))}</th></tr></thead><tbody>");
         foreach (var entry in addresses)
             html.AppendLine("<tr>" +
                             $"<td class=\"mono\">{entry.Address}</td>" +
@@ -253,20 +257,22 @@ public static class ProjectReport
             .ToList();
         if (refs.Count == 0)
         {
-            html.AppendLine("<p class=\"empty\">Keine Kommunikationsobjekte im Projekt.</p>");
+            html.AppendLine($"<p class=\"empty\">{Escape(Strings.Get("ReportNoComObjects"))}</p>");
             return html.ToString();
         }
 
         var addresses = ProjectQuery.GroupAddresses(project).ToDictionary(a => a.Id, a => a.Address.ToString());
-        html.AppendLine("<table><thead><tr><th scope=\"col\">Gerät</th><th scope=\"col\">Adresse</th>" +
-                        "<th scope=\"col\">Nr.</th><th scope=\"col\">Objekt</th>" +
-                        "<th scope=\"col\">Verknüpfte Gruppenadressen</th></tr></thead><tbody>");
+        html.AppendLine($"<table><thead><tr><th scope=\"col\">{Escape(Strings.Get("ReportColDevice"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColAddress"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColNumber"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColObject"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColLinkedGroupAddresses"))}</th></tr></thead><tbody>");
         foreach (var (device, comObject) in refs)
         {
             var links = comObject.Links.Count == 0
                 ? Dash
                 : string.Join(", ", comObject.Links.Select(id =>
-                    addresses.TryGetValue(id, out var address) ? address : $"{id} (unbekannt)"));
+                    addresses.TryGetValue(id, out var address) ? address : Strings.Get("ReportUnknownReference", id)));
             html.AppendLine("<tr>" +
                             $"<td>{Show(device.Name)}</td>" +
                             $"<td class=\"mono\">{device.Address}</td>" +
@@ -285,17 +291,17 @@ public static class ProjectReport
         var rows = LinkMatrix(project);
         if (rows.Count == 0)
         {
-            html.AppendLine("<p class=\"empty\">Keine Gruppenbereiche im Projekt.</p>");
+            html.AppendLine($"<p class=\"empty\">{Escape(Strings.Get("ReportNoRanges"))}</p>");
             return html.ToString();
         }
 
-        html.AppendLine("<p>Verknüpfungen je Hauptbereich; „Verknüpfungen“ zählt alle Objekt-Links " +
-                        "auf die Gruppenadressen des Bereichs. Verweise auf fehlende Gruppenadressen " +
-                        "erscheinen als Befund der Projektprüfung.</p>");
-        html.AppendLine("<table><thead><tr><th scope=\"col\">Bereich</th>" +
-                        "<th scope=\"col\">Gruppenadressen</th><th scope=\"col\">mit DPT</th>" +
-                        "<th scope=\"col\">verknüpft</th><th scope=\"col\">unverknüpft</th>" +
-                        "<th scope=\"col\">Verknüpfungen</th></tr></thead><tbody>");
+        html.AppendLine($"<p>{Escape(Strings.Get("ReportLinkMatrixIntro"))}</p>");
+        html.AppendLine($"<table><thead><tr><th scope=\"col\">{Escape(Strings.Get("ReportColRange"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportFigureGroupAddresses"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColWithDpt"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColLinked"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColUnlinked"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColLinks"))}</th></tr></thead><tbody>");
         foreach (var row in rows)
             html.AppendLine("<tr>" +
                             $"<td>{Escape(row.Range)}</td>" +
@@ -306,7 +312,7 @@ public static class ProjectReport
                             $"<td class=\"num\">{row.Links}</td>" +
                             "</tr>");
         html.AppendLine("<tr class=\"total\">" +
-                        "<td>Gesamt</td>" +
+                        $"<td>{Escape(Strings.Get("ReportTotal"))}</td>" +
                         $"<td class=\"num\">{rows.Sum(r => r.GroupAddresses)}</td>" +
                         $"<td class=\"num\">{rows.Sum(r => r.WithDatapointType)}</td>" +
                         $"<td class=\"num\">{rows.Sum(r => r.Linked)}</td>" +
@@ -320,20 +326,23 @@ public static class ProjectReport
     private static string FindingsBody(IReadOnlyList<CheckFinding> findings)
     {
         var html = new StringBuilder();
-        html.AppendLine($"<p>{ProjectCheck.Count(findings, CheckSeverity.Error)} Fehler, " +
-                        $"{ProjectCheck.Count(findings, CheckSeverity.Warning)} Warnungen, " +
-                        $"{ProjectCheck.Count(findings, CheckSeverity.Info)} Hinweise.</p>");
+        html.AppendLine($"<p>{Escape(Strings.Get("ReportFindingsSummary",
+            ProjectCheck.Count(findings, CheckSeverity.Error),
+            ProjectCheck.Count(findings, CheckSeverity.Warning),
+            ProjectCheck.Count(findings, CheckSeverity.Info)))}</p>");
         if (findings.Count == 0)
         {
-            html.AppendLine("<p class=\"empty\">Keine Befunde.</p>");
+            html.AppendLine($"<p class=\"empty\">{Escape(Strings.Get("ReportNoFindings"))}</p>");
             return html.ToString();
         }
 
-        html.AppendLine("<table><thead><tr><th scope=\"col\">Schwere</th><th scope=\"col\">Code</th>" +
-                        "<th scope=\"col\">Pfad</th><th scope=\"col\">Meldung</th></tr></thead><tbody>");
+        html.AppendLine($"<table><thead><tr><th scope=\"col\">{Escape(Strings.Get("ReportColSeverity"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColCode"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColPath"))}</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColMessage"))}</th></tr></thead><tbody>");
         foreach (var finding in findings.OrderByDescending(f => f.Severity))
             html.AppendLine("<tr>" +
-                            $"<td class=\"sev\">{Severity(finding.Severity)}</td>" +
+                            $"<td class=\"sev\">{Escape(Severity(finding.Severity))}</td>" +
                             $"<td class=\"mono\">{Escape(finding.Code)}</td>" +
                             $"<td>{Escape(finding.Path)}</td>" +
                             $"<td>{Escape(finding.Message)}</td>" +
@@ -356,7 +365,7 @@ public static class ProjectReport
         html.AppendLine($"  @page {{ size: {paper}; margin: 16mm 12mm 18mm;");
         html.AppendLine($"    @top-left {{ content: \"{Css(title)}\"; font-size: 8pt; color: #555; }}");
         html.AppendLine($"    @bottom-left {{ content: \"{Css(date)}\"; font-size: 8pt; color: #555; }}");
-        html.AppendLine("    @bottom-right { content: \"Seite \" counter(page) \" / \" counter(pages); font-size: 8pt; color: #555; }");
+        html.AppendLine($"    @bottom-right {{ content: \"{Css(Strings.Get("ReportPageOf"))}\" counter(page) \" / \" counter(pages); font-size: 8pt; color: #555; }}");
         html.AppendLine("  }");
         html.AppendLine(StyleSheet);
     }
@@ -418,13 +427,13 @@ public static class ProjectReport
             : $"{range.Name} ({range.RangeStart}..{range.RangeEnd})";
 
     private static string Titled(string prefix, string? name)
-        => string.IsNullOrWhiteSpace(name) ? prefix : $"{prefix} – {Escape(name)}";
+        => string.IsNullOrWhiteSpace(name) ? Escape(prefix) : $"{Escape(prefix)} – {Escape(name)}";
 
     private static string Severity(CheckSeverity severity) => severity switch
     {
-        CheckSeverity.Error => "Fehler",
-        CheckSeverity.Warning => "Warnung",
-        _ => "Hinweis",
+        CheckSeverity.Error => Strings.Get("ReportSeverityError"),
+        CheckSeverity.Warning => Strings.Get("ReportSeverityWarning"),
+        _ => Strings.Get("ReportSeverityInfo"),
     };
 
     private static string LinkCell(List<string>? links)
@@ -433,7 +442,7 @@ public static class ProjectReport
             : $"{links.Count}×<br>{string.Join("<br>", links.Select(Escape))}";
 
     private static void AppendFact(StringBuilder html, string label, string value)
-        => html.AppendLine($"<tr><th scope=\"row\">{label}</th><td>{Escape(value)}</td></tr>");
+        => html.AppendLine($"<tr><th scope=\"row\">{Escape(label)}</th><td>{Escape(value)}</td></tr>");
 
     private static void AppendFigure(StringBuilder html, int value, string label)
         => html.AppendLine($"<div class=\"figure\"><div class=\"value\">{value}</div>" +
@@ -442,7 +451,7 @@ public static class ProjectReport
     private static void AppendSection(StringBuilder html, string id, string heading, string body)
     {
         html.AppendLine($"<section class=\"report-section\" id=\"{id}\">");
-        html.AppendLine($"<h2>{heading}</h2>");
+        html.AppendLine($"<h2>{Escape(heading)}</h2>");
         html.Append(body);
         html.AppendLine("</section>");
     }

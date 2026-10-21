@@ -689,6 +689,111 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         Strings.Available.Count == 2);
 }
 
+// --- Lokalisierung der Projektprüfung: deutsche Vorgabe, englische Übersetzung, gleiche Pfade ---
+{
+    Project CheckProject()
+    {
+        var taster = Dev("1.1.1", "Taster");
+        taster.ComObjectRefs.Add(ComRef("CO-1", "Schalten"));
+        var checkProject = BuildProject("P-I18N", "Prüfung", taster, Dev("1.1.2", "Aktor"));
+        checkProject.Workbench.Devices["ghost"] = new Knx.Workbench.DeviceMetadata();
+        return checkProject;
+    }
+
+    var catalogue = new Dictionary<string, Knx.Catalog.CatalogApplicationProgram>
+    {
+        ["M-0001_H-0001"] = new() { Id = "M-0001_H-0001", Broken = true },
+    };
+    string Message(Project project, string code) =>
+        ProjectCheck.Run(project, catalogue).First(f => f.Code == code).Message;
+
+    void CheckMessage(string label, string code, string de, string en)
+    {
+        Strings.Language = "de";
+        var german = Message(CheckProject(), code);
+        Strings.Language = "en";
+        var english = Message(CheckProject(), code);
+        Strings.Language = "de";
+        Check($"i18n: {label} deutsch", german == de, german);
+        Check($"i18n: {label} englisch", english == en, english);
+        Check($"i18n: {label} wirklich übersetzt", german != english);
+    }
+
+    var emptyDe = ProjectCheck.Run(new Project { Id = "P-EMPTY", Name = "Leer" });
+    Strings.Language = "en";
+    var emptyEn = ProjectCheck.Run(new Project { Id = "P-EMPTY", Name = "Leer" });
+    Strings.Language = "de";
+    Check("i18n: P001 deutsch", emptyDe.Single().Message == "Projekt enthält keine Installation.",
+        emptyDe.Single().Message);
+    Check("i18n: P001 englisch", emptyEn.Single().Message == "Project contains no installation.",
+        emptyEn.Single().Message);
+    Check("i18n: P001 Pfad, Code und Schwere unverändert",
+        emptyEn.Single().Path == "Leer" && emptyEn.Single().Code == "P001"
+        && emptyEn.Single().Severity == CheckSeverity.Error);
+
+    CheckMessage("P023", "P023", "Gerät 'Aktor' hat keine Kommunikationsobjekte.",
+        "Device 'Aktor' has no communication objects.");
+    CheckMessage("P040", "P040", "Kommunikationsobjekt 'Schalten' von 'Taster' ist nicht verknüpft.",
+        "Communication object 'Schalten' of 'Taster' is not linked.");
+    CheckMessage("P052", "P052", "Arbeitsbereichs-Metadaten verweisen auf das unbekannte Gerät 'ghost'.",
+        "Workbench metadata references the unknown device 'ghost'.");
+    CheckMessage("P070", "P070",
+        "Applikationsprogramm von 'Taster' ist als defekt markiert; Bearbeiten und Download sind gesperrt.",
+        "Application program of 'Taster' is marked as broken; editing and download are locked.");
+
+    var problemProject = CheckProject();
+    var deFindings = ProjectCheck.Run(problemProject, catalogue);
+    Strings.Language = "en";
+    var enFindings = ProjectCheck.Run(problemProject, catalogue);
+    Strings.Language = "de";
+    Check("i18n: Prüfbefunde behalten Code, Pfad und Reihenfolge",
+        deFindings.Select(f => (f.Code, f.Path, f.Severity))
+            .SequenceEqual(enFindings.Select(f => (f.Code, f.Path, f.Severity))),
+        string.Join(",", deFindings.Select(f => f.Code)));
+
+    Check("i18n: Apostroph im Wert bleibt erhalten",
+        Strings.Get("ChkP020", "O'Brien", "1.1.1") == "Gerät 'O'Brien' hat die ungültige Adresse 1.1.1.",
+        Strings.Get("ChkP020", "O'Brien", "1.1.1"));
+    Strings.Language = "en";
+    Check("i18n: Apostroph im Wert bleibt erhalten (en)",
+        Strings.Get("ChkP020", "O'Brien", "1.1.1") == "Device 'O'Brien' has the invalid address 1.1.1.",
+        Strings.Get("ChkP020", "O'Brien", "1.1.1"));
+    Strings.Language = "de";
+}
+
+// --- Lokalisierung: neue Schlüssel vollständig, Platzhalter formatierbar ---
+{
+    var prefixes = new[] { "Chk", "Csv", "Report" };
+    var keys = Strings.Catalogue
+        .Where(p => prefixes.Any(prefix => p.Key.StartsWith(prefix, StringComparison.Ordinal)))
+        .OrderBy(p => p.Key, StringComparer.Ordinal)
+        .ToList();
+    Check("i18n: neue Schlüssel vorhanden", keys.Count >= 100, keys.Count.ToString());
+    Check("i18n: keine leeren neuen Übersetzungen",
+        keys.All(p => !string.IsNullOrWhiteSpace(p.Value.De) && !string.IsNullOrWhiteSpace(p.Value.En)),
+        string.Join(",", keys.Where(p => string.IsNullOrWhiteSpace(p.Value.De) ||
+                                          string.IsNullOrWhiteSpace(p.Value.En)).Select(p => p.Key)));
+
+    bool Formats(string key, string text)
+    {
+        var indexes = System.Text.RegularExpressions.Regex.Matches(text, @"\{(\d+)\}")
+            .Select(m => int.Parse(m.Groups[1].Value)).DefaultIfEmpty(-1).Max();
+        var args = Enumerable.Range(0, indexes + 1).Select(i => (object)("Wert" + i)).ToArray();
+        var rendered = Strings.Get(key, args);
+        return !rendered.Contains('{') && !rendered.Contains('}');
+    }
+
+    foreach (var language in Strings.Available)
+    {
+        Strings.Language = language;
+        Check($"i18n: Platzhalter formatierbar ({language})",
+            keys.All(p => Formats(p.Key, language == "en" ? p.Value.En : p.Value.De)),
+            string.Join(",", keys.Where(p => !Formats(p.Key, language == "en" ? p.Value.En : p.Value.De))
+                .Select(p => p.Key)));
+    }
+    Strings.Language = "de";
+}
+
 // --- ProjectOperations: atomare Geräte-, Linien-, Segment- und Gruppenadress-Aktionen ---
 {
     // Two installations, rooms, lines with/without segments and group ranges; one device with

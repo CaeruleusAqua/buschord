@@ -268,7 +268,7 @@ public partial class WorkbenchWindow
 
     private static string AssociationsCsv(Project project)
     {
-        var builder = new StringBuilder("Geräteadresse;Gerät;Objektnummer;Objekt;DPT;Länge;Flags;Aktiv;GA-Adresse;GA-Name;Sendend;Einbauort\r\n");
+        var builder = new StringBuilder(Strings.Get("CsvAssociationsHeader") + "\r\n");
         foreach (var a in Knx.Workbench.WorkbenchProject.Associations(project))
         {
             foreach (var value in new[] { a.DeviceAddress, a.DeviceName, a.Number.ToString(),

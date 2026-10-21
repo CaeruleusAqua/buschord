@@ -28,6 +28,9 @@ public sealed class Strings : INotifyPropertyChanged
 
     public static IReadOnlyList<string> Available { get; } = ["de", "en"];
 
+    /// <summary>Every key with its German and English text; used to verify completeness.</summary>
+    public static IReadOnlyDictionary<string, (string De, string En)> Catalogue => Map;
+
     public string this[string key] => Get(key);
 
     public static string Get(string key, params object[] args)
@@ -35,7 +38,9 @@ public sealed class Strings : INotifyPropertyChanged
         var text = Map.TryGetValue(key, out var entry)
             ? _language == "en" ? entry.En : entry.De
             : key;
-        return args.Length == 0 ? text : string.Format(text, args);
+        if (args.Length == 0) return text;
+        try { return string.Format(text, args); }
+        catch (FormatException) { return text; }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -432,5 +437,182 @@ public sealed class Strings : INotifyPropertyChanged
         ["ModificationChanged"] = ("Geändert", "Changed"),
         ["ModificationUnchanged"] = ("Unverändert", "Unchanged"),
         ["SplashTagline"] = ("Open-Source-Gebäudeautomation", "Open-source building automation engineering"),
+
+        // ---- project check messages (Knx.ProjectCheck) ----
+        ["ChkKindInstallation"] = ("Installation", "installation"),
+        ["ChkKindBuildingNode"] = ("Gebäudeknoten", "building node"),
+        ["ChkKindGroupRange"] = ("Gruppenbereich", "group range"),
+        ["ChkKindGroupAddress"] = ("Gruppenadresse", "group address"),
+        ["ChkKindArea"] = ("Bereich", "area"),
+        ["ChkKindDevice"] = ("Gerät", "device"),
+        ["ChkKindLine"] = ("Linie", "line"),
+        ["ChkKindSegment"] = ("Segment", "segment"),
+        ["ChkP001"] = ("Projekt enthält keine Installation.", "Project contains no installation."),
+        ["ChkP010"] = ("Bereichsadresse muss zwischen 0 und 15 liegen.",
+                        "Area address must be between 0 and 15."),
+        ["ChkP011"] = ("Linienadresse muss zwischen 0 und 15 liegen.",
+                        "Line address must be between 0 and 15."),
+        ["ChkP012"] = ("Linie hat {0} Segmente; die Kopplerbestückung ist nicht modelliert.",
+                        "Line has {0} segments; coupler population is not modelled."),
+        ["ChkP013"] = ("Segmentadresse muss zwischen 0 und 15 liegen.",
+                        "Segment address must be between 0 and 15."),
+        ["ChkP014"] = ("Linie hat {0} Segmente; zwischen Segmenten sind Segmentkoppler nötig. " +
+                        "Das Projektmodell führt keine Kopplerbestückung, die Prüfung ist nicht möglich.",
+                        "Line has {0} segments; segment couplers are required between segments. " +
+                        "The project model carries no coupler population, so the check is not possible."),
+        ["ChkP015"] = ("Bereichsadresse {0} ist in der Installation {1} mehrfach vergeben.",
+                        "Area address {0} is assigned more than once in installation {1}."),
+        ["ChkP016"] = ("Linienadresse {0} ist im Bereich {1} mehrfach vergeben.",
+                        "Line address {0} is assigned more than once in area {1}."),
+        ["ChkP020"] = ("Gerät '{0}' hat die ungültige Adresse {1}.",
+                        "Device '{0}' has the invalid address {1}."),
+        ["ChkP021"] = ("Gerät '{0}' hat keine Produktreferenz.",
+                        "Device '{0}' has no product reference."),
+        ["ChkP022"] = ("Gerät ohne Namen.", "Device without a name."),
+        ["ChkP023"] = ("Gerät '{0}' hat keine Kommunikationsobjekte.",
+                        "Device '{0}' has no communication objects."),
+        ["ChkP024"] = ("Gerät '{0}' hängt in Bereich {1}{2}, seine Adresse {3} gehört nicht dazu.",
+                        "Device '{0}' sits in area {1}{2}, its address {3} does not belong there."),
+        ["ChkP024LineSuffix"] = ("/Linie {0}", "/line {0}"),
+        ["ChkP025"] = ("Adresse {0} ist {1}× vergeben: {2}",
+                        "Address {0} is assigned {1}×: {2}"),
+        ["ChkP030"] = ("Gruppenadresse '{0}' hat keinen Datapoint-Typ.",
+                        "Group address '{0}' has no datapoint type."),
+        ["ChkP031"] = ("Gruppenadresse ohne Namen.", "Group address without a name."),
+        ["ChkP032"] = ("Gruppenadresse {0} ist {1}× vergeben: {2}",
+                        "Group address {0} is assigned {1}×: {2}"),
+        ["ChkP033"] = ("Adresse liegt außerhalb des Bereichs '{0}' ({1}..{2}).",
+                        "Address lies outside range '{0}' ({1}..{2})."),
+        ["ChkP034Main"] = ("Gruppenadressen liegen direkt im Hauptbereich; im dreistufigen Stil " +
+                           "gehören sie in einen Mittelbereich.",
+                           "Group addresses lie directly in the main range; in the three-level style " +
+                           "they belong in a middle range."),
+        ["ChkP034Depth"] = ("Bereich ist tiefer verschachtelt als der dreistufige Stil erlaubt " +
+                            "(Haupt-/Mittelbereich).",
+                            "Range is nested deeper than the three-level style allows " +
+                            "(main/middle range)."),
+        ["ChkP034TwoLevel"] = ("Bereich ist verschachtelt; im zweistufigen Stil liegen Adressen direkt " +
+                               "im Hauptbereich.",
+                               "Range is nested; in the two-level style addresses lie directly in the " +
+                               "main range."),
+        ["ChkP035Bounds"] = ("Bereichsgrenzen {0}..{1} liegen außerhalb des 16-Bit-Adressraums.",
+                             "Range bounds {0}..{1} lie outside the 16-bit address space."),
+        ["ChkP035Reversed"] = ("Bereichsgrenzen sind verdreht: {0}..{1}.",
+                               "Range bounds are reversed: {0}..{1}."),
+        ["ChkP040"] = ("Kommunikationsobjekt '{0}' von '{1}' ist nicht verknüpft.",
+                        "Communication object '{0}' of '{1}' is not linked."),
+        ["ChkP041"] = ("Verknüpfung '{0}' von '{1}' zeigt auf keine existierende Gruppenadresse.",
+                        "Link '{0}' of '{1}' points to no existing group address."),
+        ["ChkP042"] = ("Gruppenadresse '{0}' ist mit keinem Kommunikationsobjekt verknüpft.",
+                        "Group address '{0}' is not linked to any communication object."),
+        ["ChkP043"] = ("Gebäudeknoten '{0}' verweist auf das Gerät '{1}', das im Projekt nicht existiert.",
+                        "Building node '{0}' references device '{1}', which does not exist in the project."),
+        ["ChkP050"] = ("{0}-Bezeichner '{1}' ist {2}-mal vergeben; Referenzen sind nicht eindeutig.",
+                        "{0} identifier '{1}' is assigned {2} times; references are not unique."),
+        ["ChkP051"] = ("{0} hat keinen Bezeichner.", "{0} has no identifier."),
+        ["ChkP052Device"] = ("Arbeitsbereichs-Metadaten verweisen auf das unbekannte Gerät '{0}'.",
+                             "Workbench metadata references the unknown device '{0}'."),
+        ["ChkP052Object"] = ("Arbeitsbereichs-Metadaten verweisen auf ein unbekanntes Kommunikationsobjekt.",
+                             "Workbench metadata references an unknown communication object."),
+        ["ChkP052Connector"] = ("Connector-Metadaten verweisen auf eine nicht mehr verknüpfte Gruppenadresse.",
+                                "Connector metadata references a group address that is no longer linked."),
+        ["ChkP052Sending"] = ("Sendeadresse verweist auf eine nicht mehr verknüpfte Gruppenadresse.",
+                              "Sending address references a group address that is no longer linked."),
+        ["ChkP052Group"] = ("Arbeitsbereichs-Metadaten verweisen auf die unbekannte Gruppenadresse '{0}'.",
+                            "Workbench metadata references the unknown group address '{0}'."),
+        ["ChkP060"] = ("Linie nutzt das IP-Medium. Router- und Backbone-Kopplung sind im Projektmodell " +
+                        "nicht abgebildet; ihre Anwesenheit ist nicht geprüft.",
+                        "Line uses the IP medium. Router and backbone coupling are not modelled in the " +
+                        "project; their presence is not checked."),
+        ["ChkP070"] = ("Applikationsprogramm von '{0}' ist als defekt markiert; Bearbeiten und Download " +
+                        "sind gesperrt.",
+                        "Application program of '{0}' is marked as broken; editing and download are locked."),
+        ["ChkP071"] = ("Download-Information des Applikationsprogramms von '{0}' ist unvollständig; " +
+                        "Einfügen, Bearbeiten und Download sind gesperrt.",
+                        "Download information of the application program of '{0}' is incomplete; inserting, " +
+                        "editing and download are locked."),
+        ["ChkP072"] = ("Applikationsprogramm '{0}' von '{1}' ist im geladenen Katalog nicht vorhanden; " +
+                        "sein Status ist nicht prüfbar.",
+                        "Application program '{0}' of '{1}' is not present in the loaded catalogue; " +
+                        "its status cannot be checked."),
+        ["ChkP073"] = ("Segmentadresse {0} ist in der Linie {1} mehrfach vergeben.",
+                        "Segment address {0} is assigned more than once in line {1}."),
+
+        // ---- CSV headers written by the exporters ----
+        ["CsvGroupAddressHeader"] = ("Adresse;Name;Beschreibung;DatapointType;Puid",
+                                      "Address;Name;Description;DatapointType;Puid"),
+        ["CsvDeviceHeader"] = ("Adresse;Name;ProduktRef;Beschreibung;Kommentar",
+                                "Address;Name;ProductRef;Description;Comment"),
+        ["CsvTopologyHeader"] = ("Area;Line;Segment;Gerät;Adresse", "Area;Line;Segment;Device;Address"),
+        ["CsvAssociationsHeader"] = ("Geräteadresse;Gerät;Objektnummer;Objekt;DPT;Länge;Flags;Aktiv;" +
+                                      "GA-Adresse;GA-Name;Sendend;Einbauort",
+                                      "DeviceAddress;Device;ObjectNumber;Object;DPT;Length;Flags;Active;" +
+                                      "GroupAddress;GroupName;Sending;InstalledRoom"),
+
+        // ---- printable project report (Knx.Reports.ProjectReport) ----
+        ["ReportDocumentation"] = ("Projektdokumentation", "Project documentation"),
+        ["ReportTopology"] = ("Topologie und Geräte", "Topology and devices"),
+        ["ReportGroupAddresses"] = ("Gruppenadressen", "Group addresses"),
+        ["ReportComObjects"] = ("Kommunikationsobjekte", "Communication objects"),
+        ["ReportLinkMatrix"] = ("Verknüpfungsmatrix", "Link matrix"),
+        ["ReportFindings"] = ("Projektprüfung", "Project check"),
+        ["ReportFactId"] = ("Projekt-ID", "Project ID"),
+        ["ReportFactCreated"] = ("Erstellt am", "Created on"),
+        ["ReportFactStart"] = ("Projektbeginn", "Project start"),
+        ["ReportFactGuid"] = ("Projekt-GUID", "Project GUID"),
+        ["ReportFigureInstallations"] = ("Installationen", "Installations"),
+        ["ReportFigureAreas"] = ("Bereiche", "Areas"),
+        ["ReportFigureLines"] = ("Linien", "Lines"),
+        ["ReportFigureDevices"] = ("Geräte", "Devices"),
+        ["ReportFigureGroupAddresses"] = ("Gruppenadressen", "Group addresses"),
+        ["ReportFigureWithDpt"] = ("davon mit DPT", "of which with DPT"),
+        ["ReportFigureComObjects"] = ("Kommunikationsobjekte", "Communication objects"),
+        ["ReportFigureLinked"] = ("verknüpfte Gruppenadressen", "linked group addresses"),
+        ["ReportFigureDptTypes"] = ("Datapoint-Typen", "Datapoint types"),
+        ["ReportFigureErrors"] = ("Fehler", "Errors"),
+        ["ReportFigureWarnings"] = ("Warnungen", "Warnings"),
+        ["ReportFigureInfos"] = ("Hinweise", "Notes"),
+        ["ReportInstallationTitle"] = ("Installation", "Installation"),
+        ["ReportAreaTitle"] = ("Bereich {0}", "Area {0}"),
+        ["ReportLineTitle"] = ("Linie {0}", "Line {0}"),
+        ["ReportSegmentTitle"] = ("Segment {0}", "Segment {0}"),
+        ["ReportNoDevices"] = ("Keine Geräte im Projekt.", "No devices in the project."),
+        ["ReportNoGroupAddresses"] = ("Keine Gruppenadressen im Projekt.", "No group addresses in the project."),
+        ["ReportNoComObjects"] = ("Keine Kommunikationsobjekte im Projekt.",
+                                   "No communication objects in the project."),
+        ["ReportNoRanges"] = ("Keine Gruppenbereiche im Projekt.", "No group ranges in the project."),
+        ["ReportNoFindings"] = ("Keine Befunde.", "No findings."),
+        ["ReportColAddress"] = ("Adresse", "Address"),
+        ["ReportColDevice"] = ("Gerät", "Device"),
+        ["ReportColProductRef"] = ("Produkt-Referenz", "Product reference"),
+        ["ReportColDescription"] = ("Beschreibung", "Description"),
+        ["ReportColName"] = ("Name", "Name"),
+        ["ReportColDpt"] = ("Datapoint-Typ", "Datapoint type"),
+        ["ReportColRange"] = ("Bereich", "Range"),
+        ["ReportColLinks"] = ("Verknüpfungen", "Links"),
+        ["ReportColObject"] = ("Objekt", "Object"),
+        ["ReportColNumber"] = ("Nr.", "No."),
+        ["ReportColLinkedGroupAddresses"] = ("Verknüpfte Gruppenadressen", "Linked group addresses"),
+        ["ReportColSeverity"] = ("Schwere", "Severity"),
+        ["ReportColCode"] = ("Code", "Code"),
+        ["ReportColPath"] = ("Pfad", "Path"),
+        ["ReportColMessage"] = ("Meldung", "Message"),
+        ["ReportColWithDpt"] = ("mit DPT", "with DPT"),
+        ["ReportColLinked"] = ("verknüpft", "linked"),
+        ["ReportColUnlinked"] = ("unverknüpft", "unlinked"),
+        ["ReportTotal"] = ("Gesamt", "Total"),
+        ["ReportLinkMatrixIntro"] = ("Verknüpfungen je Hauptbereich; „Verknüpfungen“ zählt alle Objekt-Links " +
+                                      "auf die Gruppenadressen des Bereichs. Verweise auf fehlende " +
+                                      "Gruppenadressen erscheinen als Befund der Projektprüfung.",
+                                      "Links per main range; “Links” counts all object links to the group " +
+                                      "addresses of the range. References to missing group addresses appear " +
+                                      "as findings of the project check."),
+        ["ReportFindingsSummary"] = ("{0} Fehler, {1} Warnungen, {2} Hinweise.",
+                                      "{0} errors, {1} warnings, {2} notes."),
+        ["ReportUnknownReference"] = ("{0} (unbekannt)", "{0} (unknown)"),
+        ["ReportPageOf"] = ("Seite ", "Page "),
+        ["ReportSeverityError"] = ("Fehler", "Error"),
+        ["ReportSeverityWarning"] = ("Warnung", "Warning"),
+        ["ReportSeverityInfo"] = ("Hinweis", "Note"),
     };
 }

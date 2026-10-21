@@ -6,7 +6,7 @@ public static class ProjectCsvExporter
     public static string GroupAddresses(Project project)
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Adresse;Name;Beschreibung;DatapointType;Puid");
+        sb.AppendLine(Strings.Get("CsvGroupAddressHeader"));
         foreach (var inst in project.Installations)
             foreach (var range in inst.MainRanges)
                 CollectGroupAddresses(range, sb);
@@ -23,7 +23,7 @@ public static class ProjectCsvExporter
     public static string Devices(Project project)
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Adresse;Name;ProduktRef;Beschreibung;Kommentar");
+        sb.AppendLine(Strings.Get("CsvDeviceHeader"));
         foreach (var inst in project.Installations)
             foreach (var area in inst.Areas)
             {
@@ -44,7 +44,7 @@ public static class ProjectCsvExporter
     public static string Topology(Project project)
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Area;Line;Segment;Gerät;Adresse");
+        sb.AppendLine(Strings.Get("CsvTopologyHeader"));
         foreach (var inst in project.Installations)
             foreach (var area in inst.Areas)
                 foreach (var line in area.Lines)

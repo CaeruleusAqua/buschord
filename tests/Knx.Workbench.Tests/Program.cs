@@ -655,6 +655,29 @@ Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoad
         "project check: severity counters cover all findings");
 }
 
+// Assignments CSV header (workbench export): one column per exported field, in both UI languages.
+{
+    const string germanHeader =
+        "Geräteadresse;Gerät;Objektnummer;Objekt;DPT;Länge;Flags;Aktiv;GA-Adresse;GA-Name;Sendend;Einbauort";
+    const string englishHeader =
+        "DeviceAddress;Device;ObjectNumber;Object;DPT;Length;Flags;Active;GroupAddress;GroupName;Sending;InstalledRoom";
+    Strings.Language = "de";
+    Check(Strings.Get("CsvAssociationsHeader") == germanHeader,
+        "assignments CSV: German header unchanged -> " + Strings.Get("CsvAssociationsHeader"));
+    Strings.Language = "en";
+    Check(Strings.Get("CsvAssociationsHeader") == englishHeader,
+        "assignments CSV: English header -> " + Strings.Get("CsvAssociationsHeader"));
+    foreach (var language in Strings.Available)
+    {
+        Strings.Language = language;
+        var columns = Strings.Get("CsvAssociationsHeader").Split(';');
+        Check(columns.Length == 12, "assignments CSV: 12 columns expected (" + language + ") -> " + columns.Length);
+        Check(columns.All(c => !string.IsNullOrWhiteSpace(c)),
+            "assignments CSV: no empty column name (" + language + ")");
+    }
+    Strings.Language = "de";
+}
+
 // Project operations on the demo model: copied external channel metadata, moved device keeps
 // workbench facts, group-address move/delete keep links consistent and undo atomically.
 {

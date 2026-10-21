@@ -60,7 +60,7 @@
         </ItemsControl>
       </ScrollViewer>
       <TextBlock x:Name="PreviewLimitations" TextWrapping="Wrap" Classes="wb-muted" />
-      <Button x:Name="CancelReviewButton" Content="Cancel review" Click="OnCancelReview" Classes="wb-button" />
+      <Button x:Name="CancelReviewButton" Click="OnCancelReview" Classes="wb-button" />
     </StackPanel>
     <Border x:Name="NoticePanel" DockPanel.Dock="Top" Classes="wb-panel" CornerRadius="6"
             BorderThickness="1" Padding="10,7" Margin="0,0,0,10" IsVisible="False">

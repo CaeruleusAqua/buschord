@@ -37,6 +37,20 @@ var topoCsv = ProjectCsvExporter.Topology(project);
 Check("Topology-CSV enthält Header", topoCsv.StartsWith("Area;Line;Segment;Gerät;Adresse"));
 Check("Topology-CSV enthält Aktor", topoCsv.Contains("Aktor"));
 
+// CSV-Köpfe folgen der UI-Sprache; Deutsch bleibt die Vorgabe.
+Strings.Language = "en";
+Check("CSV: Gruppenadress-Kopf englisch",
+    ProjectCsvExporter.GroupAddresses(project).StartsWith("Address;Name;Description;DatapointType;Puid"));
+Check("CSV: Geräte-Kopf englisch",
+    ProjectCsvExporter.Devices(project).StartsWith("Address;Name;ProductRef;Description;Comment"));
+Check("CSV: Topologie-Kopf englisch",
+    ProjectCsvExporter.Topology(project).StartsWith("Area;Line;Segment;Device;Address"));
+Strings.Language = "de";
+Check("CSV: Kopf bleibt deutsch ohne Sprachwechsel",
+    ProjectCsvExporter.GroupAddresses(project).StartsWith("Adresse;Name;Beschreibung;DatapointType;Puid") &&
+    ProjectCsvExporter.Devices(project).StartsWith("Adresse;Name;ProduktRef;Beschreibung;Kommentar") &&
+    ProjectCsvExporter.Topology(project).StartsWith("Area;Line;Segment;Gerät;Adresse"));
+
 // ---------------------------------------------------------------- Projektbericht (HTML)
 
 var tricky = new Project
@@ -140,6 +154,34 @@ Check("Bericht: leeres Projekt nennt leere Abschnitte",
     emptyReport.Contains("Keine Geräte im Projekt") && emptyReport.Contains("Keine Gruppenadressen im Projekt") &&
     emptyReport.Contains("Keine Kommunikationsobjekte im Projekt") &&
     emptyReport.Contains("Keine Gruppenbereiche im Projekt"));
+
+// Der Bericht folgt der UI-Sprache, inklusive der Befundtexte aus der Projektprüfung.
+Strings.Language = "en";
+var englishReport = ProjectReport.Render(emptyProject, new ProjectReportOptions { GeneratedAt = fixedTime });
+Check("Bericht: englische Überschriften",
+    englishReport.Contains("Topology and devices") && englishReport.Contains("Communication objects") &&
+    englishReport.Contains("Link matrix") && englishReport.Contains("Project documentation") &&
+    englishReport.Contains("Project check"));
+Check("Bericht: keine deutschen Überschriften auf Englisch",
+    !englishReport.Contains("Topologie und Geräte") && !englishReport.Contains("Verknüpfungsmatrix") &&
+    !englishReport.Contains("Projektdokumentation"));
+Check("Bericht: englische Leerzustände",
+    englishReport.Contains("No devices in the project") &&
+    englishReport.Contains("No group addresses in the project") &&
+    englishReport.Contains("No communication objects in the project") &&
+    englishReport.Contains("No group ranges in the project"));
+Check("Bericht: englische Befundmeldung",
+    englishReport.Contains("Project contains no installation"));
+var silentProject = new Project { Id = "P-SILENT", Name = "Still" };
+silentProject.Installations.Add(new Installation { Id = "I-S", Name = "Haus" });
+var silentReport = ProjectReport.Render(silentProject, new ProjectReportOptions { GeneratedAt = fixedTime });
+Check("Bericht: englischer Leerzustand der Befunde",
+    silentReport.Contains("0 errors, 0 warnings, 0 notes.") && silentReport.Contains("No findings"));
+Check("Bericht: englische Sprachange",
+    englishReport.Contains("<html lang=\"en\">") && report.Contains("<html lang=\"de\">"));
+Strings.Language = "de";
+Check("Bericht: deutsch bleibt Vorgabe",
+    ProjectReport.Render(emptyProject, new ProjectReportOptions { GeneratedAt = fixedTime }) == emptyReport);
 
 var reportPath = Path.Combine(Path.GetTempPath(), "knx_project_report_" + Guid.NewGuid().ToString("N") + ".html");
 var written = ProjectReport.Write(tricky, reportPath, new ProjectReportOptions { GeneratedAt = fixedTime });
