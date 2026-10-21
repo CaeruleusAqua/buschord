@@ -2,6 +2,10 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
+using Avalonia.Styling;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Knx;
 using Knx.App.Workbench;
 
@@ -23,7 +27,41 @@ public partial class App : Application
     /// <summary>Opens the catalogue browser at startup (--catalog).</summary>
     public static bool ShowCatalogOnStartup { get; set; }
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+        EnsureToolTipContrast();
+    }
+
+    private static bool _toolTipContrastHooked;
+    private static void EnsureToolTipContrast()
+    {
+        if (_toolTipContrastHooked) return;
+        _toolTipContrastHooked = true;
+        // ToolTip content is created in a PopupRoot outside the window's style scope; the
+        // generated TextBlock otherwise keeps Fluent's black foreground in dark mode.
+        ToolTip.IsOpenProperty.Changed.AddClassHandler<ToolTip>((tip, args) =>
+        {
+            if (args.NewValue is not true) return;
+            Dispatcher.UIThread.Post(() =>
+            {
+                foreach (var text in tip.GetVisualDescendants().OfType<TextBlock>())
+                    text.Foreground = tip.Foreground;
+            }, DispatcherPriority.Background);
+        });
+        ToolTip.TipProperty.Changed.AddClassHandler<Control>((control, args) =>
+        {
+            if (args.NewValue is not string text) return;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (control.GetValue(ToolTip.TipProperty) is not string current || current != text) return;
+                var block = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 320 };
+                block.Foreground = new SolidColorBrush(Color.Parse(
+                    control.ActualThemeVariant == ThemeVariant.Dark ? "#e5ebf3" : "#202c3c"));
+                control.SetCurrentValue(ToolTip.TipProperty, block);
+            }, DispatcherPriority.Background);
+        });
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {

@@ -2,49 +2,89 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="using:Knx.App.Localization"
         x:Class="Knx.App.SettingsWindow"
-        Title="{loc:Tr OptionsTitle}" Width="620" Height="560" MinWidth="480" MinHeight="420"
+        Title="{loc:Tr OptionsTitle}" Width="720" Height="620" MinWidth="560" MinHeight="480"
+        Background="{DynamicResource WbBackground}" Foreground="{DynamicResource WbText}"
+        FontFamily="Inter, Segoe UI" FontSize="12"
         Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
-  <DockPanel Margin="14">
-    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
-                Spacing="{StaticResource ControlGap}" Margin="0,12,0,0">
-      <Button Content="{loc:Tr BtnSaveSettings}" Classes="primary" Click="OnSave" />
-      <Button Content="{loc:Tr BtnCancel}" Click="OnCancel" />
+  <Window.Styles>
+    <Style Selector="Border.settings-card">
+      <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="{DynamicResource WbRadius}" />
+      <Setter Property="Padding" Value="16" />
+    </Style>
+    <Style Selector="TextBlock.settings-heading">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,12" />
+    </Style>
+    <Style Selector="TextBlock.settings-label">
+      <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="Auto,*,Auto">
+    <StackPanel Margin="24,18,24,10" Spacing="4">
+      <TextBlock Text="{loc:Tr OptionsTitle}" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock Text="{loc:Tr OptionsAppearance}" Foreground="{DynamicResource WbMuted}" FontSize="11" />
     </StackPanel>
 
-    <StackPanel Spacing="14">
-      <TextBlock Text="{loc:Tr OptionsAppearance}" FontWeight="SemiBold" />
-      <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto">
-        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr OptionsTheme}" VerticalAlignment="Center" />
-        <ComboBox Grid.Row="0" Grid.Column="1" x:Name="ThemeBox" Width="220" HorizontalAlignment="Left">
-          <ComboBoxItem Content="{loc:Tr ThemeSystem}" />
-          <ComboBoxItem Content="{loc:Tr ThemeLight}" />
-          <ComboBoxItem Content="{loc:Tr ThemeDark}" />
-        </ComboBox>
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="24,0,24,18" Spacing="14" MaxWidth="820">
+        <Border Classes="settings-card">
+          <StackPanel>
+            <TextBlock Text="{loc:Tr OptionsAppearance}" Classes="settings-heading" />
+            <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr OptionsTheme}" Classes="settings-label" />
+              <ComboBox Grid.Row="0" Grid.Column="1" x:Name="ThemeBox" Width="240" HorizontalAlignment="Left">
+                <ComboBoxItem Content="{loc:Tr ThemeSystem}" />
+                <ComboBoxItem Content="{loc:Tr ThemeLight}" />
+                <ComboBoxItem Content="{loc:Tr ThemeDark}" />
+              </ComboBox>
 
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr OptionsLanguage}" VerticalAlignment="Center" Margin="0,8,0,0" />
-        <ComboBox Grid.Row="1" Grid.Column="1" x:Name="LanguageBox" Width="220" HorizontalAlignment="Left" Margin="0,8,0,0">
-          <ComboBoxItem Content="Deutsch" />
-          <ComboBoxItem Content="English" />
-        </ComboBox>
+              <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr OptionsLanguage}" Classes="settings-label" />
+              <ComboBox Grid.Row="1" Grid.Column="1" x:Name="LanguageBox" Width="240" HorizontalAlignment="Left">
+                <ComboBoxItem Content="Deutsch" />
+                <ComboBoxItem Content="English" />
+              </ComboBox>
 
-        <CheckBox Grid.Row="2" Grid.Column="1" x:Name="ConfirmDeleteBox"
-                  Content="{loc:Tr OptionsConfirmDelete}" Margin="0,8,0,0" />
+              <CheckBox Grid.Row="2" Grid.Column="1" x:Name="ConfirmDeleteBox"
+                        Content="{loc:Tr OptionsConfirmDelete}" />
 
-        <TextBlock Grid.Row="3" Grid.Column="0" Text="{loc:Tr OptionsRecent}"
-                   VerticalAlignment="Top" Margin="0,8,0,0" />
-        <Border Grid.Row="3" Grid.Column="1" Classes="panel" Height="120" Margin="0,8,0,0">
-          <ListBox x:Name="RecentList" />
+              <TextBlock Grid.Row="3" Grid.Column="0" Text="{loc:Tr OptionsRecent}"
+                         Classes="settings-label" VerticalAlignment="Top" />
+              <Border Grid.Row="3" Grid.Column="1" Height="120"
+                      Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}"
+                      BorderThickness="1" CornerRadius="{DynamicResource WbSmallRadius}">
+                <ListBox x:Name="RecentList" Background="Transparent" />
+              </Border>
+            </Grid>
+          </StackPanel>
         </Border>
-      </Grid>
 
-      <TextBlock Text="{loc:Tr OptionsBus}" FontWeight="SemiBold" />
-      <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto">
-        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr OptionsInterface}" VerticalAlignment="Center" />
-        <TextBox Grid.Row="0" Grid.Column="1" x:Name="BusInterfaceBox" Watermark="z. B. 192.168.1.10" />
+        <Border Classes="settings-card">
+          <StackPanel>
+            <TextBlock Text="{loc:Tr OptionsBus}" Classes="settings-heading" />
+            <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto" RowSpacing="10">
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr OptionsInterface}" Classes="settings-label" />
+              <TextBox Grid.Row="0" Grid.Column="1" x:Name="BusInterfaceBox" Watermark="z. B. 192.168.1.10" />
 
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr OptionsOwnAddress}" VerticalAlignment="Center" Margin="0,8,0,0" />
-        <TextBox Grid.Row="1" Grid.Column="1" x:Name="TunnelAddressBox" Watermark="1.1.250" Margin="0,8,0,0" />
-      </Grid>
-    </StackPanel>
-  </DockPanel>
+              <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr OptionsOwnAddress}" Classes="settings-label" />
+              <TextBox Grid.Row="1" Grid.Column="1" x:Name="TunnelAddressBox" Watermark="1.1.250" />
+            </Grid>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+
+    <Border Grid.Row="2" Background="{DynamicResource WbPaper}"
+            BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0" Padding="24,12">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Content="{loc:Tr BtnCancel}" Click="OnCancel" Classes="quiet" />
+        <Button Content="{loc:Tr BtnSaveSettings}" Classes="primary" Click="OnSave" />
+      </StackPanel>
+    </Border>
+  </Grid>
 </Window>

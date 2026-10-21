@@ -80,6 +80,12 @@
           <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#E4F2F1" />
           <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#087E81" />
           <SolidColorBrush x:Key="DockApplicationAccentForegroundBrush" Color="#FFFFFF" />
+
+          <!-- Tooltips are popup top-levels and do not inherit the window palette. -->
+          <SolidColorBrush x:Key="ToolTipBackground" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="ToolTipForeground" Color="#202C3C" />
+          <SolidColorBrush x:Key="ToolTipBorderBrush" Color="#BFC5CB" />
+          <SolidColorBrush x:Key="TextControlForeground" Color="#202C3C" />
         </ResourceDictionary>
 
         <!-- ===== dark ===== -->
@@ -123,6 +129,12 @@
           <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#233F43" />
           <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#62D1CD" />
           <SolidColorBrush x:Key="DockApplicationAccentForegroundBrush" Color="#101418" />
+
+          <!-- Tooltips are popup top-levels and do not inherit the window palette. -->
+          <SolidColorBrush x:Key="ToolTipBackground" Color="#25292E" />
+          <SolidColorBrush x:Key="ToolTipForeground" Color="#E5EBF3" />
+          <SolidColorBrush x:Key="ToolTipBorderBrush" Color="#4A5158" />
+          <SolidColorBrush x:Key="TextControlForeground" Color="#E5EBF3" />
         </ResourceDictionary>
 
       </ResourceDictionary.ThemeDictionaries>
@@ -154,6 +166,30 @@
       <Setter Property="FontSize" Value="12.5" />
       <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
       <Setter Property="Background" Value="{DynamicResource EtsChrome}" />
+    </Style>
+
+    <Style Selector="ToolTip">
+      <Setter Property="Background" Value="{DynamicResource ToolTipBackground}" />
+      <Setter Property="Foreground" Value="{DynamicResource ToolTipForeground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ToolTipBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="ToolTip /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource ToolTipBackground}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource ToolTipForeground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ToolTipBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="8,5" />
+    </Style>
+    <Style Selector="ToolTip TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource ToolTipForeground}" />
+    </Style>
+    <Style Selector="ToolTip /template/ ContentPresenter TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource ToolTipForeground}" />
     </Style>
 
     <Style Selector="TextBlock">

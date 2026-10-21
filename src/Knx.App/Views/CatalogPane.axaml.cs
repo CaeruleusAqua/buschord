@@ -482,9 +482,17 @@ public partial class CatalogPane : UserControl
         ToolTip.SetTip(ErrorText, text);
     }
 
-    private void AddError(string error) => SetMessage(
-        string.Join(Environment.NewLine, new[] { ToolTip.GetTip(ErrorText) as string, error }
+    private void AddError(string error)
+    {
+        var existing = ToolTip.GetTip(ErrorText) switch
+        {
+            string text => text,
+            TextBlock block => block.Text,
+            _ => null
+        };
+        SetMessage(string.Join(Environment.NewLine, new[] { existing, error }
             .Where(text => !string.IsNullOrWhiteSpace(text))));
+    }
 
     private void OnInsert(object? sender, RoutedEventArgs e)
     {
