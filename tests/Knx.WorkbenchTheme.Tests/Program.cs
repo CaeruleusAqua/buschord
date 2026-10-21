@@ -21,8 +21,9 @@ foreach (var (palette, name) in new[] { (light, "light"), (dark, "dark") })
     foreach (var (foreground, background, minimum) in new[]
              {
                  ("WbText", "WbPaper", 7.0), ("WbMuted", "WbRail", 4.5),
-                 ("WbMuted", "WbStatusbar", 4.5), ("WbDisabledText", "WbDisabled", 4.5),
-                 ("WbSelectedText", "WbSelected", 4.5),
+                 ("WbMuted", "WbStatusbar", 4.5), ("WbMuted", "WbHover", 4.5),
+                 ("WbDisabledText", "WbDisabled", 4.5),
+                 ("WbSelectedText", "WbSelected", 4.5), ("WbSelectedText", "WbTint", 4.5),
              })
         Check(Contrast(palette[foreground]!, palette[background]!) >= minimum,
             $"{name} contrast {foreground}/{background} >= {minimum:0.0}:1");
