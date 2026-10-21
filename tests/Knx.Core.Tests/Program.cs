@@ -1212,5 +1212,23 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
     }
 }
 
+// ---- CSV-Helfer: RFC 4180 und Formel-Neutralisierung ----
+{
+    Check("CSV: leeres Feld", Csv.Field(null) == "" && Csv.Field("") == "");
+    Check("CSV: unkritisches Feld unverändert", Csv.Field("Wohnzimmer") == "Wohnzimmer");
+    Check("CSV: Trennzeichen, Anfuehrungszeichen und Zeilenumbruch zitiert",
+        Csv.Field("a;b") == "\"a;b\"" && Csv.Field("a\"b") == "\"a\"\"b\"" && Csv.Field("a\r\nb") == "\"a\r\nb\"");
+    Check("CSV: Komma nur bei Komma-Trennung zitiert",
+        Csv.Field("a,b") == "a,b" && Csv.Field("a,b", ',') == "\"a,b\"");
+    Check("CSV: Formeln und Tab/CR am Zellanfang neutralisiert",
+        Csv.Field("=1+1") == "'=1+1" && Csv.Field("+SUM(1,1)") == "'+SUM(1,1)"
+        && Csv.Field("-5") == "'-5" && Csv.Field("@cmd") == "'@cmd"
+        && Csv.Field("\t=1") == "'\t=1" && Csv.Field("\r=1") == "\"'\r=1\"");
+    Check("CSV: Formel nach führendem Leerraum neutralisiert",
+        Csv.Field("  =1+1") == "'  =1+1" && Csv.Field("\t  @cmd") == "'\t  @cmd");
+    Check("CSV: Zeile verbindet maskierte Felder",
+        Csv.Row(';', "1/1/1", "=1+1", "a;b") == "1/1/1;'=1+1;\"a;b\"");
+}
+
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER: {string.Join("; ", failures)}");
 return failures.Count == 0 ? 0 : 1;

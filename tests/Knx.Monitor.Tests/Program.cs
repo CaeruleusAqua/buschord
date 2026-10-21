@@ -262,6 +262,7 @@ try
     decoded.SaveCsv(exportPath);
     var reread = ParseCsv(File.ReadAllText(exportPath));
     Check("Saved CSV is UTF-8 with the same record count", reread.Count == decoded.VisibleCount + 1);
+    Check("Saved CSV has no BOM", File.ReadAllBytes(exportPath) is not [0xEF, 0xBB, 0xBF, ..]);
 }
 finally
 {

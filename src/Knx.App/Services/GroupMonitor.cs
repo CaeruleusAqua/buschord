@@ -251,11 +251,8 @@ public sealed class GroupMonitor
 
     public void SaveCsv(string path) => File.WriteAllText(path, ToCsv(), new UTF8Encoding(false));
 
-    /// <summary>Quotes one CSV field only when it needs quoting (RFC 4180).</summary>
-    public static string CsvField(string value)
-        => value.IndexOfAny([',', '"', '\r', '\n']) < 0
-            ? value
-            : "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    /// <summary>Quotes one field per RFC 4180 and neutralises spreadsheet formulas.</summary>
+    public static string CsvField(string value, char separator = ',') => Csv.Field(value, separator);
 
     /// <summary>Write, read or response, derived from the APCI service name.</summary>
     public static MonitorKind KindOf(Apci apci)

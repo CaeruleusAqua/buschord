@@ -532,6 +532,99 @@ var keysOtherDac = SecureKeys.DeriveKeys("geheim", dacOther);
         .NextSequenceNumber() == SecureKey.MaxSequenceNumber);
 }
 
+// ---- 15. CSV-Export: RFC 4180 und Formel-Neutralisierung ----
+{
+    var csvProject = new Project { Id = "P-CSV", Name = "CSV" };
+    var csvInst = new Installation { Id = "I-CSV" };
+    var csvArea = new Area { Id = "A-CSV", Address = 1, Name = "=1+1" };
+    var csvLine = new Line { Id = "L-CSV", Address = 1, Name = "+SUM(1,1)" };
+    csvLine.Devices.Add(new DeviceInstance
+    {
+        Id = "D-CSV",
+        Address = new IndividualAddress(1, 1, 1),
+        Name = "@cmd;x",
+        ProductRefId = "M-1",
+    });
+    csvArea.Lines.Add(csvLine);
+    csvInst.Areas.Add(csvArea);
+    var csvRange = new GroupRange { Id = "GR-CSV", RangeStart = 1, RangeEnd = 15 };
+    csvRange.Addresses.Add(new GroupAddressEntry
+    {
+        Id = "GA-CSV",
+        Name = "=1+1;\"quote\"",
+        Address = GroupAddress.ThreeLevel(1, 1, 1),
+        DatapointType = "+SUM(1,1)",
+    });
+    csvInst.MainRanges.Add(csvRange);
+    csvProject.Installations.Add(csvInst);
+
+    var recorder = new TelegramRecorder();
+    recorder.Start();
+    recorder.Add(new BusTelegram
+    {
+        Timestamp = new DateTimeOffset(2024, 1, 2, 3, 4, 5, TimeSpan.Zero),
+        Source = "1.1.1",
+        Telegram = new Telegram
+        {
+            Source = new IndividualAddress(1, 1, 1),
+            Destination = new IndividualAddress(GroupAddress.ThreeLevel(1, 1, 1).Raw),
+            IsGroupAddress = true,
+            Apci = Apci.GroupValueWrite,
+            Data = [1],
+        },
+    });
+
+    static List<string> Cells(string line)
+    {
+        var cells = new List<string>();
+        var field = new StringBuilder();
+        var quoted = false;
+        for (var i = 0; i < line.Length; i++)
+        {
+            var c = line[i];
+            if (quoted)
+            {
+                if (c == '"' && i + 1 < line.Length && line[i + 1] == '"') { field.Append('"'); i++; }
+                else if (c == '"') quoted = false;
+                else field.Append(c);
+            }
+            else if (c == '"') quoted = true;
+            else if (c == ';') { cells.Add(field.ToString()); field.Clear(); }
+            else field.Append(c);
+        }
+        cells.Add(field.ToString());
+        return cells;
+    }
+
+    var etsCsv = recorder.ToEtsCsv(csvProject);
+    Check("CSV: ETS-Kopf unverändert", etsCsv.StartsWith(
+        "Time;Service;Flags;Prio;Source Address;Source Name;Destination Address;" +
+        "Destination Name;Hop Count;Type;DPT;Iack;Info"));
+    var etsRow = etsCsv.Split('\n', StringSplitOptions.RemoveEmptyEntries).Skip(1).Select(Cells).Single();
+    Check("CSV: ETS-Zeile behält 13 Spalten", etsRow.Count == 13, etsRow.Count.ToString());
+    Check("CSV: Quellname neutralisiert und zitiert", etsRow[5] == "'@cmd;x", etsRow[5]);
+    Check("CSV: Zielname neutralisiert und zitiert", etsRow[7] == "'=1+1;\"quote\"", etsRow[7]);
+    Check("CSV: DPT neutralisiert", etsRow[10] == "'+SUM(1,1)", etsRow[10]);
+
+    var csvPath = Path.Combine(Path.GetTempPath(), "knx-bus-csv-" + Guid.NewGuid().ToString("N") + ".csv");
+    try
+    {
+        recorder.SaveCsv(csvPath);
+        var bytes = File.ReadAllBytes(csvPath);
+        Check("CSV: Aufzeichnung ist UTF-8 mit BOM", bytes is [0xEF, 0xBB, 0xBF, ..]);
+        var lines = File.ReadAllLines(csvPath);
+        Check("CSV: Aufzeichnungs-Kopf unverändert", lines[0] == "Zeitstempel;Quelle;Ziel;Gruppe;APCI;Daten");
+        Check("CSV: Aufzeichnung behält 6 Spalten", lines[1].Split(';').Length == 6);
+        var reread = TelegramRecorder.LoadCsv(csvPath);
+        Check("CSV: Aufzeichnung lädt unverändert zurück",
+            reread.Count == 1 && reread[0].Data == "01" && reread[0].Destination == "1/1/1");
+    }
+    finally
+    {
+        File.Delete(csvPath);
+    }
+}
+
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 

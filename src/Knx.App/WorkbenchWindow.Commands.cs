@@ -31,7 +31,7 @@ public partial class WorkbenchWindow
                 Async(W("ExportDevices"), () => ExportAsync("geraete.csv", ProjectCsvExporter.Devices)),
                 Async(W("ExportTopology"), () => ExportAsync("topologie.csv", ProjectCsvExporter.Topology)),
                 Async(W("ExportReport"), () => ExportAsync("projektbericht.html", p => ProjectReport.Render(p))),
-                Async(W("ExportAssociations"), () => ExportAsync("zuordnungen.csv", AssociationsCsv)),
+                Async(W("ExportAssociations"), () => ExportAsync("zuordnungen.csv", ProjectCsvExporter.Associations)),
                 Async(W("ExportLabels"), ExportLabelsAsync),
                 Async(W("ExportSemanticTtl"), () => ExportSemanticAsync(SemanticExport.SemanticFormat.Turtle, "semantik.ttl", "ttl")),
                 Async(W("ExportSemanticJsonLd"), () => ExportSemanticAsync(SemanticExport.SemanticFormat.JsonLd, "semantik.jsonld", "jsonld")),
@@ -264,23 +264,6 @@ public partial class WorkbenchWindow
         if (ViewModel.Recorder.Count == 0) { ViewModel.Status = W("NoRecording"); return; }
         var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = "telegramme.csv", DefaultExtension = "csv" });
         if (file?.TryGetLocalPath() is { } path) ViewModel.Recorder.SaveCsv(path);
-    }
-
-    private static string AssociationsCsv(Project project)
-    {
-        var builder = new StringBuilder(Strings.Get("CsvAssociationsHeader") + "\r\n");
-        foreach (var a in Knx.Workbench.WorkbenchProject.Associations(project))
-        {
-            foreach (var value in new[] { a.DeviceAddress, a.DeviceName, a.Number.ToString(),
-                a.ObjectName, a.Dpt ?? "", a.Bits?.ToString() ?? "", a.Flags ?? "",
-                a.Active ? Strings.Get("CsvYes") : Strings.Get("CsvNo"),
-                a.GroupAddress, a.GroupName, a.Sending ? Strings.Get("CsvYes") : Strings.Get("CsvNo"),
-                a.InstalledRoomId ?? "" })
-                builder.Append(GroupMonitor.CsvField(value)).Append(';');
-            builder.Length -= 1;
-            builder.Append("\r\n");
-        }
-        return builder.ToString();
     }
 
     private async Task ExportDemoJsonAsync()

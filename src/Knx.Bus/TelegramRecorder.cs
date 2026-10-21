@@ -82,7 +82,7 @@ public sealed class TelegramRecorder
         var sb = new StringBuilder();
         sb.AppendLine("Zeitstempel;Quelle;Ziel;Gruppe;APCI;Daten");
         foreach (var e in _entries)
-            sb.AppendLine(string.Join(';',
+            sb.AppendLine(Csv.Row(';',
                 e.Timestamp.ToString("o", CultureInfo.InvariantCulture),
                 e.Source, e.Destination, e.IsGroupAddress ? "1" : "0", e.Apci, e.Data));
         File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true));
@@ -164,7 +164,7 @@ public sealed class TelegramRecorder
                 ? GroupAddressName(project, entry.Destination)
                 : DeviceName(project, entry.Destination);
             var dpt = entry.IsGroupAddress ? GroupAddressDpt(project, entry.Destination) : "";
-            sb.AppendLine(string.Join(';',
+            sb.AppendLine(Csv.Row(';',
                 entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
                 entry.Apci, "T", "Low",
                 entry.Source, sourceName,

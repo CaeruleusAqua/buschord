@@ -1,6 +1,10 @@
+using System.Text;
 using Knx;
 using Knx.App.Services;
+using Knx.Bus;
+using Knx.ProjectCompare;
 using Knx.Reports;
+using Knx.Workbench;
 
 // Self-Check für die Reports-Export-Pipeline
 var failures = new List<string>();
@@ -8,6 +12,46 @@ void Check(string name, bool ok, string? detail = null)
 {
     Console.WriteLine((ok ? "  PASS " : "  FAIL ") + name + (ok || detail is null ? "" : " -> " + detail));
     if (!ok) failures.Add(name);
+}
+
+static List<List<string>> ParseCsv(string text, char separator = ';')
+{
+    var rows = new List<List<string>>();
+    var row = new List<string>();
+    var field = new StringBuilder();
+    var quoted = false;
+    for (var i = 0; i < text.Length; i++)
+    {
+        var c = text[i];
+        if (quoted)
+        {
+            if (c == '"' && i + 1 < text.Length && text[i + 1] == '"') { field.Append('"'); i++; }
+            else if (c == '"') quoted = false;
+            else field.Append(c);
+        }
+        else if (c == '"') quoted = true;
+        else if (c == separator) { row.Add(field.ToString()); field.Clear(); }
+        else if (c == '\r' && i + 1 < text.Length && text[i + 1] == '\n')
+        {
+            row.Add(field.ToString()); field.Clear(); rows.Add(row); row = []; i++;
+        }
+        else if (c == '\n') { row.Add(field.ToString()); field.Clear(); rows.Add(row); row = []; }
+        else field.Append(c);
+    }
+    if (field.Length > 0 || row.Count > 0) { row.Add(field.ToString()); rows.Add(row); }
+    return rows;
+}
+
+void CheckNeutralized(string name, string csv, char separator = ';')
+{
+    var bad = ParseCsv(csv, separator).SelectMany(row => row)
+        .Where(cell =>
+        {
+            var text = cell.TrimStart();
+            return text.Length > 0 && text[0] is '=' or '+' or '-' or '@';
+        })
+        .ToList();
+    Check(name, bad.Count == 0, string.Join(" | ", bad));
 }
 
 var project = new Project { Id = "P-1", Name = "Test" };
@@ -50,6 +94,149 @@ Check("CSV: Kopf bleibt deutsch ohne Sprachwechsel",
     ProjectCsvExporter.GroupAddresses(project).StartsWith("Adresse;Name;Beschreibung;DatapointType;Puid") &&
     ProjectCsvExporter.Devices(project).StartsWith("Adresse;Name;ProduktRef;Beschreibung;Kommentar") &&
     ProjectCsvExporter.Topology(project).StartsWith("Area;Line;Segment;Gerät;Adresse"));
+
+// ---------------------------------------------------------------- CSV-Sicherheit
+
+Check("CSV: Formelzeichen wird mit Apostroph entschärft",
+    Csv.Field("=1+1") == "'=1+1" && Csv.Field("+SUM(1,1)") == "'+SUM(1,1)"
+    && Csv.Field("@cmd") == "'@cmd" && Csv.Field("-5") == "'-5");
+Check("CSV: Formel nach führendem Leerraum wird entschärft",
+    Csv.Field("  =1+1") == "'  =1+1" && Csv.Field("\t=1+1") == "'\t=1+1");
+Check("CSV: RFC 4180 zitiert Trennzeichen, Anführungszeichen und Zeilenumbruch",
+    Csv.Field("a;b") == "\"a;b\"" && Csv.Field("a\"b") == "\"a\"\"b\"" && Csv.Field("a\nb") == "\"a\nb\"");
+Check("CSV: Komma bleibt bei Semikolon-Trennung unmaskiert",
+    Csv.Field("a,b") == "a,b" && Csv.Field("a,b", ',') == "\"a,b\"");
+
+// Namen und Beschreibungen stammen aus Projekt-/Katalog-XML und dürfen nie als Formel laufen.
+var hostile = new Project { Id = "P-H", Name = "Hostile" };
+var hostileInst = new Installation { Id = "I-H" };
+var hostileArea = new Area { Id = "A-H", Address = 1, Name = "=1+1" };
+var hostileLine = new Line { Id = "L-H", Address = 1, Name = "  +SUM(1,1)" };
+hostileLine.Devices.Add(new DeviceInstance
+{
+    Id = "D-H",
+    Address = new IndividualAddress(1, 1, 2),
+    Name = "\t=cmd|' /C calc'!A0",
+    ProductRefId = "-2+3",
+    Description = "  +SUM(1,1)",
+    Comment = "@cmd",
+});
+hostileArea.Lines.Add(hostileLine);
+hostileInst.Areas.Add(hostileArea);
+var hostileRange = new GroupRange { Id = "GR-H", Name = "Licht", RangeStart = 1, RangeEnd = 15 };
+hostileRange.Addresses.Add(new GroupAddressEntry
+{
+    Id = "GA-H",
+    Name = "=1+1;\"quote\"\nline",
+    Description = "@cmd",
+    Address = GroupAddress.ThreeLevel(1, 1, 1),
+    DatapointType = "  =1+1",
+});
+hostileInst.MainRanges.Add(hostileRange);
+hostile.Installations.Add(hostileInst);
+
+var hostileGaCsv = ProjectCsvExporter.GroupAddresses(hostile);
+Check("CSV: Gruppenadress-Kopf bleibt unverändert",
+    hostileGaCsv.StartsWith("Adresse;Name;Beschreibung;DatapointType;Puid"));
+Check("CSV: Gruppenadresse mit Semikolon, Anführungszeichen und Zeilenumbruch zitiert",
+    hostileGaCsv.Contains("1/1/1;\"'=1+1;\"\"quote\"\"\nline\";'@cmd;'  =1+1;0"));
+CheckNeutralized("CSV: Gruppenadressen ohne Formelzelle", hostileGaCsv);
+
+var hostileDevCsv = ProjectCsvExporter.Devices(hostile);
+Check("CSV: Geräte-Kopf bleibt unverändert",
+    hostileDevCsv.StartsWith("Adresse;Name;ProduktRef;Beschreibung;Kommentar"));
+Check("CSV: Gerätefelder entschärft",
+    hostileDevCsv.Contains("1.1.2;'\t=cmd|' /C calc'!A0;'-2+3;'  +SUM(1,1);'@cmd"));
+CheckNeutralized("CSV: Geräte ohne Formelzelle", hostileDevCsv);
+
+var hostileTopoCsv = ProjectCsvExporter.Topology(hostile);
+Check("CSV: Topologie-Kopf bleibt unverändert",
+    hostileTopoCsv.StartsWith("Area;Line;Segment;Gerät;Adresse"));
+CheckNeutralized("CSV: Topologie ohne Formelzelle", hostileTopoCsv);
+
+var hostileLabels = LabelCreator.ToCsv(LabelCreator.DeviceLabels(hostile, new LabelOptions()));
+Check("CSV: Etiketten-Kopf bleibt unverändert", hostileLabels.StartsWith("Adresse;Titel;Untertitel;Zusatz"));
+CheckNeutralized("CSV: Etiketten ohne Formelzelle", hostileLabels);
+CheckNeutralized("CSV: Gruppenadress-Etiketten ohne Formelzelle",
+    LabelCreator.ToCsv(LabelCreator.GroupAddressLabels(hostile, new LabelOptions())));
+
+var demo = WorkbenchJson.CreateDemo();
+foreach (var row in ProjectQuery.Devices(demo)) row.Device.Name = "=1+1";
+foreach (var entry in ProjectQuery.GroupAddresses(demo)) entry.Name = "@cmd";
+foreach (var row in ProjectQuery.Devices(demo))
+    foreach (var hostileObject in row.Device.ComObjectRefs) hostileObject.Text = "+SUM(1,1)";
+var assocCsv = ProjectCsvExporter.Associations(demo);
+Check("CSV: Zuordnungs-Kopf bleibt unverändert",
+    assocCsv.StartsWith(Strings.Get("CsvAssociationsHeader")));
+Check("CSV: Zuordnungen enthalten Datenzeilen", ParseCsv(assocCsv).Count > 1);
+CheckNeutralized("CSV: Zuordnungen ohne Formelzelle", assocCsv);
+
+var reportCsv = ReportCsv.Render(new[]
+{
+    ("=1+1", "+SUM(1,1)", "@cmd"),
+    ("Info", "Name;mit\nZeilen", "\"quoted\""),
+});
+Check("CSV: Befund-Kopf bleibt unverändert", reportCsv.StartsWith(Strings.Get("ReportCsvHeader")));
+Check("CSV: Befundfeld mit Semikolon und Zeilenumbruch zitiert",
+    reportCsv.Contains("\"Name;mit\nZeilen\""));
+CheckNeutralized("CSV: Befunde ohne Formelzelle", reportCsv);
+
+var diff = new DifferenceReport
+{
+    LeftProjectName = "A",
+    RightProjectName = "B",
+    GeneratedAt = DateTimeOffset.UnixEpoch,
+};
+diff.Items.Add(new DifferenceItem
+{
+    Path = "=1+1",
+    ObjectType = "Device",
+    ObjectName = "@cmd",
+    Modification = ModificationType.Changed,
+    OldValue = "+SUM(1,1)",
+    NewValue = "  -2+3",
+});
+var compareCsv = ComparisonCsv.Render(diff);
+Check("CSV: Vergleichs-Kopf bleibt unverändert", compareCsv.StartsWith(Strings.Get("CompareCsvHeader")));
+CheckNeutralized("CSV: Vergleich ohne Formelzelle", compareCsv);
+
+var monitorProject = new Project { Id = "P-M", Name = "Monitor" };
+var monitorInst = new Installation { Id = "I-M" };
+var monitorRange = new GroupRange { Id = "GR-M", RangeStart = 1, RangeEnd = 15 };
+monitorRange.Addresses.Add(new GroupAddressEntry
+{
+    Id = "GA-M", Name = "=1+1", Address = GroupAddress.ThreeLevel(1, 1, 1), DatapointType = "DPST-1-1",
+});
+monitorInst.MainRanges.Add(monitorRange);
+monitorProject.Installations.Add(monitorInst);
+var monitor = new GroupMonitor { Project = monitorProject };
+monitor.Append(new BusTelegram
+{
+    Timestamp = DateTimeOffset.UnixEpoch,
+    Source = "1.1.1",
+    Telegram = new Telegram
+    {
+        Source = new IndividualAddress(1, 1, 1),
+        Destination = new IndividualAddress(GroupAddress.ThreeLevel(1, 1, 1).Raw),
+        IsGroupAddress = true,
+        Apci = Apci.GroupValueWrite,
+        Data = [1],
+    },
+});
+var monitorCsv = monitor.ToCsv();
+Check("CSV: Telegramm-Kopf bleibt unverändert",
+    monitorCsv.StartsWith("Timestamp,Source,Destination,IsGroup,Apci,Data,Value,Unit,DatapointType,Name"));
+Check("CSV: Telegrammname neutralisiert", monitorCsv.Contains(",'=1+1"));
+CheckNeutralized("CSV: Telegramme ohne Formelzelle", monitorCsv, ',');
+
+Strings.Language = "en";
+Check("CSV: Etiketten-Kopf englisch",
+    LabelCreator.ToCsv(Array.Empty<Label>()).StartsWith("Address;Title;Subtitle;Extra"));
+Check("CSV: Befund-Kopf englisch",
+    ReportCsv.Render(Array.Empty<(string, string, string)>()).StartsWith("Severity;Object;Description"));
+Check("CSV: Vergleichs-Kopf englisch",
+    ComparisonCsv.Render(diff).StartsWith("Path;Type;Object;Change;Old;New"));
+Strings.Language = "de";
 
 // ---------------------------------------------------------------- Projektbericht (HTML)
 

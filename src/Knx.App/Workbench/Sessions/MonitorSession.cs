@@ -377,11 +377,10 @@ public sealed class MonitorSession : SessionState, IDisposable
         return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
-    private static string CsvRow(WorkbenchTelegram r) => string.Join(',', new[]
-    {
+    private static string CsvRow(WorkbenchTelegram r) => Csv.Row(',',
         r.Timestamp.ToString("O", CultureInfo.InvariantCulture), r.Source, r.Destination, r.Service,
-        r.DatapointType ?? "", r.Value, r.Origin.ToString(), r.GroupAddressId ?? "", r.DeviceId ?? "", r.DataHex,
-    }.Select(GroupMonitor.CsvField)) + "\r\n";
+        r.DatapointType ?? "", r.Value, r.Origin.ToString(), r.GroupAddressId ?? "", r.DeviceId ?? "",
+        r.DataHex) + "\r\n";
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
     public void Dispose()

@@ -48,11 +48,8 @@ public static class LabelCreator
     {
         var sb = new StringBuilder(Strings.Get("CsvLabelHeader") + "\n");
         foreach (var l in labels)
-            sb.AppendLine($"{l.Address};{Escape(l.Title)};{Escape(l.Subtitle)};{Escape(l.Extra)}");
+            sb.AppendLine(Csv.Row(';', l.Address, l.Title, l.Subtitle, l.Extra));
         return sb.ToString();
-
-        static string Escape(string? value)
-            => value is null ? "" : value.Contains(';') ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
     }
 
     /// <summary>Printable A4 sheet; print with "background graphics" enabled to keep the frames.</summary>

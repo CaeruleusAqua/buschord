@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Knx;
+using Knx.Reports;
 
 namespace Knx.App;
 
@@ -60,24 +61,17 @@ public partial class ReportWindow : Window
             });
             if (file is null) return;
 
-            var sb = new StringBuilder(Strings.Get("ReportCsvHeader") + "\n");
-            foreach (var row in _rows)
-                sb.AppendLine($"{row.Severity};{Escape(row.Title)};{Escape(row.Detail)}");
+            var csv = ReportCsv.Render(_rows.Select(row => (row.Severity, row.Title, row.Detail)));
 
             await using var stream = await file.OpenWriteAsync();
             await using var writer = new StreamWriter(stream, new UTF8Encoding(true));
-            await writer.WriteAsync(sb.ToString());
+            await writer.WriteAsync(csv);
         }
         catch (Exception ex)
         {
             await ConfirmDialog.ShowMessageAsync(this, Strings.Get("CsvSaveFailed"), ex.Message);
         }
     }
-
-    private static string Escape(string value)
-        => value.Contains(';') || value.Contains('"')
-            ? $"\"{value.Replace("\"", "\"\"")}\""
-            : value;
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 }
