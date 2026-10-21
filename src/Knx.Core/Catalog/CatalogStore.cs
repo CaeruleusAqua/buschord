@@ -9,6 +9,10 @@ public sealed record CatalogLoadError(string File, string Message);
 /// <summary>Progress of <see cref="CatalogStore.LoadAll"/> in library files.</summary>
 public sealed record CatalogLoadProgress(int Loaded, int Total, string File);
 
+/// <summary>Summary of one catalogue import, including gating facts.</summary>
+public sealed record CatalogImportReport(string File, string CatalogName, int Products, int Sections, int Programs,
+    bool HasBrokenProgram, bool HasDcaProgram, bool HasExternalSoftware);
+
 /// <summary>
 /// Local catalogue library in %APPDATA%\KnxClone\catalogs (or an explicit directory):
 /// import copies a .knxprod into the library, LoadAll parses every entry, Remove deletes one.
@@ -18,6 +22,9 @@ public sealed class CatalogStore
     public CatalogStore(string? directory = null) => Directory = directory ?? DefaultDirectory;
 
     public string Directory { get; }
+
+    /// <summary>Summary of the last <see cref="Import"/>; null before the first import.</summary>
+    public CatalogImportReport? LastImportReport { get; private set; }
 
     public static string DefaultDirectory =>
         IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -37,6 +44,9 @@ public sealed class CatalogStore
         if (!string.Equals(IOPath.GetFullPath(catalog.Path), IOPath.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
             File.Copy(catalog.Path, target, overwrite: true);
         catalog.Relocate(target);
+        LastImportReport = new(target, catalog.Name, catalog.Products.Count, catalog.CatalogSections.Count,
+            catalog.Programs.Count, catalog.Programs.Any(p => p.Broken || p.DownloadInfoIncomplete),
+            catalog.Programs.Any(p => p.RequiresDca), catalog.Programs.Any(p => p.RequiresExternalSoftware));
         return catalog;
     }
 

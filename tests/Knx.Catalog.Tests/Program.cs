@@ -321,6 +321,10 @@ var library = Path.Combine(root, "library");
 var store = new CatalogStore(library);
 var imported = store.Import(archive);
 Check("Import kopiert", File.Exists(imported.Path), imported.Path);
+Check("Import report summarizes products/programs and gating", store.LastImportReport is { } report
+    && report.Products > 0 && report.Programs > 0 && report.File == imported.Path
+    && report.HasDcaProgram == imported.Programs.Any(p => p.RequiresDca)
+    && report.HasBrokenProgram == imported.Programs.Any(p => p.Broken || p.DownloadInfoIncomplete));
 Check("Import-Dateiname (Hersteller + stabile Identität)",
     Path.GetFileName(imported.Path).StartsWith("M-00FA_", StringComparison.Ordinal) &&
     Path.GetFileName(imported.Path).EndsWith(".knxprod", StringComparison.OrdinalIgnoreCase)
