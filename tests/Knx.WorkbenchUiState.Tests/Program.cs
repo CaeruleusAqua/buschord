@@ -1,3 +1,4 @@
+using Knx;
 using Knx.App.Workbench;
 
 var checks = 0;
@@ -85,6 +86,67 @@ try
     parameterVm.CreateProject(nextParameterProject, null);
     Check("Parameter session reports a switched project as stale", parameterSession.IsStale
         && parameterSession.ProjectId == "P-PARAM-2");
+
+    // Favorites/pinning: project-scoped, persisted in the layout, never resurrected for other projects.
+    var pins = new WorkbenchWorkspace("P1");
+    var pinnedDevice = new WorkbenchTarget("device", "D1");
+    var pinnedGroup = new WorkbenchTarget("ga", "GA1");
+    Check("Favorite toggles on and off", pins.ToggleFavorite(pinnedDevice) && pins.IsFavorite(pinnedDevice)
+        && !pins.ToggleFavorite(pinnedDevice) && !pins.IsFavorite(pinnedDevice));
+    pins.ToggleFavorite(pinnedDevice);
+    pins.ToggleFavorite(pinnedGroup);
+    pins.ToggleFavorite(new("device", ""));
+    var pinPath = Path.Combine(root, "pins.json");
+    pins.SaveLayout(pinPath);
+    var restoredPins = new WorkbenchWorkspace("P1");
+    Check("Invalid favorites are never stored", pins.Favorites.SequenceEqual([pinnedDevice, pinnedGroup]));
+    Check("Favorites persist with the workspace layout", restoredPins.TryRestoreLayout(pinPath)
+        && restoredPins.Favorites.SequenceEqual([pinnedDevice, pinnedGroup]));
+    restoredPins.TryRestoreLayout(pinPath, target => target.Kind != "ga");
+    Check("Favorites for missing targets are dropped on restore", restoredPins.Favorites.SequenceEqual([pinnedDevice]));
+    var otherPins = new WorkbenchWorkspace("P2");
+    otherPins.ToggleFavorite(pinnedDevice);
+    otherPins.TryRestoreLayout(pinPath);
+    Check("Favorites do not leak into another project", otherPins.Favorites.SequenceEqual([pinnedDevice]));
+    restoredPins.ChangeProject("P2");
+    Check("Project change clears favorites with the tabs", restoredPins.Favorites.Count == 0);
+
+    // Drag-and-drop target validation stays a pure projection: invalid drops never mutate.
+    var dropProject = new Project { Id = "P-DROP", Name = "Drop" };
+    var dropInstallation = new Installation { Id = "I-1", Name = "Gebäude" };
+    var dropArea = new Area { Id = "A-1", Address = 1 };
+    var dropLine = new Line { Id = "L-1", Address = 1, Name = "Linie 1" };
+    var otherLine = new Line { Id = "L-2", Address = 2, Name = "Linie 2" };
+    var dropSegment = new Segment { Id = "S-1", Address = 1 };
+    dropLine.Segments.Add(dropSegment);
+    dropArea.Lines.Add(dropLine); dropArea.Lines.Add(otherLine);
+    dropInstallation.Areas.Add(dropArea); dropProject.Installations.Add(dropInstallation);
+    var dropRoom = dropInstallation.Locations.Add(null, "Wohnzimmer", SpaceKind.Room, "R-1");
+    var dropDevice = new DeviceInstance { Id = "D-1", Name = "Taster", Address = new(1, 1, 10), ProductRefId = "M-1" };
+    dropSegment.Devices.Add(dropDevice); dropRoom.AssignDevice(dropDevice);
+    var dropAddressBefore = dropDevice.Address.ToString();
+    var toOtherLine = WorkbenchProjection.ResolveDeviceDrop(dropProject, dropDevice.Id, new("line", "L-2"));
+    Check("Drop on another line resolves a segment-free target", toOtherLine.Ok
+        && toOtherLine.Line?.Id == "L-2" && toOtherLine.Segment is null);
+    var outOfSegment = WorkbenchProjection.ResolveDeviceDrop(dropProject, dropDevice.Id, new("line", "L-1"));
+    Check("Drop on the own line leaves the segment", outOfSegment.Ok && outOfSegment.Segment is null);
+    Check("Drop on the current segment is a no-op", WorkbenchProjection
+        .ResolveDeviceDrop(dropProject, dropDevice.Id, new("segment", "S-1")).Status == DeviceDropStatus.AlreadyThere);
+    Check("Drop rejects non-topology, unknown device and unknown line targets",
+        WorkbenchProjection.ResolveDeviceDrop(dropProject, dropDevice.Id, new("room", "R-1")).Status == DeviceDropStatus.NotATopologyTarget
+        && WorkbenchProjection.ResolveDeviceDrop(dropProject, "D-missing", new("line", "L-2")).Status == DeviceDropStatus.DeviceMissing
+        && WorkbenchProjection.ResolveDeviceDrop(dropProject, dropDevice.Id, new("line", "L-missing")).Status == DeviceDropStatus.LineMissing);
+    Check("Rejected drops leave topology, address and room untouched",
+        dropSegment.Devices.Contains(dropDevice) && !otherLine.Devices.Contains(dropDevice)
+        && dropDevice.Address.ToString() == dropAddressBefore && dropRoom.DeviceRefs.Contains(dropDevice.Id));
+    var move = WorkbenchProjection.ResolveDeviceDrop(dropProject, dropDevice.Id, new("line", "L-2"));
+    var moved = move.Ok ? ProjectOperations.MoveDevice(dropProject, dropDevice, move.Line!, move.Segment) : null;
+    Check("Validated drop moves the device and keeps its room", moved is { Ok: true }
+        && otherLine.Devices.Contains(dropDevice) && !dropSegment.Devices.Contains(dropDevice)
+        && dropRoom.DeviceRefs.Contains(dropDevice.Id) && dropDevice.Address.Line == 2);
+    Check("Dropping the moved device back onto its line is a no-op",
+        WorkbenchProjection.ResolveDeviceDrop(dropProject, dropDevice.Id, new("line", "L-2")).Status == DeviceDropStatus.AlreadyThere);
+
     Console.WriteLine($"WORKBENCH UI STATE OK ({checks})");
 }
 finally { Directory.Delete(root, recursive: true); }

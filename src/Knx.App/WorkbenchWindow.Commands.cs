@@ -1,4 +1,5 @@
 using System.Text;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Platform.Storage;
@@ -359,7 +360,7 @@ public partial class WorkbenchWindow
             var window = new CompareWindow();
             window.Load(report);
             await window.ShowDialog(this);
-            ViewModel.Status = $"Vergleich: {report.AddedCount} + / {report.RemovedCount} − / {report.ChangedCount} ~";
+            ViewModel.Status = W("CompareSummary", report.AddedCount, report.RemovedCount, report.ChangedCount);
         }
         catch (Exception ex) { ViewModel.Status = W("CompareFailed", ex.Message); }
     }
@@ -628,6 +629,113 @@ public partial class WorkbenchWindow
             catch (Exception ex) { ViewModel.Status = W("LinkFailed", ex.Message); }
         };
         dialog.ShowDialog(this);
+    }
+
+    /// <summary>
+    /// Opens a read-only counterview beside the main window. The work item stays a tab in the
+    /// main window, so the companion never owns selection, filters or the docking layout.
+    /// </summary>
+    internal void OpenCompanion(WorkbenchTarget target)
+    {
+        if (ViewModel.Project is not { } project || target.Kind is not ("device" or "ga")) return;
+        if (WorkbenchProjection.Resolve(project, target) is not { } model) return;
+        if (_companions.FirstOrDefault(pair => pair.Key == target).Value is { } open && open.IsVisible)
+        {
+            open.Activate();
+            return;
+        }
+        var window = new Window
+        {
+            Title = $"{TargetTitle(model, target)} · {W("CompanionWindow")}",
+            Width = 460, Height = 560, MinWidth = 320, MinHeight = 280,
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Content = BuildCompanion(target)
+        };
+        PlaceBesideOwner(window);
+        EventHandler<string> refresh = (_, _) => Dispatcher.UIThread.Post(() =>
+        {
+            if (window.IsVisible) window.Content = BuildCompanion(target);
+        });
+        ViewModel.ProjectEdited += refresh;
+        _companions[target] = window;
+        window.Closed += (_, _) =>
+        {
+            ViewModel.ProjectEdited -= refresh;
+            _companions.Remove(target);
+            _toolWindows.Remove(window);
+        };
+        _toolWindows.Add(window);
+        window.Show(this);
+    }
+
+    private void PlaceBesideOwner(Window window)
+    {
+        var scaling = RenderScaling <= 0 ? 1 : RenderScaling;
+        var x = Position.X + (int)(Bounds.Width * scaling) + 12;
+        var y = Position.Y + 48;
+        if (Screens?.ScreenFromWindow(this) is { } screen)
+        {
+            var area = screen.WorkingArea;
+            x = Math.Max(area.X + 12, Math.Min(x, area.Right - (int)(window.Width * scaling) - 12));
+            y = Math.Max(area.Y + 12, Math.Min(y, area.Bottom - (int)(window.Height * scaling) - 12));
+        }
+        window.Position = new PixelPoint(x, y);
+    }
+
+    /// <summary>Read-only GA or device facts; every navigation goes through the main window.</summary>
+    private Control BuildCompanion(WorkbenchTarget target)
+    {
+        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        if (ViewModel.Project is not { } project || WorkbenchProjection.Resolve(project, target) is not { } model)
+        {
+            panel.Children.Add(Note(W("CompanionEmpty")));
+            return new ScrollViewer { Content = panel };
+        }
+        panel.Children.Add(Label(TargetTitle(model, target)));
+        panel.Children.Add(ActionButton(W("RevealInMain"), () => { OpenTarget(target); Activate(); }, "quiet"));
+        switch (model)
+        {
+            case GroupAddressEntry ga:
+                panel.Children.Add(Section(W("SectionGeneral"),
+                    Note(W("DatapointType") + ": " + (ga.DatapointType ?? W("Unknown"))),
+                    Note(W("GroupAddress") + ": " + ga.Address)));
+                var linked = ProjectQuery.ComObjectRefs(project).Where(r => r.Ref.Links.Contains(ga.Id)).ToList();
+                var links = new StackPanel { Spacing = 4 };
+                links.Children.Add(Note(W("GaLinkedCount", linked.Count)));
+                if (linked.Count == 0) links.Children.Add(Note(W("GaNoLinks")));
+                foreach (var group in linked.GroupBy(r => r.Device).Take(40))
+                {
+                    links.Children.Add(ActionButton(W("GaLinkedDevice", group.Key.Address.ToString(), group.Key.Name ?? ""),
+                        () => { OpenTarget(new("device", group.Key.Id), "relations"); Activate(); }, "quiet"));
+                    foreach (var (device, comObject) in group.Take(10))
+                    {
+                        var sending = WorkbenchProject.Metadata(project, new(device.Id, comObject.Id))?.SendingGroupId == ga.Id;
+                        links.Children.Add(Note($"#{comObject.Number} · {comObject.Text ?? comObject.Id}" + (sending ? " · " + W("SendingBadge") : "")));
+                    }
+                }
+                panel.Children.Add(Section(W("SectionLinks"), links));
+                break;
+            case DeviceInstance device:
+                var line = ProjectQuery.LocateDevice(project, device.Address)?.Line;
+                var room = project.Installations.SelectMany(i => i.Locations.AllNodes).FirstOrDefault(n => n.DeviceRefs.Contains(device.Id));
+                var application = device.Hardware2ProgramRefId ?? project.Workbench.Devices.GetValueOrDefault(device.Id)?.Application ?? "-";
+                panel.Children.Add(Section(W("SectionGeneral"),
+                    Note(W("DeviceFacts", device.Address.ToString(), device.ProductRefId, application)),
+                    Note(W("Line") + ": " + (line is null ? W("Unknown") : $"{line.Address} · {line.Name ?? W("Line")}")),
+                    Note(W("RoomOptional") + ": " + (room?.Path ?? W("Unknown")))));
+                var objects = ProjectQuery.ComObjectRefs(project).Where(r => r.Device.Id == device.Id).ToList();
+                var objectRows = new StackPanel { Spacing = 2 };
+                objectRows.Children.Add(Note(W("TableFootnote", objects.Count)));
+                foreach (var (_, comObject) in objects.Take(200))
+                {
+                    var addresses = comObject.Links.Select(id => ProjectQuery.GroupAddresses(project).FirstOrDefault(g => g.Id == id))
+                        .Where(g => g is not null).Select(g => g!.Address.ToString()).ToList();
+                    objectRows.Children.Add(Note($"#{comObject.Number} · {comObject.Text ?? comObject.Id} · {(addresses.Count == 0 ? W("NoLinks") : string.Join("  ", addresses))}"));
+                }
+                panel.Children.Add(Section(W("SectionObject"), objectRows));
+                break;
+        }
+        return new ScrollViewer { Content = panel };
     }
 
     private sealed record LinkPreview(WorkbenchRow Row, string? Error, bool AlreadyLinked);

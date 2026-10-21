@@ -116,6 +116,34 @@ public static class WorkbenchProjection
         }
     }
 
+    /// <summary>
+    /// Validates a device dragged onto a navigator line or segment without touching the project.
+    /// The UI only mutates when <see cref="DeviceDropResult.Ok"/> is true, so an invalid drop
+    /// can never move a device or allocate an address.
+    /// </summary>
+    public static DeviceDropResult ResolveDeviceDrop(Project p, string deviceId, WorkbenchTarget? target)
+    {
+        if (target is not { Kind: "line" or "segment" }) return new(DeviceDropStatus.NotATopologyTarget);
+        var device = ProjectQuery.DeviceList(p).FirstOrDefault(d => d.Id == deviceId);
+        if (device is null) return new(DeviceDropStatus.DeviceMissing);
+        Line? line;
+        Segment? segment = null;
+        if (target.Kind == "line") line = Lines(p).FirstOrDefault(l => l.Id == target.Id);
+        else
+        {
+            var placement = Lines(p).SelectMany(l => l.Segments.Select(s => (Line: l, Segment: s)))
+                .FirstOrDefault(x => x.Segment.Id == target.Id);
+            line = placement.Line;
+            segment = placement.Segment;
+        }
+        if (line is null) return new(DeviceDropStatus.LineMissing);
+        var currentLine = Lines(p).FirstOrDefault(l => l.Devices.Contains(device) || l.Segments.Any(s => s.Devices.Contains(device)));
+        var currentSegment = currentLine?.Segments.FirstOrDefault(s => s.Devices.Contains(device));
+        if (ReferenceEquals(currentLine, line) && ReferenceEquals(currentSegment, segment))
+            return new(DeviceDropStatus.AlreadyThere);
+        return new(DeviceDropStatus.Ok, line, segment);
+    }
+
     public static IReadOnlyList<WorkbenchNavNode> Navigation(Project p, string perspective)
     {
         var devices = ProjectQuery.DeviceList(p).ToList();
@@ -170,6 +198,21 @@ public static class WorkbenchProjection
 
 public sealed record WorkbenchNavNode(string Key, string Name, string Meta, object Model, WorkbenchTarget? Target,
     IReadOnlyList<WorkbenchNavNode> Children);
+
+/// <summary>Why a device drag was rejected; the shell localizes every value.</summary>
+public enum DeviceDropStatus
+{
+    Ok,
+    NotATopologyTarget,
+    DeviceMissing,
+    LineMissing,
+    AlreadyThere,
+}
+
+public sealed record DeviceDropResult(DeviceDropStatus Status, Line? Line = null, Segment? Segment = null)
+{
+    public bool Ok => Status == DeviceDropStatus.Ok;
+}
 
 public sealed record WorkbenchRow(string Key, string Kind, string Name, string Address, DeviceInstance Device,
     ComObjectInstanceRef? Object, int Depth, bool Expanded, bool CanExpand, string Links = "", string LinkDetails = "",

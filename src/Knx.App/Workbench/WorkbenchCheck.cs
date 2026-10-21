@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Xml.Linq;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
@@ -189,11 +190,28 @@ internal static class WorkbenchCheck
                 pane.FindControl<Button>("ApplyButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Check("routed explicit Apply uses existing validation and undo", d.ParameterValues.GetValueOrDefault("R-N") == "44" && window.ViewModel.IsDirty);
                 window.Workspace.InspectorVisible = true;
-                Check("inspector reveals native device", window.FindControl<StackPanel>("InspectorBody")!.Children.OfType<TextBlock>().Any(t => t.Text == d.Name));
-                var inspector = window.FindControl<StackPanel>("InspectorBody")!;
-                inspector.Children.OfType<TextBox>().First().Text = "Tastsensor · bearbeitet";
-                inspector.Children.OfType<Button>().First(b => Equals(b.Content, WorkbenchStrings.Get("ApplyProperties")))
+                var inspectorBody = window.FindControl<StackPanel>("InspectorBody")!;
+                var inspectorFooter = window.FindControl<StackPanel>("InspectorFooter")!;
+                Check("inspector reveals native device", inspectorBody.Children.OfType<TextBlock>().Any(t => t.Text == d.Name));
+                Check("inspector groups facts into named sections",
+                    inspectorBody.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == WorkbenchStrings.Get("SectionTopology"))
+                    && inspectorBody.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == WorkbenchStrings.Get("SectionDevice")));
+                Check("inspector footer holds the apply action",
+                    inspectorFooter.Children.OfType<Button>().Any(b => Equals(b.Content, WorkbenchStrings.Get("ApplyProperties"))));
+                window.Activate();
+                await Task.Delay(80);
+                var nameBox = inspectorBody.GetVisualDescendants().OfType<TextBox>().First();
+                nameBox.Text = "Tastsensor · bearbeitet";
+                nameBox.CaretIndex = nameBox.Text.Length;
+                nameBox.Focus();
+                Check("inspector focuses the edited field", window.FocusManager?.GetFocusedElement() == nameBox);
+                inspectorFooter.Children.OfType<Button>().First(b => Equals(b.Content, WorkbenchStrings.Get("ApplyProperties")))
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(80);
+                var refocused = window.FocusManager?.GetFocusedElement() as TextBox;
+                Check("inspector keeps the edited field focused after apply",
+                    refocused is not null && AutomationProperties.GetAutomationId(refocused) == "inspector.device.name"
+                    && refocused.CaretIndex == "Tastsensor · bearbeitet".Length);
                 Check("native inspector rename refreshes work-item titles", d.Name == "Tastsensor · bearbeitet" && deviceTab.Title == d.Name);
                 var checkLine = p.Installations[0].Areas[0].Lines[0];
                 var checkSegment = new Segment { Id = "S-CHECK", Address = 1 };
@@ -204,6 +222,21 @@ internal static class WorkbenchCheck
                 Check("device edit preserves the segment and assigns the room", editError is null
                     && checkSegment.Devices.Contains(d) && !checkLine.Devices.Contains(d)
                     && p.Installations[0].Locations.Find("R-1")!.DeviceRefs.Contains(d.Id));
+                var dropAddress = d.Address.ToString();
+                var toLine = WorkbenchProjection.ResolveDeviceDrop(p, d.Id, new("line", checkLine.Id));
+                var toCurrentSegment = WorkbenchProjection.ResolveDeviceDrop(p, d.Id, new("segment", checkSegment.Id));
+                Check("drop target validation resolves lines, segments and invalid targets", toLine.Ok && toLine.Segment is null
+                    && toCurrentSegment.Status == DeviceDropStatus.AlreadyThere
+                    && WorkbenchProjection.ResolveDeviceDrop(p, d.Id, new("room", "R-1")).Status == DeviceDropStatus.NotATopologyTarget
+                    && WorkbenchProjection.ResolveDeviceDrop(p, "D-missing", new("line", checkLine.Id)).Status == DeviceDropStatus.DeviceMissing
+                    && WorkbenchProjection.ResolveDeviceDrop(p, d.Id, new("line", "L-missing")).Status == DeviceDropStatus.LineMissing
+                    && checkSegment.Devices.Contains(d) && !checkLine.Devices.Contains(d) && d.Address.ToString() == dropAddress);
+                var dropMoved = toLine.Ok && window.ViewModel.ApplyProjectOperation("Selftest: Gerät verschieben",
+                    op => ProjectOperations.MoveDevice(op, d, toLine.Line!, toLine.Segment));
+                await Task.Delay(40);
+                Check("validated drop moves the device out of the segment and keeps the room",
+                    dropMoved && checkLine.Devices.Contains(d) && !checkSegment.Devices.Contains(d)
+                    && p.Installations[0].Locations.Find("R-1")!.DeviceRefs.Contains(d.Id) && d.Address.ToString() == dropAddress);
                 window.SetRepresentation("relations");
                 Check("relations view uses domain-validated links", window.FindControl<ContentControl>("RelationsHost")!.Content is ScrollViewer
                     && window.ViewModel.Project is { } relationProject && Knx.Workbench.WorkbenchProject.Associations(relationProject).Count > 0);
@@ -227,7 +260,34 @@ internal static class WorkbenchCheck
                 var firstTab = window.Workspace.ActiveTab;
                 window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Tab, KeyModifiers = KeyModifiers.Control });
                 Check("Ctrl+Tab changes the active work item", window.Workspace.ActiveTab != firstTab);
-                window.ShowTool("monitor"); window.ViewModel.StartRecording(); window.Workspace.ToolsVisible = false;
+                var footnote = window.FindControl<TextBlock>("TableFootnote")!;
+                Check("table footnote is a named polite live region",
+                    AutomationProperties.GetLiveSetting(footnote) == Avalonia.Automation.AutomationLiveSetting.Polite
+                    && AutomationProperties.GetName(footnote) == WorkbenchStrings.Get("TableFootnoteName"));
+                Check("row names do not end in a dangling separator", !window.FindControl<ListBox>("ObjectTable")!
+                    .GetVisualDescendants().OfType<Grid>().Select(AutomationProperties.GetName)
+                    .Any(name => name is { Length: > 0 } text && (text.EndsWith(",", StringComparison.Ordinal) || text.EndsWith(", ", StringComparison.Ordinal))));
+                window.Width = 1024;
+                await Task.Delay(150);
+                var mainColumn = window.FindControl<Grid>("MainColumn")!;
+                Check("narrow inspector overlay keeps covered editor stops out of the tab order",
+                    window.Workspace.InspectorVisible && KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.None);
+                window.Width = 1440;
+                await Task.Delay(150);
+                Check("wide layout restores editor tab navigation",
+                    KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.Continue);
+                window.ShowTool("programming");
+                await Task.Delay(60);
+                Check("programming tool renders its list inside one host", window.FindControl<ContentControl>("ToolHost")!.Content is DockPanel);
+                window.ShowTool("search");
+                await Task.Delay(60);
+                Check("search tool is hosted maximized instead of the 242 DIP dock", window.Workspace.ToolsMaximized
+                    && mainColumn.RowDefinitions[1].Height.Value == 0 && window.FindControl<ContentControl>("ToolHost")!.Content is SearchPane);
+                window.ShowTool("monitor");
+                await Task.Delay(60);
+                Check("leaving search restores the docked tool height", !window.Workspace.ToolsMaximized
+                    && mainColumn.RowDefinitions[1].Height.IsStar);
+                window.ViewModel.StartRecording(); window.Workspace.ToolsVisible = false;
                 window.ShowTool("monitor");
                 Check("hiding and recreating monitor retains recorder state", window.ViewModel.IsRecording);
                 for (var cycle = 0; cycle < 3; cycle++)
@@ -243,6 +303,29 @@ internal static class WorkbenchCheck
                     Check($"closing tool window {cycle + 1} docks back into the shell", window.Workspace.ToolsVisible && window.FindControl<ContentControl>("ToolHost")!.Content is not null);
                 }
                 window.ViewModel.StopRecording();
+                var toolsBeforeCompanion = window.Workspace.ToolsVisible;
+                var companionGa = ProjectQuery.GroupAddresses(window.ViewModel.Project!).First();
+                window.OpenCompanion(new("ga", companionGa.Id));
+                await Task.Delay(120);
+                var companion = desktop.Windows.FirstOrDefault(w => w != window
+                    && w.Title.Contains(WorkbenchStrings.Get("CompanionWindow"), StringComparison.Ordinal));
+                Check("companion pane opens beside the main window for a group address",
+                    companion?.Content is ScrollViewer { Content: StackPanel });
+                companion?.Close();
+                await Task.Delay(40);
+                Check("closing the companion keeps the docking layout and work items",
+                    window.Workspace.ToolsVisible == toolsBeforeCompanion && window.Workspace.ActiveTab is not null
+                    && window.FindControl<ContentControl>("ToolHost")!.Content is not null);
+                window.Workspace.Navigators["building"].Query = "";
+                window.Navigate("building");
+                var projectTarget = new WorkbenchTarget("project", window.ViewModel.Project!.Id);
+                window.Workspace.ToggleFavorite(projectTarget);
+                window.RefreshWorkspace();
+                await Task.Delay(80);
+                Check("pinned work item is marked in the navigator",
+                    window.FindControl<ListBox>("NavTree")!.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.StartsWith("★") == true));
+                Check("pin toggles off again", !window.Workspace.ToggleFavorite(projectTarget) && !window.Workspace.IsFavorite(projectTarget));
+                window.RefreshWorkspace();
                 window.ViewModel.UndoCommand.Execute(null); window.RefreshWorkspace();
                 Check("undo targets resolve the replacement project", !ReferenceEquals(window.ViewModel.Project, p) && WorkbenchProjection.Resolve(window.ViewModel.Project, deviceTab.Target) is DeviceInstance);
                 var large = ProjectQuery.DeviceList(window.ViewModel.Project!).First();

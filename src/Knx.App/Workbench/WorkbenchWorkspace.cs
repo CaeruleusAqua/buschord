@@ -47,6 +47,22 @@ public sealed partial class WorkbenchWorkspace : ObservableObject
 
     public string ProjectId { get; private set; }
     public ObservableCollection<WorkbenchTab> Tabs { get; } = [];
+
+    /// <summary>Pinned work items. Targets are project-scoped, so they clear with the project.</summary>
+    public ObservableCollection<WorkbenchTarget> Favorites { get; } = [];
+
+    public bool IsFavorite(WorkbenchTarget target) => Favorites.Contains(target);
+
+    /// <summary>Toggles the pin and returns the new state; invalid targets are never pinned.</summary>
+    public bool ToggleFavorite(WorkbenchTarget target)
+    {
+        if (!target.IsValid) return false;
+        if (Favorites.Remove(target)) return false;
+        if (Favorites.Count >= 100) Favorites.RemoveAt(0);
+        Favorites.Add(target);
+        return true;
+    }
+
     public IReadOnlyDictionary<string, WorkbenchNavigatorState> Navigators { get; } =
         new Dictionary<string, WorkbenchNavigatorState>(StringComparer.Ordinal)
         {
@@ -88,6 +104,7 @@ public sealed partial class WorkbenchWorkspace : ObservableObject
         if (projectId == ProjectId) return;
         ProjectId = projectId;
         Tabs.Clear(); ActiveTab = null;
+        Favorites.Clear();
         foreach (var nav in Navigators.Values)
         {
             nav.Query = ""; nav.SelectedId = null; nav.ScrollOffset = 0; nav.ExpandedIds.Clear();
@@ -116,6 +133,7 @@ public sealed partial class WorkbenchWorkspace : ObservableObject
             NavigatorWidth = Size(NavigatorWidth, 200, 400, 272),
             InspectorWidth = Size(InspectorWidth, 290, 480, 350),
             ToolsHeight = Size(ToolsHeight, 140, 1000, 242), ActiveTarget = ActiveTab?.Target,
+            Favorites = Favorites.Cast<WorkbenchTarget?>().ToList(),
             Tabs = Tabs.Select(t => (TabLayout?)new TabLayout
             {
                 Target = t.Target, Title = t.Title, View = t.View, Filter = t.Filter,
@@ -170,6 +188,12 @@ public sealed partial class WorkbenchWorkspace : ObservableObject
             tab.CollapsedDeviceIds.UnionWith((stored.CollapsedDeviceIds ?? []).Where(x => !string.IsNullOrEmpty(x)));
         }
         ActiveTab = Tabs.FirstOrDefault(t => t.Target == data.ActiveTarget) ?? Tabs.FirstOrDefault();
+        Favorites.Clear();
+        foreach (var favorite in (data.Favorites ?? []).Take(100))
+        {
+            if (favorite is not { IsValid: true } pinned || targetExists?.Invoke(pinned) == false || Favorites.Contains(pinned)) continue;
+            Favorites.Add(pinned);
+        }
         foreach (var (key, stored) in data.Navigators)
         {
             if (stored is null || !Navigators.TryGetValue(key, out var nav)) continue;
@@ -196,6 +220,7 @@ public sealed partial class WorkbenchWorkspace : ObservableObject
         public double InspectorWidth { get; set; } = 350;
         public double ToolsHeight { get; set; } = 242;
         public WorkbenchTarget? ActiveTarget { get; set; }
+        public List<WorkbenchTarget?>? Favorites { get; set; } = [];
         public List<TabLayout?>? Tabs { get; set; } = [];
         public Dictionary<string, NavigatorLayout?>? Navigators { get; set; } = [];
     }

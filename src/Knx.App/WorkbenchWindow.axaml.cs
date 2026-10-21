@@ -24,9 +24,12 @@ public partial class WorkbenchWindow : Window
     private readonly ParameterPane _parameters;
     private readonly ParameterEditingSession _parameterSession;
     private readonly ComboBox _parameterDevice = new() { MinWidth = 240, Margin = new(0, 0, 0, 12) };
-    private readonly StackPanel _modePanel = new() { Margin = new(0, 12, 0, 0), Spacing = 8, MaxWidth = 620, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
+    private readonly StackPanel _modePanel = new() { Margin = new(0, 12, 0, 0), Spacing = 8, MaxWidth = 620, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
+    private readonly StackPanel _modeActions = new() { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
+    private readonly Border _modeFooter = new() { BorderThickness = new(0, 1, 0, 0), Padding = new(0, 10, 0, 2), Margin = new(0, 12, 0, 0) };
     private readonly ScrollViewer _modeScroll = new() { VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto };
     private readonly List<Window> _toolWindows = [];
+    private readonly Dictionary<WorkbenchTarget, Window> _companions = [];
     private readonly Dictionary<string, Button> _railButtons = new(StringComparer.Ordinal);
     private readonly WorkbenchAudit _audit = new();
     private WorkbenchSessions? _sessions;
@@ -48,6 +51,17 @@ public partial class WorkbenchWindow : Window
     private bool _scrollRestorePending;
     private int _navRestoreVersion;
     private bool _navRestorePending;
+    private readonly List<Control> _inspectorFooters = [];
+    private string? _inspectorFocusId;
+    private int _inspectorFocusCaret;
+    private static readonly DataFormat<string> DeviceDragFormat = DataFormat.CreateInProcessFormat<string>("buschord/workbench-device");
+    private DeviceInstance? _dragDevice;
+    private PointerPressedEventArgs? _dragPress;
+    private Point _dragOrigin;
+    private Control? _dropHighlight;
+    private bool _compactToolTabs;
+    private bool _compactObjectToolbar;
+    private bool _searchForcedMaximize;
     public MainWindowViewModel ViewModel { get; }
     public WorkbenchWorkspace Workspace { get; }
     internal ParameterPane ParameterEditor => _parameters;
@@ -71,9 +85,15 @@ public partial class WorkbenchWindow : Window
         parameterLayout.Children.Add(_parameterDevice);
         _modeScroll.Content = _modePanel;
         _modeScroll.IsVisible = false;
-        var parameterContent = new Grid();
+        // The demo form mirrors ParameterPane: scrolling fields above, sticky action footer below.
+        _modeFooter.Child = _modeActions;
+        _modeFooter.IsVisible = false;
+        _modeFooter.Classes.Add("wb-action-footer");
+        var parameterContent = new Grid { RowDefinitions = new("*,Auto") };
         parameterContent.Children.Add(_parameters);
-        parameterContent.Children.Add(new Border { VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top, Child = _modeScroll });
+        parameterContent.Children.Add(_modeScroll);
+        Grid.SetRow(_modeFooter, 1);
+        parameterContent.Children.Add(_modeFooter);
         parameterLayout.Children.Add(parameterContent);
         ParametersHost.Content = parameterLayout;
         _parameterDevice.ItemTemplate = new FuncDataTemplate<DeviceRow>((d, _) => Label(d is null ? "" : $"{d.AddressText} · {d.Name}"));
@@ -104,7 +124,9 @@ public partial class WorkbenchWindow : Window
             var perspective = key;
             var perspectiveButton = ActionButton(title, () => Navigate(perspective), "quiet");
             perspectiveButton.FontSize = 10; perspectiveButton.Padding = new(2, 0); perspectiveButton.MinWidth = 0;
-            perspectiveButton.Content = IconLabel(glyph, title);
+            // Text-only like the concept's nav-kind strip: icon+label does not fit 210 DIP at 1024/900.
+            perspectiveButton.Content = Label(title);
+            AutomationProperties.SetName(perspectiveButton, title);
             Perspectives.Children.Add(perspectiveButton);
             var rail = ActionButton("", () => Navigate(perspective), "quiet");
             rail.Content = new ConceptIcon { Symbol = glyph, Width = 19, Height = 19 };
@@ -128,6 +150,7 @@ public partial class WorkbenchWindow : Window
             var view = key;
             var button = ActionButton(title, () => SetRepresentation(view), "quiet");
             button.Classes.Add("wb-view-tab");
+            AutomationProperties.SetName(button, title);
             Representations.Children.Add(button);
         }
         foreach (var (key, title) in new[] { ("monitor", W("Monitor")), ("programming", W("ProgrammingTab")), ("scan", W("Scan")), ("search", W("SidebarSearch")), ("changes", W("Changes")), ("problems", W("Problems")) })
@@ -136,11 +159,7 @@ public partial class WorkbenchWindow : Window
             var button = ActionButton(title, () => ShowTool(tool), "quiet");
             button.Tag = tool;
             button.Classes.Add("wb-tool-tab");
-            button.Content = IconLabel(key switch
-            {
-                "monitor" => "monitor", "programming" => "download", "scan" => "refresh",
-                "search" => "search", "changes" => "clock", _ => "warning"
-            }, title);
+            button.Content = IconLabel(ToolIcon(tool), title);
             AutomationProperties.SetName(button, title);
             ToolTabs.Children.Add(button);
         }
@@ -153,6 +172,16 @@ public partial class WorkbenchWindow : Window
         AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Tunnel);
         NavTree.AddHandler(KeyDownEvent, OnNavigatorKeyDown, RoutingStrategies.Tunnel);
         ObjectTable.AddHandler(KeyDownEvent, OnTableKeyDown, RoutingStrategies.Tunnel);
+        // Device rows are drag sources; line and segment rows (and a line work item's table) accept drops.
+        AddHandler(PointerMovedEvent, OnDragWatchMoved, RoutingStrategies.Tunnel);
+        AddHandler(PointerReleasedEvent, (_, _) => ResetDragWatch(), RoutingStrategies.Tunnel);
+        foreach (var surface in new Control[] { NavTree, ObjectTable })
+        {
+            DragDrop.SetAllowDrop(surface, true);
+            surface.AddHandler(DragDrop.DragOverEvent, OnDeviceDragOver);
+            surface.AddHandler(DragDrop.DragLeaveEvent, (_, _) => ClearDropHighlight());
+            surface.AddHandler(DragDrop.DropEvent, OnDeviceDrop);
+        }
         Closing += OnClosing;
         foreach (var splitter in new[] { NavSplitter, InspectorSplitter, ToolsSplitter })
         {
@@ -321,7 +350,12 @@ public partial class WorkbenchWindow : Window
     private void UpdateRail()
     {
         foreach (var (key, button) in _railButtons)
-            button.Classes.Set("active", key == Workspace.Perspective);
+        {
+            var active = key == Workspace.Perspective;
+            button.Classes.Set("active", active);
+            button.Classes.Set("rail-active", active);
+            AutomationProperties.SetItemStatus(button, active ? W("Selected") : "");
+        }
     }
 
     public WorkbenchTab OpenTarget(WorkbenchTarget target, string? view = null)
@@ -349,7 +383,6 @@ public partial class WorkbenchWindow : Window
         tab.View = view;
         RefreshEditor();
     }
-
     public void RefreshWorkspace()
     {
         if (_refreshing) return;
@@ -390,7 +423,8 @@ public partial class WorkbenchWindow : Window
             foreach (var tab in Workspace.Tabs) tab.Title = TargetTitle(WorkbenchProjection.Resolve(p, tab.Target), tab.Target);
             ProjectName.Text = p?.Name ?? "BusChord";
             ProjectSummary.Text = p is null ? W("OpenOrCreateProject") : W("DeviceLineSummary", ProjectQuery.DeviceList(p).Count(), WorkbenchProjection.Lines(p).Count());
-            NavSearch.Text = Workspace.Navigators[Workspace.Perspective].Query;
+            // Rewriting unchanged text would clear the field's own undo stack; compare first.
+            if (NavSearch.Text != Workspace.Navigators[Workspace.Perspective].Query) NavSearch.Text = Workspace.Navigators[Workspace.Perspective].Query;
             RefreshNavigation();
             UpdateRail();
             RefreshTabs();
@@ -510,7 +544,8 @@ public partial class WorkbenchWindow : Window
             ToolPageHost.IsVisible = tool || tab is null || tab.View == "overview";
             if (tab is not null)
             {
-                ObjectSearch.Text = tab.Filter;
+                // Only write when the filter changed, otherwise the field's undo stack is reset.
+                if (ObjectSearch.Text != tab.Filter) ObjectSearch.Text = tab.Filter;
                 Unlinked.IsChecked = tab.UnlinkedOnly;
                 RelatedBox.IsChecked = tab.IncludeRelated;
                 var rows = ViewModel.Project is { } project ? WorkbenchProjection.Rows(project, tab) : [];
@@ -540,7 +575,11 @@ public partial class WorkbenchWindow : Window
                 }
                 else if (tab.View == "overview") ToolPageHost.Content = CreateProblemsView();
                 for (var i = 0; i < Representations.Children.Count; i++)
-                    Representations.Children[i].Classes.Set("active", new[] { "objects", "params", "relations", "overview" }[i] == tab.View);
+                {
+                    var activeView = new[] { "objects", "params", "relations", "overview" }[i] == tab.View;
+                    Representations.Children[i].Classes.Set("active", activeView);
+                    AutomationProperties.SetItemStatus(Representations.Children[i], activeView ? W("Selected") : "");
+                }
                 Dispatcher.UIThread.Post(() =>
                 {
                     if (restoreVersion != _scrollRestoreVersion) return;
@@ -567,7 +606,8 @@ public partial class WorkbenchWindow : Window
     private Control BuildNavRow(NavEntry entry)
     {
         var node = entry.Node;
-        var grid = new Grid { ColumnDefinitions = new("22,*,Auto"), Margin = new(entry.Depth * 12, 0, 4, 0), Height = 29 };
+        var grid = new Grid { ColumnDefinitions = new("22,*,Auto"), Margin = new(entry.Depth * 12, 0, 4, 0), Height = 29, Tag = node };
+        var pinned = node.Target is { } nodeTarget && Workspace.IsFavorite(nodeTarget);
         AutomationProperties.SetName(grid, node.Meta.Length > 0 ? $"{node.Name}, {node.Meta}" : node.Name);
         if (Workspace.ActiveTab?.Target is { } activeTarget && node.Target == activeTarget) grid.Classes.Add("wb-row-active");
         var hasChildren = node.Children.Count > 0;
@@ -584,9 +624,10 @@ public partial class WorkbenchWindow : Window
         expand.IsEnabled = node.Children.Count > 0; expand.Padding = new(0);
         grid.Children.Add(expand);
         var label = Label(node.Name); label.FontSize = 11; Grid.SetColumn(label, 1); grid.Children.Add(label);
-        var meta = Label(node.Meta); meta.FontSize = 9; meta.Classes.Add("wb-subtle"); Grid.SetColumn(meta, 2); grid.Children.Add(meta);
+        var meta = Label(pinned ? "★ " + node.Meta : node.Meta); meta.FontSize = 9; meta.Classes.Add("wb-subtle"); Grid.SetColumn(meta, 2); grid.Children.Add(meta);
         ToolTip.SetTip(grid, node.Name + " · " + node.Meta);
         grid.ContextMenu = BuildNavigationMenu(node);
+        if (node.Model is DeviceInstance device) WatchDeviceDrag(grid, device);
         return grid;
     }
 
@@ -616,17 +657,21 @@ public partial class WorkbenchWindow : Window
                 Add(W("Delete"), () => _ = DeleteSegmentAsync(segment));
                 break;
             case DeviceInstance device:
+                Add(W("OpenBeside"), () => OpenCompanion(new("device", device.Id)));
                 Add(W("Rename"), () => _ = RenameDeviceAsync(device));
                 Add(W("Copy"), () => _ = CopyDeviceAsync(device));
                 Add(W("Move"), () => _ = MoveDeviceAsync(device));
                 Add(W("Delete"), () => _ = DeleteDeviceAsync(device));
                 break;
             case GroupAddressEntry group:
+                Add(W("OpenBeside"), () => OpenCompanion(new("ga", group.Id)));
                 Add(W("Rename"), () => _ = RenameGroupAddressAsync(group));
                 Add(W("Copy"), () => _ = CopyGroupAddressAsync(group));
                 Add(W("Delete"), () => _ = DeleteGroupAddressAsync(group));
                 break;
         }
+        if (node.Target is { } target)
+            Add(Workspace.IsFavorite(target) ? W("Unfavorite") : W("Favorite"), () => ToggleFavorite(target, node.Name));
         return menu.Items.Count > 0 ? menu : null;
     }
 
@@ -810,10 +855,13 @@ public partial class WorkbenchWindow : Window
     private Control BuildObjectRow(WorkbenchRow row)
     {
         var grid = new Grid { ColumnDefinitions = new("*,80,50,50,170"), Height = 32, Margin = new(0, 0, 12, 0) };
-        AutomationProperties.SetName(grid, row.Object is null
-            ? $"{row.Name}, {row.Address}{(row.External ? W("ExternalChannelSuffix") : "")}"
-            : W("RowDescription", row.Name, row.Address, row.Dpt ?? W("Unknown"),
-                row.Bits is { } bitCount ? W("BitsValue", bitCount) : W("UnknownBits"), row.Flags ?? W("Unknown"), row.Links));
+        var parts = new List<string> { row.Name };
+        if (row.Address.Length > 0) parts.Add(row.Address);
+        if (row.External) parts.Add(W("ExternalChannel"));
+        AutomationProperties.SetName(grid, row.Object is null ? string.Join(", ", parts)
+            : W(row.Links.Length > 0 ? "RowDescription" : "RowDescriptionNoLinks", row.Name, row.Address,
+                row.Dpt ?? W("Unknown"), row.Bits is { } bitCount ? W("BitsValue", bitCount) : W("UnknownBits"),
+                row.Flags ?? W("Unknown"), row.Links));
         if (row.Kind == "device") grid.Classes.Add("wb-device");
         if (row.Kind is "channel" or "group") grid.Classes.Add("wb-channel");
         var name = new Grid { ColumnDefinitions = new("22,Auto,*"), Margin = new(4 + row.Depth * 12, 0, 6, 0) };
@@ -852,8 +900,115 @@ public partial class WorkbenchWindow : Window
             Grid.SetColumn(external, 1); grid.Children.Add(external);
         }
         ToolTip.SetTip(text, row.Name);
+        if (row.Kind == "device") WatchDeviceDrag(grid, row.Device);
         return grid;
     }
+
+    /// <summary>
+    /// A row becomes a drag source only after a four-pixel move with the left button held; the
+    /// press itself stays unhandled so ListBox selection and multi-selection keep working.
+    /// </summary>
+    private void WatchDeviceDrag(Control row, DeviceInstance device)
+        => row.AddHandler(PointerPressedEvent, (_, e) => StartDragWatch(device, e), RoutingStrategies.Bubble, handledEventsToo: true);
+
+    private void StartDragWatch(DeviceInstance device, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        _dragDevice = device;
+        _dragPress = e;
+        _dragOrigin = e.GetPosition(this);
+    }
+
+    private void OnDragWatchMoved(object? sender, PointerEventArgs e)
+    {
+        if (_dragDevice is null || _dragPress is null) return;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) { ResetDragWatch(); return; }
+        var delta = e.GetPosition(this) - _dragOrigin;
+        if (Math.Abs(delta.X) < 4 && Math.Abs(delta.Y) < 4) return;
+        var device = _dragDevice;
+        var press = _dragPress;
+        ResetDragWatch();
+        _ = BeginDeviceDragAsync(press, device);
+    }
+
+    private void ResetDragWatch()
+    {
+        _dragDevice = null;
+        _dragPress = null;
+    }
+
+    private async Task BeginDeviceDragAsync(PointerPressedEventArgs press, DeviceInstance device)
+    {
+        var data = new DataTransfer();
+        data.Add(DataTransferItem.Create(DeviceDragFormat, device.Id));
+        try { await DragDrop.DoDragDropAsync(press, data, DragDropEffects.Move); }
+        catch (Exception ex) { ViewModel.Status = ex.Message; }
+        finally { ResetDragWatch(); ClearDropHighlight(); }
+    }
+
+    /// <summary>The navigator row under the pointer, if it belongs to this drag session.</summary>
+    private static (Control Row, WorkbenchNavNode Node)? NodeAt(object? source)
+    {
+        for (var visual = source as Visual; visual is not null; visual = visual.GetVisualParent())
+            if (visual is Control { Tag: WorkbenchNavNode node } row) return (row, node);
+        return null;
+    }
+
+    /// <summary>Line and segment nodes are drop targets; a line work item's table accepts the same drop.</summary>
+    private WorkbenchTarget? DropTargetOf(object? sender, object? source)
+    {
+        if (NodeAt(source)?.Node.Target is { Kind: "line" or "segment" } nodeTarget) return nodeTarget;
+        return ReferenceEquals(sender, ObjectTable) && Workspace.ActiveTab?.Target is { Kind: "line" } lineTarget ? lineTarget : null;
+    }
+
+    private void OnDeviceDragOver(object? sender, DragEventArgs e)
+    {
+        if (e.DataTransfer.TryGetValue(DeviceDragFormat) is not { } deviceId) { e.DragEffects = DragDropEffects.None; return; }
+        var target = DropTargetOf(sender, e.Source);
+        var ok = target is not null && ViewModel.Project is { } project && WorkbenchProjection.ResolveDeviceDrop(project, deviceId, target).Ok;
+        e.DragEffects = ok ? DragDropEffects.Move : DragDropEffects.None;
+        HighlightDropRow(ok ? NodeAt(e.Source)?.Row : null);
+        e.Handled = true;
+    }
+
+    private void OnDeviceDrop(object? sender, DragEventArgs e)
+    {
+        ClearDropHighlight();
+        if (e.DataTransfer.TryGetValue(DeviceDragFormat) is not { } deviceId
+            || DropTargetOf(sender, e.Source) is not { } target || ViewModel.Project is not { } project) return;
+        e.Handled = true;
+        MoveDeviceTo(project, deviceId, target);
+    }
+
+    /// <summary>Validated drop; an invalid target leaves project, undo history and selection untouched.</summary>
+    private void MoveDeviceTo(Project project, string deviceId, WorkbenchTarget target)
+    {
+        var drop = WorkbenchProjection.ResolveDeviceDrop(project, deviceId, target);
+        if (!drop.Ok)
+        {
+            ViewModel.Status = drop.Status switch
+            {
+                DeviceDropStatus.AlreadyThere => W("DropAlreadyThere"),
+                DeviceDropStatus.DeviceMissing => W("DeviceMissing"),
+                DeviceDropStatus.LineMissing => W("TargetLineMissing"),
+                _ => W("DropNeedsLine")
+            };
+            return;
+        }
+        var device = ProjectQuery.DeviceList(project).First(d => d.Id == deviceId);
+        ApplyOperation(W("DeviceMoved", device.Name ?? device.Address.ToString(), drop.Segment?.Name ?? drop.Line!.Name ?? W("Line")),
+            p => ProjectOperations.MoveDevice(p, device, drop.Line!, drop.Segment));
+    }
+
+    private void HighlightDropRow(Control? row)
+    {
+        if (ReferenceEquals(_dropHighlight, row)) return;
+        _dropHighlight?.Classes.Set("wb-drop-target", false);
+        _dropHighlight = row;
+        _dropHighlight?.Classes.Set("wb-drop-target", true);
+    }
+
+    private void ClearDropHighlight() => HighlightDropRow(null);
 
     private void OnNavigatorKeyDown(object? sender, KeyEventArgs e)
     {
@@ -1037,6 +1192,45 @@ public partial class WorkbenchWindow : Window
             Workspace.Navigators[_renderedPerspective].ScrollOffset = scroll.Offset.Y;
     }
 
+    /// <summary>Section header plus its fields: the inspector stays a scannable property grid.</summary>
+    private static Control Section(string title, params Control[] fields)
+    {
+        var stack = new StackPanel { Spacing = 6 };
+        stack.Children.Add(new TextBlock { Text = title, FontSize = 10, FontWeight = FontWeight.SemiBold, Classes = { "wb-muted" } });
+        foreach (var field in fields) stack.Children.Add(field);
+        return stack;
+    }
+
+    /// <summary>One label and editor on a shared baseline; the label is the editor's accessible name.</summary>
+    private static Control Field(string label, Control editor, string automationId)
+    {
+        var grid = new Grid { ColumnDefinitions = new("104,*"), ColumnSpacing = 8 };
+        var caption = Note(label); caption.TextWrapping = TextWrapping.NoWrap; caption.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+        grid.Children.Add(caption);
+        Grid.SetColumn(editor, 1);
+        grid.Children.Add(editor);
+        AutomationProperties.SetAutomationId(editor, automationId);
+        AutomationProperties.SetName(editor, label);
+        return grid;
+    }
+
+    /// <summary>Registers an action for the inspector footer, which stays visible while sections scroll.</summary>
+    private void FooterAction(Control action) => _inspectorFooters.Add(action);
+
+    private void ToggleFavorite(WorkbenchTarget target, string name)
+    {
+        var pinned = Workspace.ToggleFavorite(target);
+        ViewModel.Status = W(pinned ? "FavoriteAdded" : "FavoriteRemoved", name);
+        RefreshWorkspace();
+    }
+
+    private Button FavoriteButton(WorkbenchTarget target, string name)
+    {
+        var pinned = Workspace.IsFavorite(target);
+        var text = pinned ? W("Unfavorite") : W("Favorite");
+        return ActionButton(text, () => ToggleFavorite(target, name), "quiet", text + ": " + name);
+    }
+
     private void BuildDeviceInspector(DeviceRow current)
     {
         InspectorBody.Children.Add(Label(current.Name));
@@ -1055,23 +1249,30 @@ public partial class WorkbenchWindow : Window
         var currentRoom = project is null ? null : project.Installations.SelectMany(i => i.Locations.AllNodes)
             .FirstOrDefault(n => n.DeviceRefs.Contains(current.Device.Id));
         roomBox.SelectedItem = rooms.FirstOrDefault(r => r.Id == currentRoom?.Id);
-        InspectorBody.Children.Add(Note(W("NameLabel"))); InspectorBody.Children.Add(name);
-        InspectorBody.Children.Add(Note(W("ColumnAddress"))); InspectorBody.Children.Add(address);
-        InspectorBody.Children.Add(Note(W("Line"))); InspectorBody.Children.Add(lineBox);
-        InspectorBody.Children.Add(Note(W("RoomOptional"))); InspectorBody.Children.Add(roomBox);
+        InspectorBody.Children.Add(Section(W("SectionGeneral"),
+            Field(W("NameLabel"), name, "inspector.device.name"),
+            Field(W("ColumnAddress"), address, "inspector.device.address")));
+        InspectorBody.Children.Add(Section(W("SectionTopology"),
+            Field(W("Line"), lineBox, "inspector.device.line"),
+            Field(W("RoomOptional"), roomBox, "inspector.device.room"),
+            Note(W("DropHint"))));
         var application = current.Device.Hardware2ProgramRefId
             ?? ViewModel.Project?.Workbench.Devices.GetValueOrDefault(current.Device.Id)?.Application
             ?? "-";
-        InspectorBody.Children.Add(Note(W("DeviceFacts", current.AddressText, current.Device.ProductRefId, application)));
-        InspectorBody.Children.Add(ActionButton(W("ApplyProperties"), () =>
+        InspectorBody.Children.Add(Section(W("SectionDevice"),
+            Note(W("DeviceFacts", current.AddressText, current.Device.ProductRefId, application))));
+        var target = new WorkbenchTarget("device", current.Device.Id);
+        FooterAction(ActionButton(W("ApplyProperties"), () =>
         {
             var error = ViewModel.UpdateDeviceDetails(current.Device, name.Text ?? "",
                 address.Text ?? "", (lineBox.SelectedItem as Line)?.Id, (roomBox.SelectedItem as SpaceNode)?.Id);
             if (error is not null) ViewModel.Status = error;
             RefreshWorkspace();
-        }, "primary"));
-        InspectorBody.Children.Add(ActionButton(W("ShowInTopology"), () => { Navigate("topology"); NavSearch.Text = current.AddressText; }));
-        InspectorBody.Children.Add(ActionButton(W("OpenParameters"), () => OpenTarget(new("device", current.Device.Id), "params"), "quiet"));
+        }, "primary", W("ApplyProperties")));
+        FooterAction(ActionButton(W("ShowInTopology"), () => { Navigate("topology"); NavSearch.Text = current.AddressText; }, "quiet"));
+        FooterAction(ActionButton(W("OpenParameters"), () => OpenTarget(new("device", current.Device.Id), "params"), "quiet"));
+        FooterAction(ActionButton(W("OpenBeside"), () => OpenCompanion(target), "quiet"));
+        FooterAction(FavoriteButton(target, current.Name));
     }
 
     private void BuildProjectInspector(Project project)
@@ -1079,44 +1280,186 @@ public partial class WorkbenchWindow : Window
         var name = new TextBox { Text = project.Name };
         var comment = new TextBox { Text = project.Comment ?? "", AcceptsReturn = true, MinHeight = 80 };
         InspectorBody.Children.Add(Label(W("ProjectProperties")));
-        InspectorBody.Children.Add(Note(W("NameLabel"))); InspectorBody.Children.Add(name);
-        InspectorBody.Children.Add(Note(W("Comment"))); InspectorBody.Children.Add(comment);
-        InspectorBody.Children.Add(ActionButton(W("Apply"), () =>
+        InspectorBody.Children.Add(Section(W("SectionGeneral"),
+            Field(W("NameLabel"), name, "inspector.project.name"),
+            Field(W("Comment"), comment, "inspector.project.comment")));
+        FooterAction(ActionButton(W("Apply"), () =>
         {
             ViewModel.Edit(W("ProjectProperties"), p => { p.Name = name.Text?.Trim() ?? p.Name; p.Comment = comment.Text; });
             RefreshWorkspace();
-        }, "primary"));
+        }, "primary", W("Apply")));
     }
 
     private void BuildGroupAddressInspector(GroupAddressEntry ga)
     {
+        var target = new WorkbenchTarget("ga", ga.Id);
         var name = new TextBox { Text = ga.Name };
         var dpt = new TextBox { Text = ga.DatapointType };
-        InspectorBody.Children.Add(Note(ga.Address.ToString())); InspectorBody.Children.Add(name); InspectorBody.Children.Add(dpt);
-        InspectorBody.Children.Add(ActionButton(W("Apply"), () =>
+        InspectorBody.Children.Add(Label($"{ga.Address} · {ga.Name}"));
+        InspectorBody.Children.Add(Section(W("SectionGeneral"),
+            Field(W("NameLabel"), name, "inspector.ga.name"),
+            Field(W("DatapointType"), dpt, "inspector.ga.dpt")));
+        FooterAction(ActionButton(W("Apply"), () =>
         {
             ViewModel.RenameGroupAddress(new(ga.Address, ga.Name, ga.DatapointType, ga.Id), name.Text ?? "", dpt.Text); RefreshWorkspace();
-        }, "primary"));
+        }, "primary", W("Apply")));
         if (ViewModel.Project is not { } gaProject) return;
         var linked = ProjectQuery.ComObjectRefs(gaProject).Where(r => r.Ref.Links.Contains(ga.Id)).ToList();
-        InspectorBody.Children.Add(Note(W("GaLinkedCount", linked.Count)));
-        if (linked.Count == 0) InspectorBody.Children.Add(Note(W("GaNoLinks")));
+        var links = new StackPanel { Spacing = 4 };
+        links.Children.Add(Note(W("GaLinkedCount", linked.Count)));
+        if (linked.Count == 0) links.Children.Add(Note(W("GaNoLinks")));
         foreach (var group in linked.GroupBy(r => r.Device).Take(40))
         {
-            InspectorBody.Children.Add(ActionButton(W("GaLinkedDevice", group.Key.Address.ToString(),
+            links.Children.Add(ActionButton(W("GaLinkedDevice", group.Key.Address.ToString(),
                 group.Key.Name ?? ""), () => OpenTarget(new("device", group.Key.Id), "relations"), "quiet"));
             foreach (var (device, comObject) in group.Take(10))
             {
                 var sending = WorkbenchProject.Metadata(gaProject, new(device.Id, comObject.Id))?.SendingGroupId == ga.Id;
-                InspectorBody.Children.Add(Note($"#{comObject.Number} · {comObject.Text ?? comObject.Id}" + (sending ? " · " + W("SendingBadge") : "")));
+                links.Children.Add(Note($"#{comObject.Number} · {comObject.Text ?? comObject.Id}" + (sending ? " · " + W("SendingBadge") : "")));
             }
         }
+        InspectorBody.Children.Add(Section(W("SectionLinks"), links));
+        FooterAction(ActionButton(W("OpenBeside"), () => OpenCompanion(target), "quiet", W("OpenBeside") + ": " + ga.Name));
+        FooterAction(FavoriteButton(target, ga.Name));
+    }
+
+    /// <summary>Object metadata stays compact but editable; links and their actions follow in one section.</summary>
+    private void BuildObjectInspector(WorkbenchRow row, DeviceRow current, ComObjectInstanceRef obj)
+    {
+        if (ViewModel.Project is not { } project) return;
+        InspectorBody.Children.Add(Label($"#{obj.Number} · {obj.Text ?? obj.Id}"));
+        InspectorBody.Children.Add(Note(W("InspectorObject", current.AddressText, current.Name, obj.Id,
+            row.Dpt ?? W("Unknown"), row.Bits is { } bits ? W("BitsValue", bits) : W("UnknownBits"),
+            row.Flags ?? W("Unknown"))));
+        var objectKey = new ObjectKey(current.Device.Id, obj.Id);
+        var storedMetadata = WorkbenchProject.Metadata(project, objectKey) ?? new ObjectMetadata();
+        var objectDpt = new TextBox { Text = storedMetadata.Dpt ?? "" };
+        var objectBits = new TextBox { Text = storedMetadata.Bits?.ToString() ?? "" };
+        var objectFlags = new TextBox { Text = storedMetadata.Flags ?? "" };
+        var objectActive = new CheckBox { Content = W("Active"), IsChecked = storedMetadata.Active };
+        AutomationProperties.SetName(objectActive, W("Active"));
+        InspectorBody.Children.Add(Section(W("SectionObject"),
+            Field(W("DatapointType"), objectDpt, "inspector.object.dpt"),
+            Field(W("ColumnLength"), objectBits, "inspector.object.bits"),
+            Field(W("ObjectFlags"), objectFlags, "inspector.object.flags"),
+            objectActive));
+        var sendingGroup = Knx.Workbench.WorkbenchProject.Metadata(project, new(current.Device.Id, obj.Id))?.SendingGroupId;
+        var links = new StackPanel { Spacing = 4 };
+        foreach (var id in obj.Links.ToArray())
+        {
+            var ga = ProjectQuery.GroupAddresses(project).FirstOrDefault(g => g.Id == id);
+            var linkRow = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
+            linkRow.Children.Add(ga is null ? Note(W("Unresolved", id))
+                : ActionButton($"{ga.Address} · {ga.Name}" + (sendingGroup == id ? W("SendingSuffix") : ""), () => OpenTarget(new("ga", ga.Id)), "quiet"));
+            if (ga is not null)
+            {
+                linkRow.Children.Add(ActionButton(W("SetSendingAddress"), () =>
+                {
+                    string? error = null;
+                    ViewModel.Edit(W("EditSendingAddress", ga.Address), p =>
+                    {
+                        var result = Knx.Workbench.WorkbenchProject.SetSending(p, new(current.Device.Id, obj.Id), ga.Id);
+                        if (!result.Ok) error = result.Errors.FirstOrDefault()?.Reason;
+                    });
+                    if (error is not null) ViewModel.Status = error;
+                    RefreshWorkspace();
+                }, "quiet", W("SetSendingTip")));
+            }
+            linkRow.Children.Add(ActionButton(W("Remove"), () =>
+            {
+                string? warning = null;
+                ViewModel.Edit(W("EditRemoveLink", id), p =>
+                {
+                    var result = Knx.Workbench.WorkbenchProject.RemoveLink(p, new(current.Device.Id, obj.Id), id);
+                    warning = result.Warnings.FirstOrDefault();
+                });
+                if (warning is not null) ViewModel.Status = warning;
+                RefreshWorkspace();
+            }, "quiet"));
+            links.Children.Add(linkRow);
+        }
+        if (obj.Links.Count == 0) links.Children.Add(Note(W("NoLinksDot")));
+        links.Children.Add(Note(W("SendingNote")));
+        InspectorBody.Children.Add(Section(W("SectionLinks"), links));
+        FooterAction(ActionButton(W("Apply"), () =>
+        {
+            int? parsedBits = null;
+            if (!string.IsNullOrWhiteSpace(objectBits.Text))
+            {
+                if (!int.TryParse(objectBits.Text, out var value) || value is < 1 or > 65535)
+                {
+                    ViewModel.Status = W("InvalidBits");
+                    return;
+                }
+                parsedBits = value;
+            }
+            ViewModel.Edit(W("ApplyProperties"), p =>
+            {
+                var metadata = WorkbenchProject.Metadata(p, objectKey) ?? new ObjectMetadata();
+                metadata.Dpt = string.IsNullOrWhiteSpace(objectDpt.Text) ? null : objectDpt.Text.Trim();
+                metadata.Bits = parsedBits;
+                metadata.Flags = string.IsNullOrWhiteSpace(objectFlags.Text) ? null : objectFlags.Text.Trim().ToUpperInvariant();
+                metadata.Active = objectActive.IsChecked == true;
+                p.Workbench.Objects[objectKey.ToString()] = metadata;
+            });
+            RefreshWorkspace();
+        }, "primary", W("Apply")));
+        FooterAction(ActionButton(W("MoreLinks"), () =>
+        {
+            if (Workspace.ActiveTab is { } tab)
+            {
+                tab.SelectedObjectIds.Clear(); tab.SelectedObjectIds.Add(WorkbenchProjection.ObjectKey(current.Device, obj));
+            }
+            ShowBatchLinkDialog();
+        }));
+    }
+
+    /// <summary>Remembers the focused inspector field so a rebuild can restore it with its caret.</summary>
+    private void RememberInspectorFocus()
+    {
+        var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Control;
+        if (focused is null || !Inspector.GetVisualDescendants().Contains(focused)) return;
+        var id = AutomationProperties.GetAutomationId(focused);
+        if (string.IsNullOrEmpty(id)) return;
+        _inspectorFocusId = id;
+        _inspectorFocusCaret = focused is TextBox box ? box.CaretIndex : 0;
+    }
+
+    private void RestoreInspectorFocus()
+    {
+        if (_inspectorFocusId is not { Length: > 0 } id) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_inspectorFocusId != id) return;
+            _inspectorFocusId = null;
+            if (Inspector.GetVisualDescendants().OfType<Control>()
+                    .FirstOrDefault(control => AutomationProperties.GetAutomationId(control) == id) is not { } target) return;
+            target.Focus();
+            if (target is TextBox box) box.CaretIndex = Math.Min(_inspectorFocusCaret, box.Text?.Length ?? 0);
+        }, DispatcherPriority.Loaded);
     }
 
     private void RefreshInspector()
     {
+        RememberInspectorFocus();
         InspectorBody.Children.Clear();
+        InspectorFooter.Children.Clear();
+        _inspectorFooters.Clear();
         InspectorTitle.Text = W("SidebarTitle");
+        try
+        {
+            RefreshInspectorBody();
+        }
+        finally
+        {
+            foreach (var action in _inspectorFooters) InspectorFooter.Children.Add(action);
+            InspectorFooterHost.IsVisible = _inspectorFooters.Count > 0;
+            RestoreInspectorFocus();
+        }
+    }
+
+    private void RefreshInspectorBody()
+    {
         if (_sidebarMode != "properties")
         {
             switch (_sidebarMode)
@@ -1139,87 +1482,7 @@ public partial class WorkbenchWindow : Window
         }
         var current = CurrentDevice();
         if (selected.FirstOrDefault()?.Object is { } obj && current is not null)
-        {
-            InspectorBody.Children.Add(Label($"#{obj.Number} · {obj.Text ?? obj.Id}"));
-            InspectorBody.Children.Add(Note(W("InspectorObject", current.AddressText, current.Name, obj.Id,
-                selected.First().Dpt ?? W("Unknown"), selected.First().Bits is { } bits ? W("BitsValue", bits) : W("UnknownBits"),
-                selected.First().Flags ?? W("Unknown"))));
-            var objectKey = new ObjectKey(current.Device.Id, obj.Id);
-            var storedMetadata = WorkbenchProject.Metadata(ViewModel.Project!, objectKey) ?? new ObjectMetadata();
-            var objectDpt = new TextBox { Text = storedMetadata.Dpt ?? "" };
-            var objectBits = new TextBox { Text = storedMetadata.Bits?.ToString() ?? "" };
-            var objectFlags = new TextBox { Text = storedMetadata.Flags ?? "" };
-            var objectActive = new CheckBox { Content = W("Active"), IsChecked = storedMetadata.Active };
-            InspectorBody.Children.Add(Note(W("DatapointType"))); InspectorBody.Children.Add(objectDpt);
-            InspectorBody.Children.Add(Note(W("ColumnLength"))); InspectorBody.Children.Add(objectBits);
-            InspectorBody.Children.Add(Note(W("ObjectFlags"))); InspectorBody.Children.Add(objectFlags);
-            InspectorBody.Children.Add(objectActive);
-            InspectorBody.Children.Add(ActionButton(W("Apply"), () =>
-            {
-                int? parsedBits = null;
-                if (!string.IsNullOrWhiteSpace(objectBits.Text))
-                {
-                    if (!int.TryParse(objectBits.Text, out var value) || value is < 1 or > 65535)
-                    {
-                        ViewModel.Status = W("InvalidBits");
-                        return;
-                    }
-                    parsedBits = value;
-                }
-                ViewModel.Edit(W("ApplyProperties"), p =>
-                {
-                    var metadata = WorkbenchProject.Metadata(p, objectKey) ?? new ObjectMetadata();
-                    metadata.Dpt = string.IsNullOrWhiteSpace(objectDpt.Text) ? null : objectDpt.Text.Trim();
-                    metadata.Bits = parsedBits;
-                    metadata.Flags = string.IsNullOrWhiteSpace(objectFlags.Text) ? null : objectFlags.Text.Trim().ToUpperInvariant();
-                    metadata.Active = objectActive.IsChecked == true;
-                    p.Workbench.Objects[objectKey.ToString()] = metadata;
-                });
-                RefreshWorkspace();
-            }, "primary"));
-            var sendingGroup = Knx.Workbench.WorkbenchProject.Metadata(ViewModel.Project!, new(current.Device.Id, obj.Id))?.SendingGroupId;
-            foreach (var id in obj.Links.ToArray())
-            {
-                var ga = ViewModel.Project is { } project ? ProjectQuery.GroupAddresses(project).FirstOrDefault(g => g.Id == id) : null;
-                var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
-                row.Children.Add(ga is null ? Note(W("Unresolved", id))
-                    : ActionButton($"{ga.Address} · {ga.Name}" + (sendingGroup == id ? W("SendingSuffix") : ""), () => OpenTarget(new("ga", ga.Id)), "quiet"));
-                if (ga is not null)
-                {
-                    row.Children.Add(ActionButton(W("SetSendingAddress"), () =>
-                    {
-                        string? error = null;
-                        ViewModel.Edit(W("EditSendingAddress", ga.Address), p =>
-                        {
-                            var result = Knx.Workbench.WorkbenchProject.SetSending(p, new(current.Device.Id, obj.Id), ga.Id);
-                            if (!result.Ok) error = result.Errors.FirstOrDefault()?.Reason;
-                        });
-                        if (error is not null) ViewModel.Status = error;
-                        RefreshWorkspace();
-                    }, "quiet", W("SetSendingTip")));
-                }
-                row.Children.Add(ActionButton(W("Remove"), () =>
-                {
-                    string? warning = null;
-                    ViewModel.Edit(W("EditRemoveLink", id), p =>
-                    {
-                        var result = Knx.Workbench.WorkbenchProject.RemoveLink(p, new(current.Device.Id, obj.Id), id);
-                        warning = result.Warnings.FirstOrDefault();
-                    });
-                    if (warning is not null) ViewModel.Status = warning;
-                    RefreshWorkspace();
-                }, "quiet"));
-                InspectorBody.Children.Add(row);
-            }
-            InspectorBody.Children.Add(ActionButton(W("MoreLinks"), () => {
-                if (Workspace.ActiveTab is { } tab)
-                {
-                    tab.SelectedObjectIds.Clear(); tab.SelectedObjectIds.Add(WorkbenchProjection.ObjectKey(current.Device, obj));
-                }
-                ShowBatchLinkDialog();
-            }));
-            InspectorBody.Children.Add(Note(W("SendingNote")));
-        }
+            BuildObjectInspector(selected.First(), current, obj);
         else if (current is not null && !(selected.Count == 0 && tab?.Target.Kind == "ga"))
             BuildDeviceInspector(current);
         else if (tab?.Target.Kind == "project" && WorkbenchProjection.Resolve(ViewModel.Project, tab.Target) is Project project)
@@ -1229,14 +1492,30 @@ public partial class WorkbenchWindow : Window
         else InspectorBody.Children.Add(Note(W("InspectorEmpty")));
     }
 
+
     public void ShowTool(string tool)
     {
         if (!WorkbenchTools.IsKnown(tool)) throw new ArgumentException("Unknown tool.", nameof(tool));
         EnsureSessions();
+        var previous = Workspace.ActiveTool;
         Workspace.ActiveTool = tool;
         Workspace.ToolsVisible = true;
+        // The full-page search pane is unusable in a 242 DIP dock: host it maximized instead.
+        if (tool == "search")
+        {
+            if (!Workspace.ToolsMaximized) { Workspace.ToolsMaximized = true; _searchForcedMaximize = true; }
+        }
+        else if (previous == "search" && _searchForcedMaximize)
+        {
+            Workspace.ToolsMaximized = false;
+            _searchForcedMaximize = false;
+        }
         foreach (var button in ToolTabs.Children.OfType<Button>())
-            button.Classes.Set("active", Equals(button.Tag, tool));
+        {
+            var activeTool = Equals(button.Tag, tool);
+            button.Classes.Set("active", activeTool);
+            AutomationProperties.SetItemStatus(button, activeTool ? W("Selected") : "");
+        }
         ToolHost.Content = CreateToolView(tool);
         ApplyLayout();
     }
@@ -1386,6 +1665,7 @@ public partial class WorkbenchWindow : Window
         toolbar.Children.Add(ActionButton(W("ClearDisplay"), () => { sessions.Monitor.ClearDisplay(); RefreshState(); }, "quiet"));
         toolbar.Children.Add(ActionButton(W("MonitorValue"), ShowMonitorValueDialog, "quiet"));
         var mode = new ComboBox { ItemsSource = new[] { W("GroupMonitor"), W("BusMonitor") }, SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0, MinWidth = 130 };
+        AutomationProperties.SetName(mode, W("MonitorMode"));
         mode.SelectionChanged += (_, _) =>
         {
             if (sessions.Monitor.IsRunning) { mode.SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0; ViewModel.Status = W("MonitorModeLocked"); return; }
@@ -1409,6 +1689,7 @@ public partial class WorkbenchWindow : Window
         }, "primary");
         toolbar.Children.Insert(0, start);
         var filter = new ComboBox { MinWidth = 190, SelectedIndex = 0 };
+        AutomationProperties.SetName(filter, W("MonitorFilter"));
         filter.ItemsSource = new[] { W("AllTelegrams"), W("WholeProject"), W("CurrentWorkItem"), W("FollowSelection") };
         filter.SelectedIndex = _monitorScope switch
         {
@@ -1447,7 +1728,7 @@ public partial class WorkbenchWindow : Window
         var demoBadge = Label(W("MonitorDemoNote")); demoBadge.FontSize = 10;
         demoBadge.Classes.Add("wb-warning");
         toolbar.Children.Add(demoBadge);
-        DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top); panel.Children.Add(toolbar);
+        CommitToolbar(panel, toolbar);
         var header = new Grid { ColumnDefinitions = new("70,80,120,90,50,70,*"), Height = 28 };
         header.Classes.Add("wb-table-header");
         var headings = new[] { W("ColumnTime"), W("ColumnSource"), W("ColumnDestination"), W("ColumnService"), "DPT", W("ColumnValue"), W("ColumnOrigin") };
@@ -1549,7 +1830,7 @@ public partial class WorkbenchWindow : Window
         fail.IsCheckedChanged += (_, _) => _simulateProgrammingFailure = fail.IsChecked == true;
         toolbar.Children.Add(fail);
         toolbar.Children.Add(Note(W("ProgrammingDemoNote")));
-        DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top); panel.Children.Add(toolbar);
+        CommitToolbar(panel, toolbar);
         var needing = devices.Count(d => sessions.Programming.NeedsProgramming(d.Device.Id));
         var needNote = Note(W("ProgrammingNeed", needing));
         DockPanel.SetDock(needNote, Avalonia.Controls.Dock.Top); panel.Children.Add(needNote);
@@ -1575,7 +1856,6 @@ public partial class WorkbenchWindow : Window
             }
             return grid;
         });
-        panel.Children.Add(list);
         var empty = new TextBlock
         {
             Text = W("ProgrammingEmpty"), Classes = { "wb-muted" },
@@ -1583,9 +1863,11 @@ public partial class WorkbenchWindow : Window
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             IsVisible = sessions.Programming.Jobs.Count == 0
         };
-        var host = new Grid();
+        // The list is parented once, into the overlay host; a DockPanel cannot re-parent it.
         panel.Children.Remove(list);
-        host.Children.Add(list); host.Children.Add(empty);
+        var host = new Grid();
+        host.Children.Add(list);
+        host.Children.Add(empty);
         panel.Children.Add(host);
         if (sessions.Programming.Jobs is System.Collections.Specialized.INotifyCollectionChanged jobsChanged)
         {
@@ -1638,8 +1920,7 @@ public partial class WorkbenchWindow : Window
         }), "primary");
         toolbar.Children.Add(run);
         toolbar.Children.Add(Note(W("ScanNote")));
-        DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top);
-        panel.Children.Add(toolbar);
+        CommitToolbar(panel, toolbar);
         var header = new Grid { ColumnDefinitions = new("100,*,100,*"), Height = 28 };
         header.Classes.Add("wb-table-header");
         var headings = new[] { W("ColumnAddress"), W("ColumnDevice"), W("ColumnStatus"), W("ColumnDetail") };
@@ -1712,6 +1993,8 @@ public partial class WorkbenchWindow : Window
     private void UpdateModePreview()
     {
         _modePanel.Children.Clear();
+        _modeActions.Children.Clear();
+        _modeFooter.IsVisible = false;
         _modeScroll.IsVisible = false;
         _parameters.IsVisible = true;
         if (_parameterDevice.SelectedItem is not DeviceRow selected || ViewModel.Project is not { } project) return;
@@ -1720,6 +2003,7 @@ public partial class WorkbenchWindow : Window
         if (!demo) return;
         _parameters.IsVisible = false;
         _modeScroll.IsVisible = true;
+        _modeFooter.IsVisible = true;
         _modePanel.Children.Add(Label(W("DemoApplicationNote")));
         var editors = new Dictionary<string, Control>(StringComparer.Ordinal);
         foreach (var (key, raw) in selected.Device.ParameterValues
@@ -1727,12 +2011,12 @@ public partial class WorkbenchWindow : Window
                      .ThenBy(p => p.Key, StringComparer.Ordinal))
         {
             var row = new StackPanel { Spacing = 4 };
-            row.Children.Add(Label(key switch
+            row.Children.Add(new TextBlock { Text = key switch
             {
                 "mode" => W("Function"), "led" => W("StatusLed"), "interface" => W("Interface"),
                 "debounce" => W("DebounceMs"), "holdTime" => W("HoldTime"), "brightnessThreshold" => W("BrightnessThreshold"),
                 "setpoint" => W("Setpoint"), "deadband" => W("Deadband"), _ => key
-            }));
+            }, Classes = { "wb-muted" } });
             Control editor;
             if (key == "mode")
             {
@@ -1750,6 +2034,8 @@ public partial class WorkbenchWindow : Window
                 editor = new TextBox { Text = Unquote(raw) };
             else
                 editor = new TextBox { Text = raw };
+            editor.Classes.Add("wb-field");
+            editor.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
             row.Children.Add(editor);
             editors[key] = editor;
             _modePanel.Children.Add(row);
@@ -1770,8 +2056,7 @@ public partial class WorkbenchWindow : Window
                 }));
         }
         _modePanel.Children.Add(preview);
-        var applyButton = ActionButton(W("Apply"), () =>
-        {
+        var applyButton = ActionButton(W("Apply"), () =>        {
             var values = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var (key, control) in editors)
             {
@@ -1798,12 +2083,9 @@ public partial class WorkbenchWindow : Window
             ViewModel.Status = W("DemoParametersApplied");
             RefreshWorkspace();
         }, "primary");
-        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
-        actions.Children.Add(applyButton);
-        actions.Children.Add(ActionButton(W("ReviewEffects"), Review, "quiet"));
-        _modePanel.Children.Add(actions);
+        _modeActions.Children.Add(ActionButton(W("ReviewEffects"), Review, "quiet"));
+        _modeActions.Children.Add(applyButton);
     }
-
     private async Task ExportFilteredMonitorAsync()
     {
         if (_sessions is not { } sessions) return;
@@ -1840,6 +2122,9 @@ public partial class WorkbenchWindow : Window
             Zones.ColumnDefinitions[4].Width = new(0);
             Zones.ColumnDefinitions[5].Width = new(0);
             InspectorSplitter.IsVisible = false;
+            // Reflow the covered strip instead of painting controls underneath the overlay.
+            ObjectTabs.Margin = new Thickness(0, 0, Inspector.Width, 0);
+            Editor.Margin = new Thickness(0, 0, Inspector.Width, 0);
         }
         else
         {
@@ -1850,17 +2135,93 @@ public partial class WorkbenchWindow : Window
             Zones.ColumnDefinitions[4].Width = new(Workspace.InspectorVisible ? 5 : 0);
             Zones.ColumnDefinitions[5].Width = new(Workspace.InspectorVisible ? Workspace.InspectorWidth : 0);
             InspectorSplitter.IsVisible = Workspace.InspectorVisible;
+            ObjectTabs.Margin = default;
+            Editor.Margin = default;
         }
         Tools.IsVisible = ToolsSplitter.IsVisible = Workspace.ToolsVisible;
         Editor.IsVisible = !Workspace.ToolsVisible || !Workspace.ToolsMaximized;
-        KeyboardNavigation.SetTabNavigation(Editor,
-            narrow && Workspace.InspectorVisible ? KeyboardNavigationMode.None : KeyboardNavigationMode.Continue);
+        // A covered editor must not keep Tab stops under the narrow inspector overlay (WCAG 2.4.11).
+        var covered = narrow && Workspace.InspectorVisible;
+        var navigation = covered ? KeyboardNavigationMode.None : KeyboardNavigationMode.Continue;
+        KeyboardNavigation.SetTabNavigation(Editor, navigation);
+        KeyboardNavigation.SetTabNavigation(ObjectTabs, navigation);
+        KeyboardNavigation.SetTabNavigation(MainColumn, navigation);
+        SetCompactToolTabs(narrow);
+        var overlayWidth = Workspace.InspectorVisible && narrow ? Inspector.Width : 0;
+        var editorWidth = Bounds.Width - 47 - (Workspace.NavigatorVisible ? navigationWidth : 0) - 5 - overlayWidth
+            - (Workspace.InspectorVisible && !narrow ? Workspace.InspectorWidth + 5 : 0);
+        LayoutObjectToolbar(editorWidth is > 0 and < 620);
         MainColumn.RowDefinitions[1].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(0) : new(1, GridUnitType.Star);
         MainColumn.RowDefinitions[2].Height = new(Workspace.ToolsVisible ? 5 : 0);
-        MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(1, GridUnitType.Star) : new(Workspace.ToolsVisible ? Math.Min(Workspace.ToolsHeight, Bounds.Height is > 0 and < 740 ? 140 : Workspace.ToolsHeight) : 0);
+        MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(1, GridUnitType.Star) : new(Workspace.ToolsVisible ? Math.Min(Workspace.ToolsHeight, Bounds.Height is > 0 and < 740 ? 176 : Workspace.ToolsHeight) : 0);
         if (Workspace.ToolsVisible && ToolHost.Content is null)
             ToolHost.Content = CreateToolView(Workspace.ActiveTool);
     }
+
+    /// <summary>Icon-only tool tabs below 1100 DIP so the strip never runs under the float/maximize/close actions.</summary>
+    private void SetCompactToolTabs(bool compact)
+    {
+        if (_compactToolTabs == compact) return;
+        _compactToolTabs = compact;
+        foreach (var button in ToolTabs.Children.OfType<Button>())
+        {
+            if (button.Tag is not string tool) continue;
+            var title = AutomationProperties.GetName(button) ?? tool;
+            button.Content = compact
+                ? new ConceptIcon { Symbol = ToolIcon(tool), Width = 17, Height = 17 }
+                : IconLabel(ToolIcon(tool), title);
+            if (compact) ToolTip.SetTip(button, title);
+        }
+    }
+
+    /// <summary>
+    /// Two-row object toolbar when the visible editor is narrow, so filters and checkboxes are
+    /// never painted under the inspector overlay. Columns are reassigned, never re-parented.
+    /// </summary>
+    private void LayoutObjectToolbar(bool compact)
+    {
+        if (_compactObjectToolbar == compact) return;
+        _compactObjectToolbar = compact;
+        if (compact)
+        {
+            ObjectToolbar.ColumnDefinitions = new("Auto,Auto,*,Auto");
+            ObjectToolbar.RowDefinitions = new("Auto,Auto");
+            Grid.SetRow(ExpandAllButton, 0); Grid.SetColumn(ExpandAllButton, 3);
+            Grid.SetRow(RelatedBox, 1); Grid.SetColumn(RelatedBox, 0);
+            Grid.SetRow(Unlinked, 1); Grid.SetColumn(Unlinked, 1);
+            Grid.SetRow(ObjectSearch, 1); Grid.SetColumn(ObjectSearch, 2); Grid.SetColumnSpan(ObjectSearch, 2);
+            RelatedBox.Margin = new(0, 4, 8, 0); Unlinked.Margin = new(0, 4, 8, 0); ObjectSearch.Margin = new(0, 4, 0, 0);
+        }
+        else
+        {
+            ObjectToolbar.ColumnDefinitions = new("Auto,Auto,*,Auto,Auto,170,Auto");
+            ObjectToolbar.RowDefinitions = new("Auto");
+            Grid.SetRow(ExpandAllButton, 0); Grid.SetColumn(ExpandAllButton, 6);
+            Grid.SetRow(RelatedBox, 0); Grid.SetColumn(RelatedBox, 3);
+            Grid.SetRow(Unlinked, 0); Grid.SetColumn(Unlinked, 4);
+            Grid.SetRow(ObjectSearch, 0); Grid.SetColumn(ObjectSearch, 5); Grid.SetColumnSpan(ObjectSearch, 1);
+            RelatedBox.Margin = new(8, 0, 8, 0); Unlinked.Margin = new(8, 0, 8, 0); ObjectSearch.Margin = default;
+        }
+    }
+
+    private static void CompactButtons(Panel panel)
+    {
+        foreach (var button in panel.Children.OfType<Button>()) button.Classes.Add("wb-compact");
+    }
+
+    /// <summary>Adds a dock toolbar with the V4 compact button height, then docks it on top.</summary>
+    private static void CommitToolbar(DockPanel panel, Panel toolbar)
+    {
+        CompactButtons(toolbar);
+        DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top);
+        panel.Children.Add(toolbar);
+    }
+
+    private static string ToolIcon(string tool) => tool switch
+    {
+        "monitor" => "monitor", "programming" => "download", "scan" => "refresh",
+        "search" => "search", "changes" => "clock", _ => "warning"
+    };
     public void SaveLayout(string path)
     {
         CaptureScroll();
