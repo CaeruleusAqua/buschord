@@ -14,7 +14,7 @@ werden hier abgehakt, nicht nur im Chat.
 - [ ] 4. Projekt-, Raum-, Linien-, Geräte- und Gruppenadressfunktionen vervollständigen.
 - [ ] 5. Katalog, Parameter, dynamische Herstellerlogik und DCA-Grenzen abschließen.
 - [ ] 6. Inbetriebnahme, Download, Diagnose, Monitor und Secure vollständig anbinden.
-- [ ] 7. Berichte, Vergleich, Suche/Ersetzen, Exporte und Demo-Abläufe abschließen.
+- [x] 7. Berichte, Vergleich, Suche/Ersetzen, Exporte und Demo-Abläufe abschließen.
 - [ ] 8. Tastatur, Screenreader, 100/150/200-%-DPI und kleine Fenster abnehmen.
 - [ ] 9. Gesamttests, unabhängige Abnahme, Dokumentation und CI abschließen.
 - [ ] 10. Geprüften Stand auf `development` integrieren und veröffentlichen.
@@ -156,6 +156,7 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 
 - Zusätzlich integriert: Projektbackup/-wiederherstellung, Geräte-Ladezustand, Katalogstatus/Gating, Sidebar-Container, Projektvergleich/Produktaustausch, Labels/Semantik-Export, Projekt-Suche/-Ersetzen, Demo-Reset, Werkzeugübersicht, GA-Gegenansicht, Material-Icons, englische Shell.
 - Recheck-Fixes (`43cff3c`, `e8d83b5`, `1c94f74`): linkable neue GA mit DPT-Bitgröße, Segmenterhalt beim Geräte-Detailedit, tote Suchergebnisse, Katalog-Raumzuordnung, gerätegebundener KO-Monitorfilter, Inspector-Elevation/Dock-Höhe, Werkzeugtexte, Leerzustände und englische Resttexte.
+- Abnahme 2026-10-21: Release-Build, alle Testprojekte, Smoke, Screenshot-Selbsttest sowie Workbench-Selftest de/en grün; UI- und Funktions-Recheck als `analysis/workbench-v4-ui-recheck.md` und `analysis/workbench-v4-functional-recheck.md` integriert.
 
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
