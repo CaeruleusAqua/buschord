@@ -1,5 +1,11 @@
 # G7: Verschlüsselte ETS6-Projekte (`*.knxproj`)
 
+> **Nachtrag 2026-10-21:** Die Workbench fragt beim Öffnen nach dem ETS-Projektpasswort
+> (nicht dem ZIP-Passwort), leitet daraus den WinZip-AES-Schlüssel ab und liest
+> Schema `/21` sowie `/23`. `Knxproj.IsPasswordError` trennt fehlendes/falsches
+> Passwort von Formatfehlern. Die Datei bleibt schreibgeschützt; ein Speichern
+> verschlüsselter Archive ist weiterhin gesperrt.
+
 Read-only-Analyse vom 2026-10-18. Keine Passwörter geraten, keine Daten entschlüsselt,
 keine Datei verändert. Die Nutzerdatei
 `<project-path>/project.knxproj` (SHA-256
@@ -15,8 +21,9 @@ Nutzerpasswort selbst, sondern einen daraus abgeleiteten Schlüssel:
 `Base64(PBKDF2-HMAC-SHA256(UTF-16LE(Passwort), "21.project.ets.knx.org", 65536, 32))`.
 Mit dem Projektpasswort ist ein legitimer Lesepfad ohne Knacken möglich; ohne Passwort
 gibt es keinen (kein Key-Escrow, keine Hintertür). Für `project.knxproj` kommt erschwerend
-hinzu: die Datei nutzt Schema `http://knx.org/xml/project/21`, BusChord liest heute nur `/23`.
-Entschlüsselung allein würde diese Datei also noch nicht öffnen.
+hinzu: die Datei nutzt Schema `http://knx.org/xml/project/21`; der Reader unterstützt
+`/21` und `/23`, der Writer schreibt weiterhin `/23`. Entschlüsselung und `/21`-Lesen
+sind damit möglich, das Archiv bleibt aber schreibgeschützt.
 
 ## Beobachteter Container (ohne Geheimnisse)
 
@@ -194,7 +201,7 @@ Das ist korrekt, aber wenig hilfreich. Vorschlag (Exception-Typ bleibt
 Encrypted ETS6 project (WinZip AES-256). Reading it requires the project password;
 BusChord does not support password-protected projects yet. Export the project from
 ETS6 without a password. Additionally, this file uses schema
-http://knx.org/xml/project/21; BusChord currently supports only /23.
+http://knx.org/xml/project/21; the reader supports /21 and /23, but encrypted projects remain read-only.
 ```
 
 Der Zusatz zum Schema ist wichtig, damit niemand nach erfolgreicher Entschlüsselung

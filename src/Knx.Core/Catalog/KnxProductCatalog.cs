@@ -229,7 +229,7 @@ public sealed class KnxProductCatalog
             if (stem.Contains("_A-", StringComparison.OrdinalIgnoreCase)) catalog._partByName[stem] = file;
         }
 
-        catalog.Images.AddRange(files.Where(IsImage).Select(IOPath.GetFileName));
+        catalog.Images.AddRange(files.Where(IsImage).Select(file => IOPath.GetFileName(file)!));
         return catalog;
     }
 

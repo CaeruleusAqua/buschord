@@ -118,6 +118,12 @@ in eine neue Datei. Der Download bleibt gesperrt, bis Descriptor-, Mask- und
 Programming-Mode-Prüfungen implementiert sind; die Workbench-Programmierung ist
 eine gekennzeichnete Simulation.
 
+Das Öffnen passwortgeschützter ETS6-Projekte fragt nach dem **ETS-Projektpasswort**,
+nicht nach dem Passwort des äußeren ZIP-Containers. BusChord leitet daraus den
+WinZip-AES-Schlüssel ab, liest Schema `/21` und `/23`, verweigert aber weiterhin
+das Speichern verschlüsselter Archive. Bei falschem Passwort erscheint der Dialog
+erneut; Abbrechen lässt das aktuelle Projekt unverändert.
+
 ## 3. Katalog
 
 Der Katalog ist ein Tab des Arbeitsbereichs, kein eigenes Fenster. Er ist über die
