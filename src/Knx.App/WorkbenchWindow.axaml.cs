@@ -692,7 +692,9 @@ public partial class WorkbenchWindow : Window
     {
         var name = await PromptTextAsync(W("WorkspaceName"));
         if (string.IsNullOrWhiteSpace(name)) return;
-        var path = Path.Combine(WorkspaceDirectory, name + ".json");
+        var safe = string.Concat(name.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or ' ')).Trim();
+        if (safe.Length == 0) return;
+        var path = Path.Combine(WorkspaceDirectory, safe + ".json");
         if (!File.Exists(path)) { ViewModel.Status = W("NoWorkspaces"); return; }
         if (!Workspace.TryRestoreLayout(path)) { ViewModel.Status = W("NoWorkspaces"); return; }
         RefreshWorkspace();
