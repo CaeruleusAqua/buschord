@@ -17,6 +17,7 @@ public partial class HelpWindow : Window
         CloseButton.Content = WorkbenchStrings.Get("Close");
         CloseButton.IsCancel = true;
         CloseButton.Click += (_, _) => Close();
+        Opened += (_, _) => CloseButton.Focus();
         KeyDown += (_, e) =>
         {
             if (e.Key != Key.Escape) return;

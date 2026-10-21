@@ -123,7 +123,7 @@
       </StackPanel>
     </Border>
 
-    <Grid ColumnDefinitions="200,*,290">
+    <Grid x:Name="CatalogRoot" ColumnDefinitions="200,*,290">
       <!-- Library -->
       <Border Grid.Column="0" Background="{DynamicResource WbPanel}"
               BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,1,0">

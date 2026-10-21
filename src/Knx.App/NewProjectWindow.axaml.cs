@@ -10,6 +10,7 @@ public partial class NewProjectWindow : Window
     public NewProjectWindow()
     {
         InitializeComponent();
+        Opened += (_, _) => NameBox.Focus();
     }
 
     public NewProjectOptions Options { get; private set; } = new();

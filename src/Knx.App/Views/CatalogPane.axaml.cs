@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -51,6 +52,17 @@ public partial class CatalogPane : UserControl
         };
         FillLines();
         UpdateRoomContext();
+        SizeChanged += (_, _) => ApplyResponsiveLayout();
+        ApplyResponsiveLayout();
+    }
+
+    /// <summary>At 900 DIP the three fixed columns leave no room for the product name.</summary>
+    private void ApplyResponsiveLayout()
+    {
+        if (CatalogRoot?.ColumnDefinitions is not { Count: 3 } columns) return;
+        var narrow = Bounds.Width is > 0 and < 1000;
+        columns[0].Width = new GridLength(narrow ? 150 : 200);
+        columns[2].Width = new GridLength(narrow ? 220 : 290);
     }
 
     /// <summary>Completes once the catalogue data is bound (or the load failed); used by screenshots.</summary>

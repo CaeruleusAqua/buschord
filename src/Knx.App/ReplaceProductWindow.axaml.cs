@@ -16,6 +16,7 @@ public partial class ReplaceProductWindow : Window
     {
         _replace = replace;
         InitializeComponent();
+        Opened += (_, _) => OldBox.Focus();
     }
 
     public string? AppliedMessage { get; private set; }
