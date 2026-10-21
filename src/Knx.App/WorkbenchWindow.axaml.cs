@@ -212,7 +212,7 @@ public partial class WorkbenchWindow : Window
         foreach (var (key, title) in new[] { ("objects", W("CommunicationObjects")), ("params", W("Parameters")), ("relations", W("Relations")), ("overview", W("Overview")) })
         {
             var view = key;
-            var tab = new TabItem { Header = title, Tag = view };
+            var tab = new TabItem { Header = title, Tag = view, Margin = new Thickness(0, 0, 18, 0) };
             tab.Classes.Add("wb-tab");
             tab.Classes.Add("wb-view-tab");
             AutomationProperties.SetName(tab, title);

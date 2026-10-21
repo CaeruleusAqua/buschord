@@ -7,16 +7,17 @@
   <Window.Styles>
     <Style Selector="Button"><Setter Property="MinHeight" Value="30"/><Setter Property="Padding" Value="10,0"/><Setter Property="FontSize" Value="12"/><Setter Property="CornerRadius" Value="5"/></Style>
     <Style Selector="Button.quiet"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/></Style>
-    <Style Selector="Button.active"><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
+    <!-- WbAccent on WbTint is 4.24:1; the darker selected text keeps the active state legible. -->
+    <Style Selector="Button.active"><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
     <Style Selector="Button.primary"><Setter Property="Background" Value="{DynamicResource WbAccent}"/><Setter Property="Foreground" Value="{DynamicResource WbOnAccent}"/></Style>
     <Style Selector="TextBox"><Setter Property="MinHeight" Value="28"/><Setter Property="FontSize" Value="11"/></Style>
     <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="{DynamicResource WbMuted}"/><Setter Property="FontSize" Value="10"/></Style>
     <Style Selector="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="MinHeight" Value="29"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
-    <Style Selector="ListBoxItem:selected /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbTint}"/><Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbTint}"/><Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
     <Style Selector="Grid.wb-row-active"><Setter Property="Background" Value="{DynamicResource WbSelected}"/></Style>
     <Style Selector="Grid.wb-row-active TextBlock"><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
     <Style Selector="Border.wb-action-footer"><Setter Property="Background" Value="{DynamicResource WbPaper}"/><Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/><Setter Property="BorderThickness" Value="0,1,0,0"/></Style>
-    <Style Selector="Button.rail-active"><Setter Property="Background" Value="{DynamicResource WbTint}"/><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/></Style>
+    <Style Selector="Button.rail-active"><Setter Property="Background" Value="{DynamicResource WbTint}"/><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
     <Style Selector="TabItem.wb-doc-tab"><Setter Property="MinWidth" Value="130"/><Setter Property="MaxWidth" Value="240"/><Setter Property="Padding" Value="10,0"/></Style>
     <Style Selector="TabItem.wb-tool-tab"><Setter Property="MinHeight" Value="35"/><Setter Property="Padding" Value="12,0"/></Style>
     <Style Selector="Grid.wb-table-header"><Setter Property="Background" Value="{DynamicResource WbPanel}"/></Style>
@@ -72,7 +73,8 @@
                 <Button x:Name="InspectorButton" Content="{loc:Wb Properties}" Click="OnInspector" Classes="quiet"/>
               </StackPanel></Grid>
             <TextBlock x:Name="Subtitle" Classes="muted" TextWrapping="Wrap" Margin="0,0,0,6"/>
-            <StackPanel x:Name="Representations" Orientation="Horizontal" Spacing="20"/>
+            <!-- Wrap instead of clipping when the narrow inspector leaves little editor width. -->
+            <WrapPanel x:Name="Representations" Orientation="Horizontal"/>
           </StackPanel>
           <Grid x:Name="ObjectToolbar" Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto,170,Auto" Margin="24,9">
             <Button Content="{loc:Wb LinkObjects}" Click="OnLinks"/>
@@ -82,9 +84,9 @@
             <TextBox x:Name="ObjectSearch" Grid.Column="5" PlaceholderText="{loc:Wb FilterObjects}" AutomationProperties.Name="{loc:Wb FilterObjects}" TextChanged="OnObjectSearch"/>
             <Button x:Name="ExpandAllButton" Grid.Column="6" ToolTip.Tip="{loc:Wb ExpandCollapseAll}" AutomationProperties.Name="{loc:Wb ExpandCollapseAllDevices}" Click="OnExpandAll" Classes="quiet"><views:ConceptIcon Symbol="down" Width="17" Height="17"/></Button>
           </Grid>
-          <Grid Grid.Row="2">
+          <Grid Grid.Row="2" RowDefinitions="*,Auto">
             <ScrollViewer x:Name="TableViewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <Grid x:Name="TableHost" RowDefinitions="31,*,27" Margin="24,0,24,0" MinWidth="568">
+            <Grid x:Name="TableHost" RowDefinitions="31,*" Margin="24,0,24,0" MinWidth="568">
               <Border Grid.Row="0" Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}"
                       BorderThickness="0,0,0,1" Margin="0,0,12,0">
                 <Grid ColumnDefinitions="28,*,80,50,50,170">
@@ -99,13 +101,14 @@
                 </Grid>
               </Border>
               <ListBox x:Name="ObjectTable" Grid.Row="1" SelectionMode="Multiple" Background="Transparent" SelectionChanged="OnObjectSelected" AutomationProperties.Name="{loc:Wb ObjectsTable}"/>
-              <TextBlock x:Name="TableFootnote" Grid.Row="2" Classes="muted" VerticalAlignment="Center"
-                         AutomationProperties.Name="{loc:Wb TableFootnoteName}" AutomationProperties.LiveSetting="Polite"/>
             </Grid>
             </ScrollViewer>
-            <ContentControl x:Name="ParametersHost" IsVisible="False" Margin="24,12"/>
-            <ContentControl x:Name="RelationsHost" IsVisible="False" Margin="24,12"/>
-            <ContentControl x:Name="ToolPageHost" IsVisible="False" Margin="24,12"/>
+            <TextBlock x:Name="TableFootnote" Grid.Row="1" Classes="muted" VerticalAlignment="Center"
+                       Margin="24,0,24,0" TextWrapping="Wrap"
+                       AutomationProperties.Name="{loc:Wb TableFootnoteName}" AutomationProperties.LiveSetting="Polite"/>
+            <ContentControl x:Name="ParametersHost" Grid.RowSpan="2" IsVisible="False" Margin="24,12"/>
+            <ContentControl x:Name="RelationsHost" Grid.RowSpan="2" IsVisible="False" Margin="24,12"/>
+            <ContentControl x:Name="ToolPageHost" Grid.RowSpan="2" IsVisible="False" Margin="24,12"/>
           </Grid>
         </Grid>
         <GridSplitter x:Name="ToolsSplitter" Grid.Row="2" Height="5" Background="{DynamicResource WbLine}" ResizeDirection="Rows"/>

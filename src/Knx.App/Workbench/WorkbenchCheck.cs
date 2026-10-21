@@ -185,7 +185,7 @@ internal static class WorkbenchCheck
                 var p = window.ViewModel.Project!;
                 var d = ProjectQuery.DeviceList(p).First();
                 var docStrip = window.FindControl<StackPanel>("ObjectTabs")!;
-                var viewStrip = window.FindControl<StackPanel>("Representations")!;
+                var viewStrip = window.FindControl<WrapPanel>("Representations")!;
                 var toolStrip = window.FindControl<StackPanel>("ToolTabs")!;
                 Check("doc/view/tool tab strips expose named TabItem semantics",
                     docStrip.Children.OfType<TabItem>().Any(t => AutomationProperties.GetName(t)?.Length > 0)
