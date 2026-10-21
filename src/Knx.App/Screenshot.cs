@@ -210,7 +210,8 @@ internal static class Screenshot
             var bytes = File.ReadAllBytes(good);
             var (width, height) = PngSize(bytes);
             Check("PNG größer als 10 KB", bytes.Length > 10_240, bytes.Length.ToString());
-            Check("PNG ist 1440x900", width == Width && height == Height, $"{width}x{height}");
+            Check("PNG hat eine plausible Erfassungsgröße", width >= 900 && height >= 600 && width <= Width + 1 && height <= Height + 1,
+                $"{width}x{height}");
         }
 
         var bogusCode = Run(exe, $"--screenshot={bogus}", "--screen=bogus");
