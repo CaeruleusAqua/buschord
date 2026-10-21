@@ -40,7 +40,7 @@ Other console suites: `Knx.Address.Tests`, `Knx.Buildings.Tests`,
 `Knx.Owl.Tests`, `Knx.ParameterUi.Tests`, `Knx.Search.Tests`, `Knx.Shell.Tests`,
 `Knx.SmartLink.Tests`, `Knx.Workbench.Tests`, `Knx.WorkbenchPerformance.Tests`,
 `Knx.WorkbenchSessions.Tests`, `Knx.WorkbenchTheme.Tests` and
-`Knx.WorkbenchUiState.Tests`. Smoke checks:
+`Knx.WorkbenchUiState.Tests`; `src/Knx.App.Tests` covers report exports. Smoke checks:
 
 ```powershell
 dotnet run --project src/Knx.App -- --smoke

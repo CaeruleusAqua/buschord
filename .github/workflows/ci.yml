@@ -38,6 +38,7 @@ env:
     tests/Knx.WorkbenchSessions.Tests
     tests/Knx.WorkbenchTheme.Tests
     tests/Knx.WorkbenchPerformance.Tests
+    src/Knx.App.Tests
 
 jobs:
   build:
