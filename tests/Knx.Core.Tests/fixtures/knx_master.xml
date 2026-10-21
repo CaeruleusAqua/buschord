@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic KNX master data for the Knx.Core self-check. Hand-written, no ETS6,
+  manufacturer or KNX Association content. See fixtures/README.md.
+-->
+<KNX xmlns="http://knx.org/xml/project/23">
+  <MasterData Id="MD-SYNTHETIC" Version="1">
+    <DatapointTypes>
+      <DatapointType Id="DPT-1" Number="1" Name="1.xxx" Text="1-bit" SizeInBit="1">
+        <DatapointSubtypes>
+          <DatapointSubtype Id="DPST-1-1" Number="1" Name="DPT_Switch" Text="switch" />
+          <DatapointSubtype Id="DPST-1-2" Number="2" Name="DPT_Bool" Text="boolean" />
+          <DatapointSubtype Id="DPST-1-3" Number="3" Name="DPT_Enable" Text="enable" />
+          <DatapointSubtype Id="DPST-1-4" Number="4" Name="DPT_Ramp" Text="ramp" />
+          <DatapointSubtype Id="DPST-1-5" Number="5" Name="DPT_Alarm" Text="alarm" />
+          <DatapointSubtype Id="DPST-1-6" Number="6" Name="DPT_BinaryValue" Text="binary value" />
+          <DatapointSubtype Id="DPST-1-7" Number="7" Name="DPT_Step" Text="step" />
+          <DatapointSubtype Id="DPST-1-8" Number="8" Name="DPT_UpDown" Text="up/down" />
+        </DatapointSubtypes>
+      </DatapointType>
+      <DatapointType Id="DPT-5" Number="5" Name="5.xxx" Text="8-bit unsigned value" SizeInBit="8">
+        <DatapointSubtypes>
+          <DatapointSubtype Id="DPST-5-1" Number="1" Name="DPT_Scaling" Text="percent" />
+        </DatapointSubtypes>
+      </DatapointType>
+      <DatapointType Id="DPT-9" Number="9" Name="9.xxx" Text="2-byte float value" SizeInBit="16" Default="true">
+        <DatapointSubtypes>
+          <DatapointSubtype Id="DPST-9-1" Number="1" Name="DPT_Value_Temp" Text="temperature" />
+        </DatapointSubtypes>
+      </DatapointType>
+      <DatapointType Id="DPT-14" Number="14" Name="14.xxx" Text="4-byte float value" SizeInBit="32">
+        <DatapointSubtypes>
+          <DatapointSubtype Id="DPST-14-1" Number="1" Name="DPT_Value_Acceleration" Text="acceleration" />
+        </DatapointSubtypes>
+      </DatapointType>
+    </DatapointTypes>
+    <Manufacturers>
+      <Manufacturer Id="M-9001" Name="Synthetic Devices" />
+      <Manufacturer Id="M-9002" Name="Example Controls" />
+      <Manufacturer Id="M-9003" Name="Demo Building Systems" />
+    </Manufacturers>
+  </MasterData>
+</KNX>

@@ -2,7 +2,7 @@ using System.Text.Json;
 using Knx;
 
 // Self-Check für den Knxproj-Kern: Round-Trip (erzeugen → speichern → laden → vergleichen)
-// und Auswertung des echten ETS6-Katalogs. Lauf: dotnet run --project tests/Knx.Core.Tests
+// und Auswertung der synthetischen Master-Data. Lauf: dotnet run --project tests/Knx.Core.Tests
 var failures = new List<string>();
 void Check(string name, bool ok, string? detail = null)
 {
@@ -82,21 +82,24 @@ Check("GA-Puid", gas[0].Puid == 42);
 Check("Address.Format", new IndividualAddress(1, 2, 3).ToString() == "1.2.3");
 Check("GA.Format", GroupAddress.ThreeLevel(2, 3, 4).ToString() == "2/3/4");
 
-// --- echter ETS6-Katalog, wenn vorhanden (aus der Analyse extrahiert/auf Platte) ---
-var catalog = "C:\\Program Files (x86)\\ETS6\\knx_master.xml";
-if (!File.Exists(catalog)) catalog = Path.Combine(AppContext.BaseDirectory, "knx_master.xml");
+// --- synthetische Master-Data (tests\Knx.Core.Tests\fixtures\knx_master.xml) ---
+var catalog = Path.Combine(AppContext.BaseDirectory, "fixtures", "knx_master.xml");
 if (File.Exists(catalog))
 {
     var (version, types) = MasterData.LoadDatapointTypes(catalog);
     var (manufacturers, _) = MasterData.CountCatalogEntries(catalog);
     Console.WriteLine($"  Katalog-Version {version}: {types.Count} Datapoint-Typen, {manufacturers} Hersteller");
-    Check("DPT >= 50", types.Count >= 50, types.Count.ToString());
-    Check("Hersteller >= 500", manufacturers >= 500, manufacturers.ToString());
+    Check("Master-Data-Version", version == 1u, version.ToString());
+    Check("DPT-Anzahl", types.Count == 4, types.Count.ToString());
+    Check("Hersteller-Anzahl", manufacturers == 3, manufacturers.ToString());
     var sw = types.FirstOrDefault(t => t.Name == "1.xxx");
-    Check("DPT 1.xxx hat 24 Subtypen", sw?.Subtypes.Count == 24, sw?.Subtypes.Count.ToString());
-    Check("DPST-1-1 Switch", sw?.Subtypes.Any(s => s is { Name: "DPT_Switch", Id: "DPST-1-1" }) == true);
+    Check("DPT 1.xxx hat 8 Subtypen", sw?.Subtypes.Count == 8, sw?.Subtypes.Count.ToString());
+    Check("DPT 1.xxx SizeInBit", sw?.SizeInBit == 1, sw?.SizeInBit.ToString());
+    Check("DPST-1-1 Switch", sw?.Subtypes.Any(s => s is { Name: "DPT_Switch", Id: "DPST-1-1", SizeInBit: 1 }) == true);
+    var temp = types.FirstOrDefault(t => t.Id == "DPT-9");
+    Check("DPT 9.xxx Subtyp", temp?.Subtypes.SingleOrDefault()?.Name == "DPT_Value_Temp", temp?.Subtypes.Count.ToString());
 }
-else Console.WriteLine("  SKIP Katalog-Check (knx_master.xml nicht gefunden)");
+else Console.WriteLine("  SKIP Katalog-Check (fixtures/knx_master.xml nicht gefunden)");
 
 // --- ETS6-Projektarchiv-Pfadauflösung für Geräte-XML (KSXML) ---
 Check("RefId M-00FA_H-Base_I-0000_A-0001-0E-1234",

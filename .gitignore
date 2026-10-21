@@ -16,3 +16,6 @@ sample-catalogs/
 catalogs/
 catalogue-library/
 artifacts/
+
+# ETS project exports contain customer data; test fixtures are generated in code.
+*.knxproj
