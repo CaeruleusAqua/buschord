@@ -60,6 +60,15 @@
       <Setter Property="FontSize" Value="10" />
       <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
     </Style>
+
+    <Style Selector="Border.catalog-badge">
+      <Setter Property="Background" Value="{DynamicResource WbTint}" />
+      <Setter Property="CornerRadius" Value="{DynamicResource WbSmallRadius}" />
+      <Setter Property="Padding" Value="6,1" />
+    </Style>
+    <Style Selector="Border.catalog-badge TextBlock">
+      <Setter Property="FontSize" Value="10" />
+    </Style>
   </UserControl.Styles>
 
   <DockPanel>
@@ -90,6 +99,9 @@
         <TextBlock x:Name="ErrorText" Classes="wb-error" FontSize="11" TextTrimming="CharacterEllipsis"
                    IsVisible="False" />
 
+        <!-- Summary of the last catalogue import: products/programs plus gating flags. -->
+        <TextBlock x:Name="ImportReport" Classes="catalog-meta" TextWrapping="Wrap" IsVisible="False" />
+
         <StackPanel x:Name="LoadingState" Orientation="Horizontal" Spacing="10" IsVisible="False">
           <ProgressBar IsIndeterminate="True" Width="120" Height="3" VerticalAlignment="Center"
                        Foreground="{DynamicResource WbAccent}" Background="{DynamicResource WbHover}" />
@@ -106,6 +118,11 @@
           <Border DockPanel.Dock="Top" Height="40" Padding="12,0"
                   BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,0,1">
             <TextBlock x:Name="LibraryHeader" Classes="catalog-section" />
+          </Border>
+          <Border DockPanel.Dock="Bottom" Padding="10,8"
+                  BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0">
+            <Button x:Name="RemoveCatalogButton" Classes="wb-button wb-compact wb-quiet"
+                    HorizontalAlignment="Stretch" IsEnabled="False" Click="OnRemoveCatalog" />
           </Border>
           <Grid>
             <ListBox x:Name="CatalogList" Classes="catalog-list" SelectionChanged="OnCatalogChanged"

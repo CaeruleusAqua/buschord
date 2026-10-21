@@ -76,15 +76,16 @@ public sealed class CatalogStore
         return catalogs;
     }
 
-    /// <summary>Deletes one catalogue file from the library.</summary>
+    /// <summary>Deletes one catalogue file from the library; refuses anything outside it.</summary>
     public bool Remove(string catalogPath)
     {
         var full = IOPath.GetFullPath(catalogPath);
-        if (!string.Equals(IOPath.GetDirectoryName(full), IOPath.GetFullPath(Directory).TrimEnd(IOPath.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(IOPath.GetDirectoryName(full),
+                IOPath.TrimEndingDirectorySeparator(IOPath.GetFullPath(Directory)), StringComparison.OrdinalIgnoreCase))
             return false;
-        if (!File.Exists(catalogPath)) return false;
+        if (!File.Exists(full)) return false;
         if ((File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0) return false;
-        File.Delete(catalogPath);
+        File.Delete(full);
         return true;
     }
 

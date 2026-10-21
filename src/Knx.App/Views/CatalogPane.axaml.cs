@@ -19,6 +19,7 @@ public partial class CatalogPane : UserControl
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private List<KnxProductCatalog> _catalogs = [];
     private CatalogProduct? _shownProduct;
+    private CatalogApplicationProgram? _shownProgram;
     private string? _suggestion;
     private Line? _preferredLine;
     private bool _busy;
@@ -30,6 +31,8 @@ public partial class CatalogPane : UserControl
         _vm = vm;
         _library = library ?? CatalogLibrary.Shared;
         InitializeComponent();
+        RemoveCatalogButton.Content = CatalogUiText.Get("RemoveCatalog");
+        ToolTip.SetTip(RemoveCatalogButton, CatalogUiText.Get("RemoveCatalogTip"));
         Loaded += OnLoaded;
         FillLines();
     }
@@ -135,7 +138,26 @@ public partial class CatalogPane : UserControl
         CatalogList.SelectedItem = previous is not null && _catalogs.Contains(previous)
             ? previous
             : _catalogs.FirstOrDefault();
+        RemoveCatalogButton.IsEnabled = SelectedCatalog is not null;
         if (_catalogs.Count == 0) RefreshSections();
+        ShowImportReport();
+    }
+
+    /// <summary>Summary of the last import: products/programs plus gating flags, after import and reload.</summary>
+    private void ShowImportReport()
+    {
+        var report = _library.Store.LastImportReport;
+        ImportReport.IsVisible = report is not null;
+        if (report is null) return;
+        var flags = new List<string>();
+        if (report.HasBrokenProgram) flags.Add(CatalogUiText.Get("BadgeBroken"));
+        if (report.HasDcaProgram) flags.Add(CatalogUiText.Get("BadgeDca"));
+        if (report.HasExternalSoftware) flags.Add(CatalogUiText.Get("BadgeExternal"));
+        var text = CatalogUiText.Get("LastImport", Path.GetFileName(report.File)) + " · "
+            + CatalogUiText.Get("ImportSummary", report.Products, report.Programs)
+            + (flags.Count > 0 ? " · " + string.Join(" · ", flags) : "");
+        ImportReport.Text = text;
+        ToolTip.SetTip(ImportReport, report.File);
     }
 
     private void FillLines()
@@ -220,10 +242,36 @@ public partial class CatalogPane : UserControl
 
     private async void OnReload(object? sender, RoutedEventArgs e) => await LoadAsync(reload: true);
 
+    /// <summary>
+    /// Removes the selected catalogue file from the local library after confirmation.
+    /// <see cref="CatalogStore.Remove"/> refuses every path outside the library directory.
+    /// </summary>
+    private async void OnRemoveCatalog(object? sender, RoutedEventArgs e)
+    {
+        if (_busy || SelectedCatalog is not { } catalog) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+        try
+        {
+            if (!await ConfirmDialog.AskDeleteAsync(owner, catalog.Name)) return;
+            if (!_library.Store.Remove(catalog.Path))
+            {
+                SetMessage(CatalogUiText.Get("RemoveFailed", catalog.Name));
+                return;
+            }
+            await LoadAsync(reload: true);
+            SetMessage(CatalogUiText.Get("Removed", catalog.Name));
+        }
+        catch (Exception ex)
+        {
+            SetMessage(Strings.Get("CatalogLoadError", ex.Message));
+        }
+    }
+
     private void OnCatalogChanged(object? sender, SelectionChangedEventArgs e) => RefreshSections();
 
     private void RefreshSections()
     {
+        RemoveCatalogButton.IsEnabled = SelectedCatalog is not null;
         SectionBox.ItemsSource = new[] { Strings.Get("CatalogAllSections") }
             .Concat(CatalogBrowser.Sections(SelectedCatalog?.Products ?? [])).ToList();
         SectionBox.SelectedIndex = 0;
@@ -284,23 +332,76 @@ public partial class CatalogPane : UserControl
         Details.Children.Clear();
         UxProduct.Text = product?.Name ?? "";
         DetailsEmpty.IsVisible = product is null;
+        _shownProgram = null;
         if (product is null || SelectedCatalog is not { } catalog) return;
 
         var program = FindProgram(catalog, product);
+        _shownProgram = program;
         Add(Strings.Get("CatalogManufacturer"), catalog.Manufacturer?.Name);
         Add(Strings.Get("ColName"), product.Name);
         Add(Strings.Get("ColMessage"), product.Description);
         Add(Strings.Get("CatalogOrderNumber"), product.OrderNumber);
         Add(Strings.Get("CatalogProgram"), program?.Name);
+        Add(CatalogUiText.Get("Programs"), product.ProgramRefIds.Count.ToString());
         Add(Strings.Get("CatalogComObjects"), program?.ComObjects.Count.ToString());
         Add(Strings.Get("CatalogPaths"), product.CatalogPaths.Count > 0 ? string.Join(" · ", product.CatalogPaths) : null);
         Add("Id", product.Id);
+        AddApplicationStatus(program);
 
         void Add(string label, string? value)
         {
             if (string.IsNullOrWhiteSpace(value)) return;
             Details.Children.Add(new TextBlock { Text = label, Classes = { "muted" } });
             Details.Children.Add(new TextBlock { Text = value, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+        }
+
+        // ETS-derived status first: it decides whether the product may be used at all.
+        void AddApplicationStatus(CatalogApplicationProgram? application)
+        {
+            Details.Children.Add(new TextBlock { Text = CatalogUiText.Get("ApplicationStatus"), Classes = { "muted" } });
+            if (application is null)
+            {
+                Details.Children.Add(new TextBlock { Text = CatalogUiText.Get("NoApplication"), Classes = { "muted" } });
+                return;
+            }
+
+            var badges = new WrapPanel();
+            AddBadge(badges, application.Broken, "BadgeBroken", "wb-error");
+            AddBadge(badges, application.DownloadInfoIncomplete, "BadgeIncomplete", "wb-error");
+            AddBadge(badges, application.RequiresDca, "BadgeDca", "wb-warning");
+            AddBadge(badges, application.RequiresExternalSoftware, "BadgeExternal", "wb-muted");
+            if (badges.Children.Count > 0) Details.Children.Add(badges);
+
+            // The strongest restriction decides the sentence; external software only informs.
+            var reason = CatalogBrowser.Blocked(application, CatalogUse.EditParameters);
+            var text = reason != CatalogBlockReason.None ? CatalogUiText.Reason(reason)
+                : application.RequiresExternalSoftware ? CatalogUiText.Get("ExternalSoftware")
+                : CatalogUiText.Get("StaticReady");
+            var classes = reason switch
+            {
+                CatalogBlockReason.Broken or CatalogBlockReason.DownloadInfoIncomplete => "wb-error",
+                CatalogBlockReason.DcaUnsupported => "wb-warning",
+                _ => "wb-muted",
+            };
+            Details.Children.Add(new TextBlock
+            {
+                Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Classes = { classes },
+            });
+
+            Add(CatalogUiText.Get("RegistrationStatus"), application.RegistrationStatus);
+            Add(CatalogUiText.Get("MinEtsVersion"), application.MinEtsVersion);
+            Add(CatalogUiText.Get("SchemaVersion"), application.SchemaVersion);
+            Add(CatalogUiText.Get("MaskVersion"), application.MaskVersion);
+        }
+
+        static void AddBadge(WrapPanel panel, bool shown, string key, string classes)
+        {
+            if (!shown) return;
+            var text = new TextBlock { Text = CatalogUiText.Get(key) };
+            text.Classes.Add(classes);
+            var badge = new Border { Margin = new Avalonia.Thickness(0, 0, 4, 4), Child = text };
+            badge.Classes.Add("catalog-badge");
+            panel.Children.Add(badge);
         }
     }
 
@@ -339,6 +440,9 @@ public partial class CatalogPane : UserControl
     {
         if (_vm.Project is not { } project) return null;
         if (SelectedProduct is null) return Strings.Get("CatalogNeedProduct");
+        // Broken or incomplete applications must not enter the project at all.
+        var blocked = CatalogBrowser.Blocked(_shownProgram, CatalogUse.Insert);
+        if (blocked != CatalogBlockReason.None) return CatalogUiText.Reason(blocked);
         if (LineBox.SelectedItem is not LineChoice choice || ResolveLine(choice) is not { } target)
             return Strings.Get("CatalogNeedLine");
         var text = AddressBox.Text?.Trim() ?? "";

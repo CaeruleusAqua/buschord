@@ -5,9 +5,111 @@ namespace Knx.App.Services;
 public sealed record LineChoice(string ProjectId, string? ProjectGuid, string InstallationId,
     string AreaId, string LineId, string Text);
 
+/// <summary>What a catalogue application is used for; every use has its own blocking rules.</summary>
+public enum CatalogUse
+{
+    /// <summary>Insert the product as a device into the project.</summary>
+    Insert,
+
+    /// <summary>Open and edit the static parameter values of the application.</summary>
+    EditParameters,
+
+    /// <summary>Program the device from the catalogue application.</summary>
+    Download,
+}
+
+/// <summary>Why a catalogue application cannot serve a <see cref="CatalogUse"/>.</summary>
+public enum CatalogBlockReason
+{
+    /// <summary>The use is allowed.</summary>
+    None,
+
+    /// <summary>ETS marked the application broken.</summary>
+    Broken,
+
+    /// <summary>ETS marked the download information incomplete.</summary>
+    DownloadInfoIncomplete,
+
+    /// <summary>A DCA/plug-in provides the editor or download; neither is executed here.</summary>
+    DcaUnsupported,
+}
+
+/// <summary>
+/// Catalogue-only vocabulary (status badges, gating reasons, import report). Kept apart from
+/// <see cref="Strings"/> because the pane owns these texts; language follows
+/// <see cref="Strings.Language"/>.
+/// </summary>
+public static class CatalogUiText
+{
+    public static string Get(string key, params object[] args)
+    {
+        var text = Map.TryGetValue(key, out var entry)
+            ? Strings.Language == "en" ? entry.En : entry.De
+            : key;
+        return args.Length == 0 ? text : string.Format(text, args);
+    }
+
+    /// <summary>Readable reason for a blocked use; empty when the use is allowed.</summary>
+    public static string Reason(CatalogBlockReason reason) => reason switch
+    {
+        CatalogBlockReason.Broken => Get("ReasonBroken"),
+        CatalogBlockReason.DownloadInfoIncomplete => Get("ReasonIncomplete"),
+        CatalogBlockReason.DcaUnsupported => Get("ReasonDca"),
+        _ => "",
+    };
+
+    private static readonly Dictionary<string, (string De, string En)> Map = new()
+    {
+        ["ApplicationStatus"] = ("Applikationsstatus", "Application status"),
+        ["NoApplication"] = ("Keine Applikation deklariert", "No application declared"),
+        ["BadgeBroken"] = ("Defekt", "Broken"),
+        ["BadgeIncomplete"] = ("Downloadinfo unvollständig", "Download info incomplete"),
+        ["BadgeDca"] = ("DCA / Plug-in", "DCA / plug-in"),
+        ["BadgeExternal"] = ("Fremdsoftware", "External software"),
+        ["ReasonBroken"] = ("Applikation ist als defekt markiert: Einfügen, Parameter bearbeiten und Download sind gesperrt.",
+                            "The application is marked broken: insert, parameter editing and download are blocked."),
+        ["ReasonIncomplete"] = ("Downloadinformationen sind unvollständig: Einfügen, Parameter bearbeiten und Download sind gesperrt.",
+                                "Download information is incomplete: insert, parameter editing and download are blocked."),
+        ["ReasonDca"] = ("DCA/Plug-in läuft hier nicht: Parameter sind nur lesbar, Download wird nicht unterstützt. Einfügen bleibt möglich.",
+                         "The DCA/plug-in does not run here: parameters are read-only and download is unsupported. Insert remains possible."),
+        ["ExternalSoftware"] = ("Zusätzlich Hersteller-Software erforderlich (Hinweis, keine Sperre).",
+                                "Vendor software is also required (information only, not a block)."),
+        ["StaticReady"] = ("Einfügen und statische Parameterbearbeitung sind lokal möglich.",
+                           "Insert and static parameter editing are available locally."),
+        ["RegistrationStatus"] = ("Registrierungsstatus", "Registration status"),
+        ["MinEtsVersion"] = ("Mindest-ETS", "Minimum ETS"),
+        ["SchemaVersion"] = ("Schema-Version", "Schema version"),
+        ["MaskVersion"] = ("Maskenversion", "Mask version"),
+        ["Programs"] = ("Programme", "Programs"),
+        ["LastImport"] = ("Letzter Import: {0}", "Last import: {0}"),
+        ["ImportSummary"] = ("{0} Produkte · {1} Programme", "{0} products · {1} programs"),
+        ["RemoveCatalog"] = ("Katalog entfernen", "Remove catalogue"),
+        ["RemoveCatalogTip"] = ("Katalogdatei aus der Bibliothek löschen", "Delete the catalogue file from the library"),
+        ["Removed"] = ("Katalog entfernt: {0}", "Catalogue removed: {0}"),
+        ["RemoveFailed"] = ("Katalog nicht entfernt (außerhalb der Bibliothek oder gesperrt): {0}",
+                            "Catalogue not removed (outside the library or locked): {0}"),
+    };
+}
+
 /// <summary>Local browsing and validated insertion, also usable without an Avalonia window.</summary>
 public static class CatalogBrowser
 {
+    /// <summary>
+    /// The first reason the application blocks a use, or <see cref="CatalogBlockReason.None"/>.
+    /// Broken and incomplete applications block every use. A DCA application stays insertable,
+    /// but no plug-in is hosted here, so parameter editing and download are unsupported.
+    /// <see cref="CatalogApplicationProgram.RequiresExternalSoftware"/> never blocks.
+    /// </summary>
+    public static CatalogBlockReason Blocked(CatalogApplicationProgram? program, CatalogUse use)
+    {
+        if (program is null) return CatalogBlockReason.None;
+        if (program.Broken) return CatalogBlockReason.Broken;
+        if (program.DownloadInfoIncomplete) return CatalogBlockReason.DownloadInfoIncomplete;
+        if (program.RequiresDca && use is CatalogUse.EditParameters or CatalogUse.Download)
+            return CatalogBlockReason.DcaUnsupported;
+        return CatalogBlockReason.None;
+    }
+
     public static List<CatalogProduct> Filter(IEnumerable<CatalogProduct> products, string? search, string? section)
     {
         var query = search?.Trim() ?? "";
@@ -49,6 +151,12 @@ public static class CatalogBrowser
         if (vm.Project is not { } project) return false;
         message = Strings.Get("CatalogNeedProduct");
         if (product is null) return false;
+        var blocked = Blocked(program, CatalogUse.Insert);
+        if (blocked != CatalogBlockReason.None)
+        {
+            message = CatalogUiText.Reason(blocked);
+            return false;
+        }
         message = Strings.Get("CatalogNeedLine");
         if (choice is null || choice.ProjectId != project.Id || choice.ProjectGuid != project.Guid) return false;
         var targets = (from installation in project.Installations

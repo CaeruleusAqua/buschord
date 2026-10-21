@@ -360,6 +360,27 @@ Check("LoadError nennt Ursache",
 Check("Remove loescht Datei", store.Remove(imported.Path) && !File.Exists(imported.Path));
 Check("Remove unbekannte Datei", !store.Remove(imported.Path));
 
+// Removal is bounded to direct children of the library directory.
+var outsideCopy = Path.Combine(root, "outside-copy.knxprod");
+File.Copy(archive, outsideCopy);
+Check("Remove ausserhalb der Bibliothek abgelehnt", !store.Remove(outsideCopy) && File.Exists(outsideCopy));
+var nestedDirectory = Path.Combine(library, "nested");
+Directory.CreateDirectory(nestedDirectory);
+var nestedCopy = Path.Combine(nestedDirectory, "nested.knxprod");
+File.Copy(archive, nestedCopy);
+Check("Remove in Unterordner abgelehnt", !store.Remove(nestedCopy) && File.Exists(nestedCopy));
+Check("Remove Verzeichnis abgelehnt", !store.Remove(library));
+
+// Import report carries the gating flags of the imported catalogue.
+var gatedStore = new CatalogStore(Path.Combine(root, "gated-library"));
+var gatedImport = gatedStore.Import(dcaPath);
+Check("Importbericht flaggt DCA, defekt und Fremdsoftware",
+    gatedStore.LastImportReport is { } gatedReport
+    && gatedReport.Products == 1 && gatedReport.Programs == 3
+    && gatedReport.HasDcaProgram && gatedReport.HasBrokenProgram && gatedReport.HasExternalSoftware
+    && gatedReport.File == gatedImport.Path,
+    gatedStore.LastImportReport?.ToString());
+
 // --- device creation ---
 var device = CatalogInstaller.CreateDevice(product1!, program1, new IndividualAddress(1, 2, 3), "Aktor");
 Check("Device-Adresse", device.Address == new IndividualAddress(1, 2, 3), device.Address.ToString());

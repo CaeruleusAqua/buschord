@@ -165,6 +165,23 @@ try
     var merged = library.Add([third]);
     Check("import merges without re-parsing the library",
         merged is not null && merged.Catalogs.Count == 3 && merged.ProductCount == 3 && changes == 1);
+    Check("last import report survives reload", library.Store.LastImportReport is { } importReport
+        && Path.GetFileName(importReport.File) == Path.GetFileName(third.Path)
+        && importReport.Products == 1 && importReport.Programs == 0
+        && !importReport.HasBrokenProgram && !importReport.HasDcaProgram && !importReport.HasExternalSoftware);
+
+    // Removal stays inside the library: the store is the only path to the file system.
+    var outside = Path.Combine(libraryRoot, "outside.knxprod");
+    File.WriteAllText(outside, "invalid");
+    Check("remove outside the library is refused", !library.Store.Remove(outside) && File.Exists(outside));
+    var nested = Directory.CreateDirectory(Path.Combine(library.Store.Directory, "nested"));
+    var nestedFile = Path.Combine(nested.FullName, "nested.knxprod");
+    File.WriteAllText(nestedFile, "invalid");
+    Check("remove below the library root is refused", !library.Store.Remove(nestedFile) && File.Exists(nestedFile));
+    Check("remove drops the catalogue from the library", library.Store.Remove(third.Path) && !File.Exists(third.Path));
+    var afterRemove = await library.ReloadAsync();
+    Check("reload after remove shows the remaining library",
+        afterRemove.Catalogs.Count == 2 && afterRemove.ProductCount == 2 && afterRemove.Errors.Count == 1);
 
     var fresh = new CatalogLibrary(new CatalogStore(Path.Combine(libraryRoot, "fresh")));
     var canceled = false;
@@ -174,9 +191,114 @@ try
 }
 finally
 {
-    foreach (var file in Directory.GetFiles(libraryRoot, "*", SearchOption.AllDirectories)) File.Delete(file);
-    foreach (var dir in Directory.GetDirectories(libraryRoot).OrderByDescending(p => p.Length)) Directory.Delete(dir);
-    Directory.Delete(libraryRoot);
+    if (Directory.Exists(libraryRoot)) Directory.Delete(libraryRoot, recursive: true);
+}
+
+// ---- ETS application status gates: broken/incomplete block, DCA stays insertable but is read-only ----
+var gateRoot = Path.Combine(Path.GetTempPath(), "catalog-gate-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(gateRoot);
+try
+{
+    var gatePath = Path.Combine(gateRoot, "gated.knxprod");
+    using (var zip = ZipFile.Open(gatePath, ZipArchiveMode.Create))
+    using (var writer = new StreamWriter(zip.CreateEntry("knxprod.xml").Open()))
+        writer.Write("""
+            <KNX><ManufacturerData><Manufacturer RefId="M-GATE">
+            <Hardware>
+              <Hardware Id="H-DCA" HasIndividualAddress="true" HasApplicationProgram="true">
+                <Products><Product Id="P-DCA" Text="DCA device" OrderNumber="DCA-1" /></Products>
+                <Hardware2Programs><Hardware2Program Id="HP-DCA"><ApplicationProgramRef RefId="A-DCA"/></Hardware2Program></Hardware2Programs>
+              </Hardware>
+              <Hardware Id="H-BROKEN" HasIndividualAddress="true" HasApplicationProgram="true">
+                <Products><Product Id="P-BROKEN" Text="Broken device" OrderNumber="BR-1" /></Products>
+                <Hardware2Programs><Hardware2Program Id="HP-BROKEN"><ApplicationProgramRef RefId="A-BROKEN"/></Hardware2Program></Hardware2Programs>
+              </Hardware>
+            </Hardware>
+            <ApplicationPrograms>
+              <ApplicationProgram Id="A-DCA" Name="DCA application">
+                <Static>
+                  <Extension EtsUiPlugin="{11111111-1111-1111-1111-111111111111}" RequiresExternalSoftware="1"/>
+                  <ComObjectTable>
+                    <ComObject Id="CO-DCA" Name="Switch" Number="1" ObjectSize="1 Bit"/>
+                  </ComObjectTable>
+                </Static>
+              </ApplicationProgram>
+              <ApplicationProgram Id="A-BROKEN" Name="Broken application" Broken="true"><Static/></ApplicationProgram>
+              <ApplicationProgram Id="A-INCOMPLETE" Name="Incomplete application" DownloadInfoIncomplete="true"><Static/></ApplicationProgram>
+              <ApplicationProgram Id="A-EXTERNAL" Name="External software"><Static><Extension RequiresExternalSoftware="1"/></Static></ApplicationProgram>
+              <ApplicationProgram Id="A-STATIC" Name="Static application"><Static/></ApplicationProgram>
+            </ApplicationPrograms>
+            </Manufacturer></ManufacturerData></KNX>
+            """);
+
+    var gated = KnxProductCatalog.Open(gatePath);
+    var dca = gated.FindProgram("A-DCA")!;
+    var broken = gated.FindProgram("A-BROKEN")!;
+    var incomplete = gated.FindProgram("A-INCOMPLETE")!;
+    var external = gated.FindProgram("A-EXTERNAL")!;
+    var plain = gated.FindProgram("A-STATIC")!;
+    Check("no application is never blocked",
+        Enum.GetValues<CatalogUse>().All(use => CatalogBrowser.Blocked(null, use) == CatalogBlockReason.None));
+    Check("broken blocks insert, edit and download",
+        CatalogBrowser.Blocked(broken, CatalogUse.Insert) == CatalogBlockReason.Broken
+        && CatalogBrowser.Blocked(broken, CatalogUse.EditParameters) == CatalogBlockReason.Broken
+        && CatalogBrowser.Blocked(broken, CatalogUse.Download) == CatalogBlockReason.Broken);
+    Check("incomplete download info blocks insert, edit and download",
+        CatalogBrowser.Blocked(incomplete, CatalogUse.Insert) == CatalogBlockReason.DownloadInfoIncomplete
+        && CatalogBrowser.Blocked(incomplete, CatalogUse.EditParameters) == CatalogBlockReason.DownloadInfoIncomplete
+        && CatalogBrowser.Blocked(incomplete, CatalogUse.Download) == CatalogBlockReason.DownloadInfoIncomplete);
+    Check("DCA stays insertable but blocks edit and download",
+        CatalogBrowser.Blocked(dca, CatalogUse.Insert) == CatalogBlockReason.None
+        && CatalogBrowser.Blocked(dca, CatalogUse.EditParameters) == CatalogBlockReason.DcaUnsupported
+        && CatalogBrowser.Blocked(dca, CatalogUse.Download) == CatalogBlockReason.DcaUnsupported);
+    Check("external software is informational only",
+        Enum.GetValues<CatalogUse>().All(use => CatalogBrowser.Blocked(external, use) == CatalogBlockReason.None));
+    Check("static application is usable",
+        Enum.GetValues<CatalogUse>().All(use => CatalogBrowser.Blocked(plain, use) == CatalogBlockReason.None));
+    Check("allowed reason is empty", CatalogUiText.Reason(CatalogBlockReason.None).Length == 0);
+
+    var language = Strings.Language;
+    Strings.Language = "en";
+    var english = CatalogUiText.Reason(CatalogBlockReason.DcaUnsupported);
+    Strings.Language = "de";
+    Check("gating text follows the UI language",
+        english.Contains("read-only", StringComparison.Ordinal)
+        && CatalogUiText.Reason(CatalogBlockReason.DcaUnsupported) != english
+        && CatalogUiText.Reason(CatalogBlockReason.DcaUnsupported).Contains("lesbar", StringComparison.Ordinal));
+    Strings.Language = language;
+
+    var gateVm = new MainWindowViewModel();
+    var gateProject = new Project { Id = "P-GATE", Name = "Gate" };
+    var gateInstallation = new Installation { Id = "I-G" };
+    var gateArea = new Area { Id = "A-G", Address = 2 };
+    var gateLine = new Line { Id = "L-G", Address = 2 };
+    gateLine.Segments.Add(new Segment { Id = "S-G" });
+    gateArea.Lines.Add(gateLine);
+    gateInstallation.Areas.Add(gateArea);
+    gateProject.Installations.Add(gateInstallation);
+    gateVm.CreateProject(gateProject, null);
+    var gateChoice = CatalogBrowser.Lines(gateProject).Single();
+    var brokenProduct = gated.Products.Single(product => product.Id == "P-BROKEN");
+    var dcaProduct = gated.Products.Single(product => product.Id == "P-DCA");
+
+    Check("broken application cannot be inserted",
+        !CatalogBrowser.Insert(gateVm, brokenProduct, broken, gateChoice, "2.2.1", null, out message)
+        && message == CatalogUiText.Reason(CatalogBlockReason.Broken)
+        && !gateVm.CanUndo && gateVm.SelectedDevice is null);
+    Check("incomplete application cannot be inserted",
+        !CatalogBrowser.Insert(gateVm, brokenProduct, incomplete, gateChoice, "2.2.1", null, out message)
+        && message == CatalogUiText.Reason(CatalogBlockReason.DownloadInfoIncomplete)
+        && !gateVm.CanUndo);
+    Check("DCA application inserts with its objects",
+        CatalogBrowser.Insert(gateVm, dcaProduct, dca, gateChoice, "2.2.1", null, out _)
+        && gateVm.SelectedDevice?.Device.ComObjectRefs.Count == 1
+        && CatalogBrowser.SuggestAddress(gateProject, gateChoice) == "2.2.2");
+}
+finally
+{
+    foreach (var file in Directory.GetFiles(gateRoot, "*", SearchOption.AllDirectories)) File.Delete(file);
+    foreach (var dir in Directory.GetDirectories(gateRoot).OrderByDescending(p => p.Length)) Directory.Delete(dir);
+    Directory.Delete(gateRoot);
 }
 
 Console.WriteLine($"CATALOG UI OK ({checks} checks; headless, no visual validation)");
