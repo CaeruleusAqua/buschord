@@ -63,9 +63,9 @@ internal static class Program
         Check("prompt exists " + title, found is not null);
         var dialog = found!;
         Check("prompt " + title, dialog.Title == title);
-        if (title == "Nicht übernommene Parameter")
+        if (title == "Unapplied parameters")
             Check("draft prompt has only Cancel/Discard", dialog.GetVisualDescendants().OfType<Button>()
-                .Select(b => b.Content).SequenceEqual(new object[] { "Cancel", "Entwürfe verwerfen" }));
+                .Select(b => b.Content).SequenceEqual(new object[] { "Cancel", "Discard drafts" }));
         Click(dialog, text);
         await Settle();
     }
@@ -124,7 +124,7 @@ internal static class Program
             {
                 await Reset();
                 MainWindow.Close();
-                await Answer("Nicht übernommene Parameter", "Cancel");
+                await Answer("Unapplied parameters", "Cancel");
                 Check("draft-only close cancelled", MainWindow.IsVisible && Pane.HasUnappliedChanges);
                 return;
             }
@@ -172,29 +172,29 @@ internal static class Program
                 && Vm.ProjectPath == SavePath && Vm.Status.Contains("nicht gespeichert")
                 && ProjectQuery.DeviceList(Knxproj.Load(SavePath)).Single().ParameterValues.Count == 0);
             MainWindow.Close();
-            await Answer("Nicht übernommene Parameter", "Cancel");
+            await Answer("Unapplied parameters", "Cancel");
             Check("draft-only close Cancel keeps window/project/draft", MainWindow.IsVisible && ReferenceEquals(Vm.Project, original) && Pane.HasUnappliedChanges);
 
             await Reset(true);
             original = Vm.Project!;
             MainWindow.Close();
-            await Answer("Nicht übernommene Parameter", "Cancel");
+            await Answer("Unapplied parameters", "Cancel");
             Check("dirty project + draft: first prompt Cancel preserves both", ReferenceEquals(Vm.Project, original) && Vm.IsDirty && Pane.HasUnappliedChanges);
             MainWindow.Close();
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
-            await Answer("Ungespeicherte Änderungen", "Cancel");
+            await Answer("Unapplied parameters", "Discard drafts");
+            await Answer("Unsaved changes", "Cancel");
             Check("dirty project + draft: second prompt Cancel preserves both", ReferenceEquals(Vm.Project, original) && Vm.IsDirty && Pane.HasUnappliedChanges);
             using (var locked = new FileStream(ProjectPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
             {
                 MainWindow.Close();
-                await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
-                await Answer("Ungespeicherte Änderungen", "Save");
+                await Answer("Unapplied parameters", "Discard drafts");
+                await Answer("Unsaved changes", "Save");
                 Check("failed project Save keeps window/project/draft", MainWindow.IsVisible && ReferenceEquals(Vm.Project, original)
                     && Vm.IsDirty && Pane.HasUnappliedChanges && Vm.Status.StartsWith("Speichern fehlgeschlagen"));
             }
             MainWindow.Close();
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
-            await Answer("Ungespeicherte Änderungen", "Save");
+            await Answer("Unapplied parameters", "Discard drafts");
+            await Answer("Unsaved changes", "Save");
             Check("both confirmations close without applying drafts", !MainWindow.IsVisible && !Pane.HasUnappliedChanges
                 && ProjectQuery.DeviceList(Knxproj.Load(ProjectPath)).Single().ParameterValues.Count == 0);
 
@@ -209,26 +209,26 @@ internal static class Program
             Check("cancelled Open picker preserves project/draft", ReferenceEquals(Vm.Project, original) && Pane.HasUnappliedChanges && Vm.IsDirty);
             OpenPath = corrupt;
             Click(MainWindow, "Open");
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
-            await Answer("Ungespeicherte Änderungen", "Nicht speichern");
+            await Answer("Unapplied parameters", "Discard drafts");
+            await Answer("Unsaved changes", "Do not save");
             await Answer("Projekt nicht ladbar", "Close");
             Check("failed routed Open preserves project/draft", ReferenceEquals(Vm.Project, original) && Pane.HasUnappliedChanges && Vm.IsDirty);
 
             Click(MainWindow, "New");
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
-            await Answer("Ungespeicherte Änderungen", "Nicht speichern");
+            await Answer("Unapplied parameters", "Discard drafts");
+            await Answer("Unsaved changes", "Do not save");
             Click(Lifetime.Windows.OfType<NewProjectWindow>().Single(), "Cancel"); await Settle();
             Check("cancelled New wizard preserves project/draft", ReferenceEquals(Vm.Project, original) && Pane.HasUnappliedChanges);
             Click(MainWindow, "New");
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
-            await Answer("Ungespeicherte Änderungen", "Nicht speichern");
+            await Answer("Unapplied parameters", "Discard drafts");
+            await Answer("Unsaved changes", "Do not save");
             SavePath = null;
             Click(Lifetime.Windows.OfType<NewProjectWindow>().Single(), "Create"); await Settle();
             Check("cancelled New picker preserves project/draft", ReferenceEquals(Vm.Project, original) && Pane.HasUnappliedChanges);
 
             Click(MainWindow, "New");
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
-            await Answer("Ungespeicherte Änderungen", "Nicht speichern");
+            await Answer("Unapplied parameters", "Discard drafts");
+            await Answer("Unsaved changes", "Do not save");
             SavePath = Root;
             Click(Lifetime.Windows.OfType<NewProjectWindow>().Single(), "Create");
             await Answer("Projekt nicht anlegbar", "Close");
@@ -236,20 +236,20 @@ internal static class Program
 
             Vm.ProjectPath = "";
             Click(MainWindow, "New");
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
+            await Answer("Unapplied parameters", "Discard drafts");
             SavePath = null;
-            await Answer("Ungespeicherte Änderungen", "Save");
+            await Answer("Unsaved changes", "Save");
             Check("cancelled Save As in second prompt retains project/draft", ReferenceEquals(Vm.Project, original) && Pane.HasUnappliedChanges && Vm.IsDirty);
             Vm.ProjectPath = ProjectPath;
 
             OpenPath = ProjectPath;
             Click(MainWindow, "Open");
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
-            await Answer("Ungespeicherte Änderungen", "Nicht speichern");
+            await Answer("Unapplied parameters", "Discard drafts");
+            await Answer("Unsaved changes", "Do not save");
             Check("successful Open clears drafts", !ReferenceEquals(Vm.Project, original) && !Pane.HasUnappliedChanges);
             await Reset();
             Click(MainWindow, "New");
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
+            await Answer("Unapplied parameters", "Discard drafts");
             SavePath = Path.Combine(Root, "created.knxproj");
             Click(Lifetime.Windows.OfType<NewProjectWindow>().Single(), "Create"); await Settle();
             Check("successful New clears drafts", Vm.ProjectPath == SavePath && !Pane.HasUnappliedChanges && File.Exists(SavePath));
@@ -259,22 +259,22 @@ internal static class Program
                 .Single(list => ReferenceEquals(list.ItemsSource, Vm.RecentProjects));
             Check("recent list exists", recents is not null);
             recents!.SelectedIndex = 0;
-            await Answer("Nicht übernommene Parameter", "Cancel");
+            await Answer("Unapplied parameters", "Cancel");
             Check("recent Cancel retains draft", Pane.HasUnappliedChanges);
             recents.SelectedIndex = 0;
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
+            await Answer("Unapplied parameters", "Discard drafts");
             Check("successful recent clears drafts", !Pane.HasUnappliedChanges);
             await Reset();
             MainWindow.GetLogicalDescendants().OfType<MenuItem>().First(m => Equals(m.Header, "Exit"))
                 .RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
+            await Answer("Unapplied parameters", "Discard drafts");
             Check("draft-only Exit Discard closes", !MainWindow.IsVisible && !Pane.HasUnappliedChanges);
             MainWindow = new MainWindow(); MainWindow.Show();
             Pane = (ParameterPane)Field(MainWindow, "_parameters");
             await Reset();
             Pane.Load(null);
             MainWindow.Close();
-            await Answer("Nicht übernommene Parameter", "Entwürfe verwerfen");
+            await Answer("Unapplied parameters", "Discard drafts");
             Check("draft-only native close Discard clears hidden draft", !MainWindow.IsVisible && !Pane.HasUnappliedChanges);
             Console.WriteLine("SHELL DRAFT LIFECYCLE OK");
         }
