@@ -53,8 +53,9 @@
           <SolidColorBrush x:Key="WbPanel" Color="#f9fafb" />
           <SolidColorBrush x:Key="WbLine" Color="#e1e5eb" />
           <SolidColorBrush x:Key="WbText" Color="#202c3c" />
-          <SolidColorBrush x:Key="WbMuted" Color="#687487" />
-          <SolidColorBrush x:Key="WbSubtle" Color="#6b7686" />
+          <!-- Darkened from the reference so 10px muted text passes 4.5:1 on rail/status. -->
+          <SolidColorBrush x:Key="WbMuted" Color="#5f6b7d" />
+          <SolidColorBrush x:Key="WbSubtle" Color="#5f6b7d" />
           <SolidColorBrush x:Key="WbAccent" Color="#087e81" />
           <SolidColorBrush x:Key="WbAccentHover" Color="#076c70" />
           <SolidColorBrush x:Key="WbOnAccent" Color="#ffffff" />
@@ -71,7 +72,7 @@
           <SolidColorBrush x:Key="WbSuccess" Color="#268175" />
           <SolidColorBrush x:Key="WbInfo" Color="#345caa" />
           <SolidColorBrush x:Key="WbDisabled" Color="#eef0f4" />
-          <SolidColorBrush x:Key="WbDisabledText" Color="#687487" />
+          <SolidColorBrush x:Key="WbDisabledText" Color="#5f6b7d" />
         </ResourceDictionary>
         <!-- Dark is a native companion palette; the HTML reference only defines light. -->
         <ResourceDictionary x:Key="Dark">
@@ -317,7 +318,8 @@
     <Setter Property="BorderThickness" Value="{StaticResource WbFocusThickness}" />
   </Style>
   <Style Selector="Button.wb-button:disabled, TabItem.wb-tab:disabled, ListBoxItem.wb-row:disabled, TextBox.wb-field:disabled, ComboBox.wb-field:disabled">
-    <Setter Property="Opacity" Value="0.46" />
+    <!-- Fluent's 0.46 opacity drops the already-muted disabled text below 2:1. -->
+    <Setter Property="Opacity" Value="1" />
     <Setter Property="TextElement.Foreground" Value="{DynamicResource WbDisabledText}" />
   </Style>
   <Style Selector="Button.wb-button:disabled /template/ ContentPresenter#PART_ContentPresenter, ListBoxItem.wb-row:disabled /template/ ContentPresenter#PART_ContentPresenter">
