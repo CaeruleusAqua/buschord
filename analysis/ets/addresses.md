@@ -610,8 +610,8 @@ Concrete gaps against ETS6:
     exporter, reader/writer/callback plugin interfaces, and skip reporting (ranges, addresses, DPTs).
     Our import path is not in `Knx.Core` at all; `WorkbenchWindow.Commands` only exports
     associations CSV/demo JSON.
-11. **Validation is thin.** 14 checks vs. ETS6's typed validators + project-check wizard matrix
-    (topology power/PSU/repeater/choke/coupler, GA association/16-bit/identifier checks).
+11. **Validation is thin.** 16 finding codes vs. ETS6's typed validators + project-check wizard
+    matrix (topology power/PSU/repeater/choke/coupler, GA association/16-bit/identifier checks).
 12. **Drag-drop absent.** No peer/behavior abstraction, so tree/list reorganisation cannot reuse a
     single multi-select drag pipeline.
 
