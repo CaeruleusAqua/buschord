@@ -1583,8 +1583,10 @@ public partial class WorkbenchWindow : Window
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             IsVisible = sessions.Programming.Jobs.Count == 0
         };
-        var host = new Grid(); host.Children.Add(list); host.Children.Add(empty);
-        panel.Children.Remove(list); panel.Children.Add(host);
+        var host = new Grid();
+        panel.Children.Remove(list);
+        host.Children.Add(list); host.Children.Add(empty);
+        panel.Children.Add(host);
         if (sessions.Programming.Jobs is System.Collections.Specialized.INotifyCollectionChanged jobsChanged)
         {
             void OnJobsChanged(object? _, System.Collections.Specialized.NotifyCollectionChangedEventArgs __)
