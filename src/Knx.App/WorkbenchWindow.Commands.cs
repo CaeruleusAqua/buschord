@@ -18,41 +18,41 @@ public partial class WorkbenchWindow
         MenuItem Async(string title, Func<Task> action) => Item(title, () => _ = GuardAsync(action));
         MainMenu.ItemsSource = new MenuItem[]
         {
-            new() { Header = "Projekt", ItemsSource = new object[]
+            new() { Header = W("MenuProject"), ItemsSource = new object[]
             {
-                Async("Neu …", NewProjectAsync), Async("Öffnen …", OpenProjectAsync), Async("Speichern", async () => await SaveAsync()),
-                Async("Speichern unter …", async () => await SaveAsync(true)), new Separator(),
-                Item("Produktkatalog", ShowCatalog), Item("Neue Gruppenadresse", () => { ViewModel.AddGroupAddress(); RefreshWorkspace(); }),
-                Async("Gruppenadressen · CSV …", () => ExportAsync("gruppenadressen.csv", ProjectCsvExporter.GroupAddresses)),
-                Async("Geräte · CSV …", () => ExportAsync("geraete.csv", ProjectCsvExporter.Devices)),
-                Async("Topologie · CSV …", () => ExportAsync("topologie.csv", ProjectCsvExporter.Topology)),
-                Async("Projektbericht · HTML …", () => ExportAsync("projektbericht.html", p => ProjectReport.Render(p))),
-                Async("Objektzuordnungen · CSV …", () => ExportAsync("zuordnungen.csv", AssociationsCsv)),
-                Async("Demo-Projekt · JSON exportieren …", ExportDemoJsonAsync),
-                Async("Demo-Projekt · JSON importieren …", ImportDemoJsonAsync),
-                new Separator(), Item("Beenden", Close)
+                Async(W("MenuNew"), NewProjectAsync), Async(W("MenuOpen"), OpenProjectAsync), Async(W("MenuSave"), async () => await SaveAsync()),
+                Async(W("MenuSaveAs"), async () => await SaveAsync(true)), new Separator(),
+                Item(W("Catalog"), ShowCatalog), Item(W("NewGroupAddress"), () => { ViewModel.AddGroupAddress(); RefreshWorkspace(); }),
+                Async(W("ExportGroupAddresses"), () => ExportAsync("gruppenadressen.csv", ProjectCsvExporter.GroupAddresses)),
+                Async(W("ExportDevices"), () => ExportAsync("geraete.csv", ProjectCsvExporter.Devices)),
+                Async(W("ExportTopology"), () => ExportAsync("topologie.csv", ProjectCsvExporter.Topology)),
+                Async(W("ExportReport"), () => ExportAsync("projektbericht.html", p => ProjectReport.Render(p))),
+                Async(W("ExportAssociations"), () => ExportAsync("zuordnungen.csv", AssociationsCsv)),
+                Async(W("ExportDemoJson"), ExportDemoJsonAsync),
+                Async(W("ImportDemoJson"), ImportDemoJsonAsync),
+                new Separator(), Item(W("MenuExit"), Close)
             } },
-            new() { Header = "Bearbeiten", ItemsSource = new object[]
+            new() { Header = W("MenuEdit"), ItemsSource = new object[]
             {
-                Item("Rückgängig    Ctrl Z", () => ViewModel.UndoCommand.Execute(null)),
-                Item("Wiederherstellen    Ctrl Shift Z", () => ViewModel.RedoCommand.Execute(null)),
-                Item("Zuordnungen bearbeiten", () => SetRepresentation("relations")),
-                Item("Auswahl verknüpfen …", ShowBatchLinkDialog),
-                Item("Eigenschaften", () => Workspace.InspectorVisible = true)
+                Item(W("MenuUndo"), () => ViewModel.UndoCommand.Execute(null)),
+                Item(W("MenuRedo"), () => ViewModel.RedoCommand.Execute(null)),
+                Item(W("EditLinks"), () => SetRepresentation("relations")),
+                Item(W("LinkSelection"), ShowBatchLinkDialog),
+                Item(W("Properties"), () => Workspace.InspectorVisible = true)
             } },
-            new() { Header = "Ansicht", ItemsSource = new object[]
+            new() { Header = W("MenuView"), ItemsSource = new object[]
             {
-                Item("Navigator    Ctrl B", () => Workspace.NavigatorVisible = !Workspace.NavigatorVisible),
-                Item("Monitor    Ctrl J", () => ShowTool("monitor")), Item("Inspektor", () => Workspace.InspectorVisible = !Workspace.InspectorVisible),
-                Item("Fokuslayout", Workspace.FocusLayout), Item("Layout zurücksetzen", Workspace.ResetLayout),
-                Item("Befehlssuche    Ctrl K", ShowPalette), Item("Optionen …", ShowSettings)
+                Item(W("MenuNavigator"), () => Workspace.NavigatorVisible = !Workspace.NavigatorVisible),
+                Item(W("MenuMonitor"), () => ShowTool("monitor")), Item(W("MenuInspector"), () => Workspace.InspectorVisible = !Workspace.InspectorVisible),
+                Item(W("FocusLayout"), Workspace.FocusLayout), Item(W("ResetLayout"), Workspace.ResetLayout),
+                Item(W("MenuPalette"), ShowPalette), Item(W("MenuOptions"), ShowSettings)
             } },
-            new() { Header = "Werkzeuge", ItemsSource = new object[]
+            new() { Header = W("MenuTools"), ItemsSource = new object[]
             {
-                Item("Projektprüfung", () => ShowTool("problems")), Item("Monitor", () => ShowTool("monitor")),
-                Item("Produktkatalog", ShowCatalog), Async("Aufzeichnung exportieren …", ExportRecordingAsync),
-                Item("Secure-Übersicht", ShowSecureOverview),
-                Item("Bedienung und Grenzen", ShowHelp)
+                Item(W("ProjectCheck"), () => ShowTool("problems")), Item(W("Monitor"), () => ShowTool("monitor")),
+                Item(W("Catalog"), ShowCatalog), Async(W("ExportRecording"), ExportRecordingAsync),
+                Item(W("SecureOverview"), ShowSecureOverview),
+                Item(W("HelpTip"), ShowHelp)
             } }
         };
     }
@@ -60,23 +60,23 @@ public partial class WorkbenchWindow
     private async Task GuardAsync(Func<Task> action)
     {
         try { await action(); }
-        catch (Exception ex) { ViewModel.Status = ex.Message; await ConfirmDialog.ShowMessageAsync(this, "Aktion fehlgeschlagen", ex.Message); }
+        catch (Exception ex) { ViewModel.Status = ex.Message; await ConfirmDialog.ShowMessageAsync(this, W("ActionFailed"), ex.Message); }
     }
 
     public void ShowCatalog() => OpenTarget(new("tool", "catalog"));
     private void ShowSettings() => _ = GuardAsync(async () => await new SettingsWindow(ViewModel.Settings).ShowDialog(this));
     private void ShowHelp() => _ = ConfirmDialog.ShowMessageAsync(this, "BusChord · Workbench V4",
-        "Raum, Linie, Gerät oder Gruppenadresse öffnen. Tabs behalten ihre eigenen Filter, Auswahl, Aufklappzustände und Darstellung.\n\n" +
-        "Ctrl+B: Navigator · Ctrl+J: Werkzeug · Ctrl+K: Befehlssuche · Ctrl+Tab: nächster Tab · Ctrl+Z / Ctrl+Shift+Z: Projekt-Undo/Redo.\n\n" +
-        "Mehrfachzuordnung prüft DPT, Länge und explizite Secure-Fähigkeit atomar. Die Sendeadresse wird ausdrücklich aus bestehenden Zuordnungen gewählt; beim Entfernen wird keine Ersatzadresse still bestimmt.\n\n" +
-        "Parameter ändern erst nach Prüfen und Übernehmen das Projekt. Speichern übernimmt keine Entwürfe. Demo-Applikationen zeigen eine reine Wirkungsvorschau; unbekannte Herstellerdynamik und DCA werden nicht ausgeführt.\n\n" +
-        "Monitor und Programmierwarteschlange sind projektgebundene Sitzungen: Ausblenden beendet sie nicht. Programmierung ist in dieser Fassung ausschließlich eine gekennzeichnete Simulation, kein realer Download. Die vollständige Aufzeichnung liegt getrennt vom Anzeigepuffer.\n\n" +
-        "Native Projektarchive bleiben das Speicherformat; das V4-Demo-JSON ist ein eigenes, streng geprüftes Austauschformat und verweigert den Export nicht darstellbarer Herstellerdaten. ETS-Kompatibilität, Secure-Schlüsselverwaltung und reale Busprogrammierung werden nicht behauptet.");
+        W("HelpIntro") +
+        W("HelpShortcuts") +
+        W("HelpLinks") +
+        W("HelpParameters") +
+        W("HelpSessions") +
+        W("HelpBoundaries"));
 
     private async Task OpenProjectAsync()
     {
-        var files = await StorageProvider.OpenFilePickerAsync(new() { Title = "KNX-Projekt öffnen", AllowMultiple = false,
-            FileTypeFilter = [new("KNX-Projekt") { Patterns = ["*.knxproj"] }] });
+        var files = await StorageProvider.OpenFilePickerAsync(new() { Title = W("OpenProjectTitle"), AllowMultiple = false,
+            FileTypeFilter = [new(W("KnxProjectFile")) { Patterns = ["*.knxproj"] }] });
         if (files.FirstOrDefault()?.TryGetLocalPath() is { } path) await OpenPathAsync(path);
     }
 
@@ -84,8 +84,8 @@ public partial class WorkbenchWindow
     {
         if (!await ConfirmDiscardAsync()) return;
         await ResetSessionsForReplacementAsync();
-        try { ViewModel.LoadProject(path); _parameters.DiscardDrafts(); RefreshWorkspace(); }
-        catch (Exception ex) { ViewModel.Status = $"Projekt nicht ladbar: {ex.Message}"; await ConfirmDialog.ShowMessageAsync(this, "Projekt nicht ladbar", ex.Message); RefreshWorkspace(); }
+        try { ViewModel.LoadProject(path); _parameters.DiscardDrafts(); ViewModel.Status = W("ProjectLoaded", ViewModel.Project?.Name ?? ""); RefreshWorkspace(); }
+        catch (Exception ex) { ViewModel.Status = W("ProjectLoadFailedStatus", ex.Message); await ConfirmDialog.ShowMessageAsync(this, W("ProjectLoadFailed"), ex.Message); RefreshWorkspace(); }
     }
 
     private async Task NewProjectAsync()
@@ -94,11 +94,11 @@ public partial class WorkbenchWindow
         var wizard = new NewProjectWindow();
         if (await wizard.ShowDialog<bool>(this) != true) return;
         var project = ProjectWizard.Create(wizard.Options);
-        var file = await StorageProvider.SaveFilePickerAsync(new() { Title = "Neues Projekt speichern", SuggestedFileName = project.Name + ".knxproj", DefaultExtension = "knxproj" });
+        var file = await StorageProvider.SaveFilePickerAsync(new() { Title = W("SaveNewProjectTitle"), SuggestedFileName = project.Name + ".knxproj", DefaultExtension = "knxproj" });
         if (file?.TryGetLocalPath() is not { } path) return;
         await ResetSessionsForReplacementAsync();
-        try { ViewModel.CreateProject(project, path); _parameters.DiscardDrafts(); RefreshWorkspace(); }
-        catch (Exception ex) { ViewModel.Status = ex.Message; await ConfirmDialog.ShowMessageAsync(this, "Projekt nicht anlegbar", ex.Message); RefreshWorkspace(); }
+        try { ViewModel.CreateProject(project, path); _parameters.DiscardDrafts(); ViewModel.Status = W("ProjectCreated", project.Name); RefreshWorkspace(); }
+        catch (Exception ex) { ViewModel.Status = ex.Message; await ConfirmDialog.ShowMessageAsync(this, W("ProjectCreateFailed"), ex.Message); RefreshWorkspace(); }
     }
 
     private async Task<bool> SaveAsync(bool saveAs = false)
@@ -113,10 +113,10 @@ public partial class WorkbenchWindow
                 ViewModel.SaveProjectAs(path);
             }
             else ViewModel.SaveProject();
-            if (_parameters.HasUnappliedChanges) ViewModel.Status = "Projekt gespeichert; nicht übernommene Parameterentwürfe wurden nicht gespeichert.";
+            if (_parameters.HasUnappliedChanges) ViewModel.Status = W("SavedWithDrafts");
             return true;
         }
-        catch (Exception ex) { ViewModel.Status = $"Speichern fehlgeschlagen: {ex.Message}"; await ConfirmDialog.ShowMessageAsync(this, "Speichern fehlgeschlagen", ex.Message); return false; }
+        catch (Exception ex) { ViewModel.Status = W("SaveFailedStatus", ex.Message); await ConfirmDialog.ShowMessageAsync(this, W("SaveFailed"), ex.Message); return false; }
     }
 
     private async Task<bool> ConfirmDiscardAsync()
@@ -146,26 +146,26 @@ public partial class WorkbenchWindow
         if (_layoutPath is not null)
         {
             try { SaveLayout(_layoutPath); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ViewModel.Status = "Layout nicht gespeichert: " + ex.Message; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ViewModel.Status = W("LayoutSaveFailed", ex.Message); }
         }
         _shuttingDown = true;
     }
 
     private async Task ExportAsync(string fileName, Func<Project, string> render)
     {
-        if (ViewModel.Project is not { } project) { ViewModel.Status = "Kein Projekt geladen"; return; }
+        if (ViewModel.Project is not { } project) { ViewModel.Status = W("NoProjectLoaded"); return; }
         var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = fileName });
         if (file is null) return;
         await using var stream = await file.OpenWriteAsync();
         stream.SetLength(0);
         await using var writer = new StreamWriter(stream, new UTF8Encoding(false));
         await writer.WriteAsync(render(project));
-        ViewModel.Status = fileName + " exportiert";
+        ViewModel.Status = W("Exported", fileName);
     }
 
     private async Task ExportRecordingAsync()
     {
-        if (ViewModel.Recorder.Count == 0) { ViewModel.Status = "Keine Aufzeichnung vorhanden"; return; }
+        if (ViewModel.Recorder.Count == 0) { ViewModel.Status = W("NoRecording"); return; }
         var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = "telegramme.csv", DefaultExtension = "csv" });
         if (file?.TryGetLocalPath() is { } path) ViewModel.Recorder.SaveCsv(path);
     }
@@ -187,19 +187,19 @@ public partial class WorkbenchWindow
 
     private async Task ExportDemoJsonAsync()
     {
-        if (ViewModel.Project is not { } project) { ViewModel.Status = "Kein Projekt geladen"; return; }
+        if (ViewModel.Project is not { } project) { ViewModel.Status = W("NoProjectLoaded"); return; }
         var json = Knx.Workbench.WorkbenchJson.Export(project);
         var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = "demo-projekt.json", DefaultExtension = "json" });
         if (file?.TryGetLocalPath() is not { } path) return;
         await File.WriteAllTextAsync(path, json, new UTF8Encoding(false));
-        ViewModel.Status = "Demo-Projekt exportiert";
+        ViewModel.Status = W("DemoExported");
     }
 
     private async Task ImportDemoJsonAsync()
     {
         if (!await ConfirmDiscardAsync()) return;
         var files = await StorageProvider.OpenFilePickerAsync(new() { AllowMultiple = false,
-            FileTypeFilter = [new("V4-Demo-Projekt") { Patterns = ["*.json"] }] });
+            FileTypeFilter = [new(W("DemoProjectFile")) { Patterns = ["*.json"] }] });
         if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
         try
         {
@@ -208,51 +208,51 @@ public partial class WorkbenchWindow
             ViewModel.CreateProject(imported, null);
             _parameterSession.DiscardDrafts();
             RefreshWorkspace();
-            ViewModel.Status = "Demo-Projekt importiert; als knxproj speichern für einen nativen Projektstand.";
+            ViewModel.Status = W("DemoImported");
         }
         catch (Exception ex)
         {
-            ViewModel.Status = "Demo-Import fehlgeschlagen: " + ex.Message;
-            await ConfirmDialog.ShowMessageAsync(this, "Demo-Import fehlgeschlagen", ex.Message);
+            ViewModel.Status = W("DemoImportFailedStatus", ex.Message);
+            await ConfirmDialog.ShowMessageAsync(this, W("DemoImportFailed"), ex.Message);
         }
     }
 
     private void ShowSecureOverview()
     {
-        if (ViewModel.Project is not { } project) { ViewModel.Status = "Kein Projekt geladen"; return; }
+        if (ViewModel.Project is not { } project) { ViewModel.Status = W("NoProjectLoaded"); return; }
         var devices = ProjectQuery.DeviceList(project);
         var capable = devices.Where(d => project.Workbench.Devices.GetValueOrDefault(d.Id)?.SecureCapable == true).ToList();
         var unknown = devices.Count(d => project.Workbench.Devices.GetValueOrDefault(d.Id)?.SecureCapable is null);
         var secureGroups = project.Workbench.Groups.Count(g => g.Value.Secure == true);
         var lines = string.Join("\n", capable.Take(40).Select(d => $"{d.Address} · {d.Name}"));
-        _ = ConfirmDialog.ShowMessageAsync(this, "KNX Secure · lesbare Übersicht",
-            $"{capable.Count} von {devices.Count()} Geräten ausdrücklich Secure-fähig; {unknown} ohne belegte Fähigkeit.\n" +
-            $"{secureGroups} Gruppenadressen sind als Secure markiert.\n\n" +
-            (lines.Length > 0 ? lines : "Keine Secure-Fähigkeit in den Zusatzdaten belegt.") +
-            "\n\nDiese Übersicht verwaltet keine Schlüssel oder Zertifikate und behauptet keine sichere Inbetriebnahme.");
+        _ = ConfirmDialog.ShowMessageAsync(this, W("SecureOverviewTitle"),
+            W("SecureSummary", capable.Count, devices.Count(), unknown) + "\n" +
+            W("SecureGroups", secureGroups) + "\n\n" +
+            (lines.Length > 0 ? lines : W("SecureNoEvidence")) +
+            "\n\n" + W("SecureBoundary"));
     }
 
     private void ShowPalette()
     {
-        var dialog = new Window { Title = "Arbeitsgegenstand oder Befehl suchen", Width = 660, Height = 480, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var dialog = new Window { Title = W("FindWorkItemOrCommand"), Width = 660, Height = 480, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         var panel = new DockPanel { Margin = new(16) };
-        var query = new TextBox { PlaceholderText = "Raum, Gerät, GA oder Befehl …", Margin = new(0, 0, 0, 12) };
+        var query = new TextBox { PlaceholderText = W("PaletteWatermark"), Margin = new(0, 0, 0, 12) };
         var list = new ListBox();
-        Avalonia.Automation.AutomationProperties.SetName(query, "Arbeitsgegenstand oder Befehl suchen");
-        Avalonia.Automation.AutomationProperties.SetName(list, "Suchergebnisse");
+        Avalonia.Automation.AutomationProperties.SetName(query, W("FindWorkItemOrCommand"));
+        Avalonia.Automation.AutomationProperties.SetName(list, W("SearchResults"));
         DockPanel.SetDock(query, Avalonia.Controls.Dock.Top); panel.Children.Add(query); panel.Children.Add(list); dialog.Content = panel;
         var candidates = new List<(string Label, Action Run)>();
         if (ViewModel.Project is { } p)
         {
             candidates.Add((p.Name, () => OpenTarget(new("project", p.Id))));
             foreach (var s in WorkbenchProjection.Spaces(p)) candidates.Add((s.Path, () => OpenTarget(new("room", s.Id))));
-            foreach (var l in WorkbenchProjection.Lines(p)) candidates.Add(("Linie · " + l.Name, () => OpenTarget(new("line", l.Id))));
+            foreach (var l in WorkbenchProjection.Lines(p)) candidates.Add((W("PaletteLine", l.Name), () => OpenTarget(new("line", l.Id))));
             foreach (var d in ProjectQuery.DeviceList(p)) candidates.Add(($"{d.Address} · {d.Name}", () => OpenTarget(new("device", d.Id))));
             foreach (var g in ProjectQuery.GroupAddresses(p)) candidates.Add(($"{g.Address} · {g.Name}", () => OpenTarget(new("ga", g.Id))));
         }
-        candidates.AddRange([("Produktkatalog", ShowCatalog), ("Projektprüfung", () => ShowTool("problems")), ("Monitor", () => ShowTool("monitor")),
-            ("Programmierung", () => ShowTool("programming")), ("Layout zurücksetzen", Workspace.ResetLayout),
-            ("Projekt öffnen", () => _ = GuardAsync(OpenProjectAsync)), ("Hilfe", ShowHelp)]);
+        candidates.AddRange([(W("Catalog"), ShowCatalog), (W("ProjectCheck"), () => ShowTool("problems")), (W("Monitor"), () => ShowTool("monitor")),
+            (W("ProgrammingTab"), () => ShowTool("programming")), (W("ResetLayout"), Workspace.ResetLayout),
+            (W("OpenProject"), () => _ = GuardAsync(OpenProjectAsync)), (W("Help"), ShowHelp)]);
         list.ItemTemplate = new FuncDataTemplate<PaletteEntry>((entry, _) => Label(entry?.Label ?? ""));
         void Filter()
         {
@@ -284,25 +284,25 @@ public partial class WorkbenchWindow
         if (ViewModel.Project is not { } project || Workspace.ActiveTab is not { } tab) return;
         var selected = WorkbenchProjection.Rows(project, tab)
             .Where(r => r.Object is not null && tab.SelectedObjectIds.Contains(r.Key)).ToList();
-        if (selected.Count == 0) { ViewModel.Status = "Zuerst mindestens ein Kommunikationsobjekt auswählen."; return; }
+        if (selected.Count == 0) { ViewModel.Status = W("BatchNeedSelection"); return; }
         var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
-        var dialog = new Window { Title = $"Zuordnen · {selected.Count} Objekt(e)", Width = 720, Height = 560, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var dialog = new Window { Title = W("BatchTitle", selected.Count), Width = 720, Height = 560, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         var panel = new DockPanel { Margin = new(16) };
         var top = new StackPanel { Spacing = 8 };
-        var picker = new ComboBox { ItemsSource = groups, MinWidth = 420, PlaceholderText = "Gruppenadresse wählen" };
+        var picker = new ComboBox { ItemsSource = groups, MinWidth = 420, PlaceholderText = W("ChooseGroupAddress") };
         picker.ItemTemplate = new FuncDataTemplate<GroupAddressEntry>((g, _) => Label(g is null ? "" : $"{g.Address} · {g.Name} · {g.DatapointType ?? "DPT?"}"));
         var preview = new ListBox { Height = 320 };
         var errors = new TextBlock { FontSize = 11, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-        var add = ActionButton("Zuordnen", () => { }, "primary");
+        var add = ActionButton(W("LinkAction"), () => { }, "primary");
         add.IsEnabled = false;
-        top.Children.Add(Label("Mehrfachzuordnung wird vollständig geprüft und atomar übernommen."));
+        top.Children.Add(Label(W("BatchIntro")));
         top.Children.Add(picker);
         top.Children.Add(preview);
         top.Children.Add(errors);
         DockPanel.SetDock(top, Avalonia.Controls.Dock.Top); panel.Children.Add(top);
         var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
         actions.Children.Add(add);
-        actions.Children.Add(ActionButton("Abbrechen", dialog.Close, "quiet"));
+        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
         DockPanel.SetDock(actions, Avalonia.Controls.Dock.Bottom); panel.Children.Add(actions);
         dialog.Content = panel;
         dialog.Opened += (_, _) => picker.Focus();
@@ -318,14 +318,14 @@ public partial class WorkbenchWindow
             }).ToList();
             preview.ItemsSource = results;
             preview.ItemTemplate = new FuncDataTemplate<LinkPreview>((p, _) => Label(
-                p is null ? "" : $"{(p.AlreadyLinked ? "bereits verknüpft" : p.Error is null ? "bereit" : "unverträglich")} · {p.Row.Name}"
+                p is null ? "" : $"{(p.AlreadyLinked ? W("AlreadyLinked") : p.Error is null ? W("Ready") : W("Incompatible"))} · {p.Row.Name}"
                 + (p.Error is null ? "" : " — " + p.Error)));
             var invalid = results.Where(r => r.Error is not null).ToList();
             add.IsEnabled = invalid.Count == 0;
             errors.Text = invalid.Count == 0
-                ? results.All(r => r.AlreadyLinked) ? "Alle gewählten Objekte sind bereits mit dieser Adresse verknüpft; es wird nichts doppelt angelegt."
-                : "Alle Objekte sind verträglich. Bestehende Zuordnungen bleiben erhalten."
-                : $"{invalid.Count} Objekt(e) sind unverträglich; es wird nichts teilweise übernommen.";
+                ? results.All(r => r.AlreadyLinked) ? W("BatchAllAlreadyLinked")
+                : W("BatchCompatible")
+                : W("BatchIncompatible", invalid.Count);
             errors.Foreground = Avalonia.Media.Brush.Parse(invalid.Count == 0 ? "#268175" : "#b45054");
         }
         picker.SelectionChanged += (_, _) => Validate();
@@ -336,16 +336,16 @@ public partial class WorkbenchWindow
             {
                 var keys = selected.Select(r => new Knx.Workbench.ObjectKey(r.Device.Id, r.Object!.Id)).ToList();
                 MutationResult result = new(false, 0, [], []);
-                ViewModel.Edit($"Zuordnung {ga.Address}", p => result = WorkbenchProject.AddLinks(p, keys, ga.Id));
+                ViewModel.Edit(W("EditLink", ga.Address), p => result = WorkbenchProject.AddLinks(p, keys, ga.Id));
                 if (!result.Ok)
                 {
-                    ViewModel.Status = result.Errors.FirstOrDefault()?.Reason ?? "Zuordnung nicht möglich";
+                    ViewModel.Status = result.Errors.FirstOrDefault()?.Reason ?? W("LinkImpossible");
                     return;
                 }
-                ViewModel.Status = $"{result.Changed} Zuordnung(en) zu {ga.Address} ergänzt; bestehende Links erhalten.";
+                ViewModel.Status = W("LinksAdded", result.Changed, ga.Address);
                 dialog.Close(); RefreshWorkspace();
             }
-            catch (Exception ex) { ViewModel.Status = "Zuordnung fehlgeschlagen: " + ex.Message; }
+            catch (Exception ex) { ViewModel.Status = W("LinkFailed", ex.Message); }
         };
         dialog.ShowDialog(this);
     }

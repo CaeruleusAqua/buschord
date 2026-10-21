@@ -83,7 +83,7 @@ public partial class WorkbenchWindow : Window
         NavTree.ItemTemplate = new FuncDataTemplate<NavEntry>((entry, _) => entry is null ? new Border() : BuildNavRow(entry));
         ObjectTable.ItemTemplate = new FuncDataTemplate<WorkbenchRow>((row, _) => row is null ? new Border() : BuildObjectRow(row));
         BuildMenus();
-        foreach (var (key, title, glyph) in new[] { ("building", "Gebäude", "Category"), ("topology", "Topologie", "AccountTree"), ("groups", "Gruppen", "FormatListBulleted") })
+        foreach (var (key, title, glyph) in new[] { ("building", W("PerspectiveBuilding"), "Category"), ("topology", W("PerspectiveTopology"), "AccountTree"), ("groups", W("PerspectiveGroups"), "FormatListBulleted") })
         {
             var perspective = key;
             var perspectiveButton = ActionButton(title, () => Navigate(perspective), "quiet");
@@ -98,25 +98,26 @@ public partial class WorkbenchWindow : Window
         }
         foreach (var (symbol, title, run) in new (string, string, Action)[]
         {
-            ("LibraryBooks", "Produktkatalog", ShowCatalog), ("FactCheck", "Projektprüfung", () => ShowTool("problems")),
-            ("Radar", "Monitor", () => ShowTool("monitor")), ("Settings", "Optionen", ShowSettings)
+            ("LibraryBooks", W("Catalog"), ShowCatalog), ("FactCheck", W("ProjectCheck"), () => ShowTool("problems")),
+            ("Radar", W("Monitor"), () => ShowTool("monitor")), ("Settings", W("Options"), ShowSettings)
         })
         {
             var button = ActionButton("", run, "quiet", title);
             button.Content = new Icon { Symbol = symbol, Width = 19, Height = 19 };
             button.Width = 35; button.Height = 35; Rail.Children.Add(button);
         }
-        foreach (var (key, title) in new[] { ("objects", "Kommunikationsobjekte"), ("params", "Parameter"), ("relations", "Beziehungen"), ("overview", "Prüfung") })
+        foreach (var (key, title) in new[] { ("objects", W("CommunicationObjects")), ("params", W("Parameters")), ("relations", W("Relations")), ("overview", W("Overview")) })
         {
             var view = key;
             var button = ActionButton(title, () => SetRepresentation(view), "quiet");
             button.Classes.Add("wb-view-tab");
             Representations.Children.Add(button);
         }
-        foreach (var (key, title) in new[] { ("monitor", "Monitor"), ("programming", "Programmierung"), ("problems", "Prüfmeldungen") })
+        foreach (var (key, title) in new[] { ("monitor", W("Monitor")), ("programming", W("ProgrammingTab")), ("problems", W("Problems")) })
         {
             var tool = key;
             var button = ActionButton(title, () => ShowTool(tool), "quiet");
+            button.Tag = tool;
             button.Classes.Add("wb-tool-tab");
             ToolTabs.Children.Add(button);
         }
@@ -196,7 +197,7 @@ public partial class WorkbenchWindow : Window
         _sessions = null;
         if (sessions is null) return;
         try { await sessions.DisposeAsync(); }
-        catch (Exception ex) { ViewModel.Status = "Werkzeugsitzung beendet: " + ex.Message; }
+        catch (Exception ex) { ViewModel.Status = W("ToolSessionEnded", ex.Message); }
     }
 
     private async Task ResetSessionsForReplacementAsync()
@@ -285,9 +286,9 @@ public partial class WorkbenchWindow : Window
 
     private static string TargetTitle(object? model, WorkbenchTarget target) => model switch
         {
-            Project p => p.Name, SpaceNode s => s.Name, Line l => l.Name ?? "Linie",
+            Project p => p.Name, SpaceNode s => s.Name, Line l => l.Name ?? W("Line"),
             DeviceInstance d => d.Name ?? d.Address.ToString(), GroupAddressEntry g => $"{g.Address} · {g.Name}",
-            _ => target.Id == "catalog" ? "Produktkatalog" : target.Id
+            _ => target.Id == "catalog" ? W("Catalog") : target.Id
         };
 
     public void SetRepresentation(string view)
@@ -327,7 +328,7 @@ public partial class WorkbenchWindow : Window
             foreach (var tab in Workspace.Tabs.Where(t => t.Target.Kind != "tool" && WorkbenchProjection.Resolve(p, t.Target) is null).ToArray()) Workspace.Close(tab);
             foreach (var tab in Workspace.Tabs) tab.Title = TargetTitle(WorkbenchProjection.Resolve(p, tab.Target), tab.Target);
             ProjectName.Text = p?.Name ?? "BusChord";
-            ProjectSummary.Text = p is null ? "Projekt öffnen oder neu anlegen" : $"{ProjectQuery.DeviceList(p).Count()} Geräte · {WorkbenchProjection.Lines(p).Count()} Linien";
+            ProjectSummary.Text = p is null ? W("OpenOrCreateProject") : W("DeviceLineSummary", ProjectQuery.DeviceList(p).Count(), WorkbenchProjection.Lines(p).Count());
             NavSearch.Text = Workspace.Navigators[Workspace.Perspective].Query;
             RefreshNavigation();
             UpdateRail();
@@ -375,13 +376,13 @@ public partial class WorkbenchWindow : Window
             var activate = ActionButton(tab.Title, () => { CaptureScroll(); Workspace.ActiveTab = tab; }, "quiet");
             activate.MaxWidth = 220; activate.Height = 39; activate.MinWidth = 110;
             header.Children.Add(activate);
-            header.Children.Add(ActionButton("×", () => { Workspace.Close(tab); RefreshWorkspace(); }, "quiet", tab.Title + " schließen"));
+            header.Children.Add(ActionButton("×", () => { Workspace.Close(tab); RefreshWorkspace(); }, "quiet", W("CloseTab", tab.Title)));
             var border = new Border { Child = header, Height = 39 };
             border.Classes.Add("wb-doc-tab");
             border.Classes.Set("active", tab == Workspace.ActiveTab);
             ObjectTabs.Children.Add(border);
         }
-        ObjectTabs.Children.Add(ActionButton("+", ShowPalette, "quiet", "Arbeitsgegenstand suchen"));
+        ObjectTabs.Children.Add(ActionButton("+", ShowPalette, "quiet", W("FindWorkItem")));
     }
 
     /// <summary>Insertion line suggested by the current work item; rooms fall back to their first device/line.</summary>
@@ -415,18 +416,18 @@ public partial class WorkbenchWindow : Window
             var tab = Workspace.ActiveTab;
             _renderedTab = tab;
             var tool = tab?.Target.Kind == "tool";
-            EditorTitle.Text = tab?.Title ?? "Willkommen bei BusChord";
+            EditorTitle.Text = tab?.Title ?? W("Welcome");
             var subject = tab is null ? null : WorkbenchProjection.Resolve(ViewModel.Project, tab.Target);
             var context = subject switch
             {
-                SpaceNode space => "Gebäude / " + (space.Parent?.Path ?? space.Name),
-                DeviceInstance device => "Gerät / " + device.Address,
-                Line => "Topologie", GroupAddressEntry => "Gruppenadressen", Project => "Projektübersicht", _ => "Projektwerkzeuge"
+                SpaceNode space => W("BreadcrumbBuilding", space.Parent?.Path ?? space.Name),
+                DeviceInstance device => W("BreadcrumbDevice", device.Address),
+                Line => W("PerspectiveTopology"), GroupAddressEntry => W("GroupAddresses"), Project => W("ProjectOverview"), _ => W("ProjectTools")
             };
-            Breadcrumb.Text = $"{ViewModel.Project?.Name ?? "Projekt"}  ›  {context}";
-            Subtitle.Text = tab is null ? "Ein Projekt öffnen, neu anlegen oder den Produktkatalog durchsuchen."
-                : tool ? "Projektwerkzeug · native Ansicht" : ViewModel.Project is { } p
-                    ? $"{WorkbenchProjection.Devices(p, tab.Target).Count} Geräte · Einbauort und Wirkung getrennt" : "";
+            Breadcrumb.Text = $"{ViewModel.Project?.Name ?? W("Project")}  ›  {context}";
+            Subtitle.Text = tab is null ? W("WelcomeHint")
+                : tool ? W("ToolSubtitle") : ViewModel.Project is { } p
+                    ? W("ScopeSummary", WorkbenchProjection.Devices(p, tab.Target).Count()) : "";
             Representations.IsVisible = tab is not null && !tool;
             var workItem = tab is not null && !tool && tab.Target.Kind is not "project";
             WatchButton.IsVisible = AddDeviceButton.IsVisible = InspectorButton.IsVisible = workItem;
@@ -446,7 +447,7 @@ public partial class WorkbenchWindow : Window
                 ObjectTable.ItemsSource = rows;
                 if (ObjectTable.SelectedItems is { } selection)
                     foreach (var row in rows.Where(r => tab.SelectedObjectIds.Contains(r.Key))) selection.Add(row);
-                TableFootnote.Text = $"{rows.Count(r => r.Object is not null)} sichtbare Objekte · DPT/Länge/Flags nur bei belegter Definition";
+                TableFootnote.Text = W("TableFootnote", rows.Count(r => r.Object is not null));
                 var current = CurrentDevice();
                 if (ParametersHost.IsVisible)
                 {
@@ -478,9 +479,9 @@ public partial class WorkbenchWindow : Window
             else
             {
                 var start = new StackPanel { Spacing = 12 };
-                start.Children.Add(ActionButton("Projekt öffnen …", () => _ = GuardAsync(OpenProjectAsync), "primary"));
-                start.Children.Add(ActionButton("Neues Projekt …", () => _ = GuardAsync(NewProjectAsync)));
-                start.Children.Add(ActionButton("Gerät aus Katalog …", ShowCatalog));
+                start.Children.Add(ActionButton(W("OpenProjectEllipsis"), () => _ = GuardAsync(OpenProjectAsync), "primary"));
+                start.Children.Add(ActionButton(W("NewProjectEllipsis"), () => _ = GuardAsync(NewProjectAsync)));
+                start.Children.Add(ActionButton(W("DeviceFromCatalogEllipsis"), ShowCatalog));
                 foreach (var recent in ViewModel.RecentProjects)
                     start.Children.Add(ActionButton(recent.Name, () => _ = OpenPathAsync(recent.Path), "quiet"));
                 ToolPageHost.Content = start;
@@ -502,7 +503,7 @@ public partial class WorkbenchWindow : Window
             CaptureNavigatorScroll();
             if (!expanded.Add(node.Key)) expanded.Remove(node.Key);
             RefreshNavigation();
-        }, "quiet", "Auf-/zuklappen: " + node.Name);
+        }, "quiet", W("ExpandCollapse", node.Name));
         expand.IsEnabled = node.Children.Count > 0; expand.Padding = new(0);
         grid.Children.Add(expand);
         var label = Label(node.Name); label.FontSize = 11; Grid.SetColumn(label, 1); grid.Children.Add(label);
@@ -515,8 +516,9 @@ public partial class WorkbenchWindow : Window
     {
         var grid = new Grid { ColumnDefinitions = new("*,80,50,50,170"), Height = 32, Margin = new(0, 0, 12, 0) };
         AutomationProperties.SetName(grid, row.Object is null
-            ? $"{row.Name}, {row.Address}{(row.External ? ", externer Kanal" : "")}"
-            : $"{row.Name}, Nummer {row.Address}, DPT {row.Dpt ?? "unbekannt"}, {row.Bits?.ToString() ?? "unbekannte"} Bit, Flags {row.Flags ?? "unbekannt"}, {row.Links}");
+            ? $"{row.Name}, {row.Address}{(row.External ? W("ExternalChannelSuffix") : "")}"
+            : W("RowDescription", row.Name, row.Address, row.Dpt ?? W("Unknown"),
+                row.Bits is { } bitCount ? W("BitsValue", bitCount) : W("UnknownBits"), row.Flags ?? W("Unknown"), row.Links));
         if (row.Kind == "device") grid.Classes.Add("wb-device");
         if (row.Kind is "channel" or "group") grid.Classes.Add("wb-channel");
         var name = new Grid { ColumnDefinitions = new("22,Auto,*"), Margin = new(4 + row.Depth * 12, 0, 6, 0) };
@@ -528,7 +530,7 @@ public partial class WorkbenchWindow : Window
                 var key = row.Kind == "device" ? row.Device.Id : row.Key;
                 if (!t.CollapsedDeviceIds.Add(key)) t.CollapsedDeviceIds.Remove(key);
                 CaptureScroll(); RefreshEditor();
-            }, "quiet", "Auf-/zuklappen: " + row.Name);
+            }, "quiet", W("ExpandCollapse", row.Name));
             expand.Padding = new(0); name.Children.Add(expand);
         }
         var address = Label(row.Address); address.FontSize = 10; address.Classes.Add("wb-subtle"); address.Margin = new(0, 0, 9, 0); Grid.SetColumn(address, 1); name.Children.Add(address);
@@ -536,21 +538,21 @@ public partial class WorkbenchWindow : Window
         Grid.SetColumn(text, 2); name.Children.Add(text); grid.Children.Add(name);
         if (row.Object is not null)
         {
-            var values = new[] { row.Dpt ?? "—", row.Bits is { } bits ? bits + " Bit" : "—", row.Flags ?? "—" };
+            var values = new[] { row.Dpt ?? "—", row.Bits is { } bits ? W("BitsValue", bits) : "—", row.Flags ?? "—" };
             for (var i = 0; i < 3; i++)
             {
                 var value = Label(values[i]); value.FontSize = 10; value.Classes.Add("wb-muted");
                 Grid.SetColumn(value, i + 1); grid.Children.Add(value);
             }
-            var links = Label(row.Links.Length > 0 ? row.Links : "Keine Zuordnung"); links.FontSize = 10;
+            var links = Label(row.Links.Length > 0 ? row.Links : W("NoLinks")); links.FontSize = 10;
             links.Classes.Add(row.Links.Length > 0 ? "wb-accent" : "wb-subtle");
             Grid.SetColumn(links, 4); grid.Children.Add(links); ToolTip.SetTip(links, row.LinkDetails);
-            if (!row.Active) { text.Classes.Add("wb-muted"); ToolTip.SetTip(text, row.Name + " · inaktiv"); }
+            if (!row.Active) { text.Classes.Add("wb-muted"); ToolTip.SetTip(text, row.Name + W("InactiveSuffix")); }
             if (row.External) text.Classes.Add("wb-success");
         }
         else if (row.External)
         {
-            var external = Label("externer Kanal"); external.FontSize = 9; external.Classes.Add("wb-success");
+            var external = Label(W("ExternalChannel")); external.FontSize = 9; external.Classes.Add("wb-success");
             Grid.SetColumn(external, 1); grid.Children.Add(external);
         }
         ToolTip.SetTip(text, row.Name);
@@ -621,40 +623,42 @@ public partial class WorkbenchWindow : Window
             ? WorkbenchProjection.Rows(p, tab).Where(r => tab.SelectedObjectIds.Contains(r.Key)).ToList() : [];
         if (selected.Count > 1)
         {
-            InspectorBody.Children.Add(Label($"{selected.Count} Zeilen ausgewählt"));
-            InspectorBody.Children.Add(Note("Die Mehrfachauswahl gilt nur für diesen Arbeitsgegenstand."));
+            InspectorBody.Children.Add(Label(W("RowsSelected", selected.Count)));
+            InspectorBody.Children.Add(Note(W("MultiSelectionNote")));
             return;
         }
         var current = CurrentDevice();
         if (selected.FirstOrDefault()?.Object is { } obj && current is not null)
         {
             InspectorBody.Children.Add(Label($"#{obj.Number} · {obj.Text ?? obj.Id}"));
-            InspectorBody.Children.Add(Note($"Gerät: {current.AddressText} · {current.Name}\nObjekt-ID: {obj.Id}\nDPT: {selected.First().Dpt ?? "unbekannt"} · Länge: {selected.First().Bits?.ToString() ?? "unbekannt"} Bit · Flags: {selected.First().Flags ?? "unbekannt"}"));
+            InspectorBody.Children.Add(Note(W("InspectorObject", current.AddressText, current.Name, obj.Id,
+                selected.First().Dpt ?? W("Unknown"), selected.First().Bits is { } bits ? W("BitsValue", bits) : W("UnknownBits"),
+                selected.First().Flags ?? W("Unknown"))));
             var sendingGroup = Knx.Workbench.WorkbenchProject.Metadata(ViewModel.Project!, new(current.Device.Id, obj.Id))?.SendingGroupId;
             foreach (var id in obj.Links.ToArray())
             {
                 var ga = ViewModel.Project is { } project ? ProjectQuery.GroupAddresses(project).FirstOrDefault(g => g.Id == id) : null;
                 var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
-                row.Children.Add(ga is null ? Note(id + " · nicht auflösbar")
-                    : ActionButton($"{ga.Address} · {ga.Name}" + (sendingGroup == id ? "  · sendend" : ""), () => OpenTarget(new("ga", ga.Id)), "quiet"));
+                row.Children.Add(ga is null ? Note(W("Unresolved", id))
+                    : ActionButton($"{ga.Address} · {ga.Name}" + (sendingGroup == id ? W("SendingSuffix") : ""), () => OpenTarget(new("ga", ga.Id)), "quiet"));
                 if (ga is not null)
                 {
-                    row.Children.Add(ActionButton("Als Sendeadresse", () =>
+                    row.Children.Add(ActionButton(W("SetSendingAddress"), () =>
                     {
                         string? error = null;
-                        ViewModel.Edit($"Sendeadresse {ga.Address}", p =>
+                        ViewModel.Edit(W("EditSendingAddress", ga.Address), p =>
                         {
                             var result = Knx.Workbench.WorkbenchProject.SetSending(p, new(current.Device.Id, obj.Id), ga.Id);
                             if (!result.Ok) error = result.Errors.FirstOrDefault()?.Reason;
                         });
                         if (error is not null) ViewModel.Status = error;
                         RefreshWorkspace();
-                    }, "quiet", "Sendeadresse ausdrücklich wählen"));
+                    }, "quiet", W("SetSendingTip")));
                 }
-                row.Children.Add(ActionButton("Entfernen", () =>
+                row.Children.Add(ActionButton(W("Remove"), () =>
                 {
                     string? warning = null;
-                    ViewModel.Edit($"Zuordnung {id} entfernen", p =>
+                    ViewModel.Edit(W("EditRemoveLink", id), p =>
                     {
                         var result = Knx.Workbench.WorkbenchProject.RemoveLink(p, new(current.Device.Id, obj.Id), id);
                         warning = result.Warnings.FirstOrDefault();
@@ -664,41 +668,41 @@ public partial class WorkbenchWindow : Window
                 }, "quiet"));
                 InspectorBody.Children.Add(row);
             }
-            InspectorBody.Children.Add(ActionButton("Weitere Zuordnungen …", () => {
+            InspectorBody.Children.Add(ActionButton(W("MoreLinks"), () => {
                 if (Workspace.ActiveTab is { } tab)
                 {
                     tab.SelectedObjectIds.Clear(); tab.SelectedObjectIds.Add(WorkbenchProjection.ObjectKey(current.Device, obj));
                 }
                 ShowBatchLinkDialog();
             }));
-            InspectorBody.Children.Add(Note("Sendezuordnung ist unabhängig vom T-Flag; beim Entfernen wird keine Ersatzadresse still gewählt."));
+            InspectorBody.Children.Add(Note(W("SendingNote")));
         }
         else if (current is not null && !(selected.Count == 0 && tab?.Target.Kind == "ga"))
         {
             InspectorBody.Children.Add(Label(current.Name));
             var name = new TextBox { Text = current.Name };
-            InspectorBody.Children.Add(Note("Bezeichnung")); InspectorBody.Children.Add(name);
+            InspectorBody.Children.Add(Note(W("NameLabel"))); InspectorBody.Children.Add(name);
             var application = current.Device.Hardware2ProgramRefId
                 ?? ViewModel.Project?.Workbench.Devices.GetValueOrDefault(current.Device.Id)?.Application
                 ?? "-";
-            InspectorBody.Children.Add(Note($"Adresse: {current.AddressText}\nProdukt: {current.Device.ProductRefId}\nApplikation: {application}"));
-            InspectorBody.Children.Add(ActionButton("Eigenschaften übernehmen", () =>
+            InspectorBody.Children.Add(Note(W("DeviceFacts", current.AddressText, current.Device.ProductRefId, application)));
+            InspectorBody.Children.Add(ActionButton(W("ApplyProperties"), () =>
             {
                 ViewModel.SelectedDevice = current; ViewModel.EditName = name.Text ?? ""; ViewModel.ApplyDetailsEdit(); RefreshWorkspace();
             }, "primary"));
-            InspectorBody.Children.Add(ActionButton("In Topologie zeigen", () => { Navigate("topology"); NavSearch.Text = current.AddressText; }));
-            InspectorBody.Children.Add(ActionButton("Parameter öffnen", () => OpenTarget(new("device", current.Device.Id), "params"), "quiet"));
+            InspectorBody.Children.Add(ActionButton(W("ShowInTopology"), () => { Navigate("topology"); NavSearch.Text = current.AddressText; }));
+            InspectorBody.Children.Add(ActionButton(W("OpenParameters"), () => OpenTarget(new("device", current.Device.Id), "params"), "quiet"));
         }
         else if (tab?.Target.Kind == "ga" && WorkbenchProjection.Resolve(ViewModel.Project, tab.Target) is GroupAddressEntry ga)
         {
             var name = new TextBox { Text = ga.Name }; var dpt = new TextBox { Text = ga.DatapointType };
             InspectorBody.Children.Add(Note(ga.Address.ToString())); InspectorBody.Children.Add(name); InspectorBody.Children.Add(dpt);
-            InspectorBody.Children.Add(ActionButton("Übernehmen", () =>
+            InspectorBody.Children.Add(ActionButton(W("Apply"), () =>
             {
                 ViewModel.RenameGroupAddress(new(ga.Address, ga.Name, ga.DatapointType, ga.Id), name.Text ?? "", dpt.Text); RefreshWorkspace();
             }, "primary"));
         }
-        else InspectorBody.Children.Add(Note("Gerät oder Kommunikationsobjekt auswählen, um Eigenschaften zu sehen."));
+        else InspectorBody.Children.Add(Note(W("InspectorEmpty")));
     }
 
     public void ShowTool(string tool)
@@ -708,10 +712,7 @@ public partial class WorkbenchWindow : Window
         Workspace.ActiveTool = tool;
         Workspace.ToolsVisible = true;
         foreach (var button in ToolTabs.Children.OfType<Button>())
-            button.Classes.Set("active", button.Content switch
-            {
-                "Monitor" => tool == "monitor", "Programmierung" => tool == "programming", "Prüfmeldungen" => tool == "problems", _ => false
-            });
+            button.Classes.Set("active", Equals(button.Tag, tool));
         ToolHost.Content = tool switch
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), _ => CreateMonitorView()
@@ -721,12 +722,12 @@ public partial class WorkbenchWindow : Window
     private Control CreateRelationsView()
     {
         if (ViewModel.Project is not { } project || Workspace.ActiveTab is not { } tab)
-            return Note("Zuerst ein Gerät oder eine Gruppenadresse öffnen.");
+            return Note(W("RelationsNeedTarget"));
         var panel = new StackPanel { Spacing = 8, Margin = new(24, 12) };
         var rows = WorkbenchProjection.Rows(project, tab).Where(r => r.Object is not null).ToList();
-        if (rows.Count == 0) { panel.Children.Add(Note("Keine Kommunikationsobjekte im aktuellen Ausschnitt.")); return panel; }
-        panel.Children.Add(Label("Zuordnungen dieses Arbeitsgegenstands"));
-        panel.Children.Add(Note("DPT, Länge und Secure-Fähigkeit werden vor jeder Änderung geprüft. Die Sendeadresse wird ausdrücklich im Inspektor gewählt."));
+        if (rows.Count == 0) { panel.Children.Add(Note(W("RelationsEmpty"))); return panel; }
+        panel.Children.Add(Label(W("RelationsTitle")));
+        panel.Children.Add(Note(W("RelationsNote")));
         foreach (var row in rows)
         {
             var card = new Border
@@ -735,27 +736,27 @@ public partial class WorkbenchWindow : Window
                 BorderBrush = Avalonia.Media.Brushes.Transparent
             };
             var stack = new StackPanel { Spacing = 4 };
-            stack.Children.Add(Label($"#{row.Object!.Number} · {row.Name} · DPT {row.Dpt ?? "unbekannt"}"));
+            stack.Children.Add(Label(W("RelationsRow", row.Object!.Number, row.Name, row.Dpt ?? W("Unknown"))));
             var links = row.Object.Links.ToList();
-            if (links.Count == 0) stack.Children.Add(Note("Keine Zuordnung."));
+            if (links.Count == 0) stack.Children.Add(Note(W("NoLinksDot")));
             foreach (var id in links)
             {
                 var ga = ProjectQuery.GroupAddresses(project).FirstOrDefault(g => g.Id == id);
                 var sending = WorkbenchProject.Metadata(project, new(row.Device.Id, row.Object.Id))?.SendingGroupId == id;
                 var line = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
-                line.Children.Add(ga is null ? Note(id) : ActionButton($"{ga.Address} · {ga.Name}" + (sending ? "  · sendend" : ""),
+                line.Children.Add(ga is null ? Note(id) : ActionButton($"{ga.Address} · {ga.Name}" + (sending ? W("SendingSuffix") : ""),
                     () => OpenTarget(new("ga", id)), "quiet"));
-                line.Children.Add(ActionButton("Entfernen", () =>
+                line.Children.Add(ActionButton(W("Remove"), () =>
                 {
                     string? warning = null;
-                    ViewModel.Edit($"Zuordnung {id} entfernen", p =>
+                    ViewModel.Edit(W("EditRemoveLink", id), p =>
                         warning = WorkbenchProject.RemoveLink(p, new(row.Device.Id, row.Object.Id), id).Warnings.FirstOrDefault());
                     if (warning is not null) ViewModel.Status = warning;
                     RefreshWorkspace();
                 }, "quiet"));
                 stack.Children.Add(line);
             }
-            stack.Children.Add(ActionButton("Zuordnungen bearbeiten …", () =>
+            stack.Children.Add(ActionButton(W("EditLinksEllipsis"), () =>
             {
                 if (Workspace.ActiveTab is { } active)
                 {
@@ -773,6 +774,7 @@ public partial class WorkbenchWindow : Window
     private Control CreateProblemsView()
     {
         ViewModel.RunCheck();
+        ViewModel.Status = ViewModel.Findings.Count == 0 ? W("CheckClean") : W("CheckFindings", ViewModel.Findings.Count);
         var list = new ListBox { ItemsSource = ViewModel.Findings, Background = Brushes.Transparent };
         list.ItemTemplate = new FuncDataTemplate<CheckFinding>((f, _) => Note(f is null ? "" : $"{f.Severity} · {f.Code} · {f.Path}\n{f.Message}"));
         return list;
@@ -782,28 +784,28 @@ public partial class WorkbenchWindow : Window
         EnsureSessions();
         var panel = new DockPanel();
         if (_sessions is not { } sessions)
-            return Note("Zuerst ein Projekt öffnen; Monitorsitzungen gehören zum Projekt.");
+            return Note(W("MonitorNeedsProject"));
         var toolbar = new WrapPanel { Margin = new(12, 6) };
         var live = new TextBlock { FontSize = 11, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new(12, 0) };
         void RefreshState()
         {
             var running = sessions.Monitor.IsRunning;
             live.Text = running
-                ? $"● Aufzeichnung läuft · {sessions.Monitor.RecordedCount} vollständig · {sessions.Monitor.FilteredRows.Count} sichtbar"
-                : $"■ Gestoppt · {sessions.Monitor.RecordedCount} aufgezeichnet";
+                ? W("MonitorRunning", sessions.Monitor.RecordedCount, sessions.Monitor.FilteredRows.Count)
+                : W("MonitorStopped", sessions.Monitor.RecordedCount);
             live.Classes.Set("wb-success", running);
             live.Classes.Set("wb-subtle", !running);
         }
-        toolbar.Children.Add(ActionButton("Stoppen", () => { sessions.Monitor.Stop(); RefreshState(); }));
-        toolbar.Children.Add(ActionButton("Anzeige leeren", () => { sessions.Monitor.ClearDisplay(); RefreshState(); }, "quiet"));
-        var mode = new ComboBox { ItemsSource = new[] { "Gruppenmonitor", "Busmonitor" }, SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0, MinWidth = 130 };
+        toolbar.Children.Add(ActionButton(W("Stop"), () => { sessions.Monitor.Stop(); RefreshState(); }));
+        toolbar.Children.Add(ActionButton(W("ClearDisplay"), () => { sessions.Monitor.ClearDisplay(); RefreshState(); }, "quiet"));
+        var mode = new ComboBox { ItemsSource = new[] { W("GroupMonitor"), W("BusMonitor") }, SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0, MinWidth = 130 };
         mode.SelectionChanged += (_, _) =>
         {
-            if (sessions.Monitor.IsRunning) { mode.SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0; ViewModel.Status = "Monitorart nur im gestoppten Zustand wechseln."; return; }
+            if (sessions.Monitor.IsRunning) { mode.SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0; ViewModel.Status = W("MonitorModeLocked"); return; }
             sessions.Monitor.Configure(mode.SelectedIndex == 1 ? WorkbenchMonitorMode.Bus : WorkbenchMonitorMode.Group, SessionOrigin.Demo, "demo-ip");
         };
         toolbar.Children.Add(mode);
-        toolbar.Children.Add(ActionButton("Starten", () =>
+        toolbar.Children.Add(ActionButton(W("Start"), () =>
         {
             try
             {
@@ -819,7 +821,7 @@ public partial class WorkbenchWindow : Window
             catch (Exception ex) { ViewModel.Status = ex.Message; }
         }, "primary"));
         var filter = new ComboBox { MinWidth = 190, SelectedIndex = 0 };
-        filter.ItemsSource = new[] { "Alle Telegramme", "Ganzes Projekt", "Aktueller Arbeitsgegenstand", "Auswahl folgen" };
+        filter.ItemsSource = new[] { W("AllTelegrams"), W("WholeProject"), W("CurrentWorkItem"), W("FollowSelection") };
         filter.SelectedIndex = _monitorScope switch
         {
             MonitorScope.Project => 1, MonitorScope.Room or MonitorScope.GroupAddress or MonitorScope.Device => 2, MonitorScope.ComObject => 3, _ => 0
@@ -848,16 +850,16 @@ public partial class WorkbenchWindow : Window
             catch (Exception ex) { ViewModel.Status = ex.Message; }
         };
         toolbar.Children.Add(filter);
-        toolbar.Children.Add(ActionButton("CSV gefiltert …", () => _ = GuardAsync(ExportFilteredMonitorAsync)));
-        toolbar.Children.Add(ActionButton("Voll-CSV …", () => _ = GuardAsync(ExportFullMonitorAsync), "quiet"));
+        toolbar.Children.Add(ActionButton(W("ExportFilteredCsv"), () => _ = GuardAsync(ExportFilteredMonitorAsync)));
+        toolbar.Children.Add(ActionButton(W("ExportFullCsv"), () => _ = GuardAsync(ExportFullMonitorAsync), "quiet"));
         toolbar.Children.Add(live);
-        var demoBadge = Label("DEMO-Simulation · keine reale Busaufzeichnung"); demoBadge.FontSize = 10;
+        var demoBadge = Label(W("MonitorDemoNote")); demoBadge.FontSize = 10;
         demoBadge.Classes.Add("wb-warning");
         toolbar.Children.Add(demoBadge);
         DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top); panel.Children.Add(toolbar);
         var header = new Grid { ColumnDefinitions = new("70,80,120,90,50,70,*"), Height = 28 };
         header.Classes.Add("wb-table-header");
-        var headings = new[] { "Zeit", "Quelle", "Ziel / Gruppenadresse", "Dienst", "DPT", "Wert", "Herkunft" };
+        var headings = new[] { W("ColumnTime"), W("ColumnSource"), W("ColumnDestination"), W("ColumnService"), "DPT", W("ColumnValue"), W("ColumnOrigin") };
         for (var i = 0; i < headings.Length; i++)
         {
             var text = Label(headings[i]); text.FontSize = 9; text.Classes.Add("wb-muted"); text.Margin = new(6, 0, 0, 0);
@@ -865,7 +867,7 @@ public partial class WorkbenchWindow : Window
         }
         DockPanel.SetDock(header, Avalonia.Controls.Dock.Top); panel.Children.Add(header);
         var tablePanel = new Grid();
-        var empty = new TextBlock { Text = "Noch keine Aufzeichnung. Monitor starten.", Classes = { "wb-muted" }, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+        var empty = new TextBlock { Text = W("MonitorEmpty"), Classes = { "wb-muted" }, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
         var list = new ListBox { ItemsSource = sessions.Monitor.FilteredRows, Background = Brushes.Transparent };
         list.ItemTemplate = new FuncDataTemplate<WorkbenchTelegram>((row, _) =>
         {
@@ -897,47 +899,47 @@ public partial class WorkbenchWindow : Window
     private Control CreateProgrammingView()
     {
         EnsureSessions();
-        if (_sessions is not { } sessions) return Note("Zuerst ein Projekt öffnen.");
+        if (_sessions is not { } sessions) return Note(W("ProgrammingNeedsProject"));
         var panel = new DockPanel();
         var toolbar = new WrapPanel { Margin = new(12, 6) };
         var devices = ViewModel.Project is { } project ? ViewModel.Devices.ToList() : [];
         var device = new ComboBox { ItemsSource = devices, MinWidth = 250, SelectedIndex = devices.Count > 0 ? 0 : -1 };
         device.ItemTemplate = new FuncDataTemplate<DeviceRow>((d, _) => Label(d is null ? "" : $"{d.AddressText} · {d.Name}"));
         toolbar.Children.Add(device);
-        toolbar.Children.Add(ActionButton("Auftrag einreihen", () =>
+        toolbar.Children.Add(ActionButton(W("EnqueueJob"), () =>
         {
-            if (device.SelectedItem is not DeviceRow row) { ViewModel.Status = "Gerät wählen."; return; }
+            if (device.SelectedItem is not DeviceRow row) { ViewModel.Status = W("SelectDevice"); return; }
             try
             {
                 var job = sessions.Programming.Enqueue(row.Device.Id, "full", "demo-ip");
-                ViewModel.Status = $"Demo-Auftrag für {row.Name} eingereiht · Gerätestand eingefroren";
+                ViewModel.Status = W("JobQueued", row.Name);
                 job.PropertyChanged += (_, _) => { };
             }
             catch (Exception ex) { ViewModel.Status = ex.Message; }
         }, "primary"));
-        toolbar.Children.Add(ActionButton("Ausführen", () => _ = GuardAsync(async () =>
+        toolbar.Children.Add(ActionButton(W("Run"), () => _ = GuardAsync(async () =>
         {
             try { await sessions.Programming.RunAsync(); }
-            catch (Exception ex) { ViewModel.Status = "Programmierung: " + ex.Message; }
+            catch (Exception ex) { ViewModel.Status = W("ProgrammingFailed", ex.Message); }
         })));
-        toolbar.Children.Add(ActionButton("Fehlgeschlagene wiederholen", () =>
+        toolbar.Children.Add(ActionButton(W("RetryFailed"), () =>
         {
             try
             {
                 foreach (var job in sessions.Programming.Jobs.Where(j => j.Status == ProgrammingJobStatus.Failed).ToArray())
                     sessions.Programming.Retry(job);
-                ViewModel.Status = "Fehlgeschlagene Demo-Aufträge erneut eingereiht.";
+                ViewModel.Status = W("JobsRequeued");
             }
             catch (Exception ex) { ViewModel.Status = ex.Message; }
         }, "quiet"));
-        toolbar.Children.Add(Note("SIMULATION · kein realer Download und keine Geräteprogrammierung"));
+        toolbar.Children.Add(Note(W("ProgrammingDemoNote")));
         DockPanel.SetDock(toolbar, Avalonia.Controls.Dock.Top); panel.Children.Add(toolbar);
         var needing = devices.Count(d => sessions.Programming.NeedsProgramming(d.Device.Id));
-        var needNote = Note($"{needing} Gerät(e) mit Programmierbedarf gegenüber dem zuletzt simulierten Erfolgsstand.");
+        var needNote = Note(W("ProgrammingNeed", needing));
         DockPanel.SetDock(needNote, Avalonia.Controls.Dock.Top); panel.Children.Add(needNote);
         var header = new Grid { ColumnDefinitions = new("110,220,100,90,*"), Height = 28 };
         header.Classes.Add("wb-table-header");
-        var headings = new[] { "Adresse", "Gerät", "Status", "Auftrag", "Hinweis" };
+        var headings = new[] { W("ColumnAddress"), W("ColumnDevice"), "Status", W("ColumnJob"), W("ColumnHint") };
         for (var i = 0; i < headings.Length; i++)
         {
             var text = Label(headings[i]); text.FontSize = 9; text.Classes.Add("wb-muted"); text.Margin = new(6, 0, 0, 0);
@@ -979,7 +981,7 @@ public partial class WorkbenchWindow : Window
         if (!demo) return;
         _parameters.IsVisible = false;
         _modeScroll.IsVisible = true;
-        _modePanel.Children.Add(Label("Demo-Applikation · Änderungen erst nach Übernehmen"));
+        _modePanel.Children.Add(Label(W("DemoApplicationNote")));
         var editors = new Dictionary<string, Control>(StringComparer.Ordinal);
         foreach (var (key, raw) in selected.Device.ParameterValues
                      .OrderBy(p => p.Key switch { "mode" => 0, "led" => 1, "interface" => 2, _ => 3 })
@@ -988,20 +990,20 @@ public partial class WorkbenchWindow : Window
             var row = new StackPanel { Spacing = 4 };
             row.Children.Add(Label(key switch
             {
-                "mode" => "Funktion", "led" => "Status-LED", "interface" => "Schnittstelle",
-                "debounce" => "Entprellzeit (ms)", "holdTime" => "Haltezeit", "brightnessThreshold" => "Helligkeitsschwelle",
-                "setpoint" => "Sollwert", "deadband" => "Totband", _ => key
+                "mode" => W("Function"), "led" => W("StatusLed"), "interface" => W("Interface"),
+                "debounce" => W("DebounceMs"), "holdTime" => W("HoldTime"), "brightnessThreshold" => W("BrightnessThreshold"),
+                "setpoint" => W("Setpoint"), "deadband" => W("Deadband"), _ => key
             }));
             Control editor;
             if (key == "mode")
             {
-                var box = new ComboBox { ItemsSource = new[] { "Schalten", "Schalten + Dimmen" } };
+                var box = new ComboBox { ItemsSource = new[] { W("SwitchMode"), W("SwitchDimMode") } };
                 box.SelectedIndex = Unquote(raw) == "dim" ? 1 : 0;
                 editor = box;
             }
             else if (key == "led")
             {
-                var box = new ComboBox { ItemsSource = new[] { "Über Rückmeldeobjekt", "Aus", "An" } };
+                var box = new ComboBox { ItemsSource = new[] { W("ViaFeedbackObject"), W("Off"), W("On") } };
                 box.SelectedIndex = Unquote(raw) switch { "off" => 1, "on" => 2, _ => 0 };
                 editor = box;
             }
@@ -1019,17 +1021,17 @@ public partial class WorkbenchWindow : Window
         {
             var result = WorkbenchProject.PreviewMode(project, selected.Device.Id, Mode());
             preview.Text = !result.Supported ? result.Reason
-                : result.Effects.Count == 0 ? "Keine Objektänderung; nur der Demo-Parameter wechselt."
-                : "Vorschau · noch nicht übernommen\n" + string.Join("\n", result.Effects.Select(e =>
+                : result.Effects.Count == 0 ? W("ModeNoChange")
+                : W("ModePreviewHeader") + string.Join("\n", result.Effects.Select(e =>
                 {
                     var links = e.RetainedGroupIds.Select(id => ProjectQuery.GroupAddresses(project).FirstOrDefault(g => g.Id == id))
                         .Where(g => g is not null).Select(g => g!.Address.ToString());
                     var ga = string.Join(", ", links);
-                    return $"{e.Key.ObjectRefId}: {(e.Active ? "aktiv" : "inaktiv")}{(ga.Length > 0 ? " · Links bleiben: " + ga : "")}";
+                    return $"{e.Key.ObjectRefId}: {(e.Active ? W("ActiveState") : W("InactiveState"))}{(ga.Length > 0 ? W("LinksRetained", ga) : "")}";
                 }));
         }
         _modePanel.Children.Add(preview);
-        var applyButton = ActionButton("Übernehmen", () =>
+        var applyButton = ActionButton(W("Apply"), () =>
         {
             var values = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var (key, control) in editors)
@@ -1047,19 +1049,19 @@ public partial class WorkbenchWindow : Window
                     ? System.Text.Json.JsonSerializer.Serialize(value) : value;
             }
             var mode = Mode();
-            ViewModel.Edit($"Demo-Parameter {selected.Name}", p =>
+            ViewModel.Edit(W("EditDemoParameters", selected.Name), p =>
             {
                 var device = ProjectQuery.DeviceList(p).FirstOrDefault(d => d.Id == selected.Device.Id);
                 if (device is null) return;
                 foreach (var (key, value) in values) device.ParameterValues[key] = value;
                 WorkbenchProject.ApplyMode(p, selected.Device.Id, mode);
             });
-            ViewModel.Status = "Demo-Parameter übernommen; bestehende Zuordnungen bleiben erhalten.";
+            ViewModel.Status = W("DemoParametersApplied");
             RefreshWorkspace();
         }, "primary");
         var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
         actions.Children.Add(applyButton);
-        actions.Children.Add(ActionButton("Auswirkungen prüfen", Review, "quiet"));
+        actions.Children.Add(ActionButton(W("ReviewEffects"), Review, "quiet"));
         _modePanel.Children.Add(actions);
     }
 
@@ -1069,7 +1071,7 @@ public partial class WorkbenchWindow : Window
         var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = "telegramme-gefiltert.csv", DefaultExtension = "csv" });
         if (file?.TryGetLocalPath() is not { } path) return;
         await File.WriteAllTextAsync(path, sessions.Monitor.ExportFilteredCsv());
-        ViewModel.Status = "Gefilterte Anzeige exportiert";
+        ViewModel.Status = W("FilteredExported");
     }
 
     private async Task ExportFullMonitorAsync()
@@ -1079,7 +1081,7 @@ public partial class WorkbenchWindow : Window
         if (file?.TryGetLocalPath() is not { } path) return;
         await using var stream = File.Create(path);
         sessions.Monitor.ExportFullCsv(stream);
-        ViewModel.Status = "Vollständige Aufzeichnung exportiert";
+        ViewModel.Status = W("FullExported");
     }
     private void ApplyLayout()
     {
@@ -1116,7 +1118,7 @@ public partial class WorkbenchWindow : Window
         if (Workspace.ToolsVisible && ToolHost.Content is null) ToolHost.Content = Workspace.ActiveTool switch
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), "monitor" => CreateMonitorView(),
-            _ => Note("Monitor, Programmierung oder Prüfmeldungen wählen.")
+            _ => Note(W("ToolPlaceholder"))
         };
     }
     public void SaveLayout(string path)
@@ -1170,7 +1172,7 @@ public partial class WorkbenchWindow : Window
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), _ => CreateMonitorView()
         };
-        var window = new Window { Title = Workspace.ActiveTool == "problems" ? "BusChord · Prüfmeldungen" : Workspace.ActiveTool == "programming" ? "BusChord · Programmierung" : "BusChord · Monitor", Width = 1000, Height = 380,
+        var window = new Window { Title = Workspace.ActiveTool == "problems" ? W("ProblemsWindowTitle") : Workspace.ActiveTool == "programming" ? W("ProgrammingWindowTitle") : W("MonitorWindowTitle"), Width = 1000, Height = 380,
             Content = content };
         _toolWindows.Add(window);
         window.Closed += (_, _) =>
@@ -1206,6 +1208,7 @@ public partial class WorkbenchWindow : Window
         }
         else if (e.Key == Key.Escape && Workspace.InspectorVisible) { Workspace.InspectorVisible = false; e.Handled = true; }
     }
+    private static string W(string key, params object[] args) => Localization.WorkbenchStrings.Get(key, args);
     private static TextBlock Label(string text) => new() { Text = text, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     private static TextBlock Note(string text) => new() { Text = text, FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new(0, 3), Classes = { "wb-muted" } };
     private static Button ActionButton(string text, Action action, string? style = null, string? accessibleName = null)

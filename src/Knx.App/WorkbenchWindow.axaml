@@ -1,5 +1,5 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:views="using:Knx.App.Views"
+        xmlns:views="using:Knx.App.Views" xmlns:loc="using:Knx.App.Localization"
         x:Class="Knx.App.WorkbenchWindow" Title="BusChord" Width="1440" Height="900"
         MinWidth="900" MinHeight="600" Background="{DynamicResource WbBackground}" FontFamily="Inter, Segoe UI" FontSize="12"
         Foreground="{DynamicResource WbText}" Icon="/Assets/brand/buschord-house-transparent-tile.ico">
@@ -40,25 +40,25 @@
           <TextBlock Text="BUSCHORD" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
         </StackPanel>
         <Menu x:Name="MainMenu" Grid.Column="1" VerticalAlignment="Center"/>
-        <Button Grid.Column="2" Content="⌕   Projekt durchsuchen                       Ctrl K" HorizontalAlignment="Center"
+        <Button Grid.Column="2" Content="{loc:Wb SearchProjectButton}" HorizontalAlignment="Center"
                 MinWidth="220" Classes="quiet" Click="OnPalette" Background="{DynamicResource WbBackground}"/>
         <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <TextBlock Text="OFFLINE" Foreground="{DynamicResource WbWarning}" FontSize="10" VerticalAlignment="Center"/>
-          <Button Content="Programmieren" Click="OnProgramming" Classes="primary"/>
+          <Button Content="{loc:Wb Programming}" Click="OnProgramming" Classes="primary"/>
         </StackPanel>
       </Grid>
     </Border>
     <Grid x:Name="Zones" Grid.Row="1" ColumnDefinitions="47,272,5,*,0,0">
       <Border Background="{DynamicResource WbRail}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,1,0">
-        <DockPanel><StackPanel x:Name="Rail" Spacing="5" Margin="5,10"/><Button DockPanel.Dock="Bottom" Content="?" Click="OnHelp" VerticalAlignment="Bottom" Classes="quiet" ToolTip.Tip="Bedienung und Grenzen"/></DockPanel>
+        <DockPanel><StackPanel x:Name="Rail" Spacing="5" Margin="5,10"/><Button DockPanel.Dock="Bottom" Content="?" Click="OnHelp" VerticalAlignment="Bottom" Classes="quiet" ToolTip.Tip="{loc:Wb HelpTip}"/></DockPanel>
       </Border>
       <Border x:Name="Navigator" Grid.Column="1" Background="{DynamicResource WbPanel}">
         <Grid RowDefinitions="Auto,Auto,Auto,*,30">
           <StackPanel Margin="15,14,10,10" Spacing="6"><TextBlock x:Name="ProjectName" FontWeight="SemiBold"/><TextBlock x:Name="ProjectSummary" Classes="muted"/></StackPanel>
           <UniformGrid Grid.Row="1" Columns="3" Margin="10,0,10,10" x:Name="Perspectives"/>
-          <TextBox x:Name="NavSearch" Grid.Row="2" PlaceholderText="Name, Adresse oder Objekt …" Margin="12,0,12,10" TextChanged="OnNavSearch"/>
+          <TextBox x:Name="NavSearch" Grid.Row="2" PlaceholderText="{loc:Wb NavSearchWatermark}" Margin="12,0,12,10" TextChanged="OnNavSearch"/>
           <ListBox x:Name="NavTree" Grid.Row="3" Background="Transparent" Margin="5,0" SelectionChanged="OnNavSelected"/>
-          <TextBlock Grid.Row="4" Text="Derselbe Projektstand in jeder Ansicht" Classes="muted" Margin="12,8,0,0"/>
+          <TextBlock Grid.Row="4" Text="{loc:Wb NavFootnote}" Classes="muted" Margin="12,8,0,0"/>
         </Grid>
       </Border>
       <GridSplitter x:Name="NavSplitter" Grid.Column="2" Width="5" Background="{DynamicResource WbLine}" ResizeDirection="Columns"/>
@@ -69,20 +69,20 @@
             <TextBlock x:Name="Breadcrumb" Classes="muted"/>
             <Grid ColumnDefinitions="*,Auto"><TextBlock x:Name="EditorTitle" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
               <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                <Button x:Name="WatchButton" Content="Beobachten" Click="OnWatch" Classes="quiet"/>
-                <Button x:Name="AddDeviceButton" Content="+ Gerät" Click="OnAddDevice" Classes="quiet"/>
-                <Button x:Name="InspectorButton" Content="Eigenschaften" Click="OnInspector" Classes="quiet"/>
+                <Button x:Name="WatchButton" Content="{loc:Wb Watch}" Click="OnWatch" Classes="quiet"/>
+                <Button x:Name="AddDeviceButton" Content="{loc:Wb AddDevice}" Click="OnAddDevice" Classes="quiet"/>
+                <Button x:Name="InspectorButton" Content="{loc:Wb Properties}" Click="OnInspector" Classes="quiet"/>
               </StackPanel></Grid>
             <TextBlock x:Name="Subtitle" Classes="muted" TextWrapping="Wrap" Margin="0,0,0,6"/>
             <StackPanel x:Name="Representations" Orientation="Horizontal" Spacing="20"/>
           </StackPanel>
           <Grid x:Name="ObjectToolbar" Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto,170,Auto" Margin="24,9">
-            <Button Content="Verknüpfen" Click="OnLinks"/>
-            <Button Grid.Column="1" Content="Eigenschaften" Classes="quiet" Click="OnInspector"/>
-            <CheckBox x:Name="RelatedBox" Grid.Column="3" Content="Externe Kanäle" FontSize="11" IsCheckedChanged="OnRelated" Margin="8,0"/>
-            <CheckBox x:Name="Unlinked" Grid.Column="4" Content="Ohne GA" FontSize="11" IsCheckedChanged="OnUnlinked" Margin="8,0"/>
-            <TextBox x:Name="ObjectSearch" Grid.Column="5" PlaceholderText="Objekte filtern …" TextChanged="OnObjectSearch"/>
-            <Button Grid.Column="6" Content="Alle" FontSize="10" Padding="6,0" ToolTip.Tip="Alles auf-/zuklappen" AutomationProperties.Name="Alle Geräte auf- oder zuklappen" Click="OnExpandAll" Classes="quiet"/>
+            <Button Content="{loc:Wb LinkObjects}" Click="OnLinks"/>
+            <Button Grid.Column="1" Content="{loc:Wb Properties}" Classes="quiet" Click="OnInspector"/>
+            <CheckBox x:Name="RelatedBox" Grid.Column="3" Content="{loc:Wb ExternalChannels}" FontSize="11" IsCheckedChanged="OnRelated" Margin="8,0"/>
+            <CheckBox x:Name="Unlinked" Grid.Column="4" Content="{loc:Wb WithoutGroupAddress}" FontSize="11" IsCheckedChanged="OnUnlinked" Margin="8,0"/>
+            <TextBox x:Name="ObjectSearch" Grid.Column="5" PlaceholderText="{loc:Wb FilterObjects}" TextChanged="OnObjectSearch"/>
+            <Button Grid.Column="6" Content="{loc:Wb ExpandAll}" FontSize="10" Padding="6,0" ToolTip.Tip="{loc:Wb ExpandCollapseAll}" AutomationProperties.Name="{loc:Wb ExpandCollapseAllDevices}" Click="OnExpandAll" Classes="quiet"/>
           </Grid>
           <Grid Grid.Row="2">
             <ScrollViewer x:Name="TableViewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
@@ -90,9 +90,9 @@
               <Border Grid.Row="0" Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}"
                       BorderThickness="0,0,0,1" Margin="0,0,12,0">
                 <Grid ColumnDefinitions="*,80,50,50,170">
-                  <TextBlock Text="Objekt / Funktion" Margin="8,8" Classes="muted"/><TextBlock Grid.Column="1" Text="DPT" Margin="0,8" Classes="muted"/>
-                  <TextBlock Grid.Column="2" Text="Länge" Margin="0,8" Classes="muted"/><TextBlock Grid.Column="3" Text="Flags" Margin="0,8" Classes="muted"/>
-                  <TextBlock Grid.Column="4" Text="Gruppenadressen" Margin="0,8" Classes="muted"/>
+                  <TextBlock Text="{loc:Wb ColumnObjectFunction}" Margin="8,8" Classes="muted"/><TextBlock Grid.Column="1" Text="DPT" Margin="0,8" Classes="muted"/>
+                  <TextBlock Grid.Column="2" Text="{loc:Wb ColumnLength}" Margin="0,8" Classes="muted"/><TextBlock Grid.Column="3" Text="Flags" Margin="0,8" Classes="muted"/>
+                  <TextBlock Grid.Column="4" Text="{loc:Wb GroupAddresses}" Margin="0,8" Classes="muted"/>
                 </Grid>
               </Border>
               <ListBox x:Name="ObjectTable" Grid.Row="1" SelectionMode="Multiple" Background="Transparent" SelectionChanged="OnObjectSelected"/>
@@ -107,23 +107,23 @@
         <GridSplitter x:Name="ToolsSplitter" Grid.Row="2" Height="5" Background="{DynamicResource WbLine}" ResizeDirection="Rows"/>
         <Grid x:Name="Tools" Grid.Row="3" RowDefinitions="35,*" Background="{DynamicResource WbPaper}">
           <Grid ColumnDefinitions="*,Auto,Auto,Auto"><StackPanel x:Name="ToolTabs" Orientation="Horizontal" Margin="12,0" Spacing="20"/>
-            <Button Grid.Column="1" Content="↗" ToolTip.Tip="Werkzeug in eigenem Fenster öffnen" AutomationProperties.Name="Werkzeug auslagern" Click="OnFloatTool" Classes="quiet"/>
-            <Button Grid.Column="2" Content="□" ToolTip.Tip="Werkzeug maximieren" AutomationProperties.Name="Werkzeug maximieren" Click="OnMaximizeTool" Classes="quiet"/>
-            <Button Grid.Column="3" Content="×" ToolTip.Tip="Werkzeug ausblenden" AutomationProperties.Name="Werkzeug ausblenden" Click="OnHideTool" Classes="quiet"/>
+            <Button Grid.Column="1" Content="↗" ToolTip.Tip="{loc:Wb ToolFloatTip}" AutomationProperties.Name="{loc:Wb ToolFloatName}" Click="OnFloatTool" Classes="quiet"/>
+            <Button Grid.Column="2" Content="□" ToolTip.Tip="{loc:Wb ToolMaximize}" AutomationProperties.Name="{loc:Wb ToolMaximize}" Click="OnMaximizeTool" Classes="quiet"/>
+            <Button Grid.Column="3" Content="×" ToolTip.Tip="{loc:Wb ToolHide}" AutomationProperties.Name="{loc:Wb ToolHide}" Click="OnHideTool" Classes="quiet"/>
           </Grid>
           <ContentControl x:Name="ToolHost" Grid.Row="1"/>
         </Grid>
       </Grid>
       <GridSplitter x:Name="InspectorSplitter" Grid.Column="4" Width="5" Background="{DynamicResource WbLine}" ResizeDirection="Columns"/>
       <Border x:Name="Inspector" Grid.Column="5" Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}" BorderThickness="1,0,0,0">
-        <Grid RowDefinitions="44,*"><Grid ColumnDefinitions="*,Auto" Margin="15,0"><TextBlock Text="Eigenschaften" VerticalAlignment="Center" FontWeight="SemiBold"/><Button Grid.Column="1" Content="×" AutomationProperties.Name="Eigenschaften ausblenden" Click="OnInspector" Classes="quiet"/></Grid>
+        <Grid RowDefinitions="44,*"><Grid ColumnDefinitions="*,Auto" Margin="15,0"><TextBlock Text="{loc:Wb Properties}" VerticalAlignment="Center" FontWeight="SemiBold"/><Button Grid.Column="1" Content="×" AutomationProperties.Name="{loc:Wb HideProperties}" Click="OnInspector" Classes="quiet"/></Grid>
           <ScrollViewer Grid.Row="1"><StackPanel x:Name="InspectorBody" Margin="15" Spacing="12"/></ScrollViewer>
         </Grid>
       </Border>
     </Grid>
     <Border Grid.Row="2" Background="{DynamicResource WbStatusbar}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0">
       <Grid ColumnDefinitions="*,Auto" Margin="12,0"><TextBlock Text="{Binding Status}" FontSize="10" VerticalAlignment="Center" Foreground="{DynamicResource WbMuted}"/>
-        <TextBlock Grid.Column="1" Text="Lokal · keine Busverbindung" Classes="muted" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1" Text="{loc:Wb StatusLocalOnly}" Classes="muted" VerticalAlignment="Center"/>
       </Grid>
     </Border>
   </Grid>

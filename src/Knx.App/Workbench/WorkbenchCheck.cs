@@ -7,6 +7,7 @@ using Avalonia.Interactivity;
 using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Knx.App.Localization;
 using Knx.App.Services;
 using Knx.App.Views;
 
@@ -23,6 +24,7 @@ internal static class WorkbenchCheck
     {
         var demo = Knx.Workbench.WorkbenchJson.CreateDemo();
         window.ViewModel.CreateProject(demo, null);
+        window.ViewModel.Status = WorkbenchStrings.Get("ProjectCreated", demo.Name);
         window.RefreshWorkspace();
         window.Workspace.Navigators["building"].ExpandedIds.UnionWith(["eg", "living"]);
         window.OpenTarget(new("room", "living"));
@@ -73,6 +75,7 @@ internal static class WorkbenchCheck
                 </Static></ApplicationProgram></KNX>
                 """).Save(stream);
         window.ViewModel.CreateProject(Knxproj.Load(path), null);
+        window.ViewModel.Status = WorkbenchStrings.Get("ProjectCreated", window.ViewModel.Project?.Name ?? p.Name);
         window.ViewModel.ProjectPath = path;
         window.RefreshWorkspace();
         window.Workspace.Navigators["building"].ExpandedIds.UnionWith(["space:F-1", "space:R-1"]);
@@ -128,7 +131,7 @@ internal static class WorkbenchCheck
             try
             {
                 Check("empty workbench offers project start actions", window.FindControl<ContentControl>("ToolPageHost")?.Content is StackPanel start
-                    && start.Children.OfType<Button>().Any(b => Equals(b.Content, "Projekt öffnen …")));
+                    && start.Children.OfType<Button>().Any(b => Equals(b.Content, WorkbenchStrings.Get("OpenProjectEllipsis"))));
                 LoadFixture(window);
                 var p = window.ViewModel.Project!;
                 var d = ProjectQuery.DeviceList(p).First();
@@ -176,7 +179,7 @@ internal static class WorkbenchCheck
                 Check("inspector reveals native device", window.FindControl<StackPanel>("InspectorBody")!.Children.OfType<TextBlock>().Any(t => t.Text == d.Name));
                 var inspector = window.FindControl<StackPanel>("InspectorBody")!;
                 inspector.Children.OfType<TextBox>().Single().Text = "Tastsensor · bearbeitet";
-                inspector.Children.OfType<Button>().First(b => Equals(b.Content, "Eigenschaften übernehmen"))
+                inspector.Children.OfType<Button>().First(b => Equals(b.Content, WorkbenchStrings.Get("ApplyProperties")))
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Check("native inspector rename refreshes work-item titles", d.Name == "Tastsensor · bearbeitet" && deviceTab.Title == d.Name);
                 window.SetRepresentation("relations");
@@ -261,9 +264,9 @@ internal static class WorkbenchCheck
                 window.ShowTool("monitor");
                 var monitorHost = (Control)window.FindControl<ContentControl>("ToolHost")!.Content!;
                 var modeBox = monitorHost.GetVisualDescendants().OfType<ComboBox>()
-                    .First(c => c.ItemsSource is IEnumerable<string> items && items.Contains("Busmonitor"));
+                    .First(c => c.ItemsSource is IEnumerable<string> items && items.Contains(WorkbenchStrings.Get("BusMonitor")));
                 modeBox.SelectedIndex = 1;
-                monitorHost.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Starten"))
+                monitorHost.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, WorkbenchStrings.Get("Start")))
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Check("start honours the selected monitor mode", window.Sessions.Monitor.IsRunning
                     && window.Sessions.Monitor.Mode == WorkbenchMonitorMode.Bus);
@@ -279,7 +282,7 @@ internal static class WorkbenchCheck
                 Check("project replacement rebuilds the tool view on fresh sessions", window.Sessions is not null
                     && window.FindControl<ContentControl>("ToolHost")!.Content is not null);
                 var refreshedTools = (Control)window.FindControl<ContentControl>("ToolHost")!.Content!;
-                refreshedTools.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, "Starten"))
+                refreshedTools.GetVisualDescendants().OfType<Button>().First(b => Equals(b.Content, WorkbenchStrings.Get("Start")))
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Check("rebuilt tool view controls the new session", window.Sessions!.Monitor.IsRunning);
                 window.Sessions.Monitor.Stop();

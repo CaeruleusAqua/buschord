@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Knx.App.Localization;
 using Knx.App.Services;
 using Knx.Workbench;
 
@@ -70,7 +71,7 @@ public static class WorkbenchProjection
                 // Native projects have no Workbench channel metadata: keep the manufacturer hierarchy visible.
                 foreach (var channel in d.Channels) AddNativeChannel(d, channel, 1);
                 if (objects.Count > 0)
-                    result.Add(new("unassigned:" + d.Id, "group", "Ohne Kanalbezug", "", d, null, 1, true, false));
+                    result.Add(new("unassigned:" + d.Id, "group", WorkbenchStrings.Get("WithoutChannel"), "", d, null, 1, true, false));
                 foreach (var r in objects) result.Add(ObjectRowOf(r, 2, addresses));
                 continue;
             }
@@ -88,7 +89,7 @@ public static class WorkbenchProjection
             }
             var unassigned = objects.Where(r => r.Metadata?.ChannelId is null).ToList();
             if (unassigned.Count > 0 && d.Channels.Count > 0)
-                result.Add(new("unassigned:" + d.Id, "group", "Ohne Kanalbezug", "", d, null, 1, true, false,
+                result.Add(new("unassigned:" + d.Id, "group", WorkbenchStrings.Get("WithoutChannel"), "", d, null, 1, true, false,
                     External: unassigned.Any(r => r.External)));
             foreach (var r in unassigned) result.Add(ObjectRowOf(r, d.Channels.Count > 0 ? 2 : 1, addresses));
         }
@@ -132,12 +133,12 @@ public static class WorkbenchProjection
         var children = perspective switch
         {
             "building" => p.Installations.SelectMany(i => i.Locations.Roots).Select(Space).Concat(
-                [new WorkbenchNavNode("unassigned", "Ohne Einbauort", "", p, null, p.UnassignedDevices().Select(Device).ToList())]).ToList(),
+                [new WorkbenchNavNode("unassigned", WorkbenchStrings.Get("WithoutInstallationLocation"), "", p, null, p.UnassignedDevices().Select(Device).ToList())]).ToList(),
             "topology" => p.Installations.SelectMany(i => i.Areas).Select(a => new WorkbenchNavNode("area:" + a.Id,
-                $"Bereich {a.Address} · {a.Name}", "", a, null, a.Lines.Select(l => new WorkbenchNavNode("line:" + l.Id,
-                    l.Name ?? "Linie", $"{a.Address}.{l.Address}", l, new("line", l.Id),
+                WorkbenchStrings.Get("AreaNode", a.Address, a.Name), "", a, null, a.Lines.Select(l => new WorkbenchNavNode("line:" + l.Id,
+                    l.Name ?? WorkbenchStrings.Get("Line"), $"{a.Address}.{l.Address}", l, new("line", l.Id),
                     l.Devices.Select(Device).Concat(l.Segments.Select(s => new WorkbenchNavNode("segment:" + s.Id,
-                        s.Name ?? "Segment", s.Address.ToString(), s, null, s.Devices.Select(Device).ToList()))).ToList()))
+                        s.Name ?? WorkbenchStrings.Get("Segment"), s.Address.ToString(), s, null, s.Devices.Select(Device).ToList()))).ToList()))
                     .Concat(a.Devices.Select(Device)).ToList())).ToList(),
             _ => p.Installations.SelectMany(i => i.MainRanges).Select(Range).ToList()
         };
