@@ -162,6 +162,7 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - Clean-Code-Review: `analysis/clean-code-review/core.md`, `app.md`, `tests-docs.md`; bestätigte P1/P2 und mehrere P3 behoben, verbleibende Grenzen in den Berichten dokumentiert.
 - Plan-Wellen: atomare Projektoperationen, Katalog-Ziel-/Such-/Importabläufe, Parameter-Footer/Validierung, Session-Cancel/Monitor-Pause/Diagnose, Baum-Kontextmenüs und projektbezogene Layouts; A11y-Abnahme als `analysis/workbench-v4-a11y-final.md`.
 - Legacy-Bereinigung: MainWindow, GroupLinksPane, ungenutzte Legacy-Panes und Dock-Abhängigkeiten entfernt; Shell-/Docking-Tests laufen jetzt nativ gegen WorkbenchWindow.
+- UI-Konsistenz-Welle: gemeinsame V4-Dialogfamilie (`f605870`), Search-/Parameter-/Catalog-Panes (`39be758`, Presenter-Fix `ab0f8a4`), Tooltips/Spinner/`wb-danger`, Screenshots für Settings/NewProject/Confirm/Splash geprüft; Demo-Parameterform und restliche Shell-P2 bleiben bis zur Shell-Abnahme offen.
 - UI-Feinschliff: Dark-Tooltips mit lesbarem Text, Konzept-Linienicons für die Workbench und V4-Einstellungsfenster; ETS-Projektpasswort-Dialog und verifizierter `/21`-Leselauf für `Lostau.knxproj` (67 Geräte, 636 Gruppenadressen).
 
 ## F. Clean-Code-Review (Schritt 11)
@@ -217,23 +218,23 @@ wenn Implementierung, fokussierter Test und Abnahmeevidenz im Abschnitt
 
 ### H2. Dialogfamilie und gemeinsame Panes (Schritte 3, 13)
 
-- [ ] **H2.1 Einheitliche Dialogsprache:** gemeinsames V4-Fenster-/Dialog-Chrome
+- [x] **H2.1 Einheitliche Dialogsprache:** gemeinsames V4-Fenster-/Dialog-Chrome
   mit `WbDialogRadius`, 22-px-Inhalt, 13-px-Footer, Titelhierarchie für
-  NewProject, Compare, Replace, Report, ConfirmDialog und Splash.
-- [ ] **H2.2 Aktionsreihenfolge und Destruktives:** primär rechts, Cancel
+  NewProject, Compare, Replace, Report, ConfirmDialog und Splash. (`f605870`)
+- [x] **H2.2 Aktionsreihenfolge und Destruktives:** primär rechts, Cancel
   quiet, Delete/Verwerfen mit `wb-danger`, kein destruktiver Default-Fokus;
-  Save/Don't-Save/Cancel in ConfirmDialog sicher.
+  Save/Don't-Save/Cancel in ConfirmDialog sicher. (`f605870`)
 - [ ] **H2.3 Englisch/Lokalisierung:** harte deutsche Strings in Compare,
   Replace, Report, Confirm, Splash und dynamischen Statusmeldungen entfernen;
   `de` bleibt Default, `en` vollständig.
-- [ ] **H2.4 SearchPane:** V4-Compact-Tool statt Legacy-Full-Page; Filter/
+- [x] **H2.4 SearchPane:** V4-Compact-Tool statt Legacy-Full-Page; Filter/
   Ergebnisse primär, Ersetzen aufklappbar, keine Mini-Scrollboxen; Suche/
-  Ersetzen/Stale-Schutz/Undo unverändert.
+  Ersetzen/Stale-Schutz/Undo unverändert. (`39be758`, `ab0f8a4`)
 - [ ] **H2.5 ParameterPane:** `wb-root`, `wb-field`, einheitliche
   `wb-label`-Hierarchie, Abschnittsnavigation, Sticky-Footer, Draft-/Read-only-
   Zustände; Demo-Form und natives Pane teilen dieselbe Feldbreite/Aktionen.
-- [ ] **H2.6 CatalogPane-Rest:** Filterbuttonhöhe/Label-Hierarchie an die
-  30-px-Felder angleichen; keine Funktionsänderung.
+- [x] **H2.6 CatalogPane-Rest:** Filterbuttonhöhe/Label-Hierarchie an die
+  30-px-Felder angleichen; keine Funktionsänderung. (`39be758`)
 
 ### H3. Parameter, DCA und Herstellergrenzen (Schritt 5)
 
