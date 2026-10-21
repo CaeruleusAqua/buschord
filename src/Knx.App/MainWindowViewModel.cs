@@ -241,8 +241,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
     // ---------- project lifecycle ----------
 
     public void LoadProject(string path, string? password = null)
+        => AdoptProject(Knxproj.Load(path, password), path);
+
+    /// <summary>Publishes an already validated project and resets undo/selection together.</summary>
+    public void AdoptProject(Project project, string path)
     {
-        var project = Knxproj.Load(path, password);
         var undo = new UndoStack();
         undo.Reset(project);
         RememberProject(path);

@@ -105,24 +105,26 @@ public partial class WorkbenchWindow
     private async Task OpenPathAsync(string path)
     {
         if (!await ConfirmDiscardAsync()) return;
-        await ResetSessionsForReplacementAsync();
         try
         {
+            Project loaded;
             string? password = null;
             while (true)
             {
                 try
                 {
-                    ViewModel.LoadProject(path, password);
+                    loaded = Knxproj.Load(path, password);
                     break;
                 }
                 catch (InvalidDataException ex) when (Knxproj.IsPasswordError(ex))
                 {
                     password = await PromptPasswordAsync(ex.Message);
-                    if (password is null) { RefreshWorkspace(); return; }
+                    if (password is null) return;
                 }
             }
+            await ResetSessionsForReplacementAsync();
             _parameters.DiscardDrafts();
+            ViewModel.AdoptProject(loaded, path);
             ViewModel.Status = W("ProjectLoaded", ViewModel.Project?.Name ?? "");
             RefreshWorkspace();
         }
@@ -222,7 +224,16 @@ public partial class WorkbenchWindow
         }
         if (_layoutPath is not null)
         {
-            try { SaveLayout(_layoutPath); }
+            try
+            {
+                if (ProjectLayoutPath(Workspace.ProjectId) is { } projectLayout)
+                {
+                    SaveLayout(projectLayout);
+                    if (!string.Equals(projectLayout, _layoutPath, StringComparison.OrdinalIgnoreCase))
+                        SaveLayout(_layoutPath);
+                }
+                else SaveLayout(_layoutPath);
+            }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ViewModel.Status = W("LayoutSaveFailed", ex.Message); }
         }
         _shuttingDown = true;

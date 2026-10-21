@@ -175,6 +175,14 @@ public partial class WorkbenchWindow : Window
     }
 
     private static string DefaultLayoutPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BusChord", "workbench-layout.json");
+
+    private string? ProjectLayoutPath(string projectId)
+    {
+        if (_layoutPath is null) return null;
+        var safe = string.Concat(projectId.Where(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_'));
+        if (safe.Length == 0) return null;
+        return Path.Combine(Path.GetDirectoryName(_layoutPath)!, "projects", safe + ".json");
+    }
     private void OnDevicesChanged(object? sender, NotifyCollectionChangedEventArgs e) => ScheduleRefresh();
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -359,8 +367,18 @@ public partial class WorkbenchWindow : Window
             }
             if (p is not null && Workspace.ProjectId != p.Id)
             {
+                var previousProject = Workspace.ProjectId;
+                if (previousProject.Length > 0 && ProjectLayoutPath(previousProject) is { } previousLayout)
+                {
+                    try { SaveLayout(previousLayout); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    { ViewModel.Status = W("LayoutSaveFailed", ex.Message); }
+                }
                 Workspace.ChangeProject(p.Id);
-                if (_layoutPath is not null) Workspace.TryRestoreLayout(_layoutPath, t => t == new WorkbenchTarget("tool", "catalog") || WorkbenchProjection.Resolve(p, t) is not null);
+                if (ProjectLayoutPath(p.Id) is { } projectLayout && File.Exists(projectLayout))
+                    Workspace.TryRestoreLayout(projectLayout, t => t == new WorkbenchTarget("tool", "catalog") || WorkbenchProjection.Resolve(p, t) is not null);
+                else if (_layoutPath is not null)
+                    Workspace.TryRestoreLayout(_layoutPath, t => t == new WorkbenchTarget("tool", "catalog") || WorkbenchProjection.Resolve(p, t) is not null);
                 if (!WorkbenchTools.IsKnown(Workspace.ActiveTool)) Workspace.ActiveTool = "monitor";
                 foreach (var nav in Workspace.Navigators.Values) nav.ExpandedIds.Add("project:" + p.Id);
                 foreach (var space in p.Installations.SelectMany(i => i.Locations.Roots)) Workspace.Navigators["building"].ExpandedIds.Add("space:" + space.Id);
@@ -903,6 +921,39 @@ public partial class WorkbenchWindow : Window
             InspectorBody.Children.Add(Note(W("InspectorObject", current.AddressText, current.Name, obj.Id,
                 selected.First().Dpt ?? W("Unknown"), selected.First().Bits is { } bits ? W("BitsValue", bits) : W("UnknownBits"),
                 selected.First().Flags ?? W("Unknown"))));
+            var objectKey = new ObjectKey(current.Device.Id, obj.Id);
+            var storedMetadata = WorkbenchProject.Metadata(ViewModel.Project!, objectKey) ?? new ObjectMetadata();
+            var objectDpt = new TextBox { Text = storedMetadata.Dpt ?? "" };
+            var objectBits = new TextBox { Text = storedMetadata.Bits?.ToString() ?? "" };
+            var objectFlags = new TextBox { Text = storedMetadata.Flags ?? "" };
+            var objectActive = new CheckBox { Content = W("Active"), IsChecked = storedMetadata.Active };
+            InspectorBody.Children.Add(Note(W("DatapointType"))); InspectorBody.Children.Add(objectDpt);
+            InspectorBody.Children.Add(Note(W("ColumnLength"))); InspectorBody.Children.Add(objectBits);
+            InspectorBody.Children.Add(Note(W("ObjectFlags"))); InspectorBody.Children.Add(objectFlags);
+            InspectorBody.Children.Add(objectActive);
+            InspectorBody.Children.Add(ActionButton(W("Apply"), () =>
+            {
+                int? parsedBits = null;
+                if (!string.IsNullOrWhiteSpace(objectBits.Text))
+                {
+                    if (!int.TryParse(objectBits.Text, out var value) || value is < 1 or > 65535)
+                    {
+                        ViewModel.Status = W("InvalidBits");
+                        return;
+                    }
+                    parsedBits = value;
+                }
+                ViewModel.Edit(W("ApplyProperties"), p =>
+                {
+                    var metadata = WorkbenchProject.Metadata(p, objectKey) ?? new ObjectMetadata();
+                    metadata.Dpt = string.IsNullOrWhiteSpace(objectDpt.Text) ? null : objectDpt.Text.Trim();
+                    metadata.Bits = parsedBits;
+                    metadata.Flags = string.IsNullOrWhiteSpace(objectFlags.Text) ? null : objectFlags.Text.Trim().ToUpperInvariant();
+                    metadata.Active = objectActive.IsChecked == true;
+                    p.Workbench.Objects[objectKey.ToString()] = metadata;
+                });
+                RefreshWorkspace();
+            }, "primary"));
             var sendingGroup = Knx.Workbench.WorkbenchProject.Metadata(ViewModel.Project!, new(current.Device.Id, obj.Id))?.SendingGroupId;
             foreach (var id in obj.Links.ToArray())
             {
