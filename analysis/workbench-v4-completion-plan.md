@@ -1,6 +1,7 @@
 # BusChord V4 — Restplan und Todo-Liste
 
-Stand: 2026-10-21. Basis: lokaler Branch `development`, Review-Basis `55ff6e1`, Clean-Code-Fixes danach.
+Stand: 2026-10-21. Basis: lokaler Branch `development`, aktueller Stand
+`ac0480a` (Review-Basis `55ff6e1`, Clean-Code-Fixes danach).
 Referenz: `C:\Users\julia\Downloads\knx-workbench-v4-bundle`.
 Dieser Plan führt die verbleibenden Arbeiten aus dem V4-Konzept, den Design-Reviews
 und der ETS-Paritätsanalyse. Er ist die maßgebliche Todo-Liste; erledigte Punkte
@@ -177,12 +178,136 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - [x] Konzept-Icons statt gefüllter Material-Icons in der Workbench.
 - [x] Einstellungsfenster im V4-Design.
 
-## Offene Restpunkte nach dieser Welle
+## H. Offene Arbeitspakete (Stand `ac0480a`, 2026-10-21)
 
-- Drag-and-drop im Navigator; Geräte/GA lassen sich über Kontextmenüs und Tastatur verschieben/kopieren.
-- Nebenfenster/Favoriten/Pinning und vollständige Side-by-side-Ansichten.
-- Parameter-Abschnittsnavigation, Projektwechsel-Hinweis für Entwürfe und DCA-Read-only-Markierung.
-- Echte UIA-/Narrator-Abnahme, reale 150/200-%-DPI und High-Contrast-Pass.
+Diese Liste ist die vollständige Restliste. Ein Punkt gilt erst als erledigt,
+wenn Implementierung, fokussierter Test und Abnahmeevidenz im Abschnitt
+„Fortschritt“ stehen. Agentenstände sind Arbeitsstände, keine Abnahme.
+
+### H1. Workbench-Shell und Interaktion (Schritte 3, 4, 13)
+
+- [ ] **H1.1 Inspector/Property-Grid:** Abschnitte, Footer, stabile Fokus- und
+  Caret-Rückgabe, schmale Overlay-Komposition bei 1024/900. Im Agentenstand
+  `agents/plan2/workbench-ui` implementiert; Abnahme mit Screenshot und
+  Tastaturpfad steht aus.
+- [ ] **H1.2 Navigations-/Tab-Zustand:** Rail-Aktivfläche, 3-px-Akzent,
+  Trennlinien, Issue-Badge und Monitor-Puls; Dokument-Tab-Akzent oben;
+  Perspektiv-/Tool-Tab-Überlauf bei 900/1024. Rest aus
+  `analysis/ui-consistency/workbench.md` P2-5/P2-6/P2-10.
+- [ ] **H1.3 Objekttabelle:** Auswahl-Checkbox je Zeile, Select-all/Tri-State,
+  GA-Chips, Zeilenkontextmenü und Tastaturäquivalenz; 10.000-Objekt-
+  Virtualisierung darf nicht regressieren. Rest aus P2-11 und Statusmatrix 17.
+- [ ] **H1.4 Shell-Chrome:** Buttons/Felder im Shellfenster auf WbLine/WbPaper/
+  WbHover statt ETS-Chrome; Statuszeile mit Projekt-/Issue-Hierarchie;
+  Empty-States mit Icon, Überschrift und Erklärung. Rest aus P2-7/P2-9.
+- [ ] **H1.5 Hilfe/Konzept:** scrollbares, lokalisiertes Hilfefenster statt
+  Messagebox; alle Help-Abschnitte, F1/Escape, keine abgeschnittenen Texte.
+  Damit auch Statusmatrix 69 und die Dokumentationsaktion schließen.
+- [ ] **H1.6 Tab-Semantik/A11y:** Dokument-, View- und Tool-Tabs als
+  TabItem-Automation-Peers, ItemStatus, Namen für Icon-Steuerungen und
+  Zeilen; Focus-Trapping im schmalen Inspector. Rest aus
+  `analysis/workbench-v4-a11y-recheck2.md`.
+- [ ] **H1.7 Drag-and-drop-Abnahme:** Geräte-Drop auf Linie/Segment und
+  Tabellen-Drop, Undo/Raum-Erhalt, Tastaturweg. Implementiert in
+  `agents/plan2/workbench-ui`; OS-Pointer-Drag ist headless nicht beweisbar,
+  daher Projektions-/Command-Test plus dokumentierte Grenze.
+- [ ] **H1.8 Favoriten/Nebenfenster:** Pinning, Side-by-side-Fenster,
+  Dedup/Refresh/Close-Lebenszyklus. Implementiert; Abnahme und
+  Fenster-Lifecycle-Test fehlen noch.
+
+### H2. Dialogfamilie und gemeinsame Panes (Schritte 3, 13)
+
+- [ ] **H2.1 Einheitliche Dialogsprache:** gemeinsames V4-Fenster-/Dialog-Chrome
+  mit `WbDialogRadius`, 22-px-Inhalt, 13-px-Footer, Titelhierarchie für
+  NewProject, Compare, Replace, Report, ConfirmDialog und Splash.
+- [ ] **H2.2 Aktionsreihenfolge und Destruktives:** primär rechts, Cancel
+  quiet, Delete/Verwerfen mit `wb-danger`, kein destruktiver Default-Fokus;
+  Save/Don't-Save/Cancel in ConfirmDialog sicher.
+- [ ] **H2.3 Englisch/Lokalisierung:** harte deutsche Strings in Compare,
+  Replace, Report, Confirm, Splash und dynamischen Statusmeldungen entfernen;
+  `de` bleibt Default, `en` vollständig.
+- [ ] **H2.4 SearchPane:** V4-Compact-Tool statt Legacy-Full-Page; Filter/
+  Ergebnisse primär, Ersetzen aufklappbar, keine Mini-Scrollboxen; Suche/
+  Ersetzen/Stale-Schutz/Undo unverändert.
+- [ ] **H2.5 ParameterPane:** `wb-root`, `wb-field`, einheitliche
+  `wb-label`-Hierarchie, Abschnittsnavigation, Sticky-Footer, Draft-/Read-only-
+  Zustände; Demo-Form und natives Pane teilen dieselbe Feldbreite/Aktionen.
+- [ ] **H2.6 CatalogPane-Rest:** Filterbuttonhöhe/Label-Hierarchie an die
+  30-px-Felder angleichen; keine Funktionsänderung.
+
+### H3. Parameter, DCA und Herstellergrenzen (Schritt 5)
+
+- [ ] **H3.1 DCA-Host-Verdrahtung:** `MainWindowViewModel` liefert einen
+  lokalisierten Read-only-Grund aus dem Katalogprogramm
+  (`CatalogBrowser.Blocked(..., CatalogUse.EditParameters)`); Workbench setzt
+  ihn nach jedem Gerätewechsel/Refresh und bei `CatalogLoaded`; Editoren,
+  Apply und Reset bleiben aus, Werte unverändert. Das ist der noch fehlende
+  Produktpfad aus B4/DCA.
+- [ ] **H3.2 DCA-Regressionstest:** synthetisches `RequiresDca`-Programm,
+  Read-only-Banner, unveränderte Werte, kein Apply; Catalog-cold-Fall.
+- [ ] **H3.3 Opaque/unsupported:** bestehende Opaque-Erkennung und
+  Warnungen nicht regressieren; keine Herstellerdynamik ausführen.
+
+### H4. Abnahme und Dokumentation (Schritte 8, 9, 13; Matrix R01–R08)
+
+- [ ] **H4.1 R01:** ETS-REA-Berichte für alle fünf Bereiche mit Belegen
+  verifizieren und als Nachweis verlinken (die Dateien existieren; Status
+  „offen“ in der Matrix ist zu korrigieren).
+- [ ] **H4.2 R02:** jede V4-Aktion aus `src/app.js` einer nativen
+  Implementierung/Testzeile oder einer bewussten Grenze zuordnen.
+- [ ] **H4.3 R03:** alle B1–B8-Punkte implementieren oder als nicht
+  unterstützt dokumentieren; offene Checkboxen oben sind die Restliste.
+- [ ] **H4.4 R04:** Fokus/Tab-Reihenfolge, Screenreader-Namen, 900×600/
+  1024×700/1440×900, simulierte 150/200-%-DPI und High-Contrast prüfen.
+  Echte Narrator-/UIA- und gemischte DPI-Läufe bleiben als Plattformgrenze
+  dokumentiert, solange sie nicht auf realer Hardware ausgeführt wurden.
+- [ ] **H4.5 R05:** englische Shell, Dialoge, Panes, Fehler- und dynamische
+  Strings automatisiert auf fehlende Keys/Deutsch prüfen; `--lang=en`-
+  Selftest und Screenshot.
+- [ ] **H4.6 R06:** Katalog/Parameter/Beziehungen/Dialoge auf eine
+  Designsprache; Screenshots light/dark bei 1440/1024/900.
+- [ ] **H4.7 R07:** jede P1/P2 aus Tokens-, Workbench-, Panes- und
+  A11y-Recheck beheben oder mit Entscheidung/Grenze dokumentieren; keine
+  stillen Reste. Referenzen:
+  `analysis/ui-consistency/tokens.md`,
+  `analysis/ui-consistency/workbench.md`,
+  `analysis/ui-consistency/panes.md`,
+  `analysis/workbench-v4-a11y-recheck2.md`.
+- [ ] **H4.8 R08:** Release-Build, alle Testprojekte, App-Tests, Smoke,
+  Screenshot-Selftest, Workbench-Selftest de/en, Remote-CI und CodeQL grün;
+  lokale und Remote-SHAs dokumentieren.
+- [ ] **H4.9 Statusmatrix:** `analysis/workbench-v4-status-matrix.md` auf
+  aktuellen Stand bringen; veraltete „partial/missing“-Zeilen (u. a. 34, 64)
+  nur mit Testbeleg schließen.
+
+### H5. Veröffentlichung (Schritt 10, R08)
+
+- [ ] **H5.1** Alle Commits nach `origin/development` pushen; Remote-CI und
+  CodeQL abwarten und Ergebnisse hier eintragen.
+- [ ] **H5.2** Plan-Checkboxen 3–6, 8 und 13 erst nach belegter Abnahme
+  schließen; `ac0480a` und die Integrations-SHAs dokumentieren.
+- [ ] **H5.3** Agenten-Worktrees/Branches nach bestätigter Integration und
+  ohne ungesicherte Änderungen aufräumen; offene Grenzen stehen lassen.
+
+### Bekannte P1/P2-Quellen (nicht doppelt abhaken)
+
+- `analysis/ui-consistency/tokens.md`: Auswahl-Tokens, Disabled-Kontrast,
+  `quiet`, Settings-Felder; P2/P3 zu Höhen, Muted-Größe, Legacy-Borders,
+  Empty-States, Toolbar, Breakpoints, Spinner, Radien, Hover, Zeilenhöhen,
+  Tooltip und Tab-Font.
+- `analysis/ui-consistency/workbench.md`: P1 Programmierung/Inspector/
+  Tool-Tabs/Perspektiven; P2 Rail, Tab-Regel, Shell-Chrome, Dialoge,
+  Englisch, Dock, Tabellenaffordanzen, Hilfe.
+- `analysis/ui-consistency/panes.md`: P1 SearchPane; P2 Parameter-Duplikat,
+  Dialogfamilie, Label-Hierarchie, Aktionsreihenfolge, destruktive
+  Bestätigung.
+- `analysis/workbench-v4-a11y-recheck2.md`: Overlay-Fokus, Footnote,
+  Tab-Rollen/Status, fehlende Namen, Such-Undo, Zeilennamen, MinHeight,
+  Perspektivnamen.
+- `analysis/workbench-v4-design-visual.md` und
+  `analysis/workbench-v4-ui-recheck.md`: historische P1/P2; nur noch offene
+  Punkte übernehmen, bereits belegte nicht erneut öffnen.
+
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
 - DCA/Plugin-Hosting: read-only Erkennung und Sperre, kein In-Process-Host (32-bit-ETS, COM/.NET-Framework, keine Sandbox).
