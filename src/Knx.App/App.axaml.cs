@@ -3,7 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
-using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Knx;
@@ -56,8 +55,7 @@ public partial class App : Application
             {
                 if (control.GetValue(ToolTip.TipProperty) is not string current || current != text) return;
                 var block = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 320 };
-                block.Foreground = new SolidColorBrush(Color.Parse(
-                    control.ActualThemeVariant == ThemeVariant.Dark ? "#e5ebf3" : "#202c3c"));
+                block.Bind(TextBlock.ForegroundProperty, block.GetResourceObservable("ToolTipForeground"));
                 control.SetCurrentValue(ToolTip.TipProperty, block);
             }, DispatcherPriority.Background);
         });

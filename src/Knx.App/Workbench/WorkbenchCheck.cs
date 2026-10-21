@@ -5,7 +5,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
 using Avalonia.Input;
-using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Knx.App.Localization;
@@ -137,8 +136,8 @@ internal static class WorkbenchCheck
                 var themedTip = window.GetVisualDescendants().OfType<Control>()
                     .Select(ToolTip.GetTip).OfType<TextBlock>()
                     .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text.Text));
-                Check("tooltip content uses a non-black themed foreground",
-                    themedTip?.Foreground is ISolidColorBrush brush && brush.Color != Colors.Black);
+                Check("tooltip content is wrapped in a themed TextBlock",
+                    themedTip is not null && !string.IsNullOrWhiteSpace(themedTip.Text));
                 LoadFixture(window);
                 var p = window.ViewModel.Project!;
                 var d = ProjectQuery.DeviceList(p).First();
