@@ -20,6 +20,7 @@ werden hier abgehakt, nicht nur im Chat.
 - [x] 10. Geprüften Stand auf `development` integrieren und veröffentlichen.
 - [x] 11. Clean-Code-Review des gesamten V4-Diffs; bestätigte Befunde beheben und Regressionstests ergänzen.
 - [x] 12. Dark-Mode-Tooltips, Konzept-Icons, V4-Einstellungsfenster und ETS-Passwortöffnung abnehmen.
+- [ ] 13. UI-Konsistenz aller Fenster, Menüs, Panes und Zustände gegen das V4-Bundle prüfen und Befunde beheben.
 
 ## A. ETS-REA-Analyse (jede Funktion belegen)
 
