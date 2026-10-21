@@ -30,6 +30,8 @@
     <Style Selector="TextBlock.wb-success"><Setter Property="Foreground" Value="{DynamicResource WbSuccess}"/></Style>
     <Style Selector="TextBlock.wb-error"><Setter Property="Foreground" Value="{DynamicResource WbError}"/></Style>
     <Style Selector="TextBlock.wb-warning"><Setter Property="Foreground" Value="{DynamicResource WbWarning}"/></Style>
+    <!-- Same field label contract as ParameterPane, so demo and native editors share one geometry. -->
+    <Style Selector="TextBlock.wb-label"><Setter Property="FontSize" Value="{DynamicResource WbFontSizeControl}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{DynamicResource WbText}"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
   </Window.Styles>
   <Grid RowDefinitions="49,*,27">
     <Border Background="{DynamicResource WbPaper}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,0,1">
@@ -49,7 +51,7 @@
     </Border>
     <Grid x:Name="Zones" Grid.Row="1" ColumnDefinitions="47,272,5,*,0,0">
       <Border Background="{DynamicResource WbRail}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,1,0">
-        <DockPanel><StackPanel x:Name="Rail" Spacing="5" Margin="5,10"/><Button DockPanel.Dock="Bottom" Width="35" Height="35" HorizontalAlignment="Center" Click="OnHelp" VerticalAlignment="Bottom" Classes="quiet" ToolTip.Tip="{loc:Wb HelpTip}" AutomationProperties.Name="{loc:Wb HelpTip}"><views:ConceptIcon Symbol="help"/></Button></DockPanel>
+        <DockPanel><StackPanel x:Name="Rail" Spacing="5" Margin="5,10"/><Button DockPanel.Dock="Bottom" Width="35" Height="35" HorizontalAlignment="Center" Click="OnHelp" VerticalAlignment="Bottom" Classes="quiet" ToolTip.Tip="{loc:Wb Documentation}" AutomationProperties.Name="{loc:Wb Documentation}"><views:ConceptIcon Symbol="help"/></Button></DockPanel>
       </Border>
       <Border x:Name="Navigator" Grid.Column="1" Background="{DynamicResource WbPanel}">
         <Grid RowDefinitions="Auto,Auto,Auto,*,30">
@@ -62,7 +64,13 @@
       </Border>
       <GridSplitter x:Name="NavSplitter" Grid.Column="2" Width="5" Background="{DynamicResource WbLine}" ResizeDirection="Columns"/>
       <Grid x:Name="MainColumn" Grid.Column="3" RowDefinitions="39,*,0,0" Background="{DynamicResource WbPaper}">
-        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Background="{DynamicResource WbTabbar}"><StackPanel x:Name="ObjectTabs" Orientation="Horizontal"/></ScrollViewer>
+        <Grid x:Name="TabStrip" ColumnDefinitions="*,Auto" Background="{DynamicResource WbTabbar}">
+          <!-- V4 compare stays in the tab strip: the pinned companion follows the active address while the editor navigates. -->
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Background="Transparent"><StackPanel x:Name="ObjectTabs" Orientation="Horizontal"/></ScrollViewer>
+          <Button x:Name="CompareButton" Grid.Column="1" Content="{loc:Wb ComparePinned}" Click="OnComparePinned"
+                  Classes="quiet" Margin="6,4" VerticalAlignment="Center"
+                  ToolTip.Tip="{loc:Wb ComparePinnedTip}" AutomationProperties.Name="{loc:Wb ComparePinned}"/>
+        </Grid>
         <Grid x:Name="Editor" Grid.Row="1" RowDefinitions="Auto,Auto,*">
           <StackPanel Margin="24,16,24,0" Spacing="6">
             <TextBlock x:Name="Breadcrumb" Classes="muted"/>

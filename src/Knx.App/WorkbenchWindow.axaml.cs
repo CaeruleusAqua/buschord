@@ -24,8 +24,10 @@ public partial class WorkbenchWindow : Window
     private readonly ParameterPane _parameters;
     private readonly ParameterEditingSession _parameterSession;
     private readonly ComboBox _parameterDevice = new() { MinWidth = 240, Margin = new(0, 0, 0, 12) };
-    private readonly StackPanel _modePanel = new() { Margin = new(0, 12, 0, 0), Spacing = 8, MaxWidth = 620, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
+    private readonly StackPanel _modePanel = new() { Margin = new(0, 12, 0, 0), Spacing = 8, MaxWidth = 540, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
     private readonly StackPanel _modeActions = new() { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
+    // ParameterPane keeps its validation summary in the footer; the demo form mirrors it.
+    private readonly TextBlock _modeStatus = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Classes = { "wb-error" } };
     private readonly Border _modeFooter = new() { BorderThickness = new(0, 1, 0, 0), Padding = new(0, 10, 0, 2), Margin = new(0, 12, 0, 0) };
     private readonly ScrollViewer _modeScroll = new() { VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto };
     private readonly List<Window> _toolWindows = [];
@@ -96,7 +98,11 @@ public partial class WorkbenchWindow : Window
         _modeScroll.Content = _modePanel;
         _modeScroll.IsVisible = false;
         // The demo form mirrors ParameterPane: scrolling fields above, sticky action footer below.
-        _modeFooter.Child = _modeActions;
+        var modeFooterHost = new Grid { ColumnDefinitions = new("*,Auto") };
+        modeFooterHost.Children.Add(_modeStatus);
+        Grid.SetColumn(_modeActions, 1);
+        modeFooterHost.Children.Add(_modeActions);
+        _modeFooter.Child = modeFooterHost;
         _modeFooter.IsVisible = false;
         _modeFooter.Classes.Add("wb-action-footer");
         var parameterContent = new Grid { RowDefinitions = new("*,Auto") };
@@ -416,11 +422,6 @@ public partial class WorkbenchWindow : Window
         "1.001" or "1.018" => "1", "3.007" => "0 (stop)", "5.001" => "75 %", "9.001" => "21.5 °C", _ => "—"
     };
 
-    private static string Unquote(string raw)
-    {
-        try { return System.Text.Json.JsonSerializer.Deserialize<string>(raw) ?? raw; }
-        catch (System.Text.Json.JsonException) { return raw; }
-    }
     private void OnWorkspaceChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (!_refreshing) RefreshWorkspace();
@@ -2296,6 +2297,7 @@ public partial class WorkbenchWindow : Window
     {
         _modePanel.Children.Clear();
         _modeActions.Children.Clear();
+        _modeStatus.Text = "";
         _modeFooter.IsVisible = false;
         _modeScroll.IsVisible = false;
         _parameters.IsVisible = true;
@@ -2308,39 +2310,36 @@ public partial class WorkbenchWindow : Window
         _modeFooter.IsVisible = true;
         _modePanel.Children.Add(Label(W("DemoApplicationNote")));
         var editors = new Dictionary<string, Control>(StringComparer.Ordinal);
+        var errors = new Dictionary<string, TextBlock>(StringComparer.Ordinal);
         foreach (var (key, raw) in selected.Device.ParameterValues
-                     .OrderBy(p => p.Key switch { "mode" => 0, "led" => 1, "interface" => 2, _ => 3 })
+                     .OrderBy(p => WorkbenchDemoForm.SortOrder(p.Key))
                      .ThenBy(p => p.Key, StringComparer.Ordinal))
         {
-            var row = new StackPanel { Spacing = 4 };
-            row.Children.Add(new TextBlock { Text = key switch
-            {
-                "mode" => W("Function"), "led" => W("StatusLed"), "interface" => W("Interface"),
-                "debounce" => W("DebounceMs"), "holdTime" => W("HoldTime"), "brightnessThreshold" => W("BrightnessThreshold"),
-                "setpoint" => W("Setpoint"), "deadband" => W("Deadband"), _ => key
-            }, Classes = { "wb-muted" } });
             Control editor;
             if (key == "mode")
             {
                 var box = new ComboBox { ItemsSource = new[] { W("SwitchMode"), W("SwitchDimMode") } };
-                box.SelectedIndex = Unquote(raw) == "dim" ? 1 : 0;
+                box.SelectedIndex = WorkbenchDemoForm.Unquote(raw) == "dim" ? 1 : 0;
                 editor = box;
             }
             else if (key == "led")
             {
                 var box = new ComboBox { ItemsSource = new[] { W("ViaFeedbackObject"), W("Off"), W("On") } };
-                box.SelectedIndex = Unquote(raw) switch { "off" => 1, "on" => 2, _ => 0 };
+                box.SelectedIndex = WorkbenchDemoForm.Unquote(raw) switch { "off" => 1, "on" => 2, _ => 0 };
                 editor = box;
             }
             else if (key == "interface")
-                editor = new TextBox { Text = Unquote(raw) };
+                editor = new TextBox { Text = WorkbenchDemoForm.Unquote(raw) };
             else
                 editor = new TextBox { Text = raw };
-            editor.Classes.Add("wb-field");
-            editor.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
-            row.Children.Add(editor);
+            var error = new TextBlock
+            {
+                FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new(0, 3, 0, 0),
+                IsVisible = false, Classes = { "wb-error" }
+            };
             editors[key] = editor;
-            _modePanel.Children.Add(row);
+            errors[key] = error;
+            _modePanel.Children.Add(DemoField(WorkbenchDemoForm.Label(key), editor, error));
         }
         var preview = new TextBlock { FontSize = 11, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Classes = { "wb-muted" } };
         string Mode() => editors.GetValueOrDefault("mode") is ComboBox { SelectedIndex: 1 } ? "dim" : "switch";
@@ -2358,7 +2357,8 @@ public partial class WorkbenchWindow : Window
                 }));
         }
         _modePanel.Children.Add(preview);
-        var applyButton = ActionButton(W("Apply"), () =>        {
+        var applyButton = ActionButton(W("Apply"), () =>
+        {
             var values = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var (key, control) in editors)
             {
@@ -2371,8 +2371,7 @@ public partial class WorkbenchWindow : Window
                     TextBox { Text: { } text } => text,
                     _ => ""
                 };
-                values[key] = key is "mode" or "led" or "interface"
-                    ? System.Text.Json.JsonSerializer.Serialize(value) : value;
+                values[key] = WorkbenchDemoForm.Serialize(key, value);
             }
             var mode = Mode();
             ViewModel.Edit(W("EditDemoParameters", selected.Name), p =>
@@ -2385,8 +2384,37 @@ public partial class WorkbenchWindow : Window
             ViewModel.Status = W("DemoParametersApplied");
             RefreshWorkspace();
         }, "primary");
+        // Same feedback contract as ParameterPane: per-field error text, footer summary, blocked Apply.
+        void Validate()
+        {
+            var invalid = 0;
+            foreach (var (key, editor) in editors)
+            {
+                var error = WorkbenchDemoForm.Validate(key, editor is TextBox box ? box.Text ?? "" : "");
+                errors[key].Text = error ?? "";
+                errors[key].IsVisible = error is not null;
+                if (error is not null) invalid++;
+            }
+            applyButton.IsEnabled = invalid == 0;
+            _modeStatus.Text = invalid == 0 ? "" : W("DemoValidationSummary", invalid);
+        }
+        foreach (var editor in editors.Values.OfType<TextBox>()) editor.TextChanged += (_, _) => Validate();
         _modeActions.Children.Add(ActionButton(W("ReviewEffects"), Review, "quiet"));
         _modeActions.Children.Add(applyButton);
+        Validate();
+    }
+
+    /// <summary>One demo field in ParameterPane's geometry: label, editor and validation text.</summary>
+    private static Control DemoField(string label, Control editor, TextBlock error)
+    {
+        editor.Classes.Add("wb-field");
+        editor.Margin = new Thickness(0, 4, 0, 0);
+        editor.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+        var row = new StackPanel { Margin = new(0, 0, 0, 14) };
+        row.Children.Add(new TextBlock { Text = label, Classes = { "wb-label" } });
+        row.Children.Add(editor);
+        row.Children.Add(error);
+        return row;
     }
     private async Task ExportFilteredMonitorAsync()
     {
@@ -2429,7 +2457,7 @@ public partial class WorkbenchWindow : Window
             Zones.ColumnDefinitions[5].Width = new(0);
             InspectorSplitter.IsVisible = false;
             // Reflow the covered strip instead of painting controls underneath the overlay.
-            ObjectTabs.Margin = new Thickness(0, 0, Inspector.Width, 0);
+            TabStrip.Margin = new Thickness(0, 0, Inspector.Width, 0);
             Editor.Margin = new Thickness(0, 0, Inspector.Width, 0);
         }
         else
@@ -2441,7 +2469,7 @@ public partial class WorkbenchWindow : Window
             Zones.ColumnDefinitions[4].Width = new(Workspace.InspectorVisible ? 5 : 0);
             Zones.ColumnDefinitions[5].Width = new(Workspace.InspectorVisible ? Workspace.InspectorWidth : 0);
             InspectorSplitter.IsVisible = Workspace.InspectorVisible;
-            ObjectTabs.Margin = default;
+            TabStrip.Margin = default;
             Editor.Margin = default;
         }
         Tools.IsVisible = ToolsSplitter.IsVisible = Workspace.ToolsVisible;
@@ -2571,6 +2599,22 @@ public partial class WorkbenchWindow : Window
     private void OnAddDevice(object? sender, RoutedEventArgs e) => ShowCatalog();
     private void OnPalette(object? sender, RoutedEventArgs e) => ShowPalette();
     private void OnHelp(object? sender, RoutedEventArgs e) => ShowHelp();
+    /// <summary>V4 compare: the companion pins the active group address, or the first one for other work items.</summary>
+    internal void OpenPinnedCompare()
+    {
+        var target = WorkbenchCompare.Resolve(ViewModel.Project, Workspace.ActiveTab?.Target);
+        if (target is null)
+        {
+            ViewModel.Status = ViewModel.Project is null ? W("CompareNoProject") : W("CompareNoGroupAddress");
+            return;
+        }
+        OpenCompanion(target);
+        var address = ViewModel.Project is { } project
+            ? ProjectQuery.FindGroupAddressById(project, target.Id)?.Address.ToString() ?? target.Id
+            : target.Id;
+        ViewModel.Status = W("CompareOpened", address);
+    }
+    private void OnComparePinned(object? sender, RoutedEventArgs e) => OpenPinnedCompare();
     private void OnMaximizeTool(object? sender, RoutedEventArgs e) => Workspace.ToolsMaximized = !Workspace.ToolsMaximized;
     private void OnHideTool(object? sender, RoutedEventArgs e) => Workspace.ToolsVisible = false;
     private void OnFloatTool(object? sender, RoutedEventArgs e)
@@ -2598,6 +2642,7 @@ public partial class WorkbenchWindow : Window
                 case Key.B: Workspace.NavigatorVisible = !Workspace.NavigatorVisible; break;
                 case Key.J: if (Workspace.ToolsVisible) Workspace.ToolsVisible = false; else ShowTool(Workspace.ActiveTool); break;
                 case Key.K: ShowPalette(); break;
+                case Key.G when e.KeyModifiers.HasFlag(KeyModifiers.Shift): OpenPinnedCompare(); break;
                 case Key.S: _ = GuardAsync(async () => await SaveAsync()); break;
                 case Key.O: _ = GuardAsync(OpenProjectAsync); break;
                 case Key.N: _ = GuardAsync(NewProjectAsync); break;

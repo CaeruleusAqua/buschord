@@ -1,4 +1,5 @@
 using Knx;
+using Knx.App.Localization;
 using Knx.App.Workbench;
 using System.Text;
 
@@ -210,6 +211,66 @@ try
     dcaSession.ResetToDefaults();
     Check("DCA apply and reset leave saved values untouched", !dcaSession.Apply()
         && dcaSession.Rows.Select(r => r.Value).SequenceEqual(dcaValues) && dcaDevice.ParameterValues.Count == 0);
+
+    // V4 compare pins one group address: the active one wins, everything else uses the first address.
+    var compareProject = new Project { Id = "P-COMPARE", Name = "Compare" };
+    var compareInstallation = new Installation { Id = "I-COMPARE" };
+    var compareRange = new GroupRange { Id = "GR-COMPARE", Name = "Compare", RangeStart = 0, RangeEnd = 65535 };
+    compareRange.Addresses.Add(new GroupAddressEntry { Id = "GA-C-2", Name = "Second", Address = GroupAddress.ThreeLevel(1, 1, 2) });
+    compareRange.Addresses.Add(new GroupAddressEntry { Id = "GA-C-1", Name = "First", Address = GroupAddress.ThreeLevel(1, 1, 1) });
+    compareInstallation.MainRanges.Add(compareRange);
+    compareProject.Installations.Add(compareInstallation);
+    var activeGa = new WorkbenchTarget("ga", "GA-C-2");
+    Check("compare keeps the active group address", WorkbenchCompare.Resolve(compareProject, activeGa) == activeGa);
+    Check("compare falls back to the first group address", WorkbenchCompare.Resolve(compareProject,
+        new WorkbenchTarget("device", "D-1")) == new WorkbenchTarget("ga", "GA-C-1"));
+    Check("compare ignores a stale active target", WorkbenchCompare.Resolve(compareProject,
+        new WorkbenchTarget("ga", "GA-missing")) == new WorkbenchTarget("ga", "GA-C-1"));
+    Check("compare needs a project and a group address", WorkbenchCompare.Resolve(null, null) is null
+        && WorkbenchCompare.Resolve(new Project { Id = "P-EMPTY", Name = "Empty" }, null) is null);
+
+    // Demo parameters keep the importer's vocabulary, encoding and numeric range in one place.
+    var demoProject = Knx.Workbench.WorkbenchJson.CreateDemo();
+    var demoDevice = ProjectQuery.DeviceList(demoProject)
+        .First(d => demoProject.Workbench.Devices[d.Id].Demo && d.ParameterValues.ContainsKey("mode"));
+    Check("every demo parameter key has a localized field label",
+        demoDevice.ParameterValues.Keys.All(key => WorkbenchDemoForm.IsKnown(key)
+            && WorkbenchDemoForm.Label(key) is { Length: > 0 } label && label != key));
+    Check("demo fields order mode, led and interface before the numeric settings",
+        demoDevice.ParameterValues.Keys.OrderBy(WorkbenchDemoForm.SortOrder)
+            .ThenBy(key => key, StringComparer.Ordinal).First() == "mode");
+    Check("demo form rejects non-numeric and out-of-range values",
+        WorkbenchDemoForm.Validate("debounce", "abc") is { Length: > 0 }
+        && WorkbenchDemoForm.Validate("debounce", "-1") is { Length: > 0 }
+        && WorkbenchDemoForm.Validate("debounce", "1000001") is { Length: > 0 }
+        && WorkbenchDemoForm.Validate("setpoint", "-20") is null
+        && WorkbenchDemoForm.Validate("setpoint", "21.5") is null
+        && WorkbenchDemoForm.Validate("mode", "anything") is null);
+    Check("demo form stores strings JSON-quoted and numbers raw",
+        WorkbenchDemoForm.Serialize("mode", "dim") == "\"dim\""
+        && WorkbenchDemoForm.Serialize("interface", "Demo") == "\"Demo\""
+        && WorkbenchDemoForm.Serialize("deadband", "0.5") == "0.5");
+
+    // R02/R05: the documentation window and the compare action stay localized in both languages.
+    var language = Knx.Strings.Language;
+    try
+    {
+        var untranslated = new List<string>();
+        foreach (var key in WorkbenchStrings.Keys)
+        {
+            Knx.Strings.Language = "de"; var de = WorkbenchStrings.Get(key);
+            Knx.Strings.Language = "en"; var en = WorkbenchStrings.Get(key);
+            if (string.IsNullOrWhiteSpace(de) || string.IsNullOrWhiteSpace(en)) untranslated.Add(key);
+        }
+        Check("every shell string exists in de and en", untranslated.Count == 0);
+        Knx.Strings.Language = "de"; var deTitle = WorkbenchStrings.Get("HelpTitle");
+        Knx.Strings.Language = "en"; var enTitle = WorkbenchStrings.Get("HelpTitle");
+        Check("documentation title and compare action are localized",
+            deTitle.Contains("Dokumentation", StringComparison.Ordinal)
+            && enTitle.Contains("Documentation", StringComparison.Ordinal)
+            && WorkbenchStrings.Get("CompareNoGroupAddress").Length > 0);
+    }
+    finally { Knx.Strings.Language = language; }
 
     Console.WriteLine($"WORKBENCH UI STATE OK ({checks})");
 }

@@ -162,6 +162,26 @@ internal static class WorkbenchCheck
                     await Task.Delay(60);
                     Check("help closes with Escape", !openHelp.IsVisible);
                 }
+                var documentation = window.GetVisualDescendants().OfType<Button>()
+                    .FirstOrDefault(button => AutomationProperties.GetName(button) == WorkbenchStrings.Get("Documentation"));
+                Check("documentation action is clearly named in the shell rail", documentation is not null);
+                documentation?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                HelpWindow? documented = null;
+                for (var attempt = 0; attempt < 100 && documented is null; attempt++)
+                {
+                    documented = desktop.Windows.OfType<HelpWindow>().FirstOrDefault(candidate => candidate.IsVisible);
+                    if (documented is null) await Task.Delay(20);
+                }
+                Check("documentation action opens the localized usage concept", documented is { } documentedWindow
+                    && documentedWindow.Title == WorkbenchStrings.Get("HelpTitle")
+                    && documentedWindow.GetVisualDescendants().OfType<TextBlock>()
+                        .Any(text => text.Text == WorkbenchStrings.Get("HelpSectionShortcuts")));
+                if (documented is { } closeDocumented)
+                {
+                    closeDocumented.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape });
+                    await Task.Delay(60);
+                    Check("documentation closes with Escape", !closeDocumented.IsVisible);
+                }
                 // Cold catalogue: the DCA reason arrives only via CatalogLoaded, then the pane is read-only.
                 var dcaProject = new Project { Id = "P-DCA-UI", Name = "DCA shell" };
                 var dcaInstallation = new Installation { Id = "I-DCA-UI" };
@@ -459,6 +479,33 @@ internal static class WorkbenchCheck
                 Check("room scope includes relevant external channel", demoRows.Any(r => r.External && r.Object?.Id == "dimmer-a-value"));
                 Check("room scope excludes unrelated external channel", !demoRows.Any(r => r.Object?.Id is { } id && id.StartsWith("dimmer-b-", StringComparison.Ordinal)));
                 Check("object metadata fills DPT, bits and flags columns", demoRows.Any(r => r.Object is not null && r.Dpt == "1.001" && r.Bits == 1 && r.Flags == "CT"));
+                // Demo form parity: shared label/field classes, per-field validation and blocked Apply.
+                var demoParameterDevice = ProjectQuery.DeviceList(demo).First(x => demo.Workbench.Devices[x.Id].Demo
+                    && x.ParameterValues.ContainsKey("debounce"));
+                window.OpenTarget(new("device", demoParameterDevice.Id), "params");
+                await Task.Delay(100);
+                var parameterHost = window.FindControl<ContentControl>("ParametersHost")!;
+                var demoLabels = parameterHost.GetVisualDescendants().OfType<TextBlock>()
+                    .Where(text => text.IsEffectivelyVisible && text.Classes.Contains("wb-label"))
+                    .Select(text => text.Text).ToHashSet();
+                Check("demo parameters use ParameterPane's field label geometry",
+                    demoLabels.Contains(WorkbenchStrings.Get("Function"))
+                    && demoLabels.Contains(WorkbenchStrings.Get("DebounceMs"))
+                    && parameterHost.GetVisualDescendants().OfType<Control>()
+                        .Any(control => control.IsEffectivelyVisible && control.Classes.Contains("wb-field")));
+                var demoApply = parameterHost.GetVisualDescendants().OfType<Button>()
+                    .FirstOrDefault(button => button.IsEffectivelyVisible && Equals(button.Content, WorkbenchStrings.Get("Apply")));
+                var demoField = parameterHost.GetVisualDescendants().OfType<TextBox>()
+                    .FirstOrDefault(text => text.IsEffectivelyVisible && text.Classes.Contains("wb-field"));
+                demoField!.Text = "-1";
+                await Task.Delay(60);
+                var demoError = parameterHost.GetVisualDescendants().OfType<TextBlock>()
+                    .FirstOrDefault(text => text.IsEffectivelyVisible && text.IsVisible && text.Classes.Contains("wb-error"));
+                Check("demo form reports the field error and blocks Apply like ParameterPane",
+                    demoError is not null && demoApply is { IsEnabled: false });
+                demoField.Text = "30";
+                await Task.Delay(60);
+                Check("valid demo values re-enable the footer action", demoApply is { IsEnabled: true });
                 var beforeLinks = Knx.Workbench.WorkbenchJson.Export(demo);
                 var incompatible = Knx.Workbench.WorkbenchProject.AddLinks(demo,
                     [new("taster-living", "taster-living-switch"), new("climate-living", "climate-living-temp")], "central-off");
@@ -502,6 +549,50 @@ internal static class WorkbenchCheck
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Check("rebuilt tool view controls the new session", window.Sessions!.Monitor.IsRunning);
                 window.Sessions.Monitor.Stop();
+
+                // V4 compare (24/E09): one pinned GA companion survives editor navigation, dedups and closes.
+                var compareProject = window.ViewModel.Project!;
+                var firstGa = ProjectQuery.GroupAddresses(compareProject).OrderBy(group => group.Address.Raw).First();
+                var compareButton = window.FindControl<Button>("CompareButton")!;
+                Window? PinnedCompanion() => desktop.Windows.FirstOrDefault(candidate => candidate.IsVisible
+                    && candidate.Title.Contains(firstGa.Address.ToString(), StringComparison.Ordinal)
+                    && candidate.Title.Contains(WorkbenchStrings.Get("CompanionWindow"), StringComparison.Ordinal));
+                var windowsBeforeCompare = desktop.Windows.Count;
+                compareButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(150);
+                var pinned = PinnedCompanion();
+                Check("compare opens the first group address beside the shell", pinned is not null
+                    && desktop.Windows.Count == windowsBeforeCompare + 1);
+                window.OpenTarget(new("device", ProjectQuery.DeviceList(compareProject).First().Id));
+                await Task.Delay(80);
+                Check("pinned compare stays visible while the editor navigates", pinned?.IsVisible == true);
+                compareButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(100);
+                Check("compare reuses the open companion instead of stacking windows",
+                    ReferenceEquals(PinnedCompanion(), pinned) && desktop.Windows.Count == windowsBeforeCompare + 1);
+                pinned?.Close();
+                await Task.Delay(80);
+                Check("closing compare ends the pinned view", pinned?.IsVisible == false);
+                window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.G, KeyModifiers = KeyModifiers.Control | KeyModifiers.Shift });
+                await Task.Delay(150);
+                var shortcutPinned = PinnedCompanion();
+                Check("Ctrl+Shift+G opens compare for the active work item", shortcutPinned is not null);
+                shortcutPinned?.Close();
+                await Task.Delay(60);
+                var emptyProject = new Project { Id = "P-NO-GA", Name = "No group addresses" };
+                var emptyInstallation = new Installation { Id = "I-NO-GA" };
+                var emptyArea = new Area { Id = "A-NO-GA", Address = 1 };
+                var emptyLine = new Line { Id = "L-NO-GA", Address = 1 };
+                emptyArea.Lines.Add(emptyLine); emptyInstallation.Areas.Add(emptyArea); emptyProject.Installations.Add(emptyInstallation);
+                window.ViewModel.CreateProject(emptyProject, null);
+                window.RefreshWorkspace();
+                await Task.Delay(80);
+                var windowsBeforeEmpty = desktop.Windows.Count;
+                compareButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(80);
+                Check("compare explains a project without group addresses instead of opening a window",
+                    window.ViewModel.Status == WorkbenchStrings.Get("CompareNoGroupAddress")
+                    && desktop.Windows.Count == windowsBeforeEmpty);
 
                 Console.WriteLine(failures.Count == 0 ? "WORKBENCH NATIVE OK" : $"WORKBENCH FAILURES: {failures.Count}");
                 window.RequestShutdown(); desktop.Shutdown(failures.Count == 0 ? 0 : 1);

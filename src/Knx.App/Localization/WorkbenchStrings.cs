@@ -19,6 +19,9 @@ public static class WorkbenchStrings
         return args.Length == 0 ? text : string.Format(text, args);
     }
 
+    /// <summary>Every shell key; the UI checks assert both languages stay complete.</summary>
+    public static IReadOnlyCollection<string> Keys => Map.Keys;
+
     // Keys are grouped by shell region; German values preserve the previous literals.
     private static readonly Dictionary<string, (string De, string En)> Map = new()
     {
@@ -48,7 +51,16 @@ public static class WorkbenchStrings
                                     "⌕   Search project                       Ctrl K"),
         ["Programming"] = ("Programmieren", "Program"),
         ["Help"] = ("Hilfe", "Help"),
-        ["HelpTip"] = ("Bedienung und Grenzen", "How it works and limits"),
+        ["HelpTip"] = ("Bedienkonzept und Grenzen", "Usage concept and limits"),
+        ["Documentation"] = ("Dokumentation und Bedienkonzept", "Documentation and usage concept"),
+        ["ComparePinned"] = ("Vergleich", "Compare"),
+        ["ComparePinnedTip"] = ("Aktive Gruppenadresse im Nebenfenster verfolgen (Strg+Umschalt+G)",
+                                 "Track the active group address in a companion window (Ctrl+Shift+G)"),
+        ["CompareOpened"] = ("Vergleich: {0} im Nebenfenster", "Comparing {0} in the companion window"),
+        ["CompareNoGroupAddress"] = ("Keine Gruppenadresse zum Vergleich. Lege zuerst eine Gruppenadresse an.",
+                                      "No group address to compare. Create a group address first."),
+        ["CompareNoProject"] = ("Kein Projekt geöffnet. Öffne ein Projekt, um Adressen zu vergleichen.",
+                                 "No project open. Open a project to compare addresses."),
         ["NavSearchWatermark"] = ("Name, Adresse oder Objekt …", "Name, address or object …"),
         ["NavFootnote"] = ("Derselbe Projektstand in jeder Ansicht", "The same project state in every view"),
         ["Watch"] = ("Beobachten", "Watch"),
@@ -318,6 +330,13 @@ public static class WorkbenchStrings
         ["BrightnessThreshold"] = ("Helligkeitsschwelle", "Brightness threshold"),
         ["Setpoint"] = ("Sollwert", "Setpoint"),
         ["Deadband"] = ("Totband", "Deadband"),
+        ["MinimumBrightness"] = ("Mindesthelligkeit", "Minimum brightness"),
+        ["FadeTime"] = ("Fadedauer (s)", "Fade time (s)"),
+        ["OnDelay"] = ("Einschaltverzögerung", "Switch-on delay"),
+        ["OffDelay"] = ("Ausschaltverzögerung", "Switch-off delay"),
+        ["DemoNumberRequired"] = ("Numerischer Wert erwartet.", "Enter a numeric value."),
+        ["DemoNumberRange"] = ("Wert muss zwischen {0} und {1} liegen.", "Value must be between {0} and {1}."),
+        ["DemoValidationSummary"] = ("{0} ungültige Eingabe(n).", "{0} invalid input(s)."),
         ["SwitchMode"] = ("Schalten", "Switch"),
         ["SwitchDimMode"] = ("Schalten + Dimmen", "Switch + dim"),
         ["ViaFeedbackObject"] = ("Über Rückmeldeobjekt", "Via feedback object"),
@@ -425,7 +444,7 @@ public static class WorkbenchStrings
         ["ActionFailed"] = ("Aktion fehlgeschlagen", "Action failed"),
         ["HelpIntro"] = ("Raum, Linie, Gerät oder Gruppenadresse öffnen. Tabs behalten ihre eigenen Filter, Auswahl, Aufklappzustände und Darstellung.\n\n",
                           "Open a room, line, device or group address. Tabs keep their own filters, selection, expansion state and view.\n\n"),
-        ["HelpTitle"] = ("BusChord · Hilfe", "BusChord · Help"),
+        ["HelpTitle"] = ("BusChord · Dokumentation", "BusChord · Documentation"),
         ["HelpSectionNavigation"] = ("Arbeitsweise", "Working with the shell"),
         ["HelpSectionShortcuts"] = ("Tastenkürzel", "Keyboard shortcuts"),
         ["HelpSectionLinks"] = ("Zuordnungen", "Links"),
@@ -433,8 +452,8 @@ public static class WorkbenchStrings
         ["HelpSectionSessions"] = ("Sitzungen", "Sessions"),
         ["HelpSectionBoundaries"] = ("Grenzen", "Boundaries"),
         ["Close"] = ("Schließen", "Close"),
-        ["HelpShortcuts"] = ("Ctrl+B: Navigator · Ctrl+J: Werkzeug · Ctrl+K: Befehlssuche · Ctrl+Tab: nächster Tab · Ctrl+Z / Ctrl+Shift+Z: Projekt-Undo/Redo.\n\n",
-                              "Ctrl+B: navigator · Ctrl+J: tool · Ctrl+K: command palette · Ctrl+Tab: next tab · Ctrl+Z / Ctrl+Shift+Z: project undo/redo.\n\n"),
+        ["HelpShortcuts"] = ("Ctrl+B: Navigator · Ctrl+J: Werkzeug · Ctrl+K: Befehlssuche · Ctrl+Shift+G: Adressvergleich · Ctrl+Tab: nächster Tab · Ctrl+Z / Ctrl+Shift+Z: Projekt-Undo/Redo.\n\n",
+                              "Ctrl+B: navigator · Ctrl+J: tool · Ctrl+K: command palette · Ctrl+Shift+G: address compare · Ctrl+Tab: next tab · Ctrl+Z / Ctrl+Shift+Z: project undo/redo.\n\n"),
         ["HelpLinks"] = ("Mehrfachzuordnung prüft DPT, Länge und explizite Secure-Fähigkeit atomar. Die Sendeadresse wird ausdrücklich aus bestehenden Zuordnungen gewählt; beim Entfernen wird keine Ersatzadresse still bestimmt.\n\n",
                           "Batch linking checks DPT, length and explicit Secure capability atomically. The sending address is chosen explicitly from existing links; removal never substitutes another address silently.\n\n"),
         ["HelpParameters"] = ("Parameter ändern erst nach Prüfen und Übernehmen das Projekt. Speichern übernimmt keine Entwürfe. Demo-Applikationen zeigen eine reine Wirkungsvorschau; unbekannte Herstellerdynamik und DCA werden nicht ausgeführt.\n\n",
