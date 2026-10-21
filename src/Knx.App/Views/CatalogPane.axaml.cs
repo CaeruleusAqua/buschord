@@ -283,6 +283,7 @@ public partial class CatalogPane : UserControl
     {
         Details.Children.Clear();
         UxProduct.Text = product?.Name ?? "";
+        DetailsEmpty.IsVisible = product is null;
         if (product is null || SelectedCatalog is not { } catalog) return;
 
         var program = FindProgram(catalog, product);
@@ -331,7 +332,7 @@ public partial class CatalogPane : UserControl
         AddressBox.IsEnabled = hasProject;
         NameBox.IsEnabled = hasProject;
         InsertButton.IsEnabled = hasProject && blocker is null;
-        SetInsertStatus(hasProject ? blocker ?? "" : "");
+        SetInsertStatus(hasProject ? blocker ?? "" : "", error: true);
     }
 
     private string? InsertBlocker()
@@ -361,9 +362,12 @@ public partial class CatalogPane : UserControl
         return targets.Count == 1 ? targets[0] : null;
     }
 
-    private void SetInsertStatus(string text)
+    private void SetInsertStatus(string text, bool error = false)
     {
         InsertStatus.Text = text;
+        // Validation blockers and failures read red; a completed insert reads as success.
+        InsertStatus.Classes.Set("wb-error", error && text.Length > 0);
+        InsertStatus.Classes.Set("wb-success", !error && text.Length > 0);
         ToolTip.SetTip(InsertStatus, text);
     }
 
@@ -386,7 +390,7 @@ public partial class CatalogPane : UserControl
         catch (Exception ex)
         {
             _vm.Status = Strings.Get("CatalogLoadError", ex.Message);
-            SetInsertStatus(_vm.Status);
+            SetInsertStatus(_vm.Status, error: true);
             return;
         }
         var inserted = CatalogBrowser.Insert(_vm, product, program, LineBox.SelectedItem as LineChoice,
@@ -398,7 +402,7 @@ public partial class CatalogPane : UserControl
             SuggestAddress();
             UpdateInsertState();
         }
-        SetInsertStatus(message);
+        SetInsertStatus(message, error: !inserted);
     }
 
     private void OnClose(object? sender, RoutedEventArgs e) =>
