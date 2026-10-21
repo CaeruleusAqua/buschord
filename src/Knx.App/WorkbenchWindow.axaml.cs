@@ -141,6 +141,7 @@ public partial class WorkbenchWindow : Window
                 "monitor" => "monitor", "programming" => "download", "scan" => "refresh",
                 "search" => "search", "changes" => "clock", _ => "warning"
             }, title);
+            AutomationProperties.SetName(button, title);
             ToolTabs.Children.Add(button);
         }
         ViewModel.PropertyChanged += OnModelChanged;
@@ -150,8 +151,8 @@ public partial class WorkbenchWindow : Window
         Workspace.PropertyChanged += OnWorkspaceChanged;
         SizeChanged += (_, _) => ApplyLayout();
         AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Tunnel);
-        NavTree.KeyDown += OnNavigatorKeyDown;
-        ObjectTable.KeyDown += OnTableKeyDown;
+        NavTree.AddHandler(KeyDownEvent, OnNavigatorKeyDown, RoutingStrategies.Tunnel);
+        ObjectTable.AddHandler(KeyDownEvent, OnTableKeyDown, RoutingStrategies.Tunnel);
         Closing += OnClosing;
         foreach (var splitter in new[] { NavSplitter, InspectorSplitter, ToolsSplitter })
         {
@@ -438,6 +439,7 @@ public partial class WorkbenchWindow : Window
             var header = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal };
             var activate = ActionButton(tab.Title, () => { CaptureScroll(); Workspace.ActiveTab = tab; }, "quiet");
             activate.MaxWidth = 220; activate.Height = 39; activate.MinWidth = 110;
+            AutomationProperties.SetName(activate, W("OpenTab", tab.Title));
             if (tab == Workspace.ActiveTab) activeButton = activate;
             header.Children.Add(activate);
             var close = ActionButton("", () => { Workspace.Close(tab); RefreshWorkspace(); }, "quiet", W("CloseTab", tab.Title));
@@ -1158,6 +1160,8 @@ public partial class WorkbenchWindow : Window
             live.Classes.Set("wb-subtle", !running);
         }
         toolbar.Children.Add(ActionButton(W("Stop"), () => { sessions.Monitor.Stop(); RefreshState(); }));
+        toolbar.Children.Add(ActionButton(W("Pause"), () => { sessions.Monitor.Pause(); RefreshState(); }, "quiet"));
+        toolbar.Children.Add(ActionButton(W("Resume"), () => { sessions.Monitor.Resume(); RefreshState(); }, "quiet"));
         toolbar.Children.Add(ActionButton(W("ClearDisplay"), () => { sessions.Monitor.ClearDisplay(); RefreshState(); }, "quiet"));
         toolbar.Children.Add(ActionButton(W("MonitorValue"), ShowMonitorValueDialog, "quiet"));
         var mode = new ComboBox { ItemsSource = new[] { W("GroupMonitor"), W("BusMonitor") }, SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0, MinWidth = 130 };
@@ -1213,6 +1217,9 @@ public partial class WorkbenchWindow : Window
             catch (Exception ex) { ViewModel.Status = ex.Message; }
         };
         toolbar.Children.Add(filter);
+        var autoScroll = new CheckBox { Content = W("AutoScroll"), IsChecked = sessions.Monitor.AutoScroll, FontSize = 11 };
+        autoScroll.IsCheckedChanged += (_, _) => sessions.Monitor.AutoScroll = autoScroll.IsChecked == true;
+        toolbar.Children.Add(autoScroll);
         toolbar.Children.Add(ActionButton(W("ExportFilteredCsv"), () => _ = GuardAsync(ExportFilteredMonitorAsync)));
         toolbar.Children.Add(ActionButton(W("ExportFullCsv"), () => _ = GuardAsync(ExportFullMonitorAsync), "quiet"));
         toolbar.Children.Add(live);
@@ -1250,7 +1257,12 @@ public partial class WorkbenchWindow : Window
         empty.IsVisible = sessions.Monitor.FilteredRows.Count == 0;
         if (sessions.Monitor.FilteredRows is System.Collections.Specialized.INotifyCollectionChanged changed)
         {
-            void OnChanged(object? _, System.Collections.Specialized.NotifyCollectionChangedEventArgs __) => empty.IsVisible = sessions.Monitor.FilteredRows.Count == 0;
+            void OnChanged(object? _, System.Collections.Specialized.NotifyCollectionChangedEventArgs __)
+            {
+                empty.IsVisible = sessions.Monitor.FilteredRows.Count == 0;
+                if (sessions.Monitor.AutoScroll && sessions.Monitor.FilteredRows.Count > 0)
+                    list.ScrollIntoView(sessions.Monitor.FilteredRows[^1]);
+            }
             changed.CollectionChanged += OnChanged;
             list.DetachedFromVisualTree += (_, _) => changed.CollectionChanged -= OnChanged;
         }
@@ -1264,6 +1276,7 @@ public partial class WorkbenchWindow : Window
         EnsureSessions();
         if (_sessions is not { } sessions) return Note(W("ProgrammingNeedsProject"));
         var panel = new DockPanel();
+        ProgrammingJob? selectedJob = null;
         var toolbar = new WrapPanel { Margin = new(12, 6) };
         var devices = ViewModel.Project is { } project ? ViewModel.Devices.ToList() : [];
         var device = new ComboBox { ItemsSource = devices, MinWidth = 250, SelectedIndex = devices.Count > 0 ? 0 : -1 };
@@ -1295,6 +1308,22 @@ public partial class WorkbenchWindow : Window
             }
             catch (Exception ex) { ViewModel.Status = ex.Message; }
         }, "quiet"));
+        toolbar.Children.Add(ActionButton(W("CancelJob"), () =>
+        {
+            if (selectedJob is null) { ViewModel.Status = W("NoJobSelected"); return; }
+            try { sessions.Programming.CancelJob(selectedJob); }
+            catch (Exception ex) { ViewModel.Status = ex.Message; }
+        }, "quiet"));
+        toolbar.Children.Add(ActionButton(W("CancelQueued"), () =>
+        {
+            try { ViewModel.Status = W("JobsCancelled", sessions.Programming.CancelQueued()); }
+            catch (Exception ex) { ViewModel.Status = ex.Message; }
+        }, "quiet"));
+        toolbar.Children.Add(ActionButton(W("ClearHistory"), () =>
+        {
+            try { sessions.Programming.ClearHistory(); }
+            catch (Exception ex) { ViewModel.Status = ex.Message; }
+        }, "quiet"));
         var fail = new CheckBox { Content = W("SimulateFailure"), IsChecked = _simulateProgrammingFailure, FontSize = 11, Margin = new(8, 0) };
         fail.IsCheckedChanged += (_, _) => _simulateProgrammingFailure = fail.IsChecked == true;
         toolbar.Children.Add(fail);
@@ -1303,9 +1332,9 @@ public partial class WorkbenchWindow : Window
         var needing = devices.Count(d => sessions.Programming.NeedsProgramming(d.Device.Id));
         var needNote = Note(W("ProgrammingNeed", needing));
         DockPanel.SetDock(needNote, Avalonia.Controls.Dock.Top); panel.Children.Add(needNote);
-        var header = new Grid { ColumnDefinitions = new("110,220,100,90,*"), Height = 28 };
+        var header = new Grid { ColumnDefinitions = new("110,220,90,90,60,*"), Height = 28 };
         header.Classes.Add("wb-table-header");
-        var headings = new[] { W("ColumnAddress"), W("ColumnDevice"), "Status", W("ColumnJob"), W("ColumnHint") };
+        var headings = new[] { W("ColumnAddress"), W("ColumnDevice"), "Status", W("ColumnJob"), W("Progress"), W("ColumnHint") };
         for (var i = 0; i < headings.Length; i++)
         {
             var text = Label(headings[i]); text.FontSize = 9; text.Classes.Add("wb-muted"); text.Margin = new(6, 0, 0, 0);
@@ -1313,11 +1342,12 @@ public partial class WorkbenchWindow : Window
         }
         DockPanel.SetDock(header, Avalonia.Controls.Dock.Top); panel.Children.Add(header);
         var list = new ListBox { ItemsSource = sessions.Programming.Jobs, Background = Brushes.Transparent };
+        list.SelectionChanged += (_, _) => selectedJob = list.SelectedItem as ProgrammingJob;
         list.ItemTemplate = new FuncDataTemplate<ProgrammingJob>((job, _) =>
         {
             if (job is null) return new Border();
-            var grid = new Grid { ColumnDefinitions = new("110,220,100,90,*"), Height = 28 };
-            var cells = new[] { job.Address, job.Name, job.Status.ToString().ToUpperInvariant(), job.Operation, job.Error ?? "" };
+            var grid = new Grid { ColumnDefinitions = new("110,220,90,90,60,*"), Height = 28 };
+            var cells = new[] { job.Address, job.Name, job.Status.ToString().ToUpperInvariant(), job.Operation, $"{job.Progress} %", job.Error ?? "" };
             for (var i = 0; i < cells.Length; i++)
             {
                 var cell = Label(cells[i]); cell.FontSize = 10; cell.Margin = new(6, 0, 0, 0); Grid.SetColumn(cell, i); grid.Children.Add(cell);
@@ -1600,6 +1630,8 @@ public partial class WorkbenchWindow : Window
         }
         Tools.IsVisible = ToolsSplitter.IsVisible = Workspace.ToolsVisible;
         Editor.IsVisible = !Workspace.ToolsVisible || !Workspace.ToolsMaximized;
+        KeyboardNavigation.SetTabNavigation(Editor,
+            narrow && Workspace.InspectorVisible ? KeyboardNavigationMode.None : KeyboardNavigationMode.Continue);
         MainColumn.RowDefinitions[1].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(0) : new(1, GridUnitType.Star);
         MainColumn.RowDefinitions[2].Height = new(Workspace.ToolsVisible ? 5 : 0);
         MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(1, GridUnitType.Star) : new(Workspace.ToolsVisible ? Math.Min(Workspace.ToolsHeight, Bounds.Height is > 0 and < 740 ? 140 : Workspace.ToolsHeight) : 0);

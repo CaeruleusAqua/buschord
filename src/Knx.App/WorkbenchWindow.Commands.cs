@@ -438,10 +438,18 @@ public partial class WorkbenchWindow
         var unknown = devices.Count(d => project.Workbench.Devices.GetValueOrDefault(d.Id)?.SecureCapable is null);
         var secureGroups = project.Workbench.Groups.Count(g => g.Value.Secure == true);
         var lines = string.Join("\n", capable.Take(40).Select(d => $"{d.Address} · {d.Name}"));
+        string diagnostics = "";
+        try
+        {
+            if (_sessions?.BuildDiagnosticSummary() is { } summary)
+                diagnostics = "\n\n" + W("ProgrammingNeed", summary.Programming.NeedsProgrammingCount) +
+                    "\n" + W("InterfaceConflicts") + ": " + summary.Interfaces.Count(i => i.HasConflict);
+        }
+        catch (InvalidOperationException) { }
         _ = ConfirmDialog.ShowMessageAsync(this, W("SecureOverviewTitle"),
             W("SecureSummary", capable.Count, devices.Count(), unknown) + "\n" +
             W("SecureGroups", secureGroups) + "\n\n" +
-            (lines.Length > 0 ? lines : W("SecureNoEvidence")) +
+            (lines.Length > 0 ? lines : W("SecureNoEvidence")) + diagnostics +
             "\n\n" + W("SecureBoundary"));
     }
 

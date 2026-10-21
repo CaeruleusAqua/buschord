@@ -82,7 +82,7 @@
     <Border Grid.Row="2" Background="{DynamicResource WbPaper}"
             BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0" Padding="24,12">
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-        <Button Content="{loc:Tr BtnCancel}" Click="OnCancel" Classes="quiet" />
+        <Button Content="{loc:Tr BtnCancel}" Click="OnCancel" Classes="quiet" IsCancel="True" />
         <Button Content="{loc:Tr BtnSaveSettings}" Classes="primary" Click="OnSave" />
       </StackPanel>
     </Border>

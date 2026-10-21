@@ -50,14 +50,14 @@
     </Border>
     <Grid x:Name="Zones" Grid.Row="1" ColumnDefinitions="47,272,5,*,0,0">
       <Border Background="{DynamicResource WbRail}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,1,0">
-        <DockPanel><StackPanel x:Name="Rail" Spacing="5" Margin="5,10"/><Button DockPanel.Dock="Bottom" Click="OnHelp" VerticalAlignment="Bottom" Classes="quiet" ToolTip.Tip="{loc:Wb HelpTip}"><views:ConceptIcon Symbol="help"/></Button></DockPanel>
+        <DockPanel><StackPanel x:Name="Rail" Spacing="5" Margin="5,10"/><Button DockPanel.Dock="Bottom" Width="35" Height="35" HorizontalAlignment="Center" Click="OnHelp" VerticalAlignment="Bottom" Classes="quiet" ToolTip.Tip="{loc:Wb HelpTip}" AutomationProperties.Name="{loc:Wb HelpTip}"><views:ConceptIcon Symbol="help"/></Button></DockPanel>
       </Border>
       <Border x:Name="Navigator" Grid.Column="1" Background="{DynamicResource WbPanel}">
         <Grid RowDefinitions="Auto,Auto,Auto,*,30">
           <StackPanel Margin="15,14,10,10" Spacing="6"><TextBlock x:Name="ProjectName" FontWeight="SemiBold"/><TextBlock x:Name="ProjectSummary" Classes="muted"/></StackPanel>
           <UniformGrid Grid.Row="1" Columns="3" Margin="10,0,10,10" x:Name="Perspectives"/>
-          <TextBox x:Name="NavSearch" Grid.Row="2" PlaceholderText="{loc:Wb NavSearchWatermark}" Margin="12,0,12,10" TextChanged="OnNavSearch"/>
-          <ListBox x:Name="NavTree" Grid.Row="3" Background="Transparent" Margin="5,0" SelectionChanged="OnNavSelected"/>
+          <TextBox x:Name="NavSearch" Grid.Row="2" PlaceholderText="{loc:Wb NavSearchWatermark}" AutomationProperties.Name="{loc:Wb NavSearchWatermark}" Margin="12,0,12,10" TextChanged="OnNavSearch"/>
+          <ListBox x:Name="NavTree" Grid.Row="3" Background="Transparent" Margin="5,0" SelectionChanged="OnNavSelected" AutomationProperties.Name="{loc:Wb Navigator}"/>
           <TextBlock Grid.Row="4" Text="{loc:Wb NavFootnote}" Classes="muted" Margin="12,8,0,0"/>
         </Grid>
       </Border>
@@ -81,7 +81,7 @@
             <Button Grid.Column="1" Content="{loc:Wb Properties}" Classes="quiet" Click="OnInspector"/>
             <CheckBox x:Name="RelatedBox" Grid.Column="3" Content="{loc:Wb ExternalChannels}" ToolTip.Tip="{loc:Wb ExternalChannelsTip}" FontSize="11" IsCheckedChanged="OnRelated" Margin="8,0"/>
             <CheckBox x:Name="Unlinked" Grid.Column="4" Content="{loc:Wb WithoutGroupAddress}" FontSize="11" IsCheckedChanged="OnUnlinked" Margin="8,0"/>
-            <TextBox x:Name="ObjectSearch" Grid.Column="5" PlaceholderText="{loc:Wb FilterObjects}" TextChanged="OnObjectSearch"/>
+            <TextBox x:Name="ObjectSearch" Grid.Column="5" PlaceholderText="{loc:Wb FilterObjects}" AutomationProperties.Name="{loc:Wb FilterObjects}" TextChanged="OnObjectSearch"/>
             <Button Grid.Column="6" ToolTip.Tip="{loc:Wb ExpandCollapseAll}" AutomationProperties.Name="{loc:Wb ExpandCollapseAllDevices}" Click="OnExpandAll" Classes="quiet"><views:ConceptIcon Symbol="down" Width="17" Height="17"/></Button>
           </Grid>
           <Grid Grid.Row="2">
@@ -95,8 +95,8 @@
                   <TextBlock Grid.Column="4" Text="{loc:Wb GroupAddresses}" Margin="0,8" Classes="muted"/>
                 </Grid>
               </Border>
-              <ListBox x:Name="ObjectTable" Grid.Row="1" SelectionMode="Multiple" Background="Transparent" SelectionChanged="OnObjectSelected"/>
-              <TextBlock x:Name="TableFootnote" Grid.Row="2" Classes="muted" VerticalAlignment="Center"/>
+              <ListBox x:Name="ObjectTable" Grid.Row="1" SelectionMode="Multiple" Background="Transparent" SelectionChanged="OnObjectSelected" AutomationProperties.Name="{loc:Wb ObjectsTable}"/>
+              <TextBlock x:Name="TableFootnote" Grid.Row="2" Classes="muted" VerticalAlignment="Center" AutomationProperties.Name="{loc:Wb ColumnObjectFunction}"/>
             </Grid>
             </ScrollViewer>
             <ContentControl x:Name="ParametersHost" IsVisible="False" Margin="24,12"/>
@@ -118,7 +118,7 @@
       <Border x:Name="Inspector" Grid.Column="5" Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}" BorderThickness="1,0,0,0">
         <Grid RowDefinitions="44,*"><Grid ColumnDefinitions="*,Auto,Auto" Margin="15,0">
             <TextBlock x:Name="InspectorTitle" Text="{loc:Wb Properties}" VerticalAlignment="Center" FontWeight="SemiBold"/>
-            <ComboBox x:Name="SidebarMode" Grid.Column="1" MinWidth="120" FontSize="10" Margin="0,0,6,0"/>
+            <ComboBox x:Name="SidebarMode" Grid.Column="1" MinWidth="120" FontSize="10" Margin="0,0,6,0" AutomationProperties.Name="{loc:Wb SidebarTitle}"/>
             <Button Grid.Column="2" AutomationProperties.Name="{loc:Wb HideProperties}" Click="OnInspector" Classes="quiet"><views:ConceptIcon Symbol="close" Width="17" Height="17"/></Button>
           </Grid>
           <ScrollViewer Grid.Row="1"><StackPanel x:Name="InspectorBody" Margin="15" Spacing="12"/></ScrollViewer>
@@ -126,8 +126,8 @@
       </Border>
     </Grid>
     <Border Grid.Row="2" Background="{DynamicResource WbStatusbar}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="*,Auto" Margin="12,0"><TextBlock Text="{Binding Status}" FontSize="10" VerticalAlignment="Center" Foreground="{DynamicResource WbMuted}"/>
-        <TextBlock Grid.Column="1" Text="{loc:Wb StatusLocalOnly}" Classes="muted" VerticalAlignment="Center"/>
+      <Grid ColumnDefinitions="*,Auto" Margin="12,0"><TextBlock x:Name="StatusText" Text="{Binding Status}" FontSize="10" VerticalAlignment="Center" Foreground="{DynamicResource WbMuted}" AutomationProperties.Name="{loc:Wb Status}" AutomationProperties.LiveSetting="Polite"/>
+        <TextBlock Grid.Column="1" Text="{loc:Wb StatusLocalOnly}" Classes="muted" VerticalAlignment="Center" AutomationProperties.LiveSetting="Off"/>
       </Grid>
     </Border>
   </Grid>

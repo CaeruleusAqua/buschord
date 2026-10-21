@@ -25,6 +25,7 @@ public partial class SettingsWindow : Window
         RecentList.ItemsSource = settings.RecentProjects.Count == 0
             ? new[] { Strings.Get("OptionsNoRecent") }
             : settings.RecentProjects.ToArray();
+        Opened += (_, _) => ThemeBox.Focus();
     }
 
     private void OnSave(object? sender, RoutedEventArgs e)
