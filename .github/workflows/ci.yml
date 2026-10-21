@@ -78,6 +78,8 @@ jobs:
         shell: bash
         run: |
           echo "::notice::Docking/Shell window suites run only on Windows: they require a native display"
+          echo "::notice::skipping tests/Knx.Docking.Tests on Linux: native display required"
+          echo "::notice::skipping tests/Knx.Shell.Tests on Linux: native display required"
           for project in $(echo "$TEST_PROJECTS" | tr -d '\r'); do
             if [ "$project" = "tests/Knx.Icon.Tests" ]; then
               echo "::notice::skipping $project on Linux: it starts Avalonia with UsePlatformDetect and needs a display"
@@ -123,11 +125,11 @@ jobs:
       - name: App screenshot selftest (Windows only)
         run: dotnet run --project src/Knx.App -c Release --no-build -- --screenshot-selftest
       - name: Docking window regressions (Windows only)
-        run: dotnet run --project tests/Knx.Docking.Tests -c Release
+        run: dotnet run --project tests/Knx.Docking.Tests -c Release --no-build
       - name: Parameter draft window regressions (Windows only)
         run: dotnet run --project tests/Knx.ParameterUi.Tests -c Release --no-build -- --native
       - name: Project lifecycle window regressions (Windows only)
-        run: dotnet run --project tests/Knx.Shell.Tests -c Release
+        run: dotnet run --project tests/Knx.Shell.Tests -c Release --no-build
       - name: Workbench native self-check de/light (Windows only)
         run: dotnet run --project src/Knx.App -c Release --no-build -- --workbench-selftest --theme=light --lang=de
       - name: Workbench native self-check en/dark (Windows only)
