@@ -325,7 +325,30 @@ public static class Knxproj
         }
         project.BaselineXml = GenerateXml(project);
         project.OriginalXml = new XDocument(doc);
+        NormalizeGroupAddressReferences(project);
         return project;
+    }
+
+    /// <summary>
+    /// ETS /21 stores group-address element ids with a project/range prefix while communication
+    /// object links may use the local <c>GA-n</c> suffix. Normalize only unambiguous suffixes;
+    /// /23 and already-resolved links stay untouched.
+    /// </summary>
+    private static void NormalizeGroupAddressReferences(Project project)
+    {
+        var groups = ProjectQuery.GroupAddresses(project).ToList();
+        var ids = groups.Select(g => g.Id).ToHashSet(StringComparer.Ordinal);
+        var byLocal = groups
+            .Select(g => (Group: g, Local: g.Id[(g.Id.LastIndexOf('_') + 1)..]))
+            .Where(x => x.Local.Length > 0)
+            .GroupBy(x => x.Local, StringComparer.Ordinal)
+            .Where(x => x.Count() == 1 && !ids.Contains(x.Key))
+            .ToDictionary(x => x.Key, x => x.Single().Group, StringComparer.Ordinal);
+        if (byLocal.Count == 0) return;
+        foreach (var (_, comObject) in ProjectQuery.ComObjectRefs(project))
+            for (var index = 0; index < comObject.Links.Count; index++)
+                if (!ids.Contains(comObject.Links[index]) && byLocal.TryGetValue(comObject.Links[index], out var group))
+                    comObject.Links[index] = group.Id;
     }
 
     private static GroupRange ReadRange(XElement element)
