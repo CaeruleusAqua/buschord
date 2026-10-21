@@ -435,20 +435,29 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
   Exporte, Felder mit `= + - @`, Tab/CR und führenden Leerzeichen
   neutralisieren; Regressionstests. (`65c253d`, `src/Knx.Core/Csv.cs`;
   Tests in App/Core/Bus/Monitor)
-- [ ] **H10.2 Katalog-Parser-Grenzen:** maximale XML-/Archivgröße,
+- [x] **H10.2 Katalog-Parser-Grenzen:** maximale XML-/Archivgröße,
   Verschachtelungstiefe und entpackte Daten begrenzen; Stack-Overflow und
   Speichererschöpfung durch feindliche Kataloge verhindern.
-- [ ] **H10.3 Cache-Vertrauen:** Identität/Hash statt nur mtime+Größe,
+  (`49f3f22`: Tiefe 64, XML-/Archivlimits, 260-MB-Bombentest)
+- [x] **H10.3 Cache-Vertrauen:** Identität/Hash statt nur mtime+Größe,
   keine absoluten Pfade aus dem Cache übernehmen, Extraktion begrenzen,
-  Temp-Dateien aufräumen.
+  Temp-Dateien aufräumen. (`49f3f22`, `33612e0`: SHA-256-Revalidierung,
+  Hex-Archivnamen, atomare Writes, Lazy-Model-Restore)
 - [ ] **H10.4 DCA-Fallback:** Projekt-XML-Applikationen ohne Katalog dürfen
   nicht versehentlich editierbar werden; Read-only-Grund erhalten.
-- [ ] **H10.5 Fixtures/Provenienz:** `knx_master.xml`, `.knxproj`-Fixtures
+- [x] **H10.5 Fixtures/Provenienz:** `knx_master.xml`, `.knxproj`-Fixtures
   und Testkorpora auf Hersteller-/Kundendaten und Lizenz prüfen; durch
-  synthetische Minima ersetzen, wo nötig.
+  synthetische Minima ersetzen, wo nötig. (`171ebca`: 1-MB-KNX-Master und
+  GPL-Fixture entfernt, synthetische Fixtures + Provenienz-README; History
+  enthält die alten Blobs weiterhin → Rewrite-Entscheidung offen)
 - [ ] **H10.6 Release-Entscheidung:** verbleibende P3
   (Klartext-Backups, `CatalogUse.Download`, Import-Atomarität,
   `.signature`) dokumentieren oder beheben.
+- [ ] **H10.7 Git-History:** Die entfernten Fixtures (`knx_master.xml`,
+  GPL-`.knxproj` inkl. eingebetteter Zugangsdaten) liegen weiterhin in der
+  Historie. Vor einem Public-Release History-Rewrite (filter-repo/BFG) und
+  Force-Push nur mit ausdrücklicher Freigabe; betroffene Test-Zugangsdaten
+  rotieren. HEAD ist clean, Historie nicht.
 
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
