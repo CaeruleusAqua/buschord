@@ -14,8 +14,7 @@ wurde nur gelesen.
 
 ## Ergebnis in einem Absatz
 
-Der äußere Container ist ein normales ZIP; das Projekt liegt in `P-0498.zip` und ist dort
-mit **WinZip AES-256 (AE-1)** verschlüsselt. Das ist kein ETS-eigenes Verfahren, sondern
+Der äußere Container ist ein normales ZIP; das Projekt liegt in `P-0498.zip` und ist dortmit **WinZip AES-256 (AE-1)** verschlüsselt. Das ist kein ETS-eigenes Verfahren, sondern
 der Standard aus PKWARE APPNOTE/WinZip. ETS6 verwendet als ZIP-Passwort nicht das
 Nutzerpasswort selbst, sondern einen daraus abgeleiteten Schlüssel:
 `Base64(PBKDF2-HMAC-SHA256(UTF-16LE(Passwort), "21.project.ets.knx.org", 65536, 32))`.
@@ -62,6 +61,13 @@ Header von `0.xml` (erste 48 Byte, lokal):
 
 Damit steht fest: `0.xml` ist nicht lesbar, bevor das AES-Passwort bekannt ist. Es gibt
 keine unverschlüsselte Kopie im Container.
+
+## Verifizierter Leselauf der Nutzerdatei
+
+Mit dem vom Nutzer genannten ETS-Projektpasswort (nicht im Repository hinterlegt)
+lädt `Knxproj.Load` die Datei vollständig: Name `Lostau`, ID `P-0498`,
+1 Installation, 67 Geräte, 636 Gruppenadressen. Es wurde nur gelesen; keine
+Projektdatei verändert oder entschlüsselt gespeichert.
 
 ## Format
 

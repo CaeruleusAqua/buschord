@@ -19,6 +19,7 @@ werden hier abgehakt, nicht nur im Chat.
 - [ ] 9. Gesamttests, unabhängige Abnahme, Dokumentation und CI abschließen.
 - [ ] 10. Geprüften Stand auf `development` integrieren und veröffentlichen.
 - [x] 11. Clean-Code-Review des gesamten V4-Diffs; bestätigte Befunde beheben und Regressionstests ergänzen.
+- [ ] 12. Dark-Mode-Tooltips, Konzept-Icons, V4-Einstellungsfenster und ETS-Passwortöffnung abnehmen.
 
 ## A. ETS-REA-Analyse (jede Funktion belegen)
 
@@ -164,6 +165,13 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - [x] App/Workbench: Riesenmethoden, wiederholte UI-Builder/Switches, Event-Lecks, Thread-/Projektwechsel-Zustand.
 - [x] Tests/Doku: nicht-falsifizierbare Checks, fehlende Regressionen, CI-/Doku-Abweichungen.
 - [x] Bestätigte P1/P2 beheben, Regressionstest ergänzen, Gesamtsuite erneut ausführen.
+
+## G. UI-Feinschliff (Schritt 12)
+
+- [x] ETS-Projektpasswort beim Öffnen abfragen, ZIP-Schlüssel ableiten, `/21` lesen.
+- [ ] Dark-Mode-Tooltips lesbar.
+- [ ] Konzept-Icons statt gefüllter Material-Icons in der Workbench.
+- [ ] Einstellungsfenster im V4-Design.
 
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
