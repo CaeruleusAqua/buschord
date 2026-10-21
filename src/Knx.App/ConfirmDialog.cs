@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Knx;
@@ -57,6 +59,15 @@ public sealed class ConfirmDialog : Window
         }
         body.Children.Add(row);
         Content = body;
+        var first = row.Children.OfType<Button>().FirstOrDefault();
+        Opened += (_, _) => first?.Focus();
+        KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape) return;
+            var cancel = row.Children.OfType<Button>().FirstOrDefault(b => b.IsCancel);
+            (cancel ?? first)?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            e.Handled = true;
+        };
         Closed += (_, _) => _chosen ??= ConfirmChoice.Cancel;
     }
 
@@ -81,6 +92,13 @@ public sealed class ConfirmDialog : Window
             (Strings.Get("BtnSave"), ConfirmChoice.Save, true),
             ("Nicht speichern", ConfirmChoice.Discard, false),
             (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, false));
+
+    /// <summary>Destructive demo reset; never touches a native project without explicit consent.</summary>
+    public static async Task<bool> AskDemoResetAsync(Window owner)
+        => await ShowAsync(owner, "Demo zurücksetzen",
+            "Der aktuelle Demo-Stand wird verworfen und das ursprüngliche Demo-Projekt geladen.\n\nFortfahren?",
+            (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, true),
+            ("Zurücksetzen", ConfirmChoice.Yes, false)) == ConfirmChoice.Yes;
 
     /// <summary>Draft consent is separate from project Save and never applies the editor.</summary>
     public static async Task<bool> AskDiscardDraftsAsync(Window owner)

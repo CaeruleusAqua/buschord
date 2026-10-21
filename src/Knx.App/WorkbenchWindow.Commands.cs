@@ -30,6 +30,7 @@ public partial class WorkbenchWindow
                 Async(W("ExportAssociations"), () => ExportAsync("zuordnungen.csv", AssociationsCsv)),
                 Async(W("ExportDemoJson"), ExportDemoJsonAsync),
                 Async(W("ImportDemoJson"), ImportDemoJsonAsync),
+                Async(W("ResetDemo"), ResetDemoAsync),
                 new Separator(), Item(W("MenuExit"), Close)
             } },
             new() { Header = W("MenuEdit"), ItemsSource = new object[]
@@ -198,6 +199,18 @@ public partial class WorkbenchWindow
         ViewModel.Status = W("DemoExported");
     }
 
+    private async Task ResetDemoAsync()
+    {
+        if (!await ConfirmDialog.AskDemoResetAsync(this)) return;
+        await ResetSessionsForReplacementAsync();
+        ViewModel.CreateProject(Knx.Workbench.WorkbenchJson.CreateDemo(), null);
+        _parameterSession.DiscardDrafts();
+        _audit.Clear();
+        Workspace.ChangeProject(ViewModel.Project!.Id);
+        RefreshWorkspace();
+        ViewModel.Status = W("DemoResetDone");
+    }
+
     private async Task ImportDemoJsonAsync()
     {
         if (!await ConfirmDiscardAsync()) return;
@@ -240,7 +253,7 @@ public partial class WorkbenchWindow
         var dialog = new Window { Title = W("FindWorkItemOrCommand"), Width = 660, Height = 480, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         var panel = new DockPanel { Margin = new(16) };
         var query = new TextBox { PlaceholderText = W("PaletteWatermark"), Margin = new(0, 0, 0, 12) };
-        var list = new ListBox();
+        var list = new ListBox { Focusable = true };
         Avalonia.Automation.AutomationProperties.SetName(query, W("FindWorkItemOrCommand"));
         Avalonia.Automation.AutomationProperties.SetName(list, W("SearchResults"));
         DockPanel.SetDock(query, Avalonia.Controls.Dock.Top); panel.Children.Add(query); panel.Children.Add(list); dialog.Content = panel;

@@ -199,6 +199,9 @@ internal static class WorkbenchCheck
                 var toolsBefore = window.Workspace.ToolsVisible;
                 window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.J, KeyModifiers = KeyModifiers.Control });
                 Check("Ctrl+J toggles the lower tools", window.Workspace.ToolsVisible != toolsBefore);
+                var firstTab = window.Workspace.ActiveTab;
+                window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Tab, KeyModifiers = KeyModifiers.Control });
+                Check("Ctrl+Tab changes the active work item", window.Workspace.ActiveTab != firstTab);
                 window.ShowTool("monitor"); window.ViewModel.StartRecording(); window.Workspace.ToolsVisible = false;
                 window.ShowTool("monitor");
                 Check("hiding and recreating monitor retains recorder state", window.ViewModel.IsRecording);

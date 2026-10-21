@@ -128,7 +128,7 @@ public partial class WorkbenchWindow : Window
         ViewModel.ProjectEdited += OnProjectEdited;
         Workspace.PropertyChanged += OnWorkspaceChanged;
         SizeChanged += (_, _) => ApplyLayout();
-        KeyDown += OnShellKeyDown;
+        AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Tunnel);
         Closing += OnClosing;
         foreach (var splitter in new[] { NavSplitter, InspectorSplitter, ToolsSplitter })
         {
@@ -381,12 +381,16 @@ public partial class WorkbenchWindow : Window
 
     private void RefreshTabs()
     {
+        var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Control;
+        var restoreTabFocus = focused is not null && ObjectTabs.GetVisualDescendants().Contains(focused);
         ObjectTabs.Children.Clear();
+        Button? activeButton = null;
         foreach (var tab in Workspace.Tabs)
         {
             var header = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal };
             var activate = ActionButton(tab.Title, () => { CaptureScroll(); Workspace.ActiveTab = tab; }, "quiet");
             activate.MaxWidth = 220; activate.Height = 39; activate.MinWidth = 110;
+            if (tab == Workspace.ActiveTab) activeButton = activate;
             header.Children.Add(activate);
             var close = ActionButton("", () => { Workspace.Close(tab); RefreshWorkspace(); }, "quiet", W("CloseTab", tab.Title));
             close.Content = new Icon { Symbol = "Close", Width = 14, Height = 14 };
@@ -397,6 +401,7 @@ public partial class WorkbenchWindow : Window
             ObjectTabs.Children.Add(border);
         }
         ObjectTabs.Children.Add(ActionButton("+", ShowPalette, "quiet", W("FindWorkItem")));
+        if (restoreTabFocus) activeButton?.Focus();
     }
 
     /// <summary>Insertion line suggested by the current work item; rooms fall back to their first device/line.</summary>
@@ -720,6 +725,22 @@ public partial class WorkbenchWindow : Window
             {
                 ViewModel.RenameGroupAddress(new(ga.Address, ga.Name, ga.DatapointType, ga.Id), name.Text ?? "", dpt.Text); RefreshWorkspace();
             }, "primary"));
+            if (ViewModel.Project is { } gaProject)
+            {
+                var linked = ProjectQuery.ComObjectRefs(gaProject).Where(r => r.Ref.Links.Contains(ga.Id)).ToList();
+                InspectorBody.Children.Add(Note(W("GaLinkedCount", linked.Count)));
+                if (linked.Count == 0) InspectorBody.Children.Add(Note(W("GaNoLinks")));
+                foreach (var group in linked.GroupBy(r => r.Device).Take(40))
+                {
+                    InspectorBody.Children.Add(ActionButton(W("GaLinkedDevice", group.Key.Address.ToString(),
+                        group.Key.Name ?? ""), () => OpenTarget(new("device", group.Key.Id), "relations"), "quiet"));
+                    foreach (var (device, comObject) in group.Take(10))
+                    {
+                        var sending = WorkbenchProject.Metadata(gaProject, new(device.Id, comObject.Id))?.SendingGroupId == ga.Id;
+                        InspectorBody.Children.Add(Note($"#{comObject.Number} · {comObject.Text ?? comObject.Id}" + (sending ? " · " + W("SendingBadge") : "")));
+                    }
+                }
+            }
         }
         else InspectorBody.Children.Add(Note(W("InspectorEmpty")));
     }
