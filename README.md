@@ -33,9 +33,9 @@ Latest bounded reference-tool analysis and implemented gap fixes:
 Archive signatures are preserved but not recomputed; changed signed data may no
 longer validate in ETS. Encrypted project archives remain unsupported.
 
-**Workbench limitation:** the native workbench uses explicit fresh tool windows
-and a dock-back action; the legacy `MainWindow` remains only for compatibility
-harnesses and still shows the known Topology/Properties floating defect. See the
+**Workbench:** the native shell uses explicit fresh tool windows and a dock-back
+action. The legacy `MainWindow`/Dock surface has been removed; all lifecycle and
+floating-tool regressions now run against `WorkbenchWindow`. See the
 [native tests](analysis/review-native-docking.md) and
 [ownership investigation](analysis/dock-crash-rootcause.md).
 The [ETS6 UI comparison](analysis/ux/ets6-panel-recheck.md) distinguishes project

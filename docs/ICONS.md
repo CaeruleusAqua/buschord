@@ -12,9 +12,9 @@ Symbols of the legacy window.
 - Rendering: `src/Knx.App/Views/ConceptIcon.cs` — draws the geometry in its
   24-unit box with the 1.7 px round stroke, defaults to 17 px and inherits
   `Foreground`.
-- Material Symbols stay in `src/Knx.App/Assets/Icons.axaml` /
-  `Views/Icon.cs` for `MainWindow` and the legacy panes (use `Icon`, not
-  `ConceptIcon`, there).
+- Material Symbols stay in `src/Knx.App/Assets/Icons.axaml` / `Views/Icon.cs`
+  for the remaining shared panes (currently `SearchPane`); new workbench
+  surfaces use `ConceptIcon`.
 
 ## Mapping
 
