@@ -99,14 +99,15 @@ public partial class WorkbenchWindow : Window
             RefreshInspector();
         };
         BuildMenus();
-        foreach (var (key, title, glyph) in new[] { ("building", W("PerspectiveBuilding"), "Category"), ("topology", W("PerspectiveTopology"), "AccountTree"), ("groups", W("PerspectiveGroups"), "FormatListBulleted") })
+        foreach (var (key, title, glyph) in new[] { ("building", W("PerspectiveBuilding"), "building"), ("topology", W("PerspectiveTopology"), "topology"), ("groups", W("PerspectiveGroups"), "groups") })
         {
             var perspective = key;
             var perspectiveButton = ActionButton(title, () => Navigate(perspective), "quiet");
             perspectiveButton.FontSize = 10; perspectiveButton.Padding = new(2, 0); perspectiveButton.MinWidth = 0;
+            perspectiveButton.Content = IconLabel(glyph, title);
             Perspectives.Children.Add(perspectiveButton);
             var rail = ActionButton("", () => Navigate(perspective), "quiet");
-            rail.Content = new Icon { Symbol = glyph, Width = 19, Height = 19 };
+            rail.Content = new ConceptIcon { Symbol = glyph, Width = 19, Height = 19 };
             rail.Width = 35; rail.Height = 35; rail.FontSize = 20;
             ToolTip.SetTip(rail, title); AutomationProperties.SetName(rail, title);
             _railButtons[key] = rail;
@@ -114,12 +115,12 @@ public partial class WorkbenchWindow : Window
         }
         foreach (var (symbol, title, run) in new (string, string, Action)[]
         {
-            ("LibraryBooks", W("Catalog"), ShowCatalog), ("FactCheck", W("ProjectCheck"), () => ShowTool("problems")),
-            ("Radar", W("Monitor"), () => ShowTool("monitor")), ("Settings", W("Options"), ShowSettings)
+            ("catalog", W("Catalog"), ShowCatalog), ("warning", W("ProjectCheck"), () => ShowTool("problems")),
+            ("monitor", W("Monitor"), () => ShowTool("monitor")), ("settings", W("Options"), ShowSettings)
         })
         {
             var button = ActionButton("", run, "quiet", title);
-            button.Content = new Icon { Symbol = symbol, Width = 19, Height = 19 };
+            button.Content = new ConceptIcon { Symbol = symbol, Width = 19, Height = 19 };
             button.Width = 35; button.Height = 35; Rail.Children.Add(button);
         }
         foreach (var (key, title) in new[] { ("objects", W("CommunicationObjects")), ("params", W("Parameters")), ("relations", W("Relations")), ("overview", W("Overview")) })
@@ -135,6 +136,11 @@ public partial class WorkbenchWindow : Window
             var button = ActionButton(title, () => ShowTool(tool), "quiet");
             button.Tag = tool;
             button.Classes.Add("wb-tool-tab");
+            button.Content = IconLabel(key switch
+            {
+                "monitor" => "monitor", "programming" => "download", "scan" => "refresh",
+                "search" => "search", "changes" => "clock", _ => "warning"
+            }, title);
             ToolTabs.Children.Add(button);
         }
         ViewModel.PropertyChanged += OnModelChanged;
@@ -417,14 +423,16 @@ public partial class WorkbenchWindow : Window
             if (tab == Workspace.ActiveTab) activeButton = activate;
             header.Children.Add(activate);
             var close = ActionButton("", () => { Workspace.Close(tab); RefreshWorkspace(); }, "quiet", W("CloseTab", tab.Title));
-            close.Content = new Icon { Symbol = "Close", Width = 14, Height = 14 };
+            close.Content = new ConceptIcon { Symbol = "close", Width = 14, Height = 14 };
             header.Children.Add(close);
             var border = new Border { Child = header, Height = 39 };
             border.Classes.Add("wb-doc-tab");
             border.Classes.Set("active", tab == Workspace.ActiveTab);
             ObjectTabs.Children.Add(border);
         }
-        ObjectTabs.Children.Add(ActionButton("+", ShowPalette, "quiet", W("FindWorkItem")));
+        var addTab = ActionButton("", ShowPalette, "quiet", W("FindWorkItem"));
+        addTab.Content = new ConceptIcon { Symbol = "plus", Width = 17, Height = 17 };
+        ObjectTabs.Children.Add(addTab);
         if (restoreTabFocus) activeButton?.Focus();
     }
 
@@ -551,7 +559,7 @@ public partial class WorkbenchWindow : Window
             RefreshNavigation();
         }, "quiet", W("ExpandCollapse", node.Name));
         if (hasChildren)
-            expand.Content = new Icon { Symbol = expanded ? "KeyboardArrowDown" : "KeyboardArrowRight", Width = 16, Height = 16 };
+            expand.Content = new ConceptIcon { Symbol = expanded ? "down" : "chevron", Width = 16, Height = 16 };
         expand.IsEnabled = node.Children.Count > 0; expand.Padding = new(0);
         grid.Children.Add(expand);
         var label = Label(node.Name); label.FontSize = 11; Grid.SetColumn(label, 1); grid.Children.Add(label);
@@ -579,7 +587,7 @@ public partial class WorkbenchWindow : Window
                 if (!t.CollapsedDeviceIds.Add(key)) t.CollapsedDeviceIds.Remove(key);
                 CaptureScroll(); RefreshEditor();
             }, "quiet", W("ExpandCollapse", row.Name));
-            expand.Content = new Icon { Symbol = row.Expanded ? "KeyboardArrowDown" : "KeyboardArrowRight", Width = 16, Height = 16 };
+            expand.Content = new ConceptIcon { Symbol = row.Expanded ? "down" : "chevron", Width = 16, Height = 16 };
             expand.Padding = new(0); name.Children.Add(expand);
         }
         var address = Label(row.Address); address.FontSize = 10; address.Classes.Add("wb-subtle"); address.Margin = new(0, 0, 9, 0); Grid.SetColumn(address, 1); name.Children.Add(address);
@@ -1634,6 +1642,13 @@ public partial class WorkbenchWindow : Window
     }
     private static string W(string key, params object[] args) => Localization.WorkbenchStrings.Get(key, args);
     private static TextBlock Label(string text) => new() { Text = text, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    /// <summary>Concept icon plus label, for buttons that are not icon-only.</summary>
+    private static Control IconLabel(string symbol, string text, double size = 14) => new StackPanel
+    {
+        Orientation = Avalonia.Layout.Orientation.Horizontal,
+        Spacing = 5,
+        Children = { new ConceptIcon { Symbol = symbol, Width = size, Height = size }, Label(text) }
+    };
     private static TextBlock Note(string text) => new() { Text = text, FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new(0, 3), Classes = { "wb-muted" } };
     private static Button ActionButton(string text, Action action, string? style = null, string? accessibleName = null)
     {

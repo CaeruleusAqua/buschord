@@ -224,7 +224,7 @@ internal static class WorkbenchCheck
                 for (var cycle = 0; cycle < 3; cycle++)
                 {
                     window.FindControl<Grid>("Tools")!.GetVisualDescendants().OfType<Button>()
-                        .First(b => b.Content is Icon icon && icon.Symbol == "OpenInNew")
+                        .First(b => b.Content is ConceptIcon icon && icon.Symbol == "export")
                         .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     await Task.Delay(30);
                     var floating = desktop.Windows.Single(w => w != window);

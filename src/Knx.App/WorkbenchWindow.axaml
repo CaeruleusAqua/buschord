@@ -50,7 +50,7 @@
     </Border>
     <Grid x:Name="Zones" Grid.Row="1" ColumnDefinitions="47,272,5,*,0,0">
       <Border Background="{DynamicResource WbRail}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,1,0">
-        <DockPanel><StackPanel x:Name="Rail" Spacing="5" Margin="5,10"/><Button DockPanel.Dock="Bottom" Content="?" Click="OnHelp" VerticalAlignment="Bottom" Classes="quiet" ToolTip.Tip="{loc:Wb HelpTip}"/></DockPanel>
+        <DockPanel><StackPanel x:Name="Rail" Spacing="5" Margin="5,10"/><Button DockPanel.Dock="Bottom" Click="OnHelp" VerticalAlignment="Bottom" Classes="quiet" ToolTip.Tip="{loc:Wb HelpTip}"><views:ConceptIcon Symbol="help"/></Button></DockPanel>
       </Border>
       <Border x:Name="Navigator" Grid.Column="1" Background="{DynamicResource WbPanel}">
         <Grid RowDefinitions="Auto,Auto,Auto,*,30">
@@ -82,7 +82,7 @@
             <CheckBox x:Name="RelatedBox" Grid.Column="3" Content="{loc:Wb ExternalChannels}" ToolTip.Tip="{loc:Wb ExternalChannelsTip}" FontSize="11" IsCheckedChanged="OnRelated" Margin="8,0"/>
             <CheckBox x:Name="Unlinked" Grid.Column="4" Content="{loc:Wb WithoutGroupAddress}" FontSize="11" IsCheckedChanged="OnUnlinked" Margin="8,0"/>
             <TextBox x:Name="ObjectSearch" Grid.Column="5" PlaceholderText="{loc:Wb FilterObjects}" TextChanged="OnObjectSearch"/>
-            <Button Grid.Column="6" ToolTip.Tip="{loc:Wb ExpandCollapseAll}" AutomationProperties.Name="{loc:Wb ExpandCollapseAllDevices}" Click="OnExpandAll" Classes="quiet"><views:Icon Symbol="UnfoldMore" Width="17" Height="17"/></Button>
+            <Button Grid.Column="6" ToolTip.Tip="{loc:Wb ExpandCollapseAll}" AutomationProperties.Name="{loc:Wb ExpandCollapseAllDevices}" Click="OnExpandAll" Classes="quiet"><views:ConceptIcon Symbol="down" Width="17" Height="17"/></Button>
           </Grid>
           <Grid Grid.Row="2">
             <ScrollViewer x:Name="TableViewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
@@ -107,9 +107,9 @@
         <GridSplitter x:Name="ToolsSplitter" Grid.Row="2" Height="5" Background="{DynamicResource WbLine}" ResizeDirection="Rows"/>
         <Grid x:Name="Tools" Grid.Row="3" RowDefinitions="35,*" Background="{DynamicResource WbPaper}">
           <Grid ColumnDefinitions="*,Auto,Auto,Auto"><StackPanel x:Name="ToolTabs" Orientation="Horizontal" Margin="12,0" Spacing="20"/>
-            <Button Grid.Column="1" ToolTip.Tip="{loc:Wb ToolFloatTip}" AutomationProperties.Name="{loc:Wb ToolFloatName}" Click="OnFloatTool" Classes="quiet"><views:Icon Symbol="OpenInNew" Width="17" Height="17"/></Button>
-            <Button Grid.Column="2" ToolTip.Tip="{loc:Wb ToolMaximize}" AutomationProperties.Name="{loc:Wb ToolMaximize}" Click="OnMaximizeTool" Classes="quiet"><views:Icon Symbol="Fullscreen" Width="17" Height="17"/></Button>
-            <Button Grid.Column="3" ToolTip.Tip="{loc:Wb ToolHide}" AutomationProperties.Name="{loc:Wb ToolHide}" Click="OnHideTool" Classes="quiet"><views:Icon Symbol="Close" Width="17" Height="17"/></Button>
+            <Button Grid.Column="1" ToolTip.Tip="{loc:Wb ToolFloatTip}" AutomationProperties.Name="{loc:Wb ToolFloatName}" Click="OnFloatTool" Classes="quiet"><views:ConceptIcon Symbol="export" Width="17" Height="17"/></Button>
+            <Button Grid.Column="2" ToolTip.Tip="{loc:Wb ToolMaximize}" AutomationProperties.Name="{loc:Wb ToolMaximize}" Click="OnMaximizeTool" Classes="quiet"><views:ConceptIcon Symbol="maximize" Width="17" Height="17"/></Button>
+            <Button Grid.Column="3" ToolTip.Tip="{loc:Wb ToolHide}" AutomationProperties.Name="{loc:Wb ToolHide}" Click="OnHideTool" Classes="quiet"><views:ConceptIcon Symbol="close" Width="17" Height="17"/></Button>
           </Grid>
           <ContentControl x:Name="ToolHost" Grid.Row="1"/>
         </Grid>
@@ -119,7 +119,7 @@
         <Grid RowDefinitions="44,*"><Grid ColumnDefinitions="*,Auto,Auto" Margin="15,0">
             <TextBlock x:Name="InspectorTitle" Text="{loc:Wb Properties}" VerticalAlignment="Center" FontWeight="SemiBold"/>
             <ComboBox x:Name="SidebarMode" Grid.Column="1" MinWidth="120" FontSize="10" Margin="0,0,6,0"/>
-            <Button Grid.Column="2" AutomationProperties.Name="{loc:Wb HideProperties}" Click="OnInspector" Classes="quiet"><views:Icon Symbol="Close" Width="17" Height="17"/></Button>
+            <Button Grid.Column="2" AutomationProperties.Name="{loc:Wb HideProperties}" Click="OnInspector" Classes="quiet"><views:ConceptIcon Symbol="close" Width="17" Height="17"/></Button>
           </Grid>
           <ScrollViewer Grid.Row="1"><StackPanel x:Name="InspectorBody" Margin="15" Spacing="12"/></ScrollViewer>
         </Grid>

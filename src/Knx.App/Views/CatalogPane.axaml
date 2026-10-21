@@ -81,7 +81,7 @@
             <Grid>
               <TextBox x:Name="SearchBox" Classes="wb-field" Padding="30,3,8,3"
                        PlaceholderText="{loc:Tr CatalogSearch}" TextChanged="OnFilterChanged" />
-              <views:Icon Symbol="Search" Width="14" Height="14" Margin="9,0,0,0"
+              <views:ConceptIcon Symbol="search" Width="14" Height="14" Margin="9,0,0,0"
                           HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False"
                           Foreground="{DynamicResource WbMuted}" />
             </Grid>
@@ -147,7 +147,7 @@
 
             <StackPanel x:Name="LibraryEmpty" IsVisible="False" Spacing="8" Margin="16"
                         VerticalAlignment="Center" HorizontalAlignment="Center">
-              <views:Icon Symbol="LibraryBooks" Width="22" Height="22" HorizontalAlignment="Center"
+              <views:ConceptIcon Symbol="catalog" Width="22" Height="22" HorizontalAlignment="Center"
                           Foreground="{DynamicResource WbMuted}" />
               <TextBlock Text="{loc:Tr CatalogNoCatalog}" Classes="wb-muted"
                          TextWrapping="Wrap" TextAlignment="Center" />
@@ -194,7 +194,7 @@
 
             <StackPanel x:Name="ProductsEmpty" IsVisible="False" Spacing="8" Margin="16"
                         VerticalAlignment="Center" HorizontalAlignment="Center">
-              <views:Icon Symbol="Search" Width="22" Height="22" HorizontalAlignment="Center"
+              <views:ConceptIcon Symbol="search" Width="22" Height="22" HorizontalAlignment="Center"
                           Foreground="{DynamicResource WbMuted}" />
               <TextBlock x:Name="ProductsEmptyText" Classes="wb-muted" TextWrapping="Wrap"
                          TextAlignment="Center" MaxWidth="320" />
@@ -256,7 +256,7 @@
             </ScrollViewer>
             <StackPanel x:Name="DetailsEmpty" Spacing="8" Margin="16"
                         VerticalAlignment="Center" HorizontalAlignment="Center">
-              <views:Icon Symbol="LibraryBooks" Width="22" Height="22" HorizontalAlignment="Center"
+              <views:ConceptIcon Symbol="catalog" Width="22" Height="22" HorizontalAlignment="Center"
                           Foreground="{DynamicResource WbMuted}" />
               <TextBlock Text="{loc:Tr CatalogNeedProduct}" Classes="wb-muted"
                          TextWrapping="Wrap" TextAlignment="Center" />

@@ -101,11 +101,74 @@ var folderHeight = folderBottom - folderTop + 1;
 Check($"FolderOpen keeps the material scale (height {folderHeight}, not 18)",
     folderHeight >= 11 && folderHeight <= 13);
 
+// Concept line icons: every path from the KNX Workbench V4 bundle is a 24x24 stroked geometry.
+string[] concepts =
+[
+    "building", "topology", "groups", "device", "home", "folder", "chevron", "down", "search",
+    "plus", "close", "more", "link", "monitor", "check", "warning", "upload", "download", "clock",
+    "undo", "redo", "settings", "layers", "panel", "split", "arrow", "lock", "eye", "catalog",
+    "play", "stop", "pin", "maximize", "doc", "help", "bulb", "trash", "export", "refresh",
+    "flash", "flag", "move",
+];
+foreach (var name in concepts)
+{
+    Check($"Concept.{name} resource exists", app.TryFindResource("Concept." + name, out var value));
+    var geometry = value as StreamGeometry ?? throw new Exception($"Concept.{name} is not a StreamGeometry");
+    // Zero-height paths are intentional (round caps turn them into dots), so one axis may be flat.
+    Check($"Concept.{name} non-empty", geometry.Bounds.Width > 0 || geometry.Bounds.Height > 0);
+    // Arc bounds may include bezier control points slightly outside the visible stroke.
+    Check($"Concept.{name} inside 24x24 viewBox",
+        geometry.Bounds.X >= -0.5 && geometry.Bounds.Y >= -0.5
+        && geometry.Bounds.Right <= 24.5 && geometry.Bounds.Bottom <= 24.5);
+    Check($"Concept.{name} lookup returns the resource", ReferenceEquals(ConceptIcon.GeometryFor(name), geometry));
+}
+
+try
+{
+    ConceptIcon.GeometryFor("DoesNotExist");
+    Check("unknown concept name is rejected", false);
+}
+catch (KeyNotFoundException ex)
+{
+    Check("unknown concept name is rejected with a clear message", ex.Message.Contains("Concept.DoesNotExist"));
+}
+
+var concept = new ConceptIcon { Symbol = "building" };
+concept.Measure(Size.Infinity);
+Check("default concept icon size is 17", concept.DesiredSize == new Size(17, 17));
+Check("concept foreground inherits from the parent", ConceptIcon.ForegroundProperty.Inherits);
+
+foreach (var name in concepts)
+{
+    var rendered = new ConceptIcon { Symbol = name, Foreground = Brushes.Black };
+    rendered.Measure(new Size(17, 17));
+    rendered.Arrange(new Rect(0, 0, 17, 17));
+    using var target = new RenderTargetBitmap(new PixelSize(17, 17), new Vector(96, 96));
+    target.Render(rendered);
+    var (left, top, right, bottom) = InkBox(target);
+    Check($"{name} concept icon renders", right > left || bottom > top);
+    Check($"{name} concept icon stays inside 17x17", left >= 0 && top >= 0 && right < 17 && bottom < 17);
+}
+
+foreach (var (theme, brush, limit) in new (string, IBrush, int)[] { ("light", Brushes.Black, 60), ("dark", Brushes.White, 180) })
+{
+    var rendered = new ConceptIcon { Symbol = "building", Foreground = brush };
+    rendered.Measure(new Size(17, 17));
+    rendered.Arrange(new Rect(0, 0, 17, 17));
+    using var target = new RenderTargetBitmap(new PixelSize(17, 17), new Vector(96, 96));
+    target.Render(rendered);
+    var (red, green, blue) = InkColor(target);
+    Check($"concept icon follows the {theme} foreground", theme == "light"
+        ? red <= limit && green <= limit && blue <= limit
+        : red >= limit && green >= limit && blue >= limit);
+}
+
 Console.WriteLine($"OK {checks} checks");
 
 static (int Left, int Top, int Right, int Bottom) InkBox(RenderTargetBitmap bitmap)
 {
-    const int size = 18, stride = size * 4;
+    var size = bitmap.PixelSize.Width;
+    var stride = size * 4;
     var buffer = Marshal.AllocHGlobal(size * stride);
     try
     {
@@ -123,6 +186,28 @@ static (int Left, int Top, int Right, int Bottom) InkBox(RenderTargetBitmap bitm
             bottom = Math.Max(bottom, y);
         }
         return (left, top, right, bottom);
+    }
+    finally
+    {
+        Marshal.FreeHGlobal(buffer);
+    }
+}
+
+// Colour of the most opaque pixel, to prove the stroke uses Foreground in both themes.
+static (byte Red, byte Green, byte Blue) InkColor(RenderTargetBitmap bitmap)
+{
+    var size = bitmap.PixelSize.Width;
+    var stride = size * 4;
+    var buffer = Marshal.AllocHGlobal(size * stride);
+    try
+    {
+        bitmap.CopyPixels(new PixelRect(0, 0, size, size), buffer, size * stride, stride);
+        var pixels = new byte[size * stride];
+        Marshal.Copy(buffer, pixels, 0, pixels.Length);
+        var best = 0;
+        for (var i = 0; i < pixels.Length; i += 4)
+            if (pixels[i + 3] > pixels[best + 3]) best = i;
+        return (pixels[best + 2], pixels[best + 1], pixels[best]);
     }
     finally
     {
