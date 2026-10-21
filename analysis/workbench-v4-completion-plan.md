@@ -317,7 +317,26 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   Speicherverbrauch und 10.000-Objekt-Pfad testen; Cache-Invalidierung nach
   Import/Entfernen/Änderung nachweisen.
 
-### H6. Veröffentlichung (Schritt 10, R08)
+### H6. Frameless / keine native Titelleiste (neu, 2026-10-21)
+
+- [ ] **H6.1 Design und API-Nachweis:** `analysis/ui-frameless-window-design.md`
+  mit Wireframe, Avalonia-12-API (`SystemDecorations`,
+  `ExtendClientAreaToDecorationsHint`, ChromeHints), Windows-Hit-Test-/
+  Snap-/Resize-Verhalten und Dialogentscheidung.
+- [ ] **H6.2 Shell-Chrome:** Marke, Menüs, Projektsuche, Status und
+  Fensteraktionen (Minimieren/Maximieren/Wiederherstellen/Schließen) in
+  einem optisch integrierten, fokussierbaren Topstrip; native Titelleiste
+  entfällt nur, wenn Drag, Doppelklick, Snap, Resize und Systemmenü erhalten
+  bleiben.
+- [ ] **H6.3 Barrierefreiheit:** Automationsnamen, Fokusreihenfolge,
+  Zielgrößen, Tastatur (Alt+F4/Alt+Space), Screenreader und High Contrast.
+- [ ] **H6.4 Dialoge:** einheitliche Entscheidung für Workbench und modale
+  Fenster; Schließen/Abbrechen darf nicht erschwert werden.
+- [ ] **H6.5 Reale Windows-Abnahme:** 100/150/200-%-DPI, Multi-Monitor,
+  Snap Layouts, Maximieren-Padding, Taskleiste, Screenshots; nicht nur
+  headless.
+
+### H7. Veröffentlichung (Schritt 10, R08)
 
 - [ ] **H5.1** Alle Commits nach `origin/development` pushen; Remote-CI und
   CodeQL abwarten und Ergebnisse hier eintragen.
