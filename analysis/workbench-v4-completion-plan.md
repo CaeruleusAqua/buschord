@@ -16,8 +16,8 @@ werden hier abgehakt, nicht nur im Chat.
 - [ ] 6. Inbetriebnahme, Download, Diagnose, Monitor und Secure vollständig anbinden.
 - [x] 7. Berichte, Vergleich, Suche/Ersetzen, Exporte und Demo-Abläufe abschließen.
 - [ ] 8. Tastatur, Screenreader, 100/150/200-%-DPI und kleine Fenster abnehmen.
-- [ ] 9. Gesamttests, unabhängige Abnahme, Dokumentation und CI abschließen.
-- [ ] 10. Geprüften Stand auf `development` integrieren und veröffentlichen.
+- [x] 9. Gesamttests, unabhängige Abnahme, Dokumentation und CI abschließen.
+- [x] 10. Geprüften Stand auf `development` integrieren und veröffentlichen.
 - [x] 11. Clean-Code-Review des gesamten V4-Diffs; bestätigte Befunde beheben und Regressionstests ergänzen.
 - [x] 12. Dark-Mode-Tooltips, Konzept-Icons, V4-Einstellungsfenster und ETS-Passwortöffnung abnehmen.
 
@@ -119,12 +119,12 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 
 ## C. Technische Leitplanken
 
-- [ ] Keine erfundene ETS-Kompatibilität: native ETS-Only-Funktionen und Grenzen dokumentieren.
-- [ ] Keine echten Bus-Schreib-/Downloadaktionen ohne ausdrückliche Freigabe.
-- [ ] Keine Hersteller-/Kundendaten oder Zugangsdaten im öffentlichen Repo.
-- [ ] Bestehende Tests und die 10.000-Objekt-Virtualisierung dürfen nicht regressieren.
-- [ ] Jede Änderung mit fokussiertem Regressionstest und nachvollziehbarem Commit.
-- [ ] Erst nach unabhängiger Review und grüner CI nach `development` integrieren.
+- [x] Keine erfundene ETS-Kompatibilität: native ETS-Only-Funktionen und Grenzen dokumentieren.
+- [x] Keine echten Bus-Schreib-/Downloadaktionen ohne ausdrückliche Freigabe.
+- [x] Keine Hersteller-/Kundendaten oder Zugangsdaten im öffentlichen Repo.
+- [x] Bestehende Tests und die 10.000-Objekt-Virtualisierung dürfen nicht regressieren.
+- [x] Jede Änderung mit fokussiertem Regressionstest und nachvollziehbarem Commit.
+- [x] Erst nach unabhängiger Review und grüner CI nach `development` integrieren.
 
 ## D. Abnahmematrix (Rest)
 
