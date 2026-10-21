@@ -332,6 +332,119 @@ try
         && !replacementView.FindControl<Button>("ApplyButton")!.IsVisible);
 
 
+    // B4: section navigation, DCA/opaque read-only mode and project-switch notices.
+    var sectionsPath = Path.Combine(directory, "sections.knxproj");
+    var sectionsProject = new Project { Id = "P-SEC", Name = "Sections" };
+    var sectionsInstallation = new Installation { Id = "I-SEC" };
+    var sectionsArea = new Area { Id = "A-SEC", Address = 1 };
+    var sectionsLine = new Line { Id = "L-SEC", Address = 1 };
+    sectionsLine.Devices.Add(new DeviceInstance { Id = "D-SEC", Name = "Channel actuator",
+        Address = new(1, 1, 1), ProductRefId = "M-0SEC_A-0001-01-0000" });
+    sectionsLine.Devices.Add(new DeviceInstance { Id = "D-OPAQUE", Name = "Opaque device",
+        Address = new(1, 1, 2), ProductRefId = "M-0SEC_A-0002-01-0000" });
+    sectionsArea.Lines.Add(sectionsLine); sectionsInstallation.Areas.Add(sectionsArea);
+    sectionsProject.Installations.Add(sectionsInstallation);
+    Knxproj.Save(sectionsProject, sectionsPath);
+    const string channelEntry = "M-0SEC/M-0SEC_A-0001-01-0000.xml";
+    using (var archive = ZipFile.Open(sectionsPath, ZipArchiveMode.Update))
+    {
+        using (var stream = archive.CreateEntry(channelEntry).Open())
+            XDocument.Parse("""
+                <KNX><ApplicationProgram><Static><ParameterTypes>
+                <ParameterType Id="N" Name="Number"><TypeNumber Type="unsignedInt" SizeInBit="8" minInclusive="0" maxInclusive="100" /></ParameterType>
+                </ParameterTypes><Parameters>
+                <Parameter Id="P-CA1" Name="Kanal A: Schalten" ParameterType="N" Value="1" />
+                <Parameter Id="P-CA2" Name="Kanal A: Dimmen" ParameterType="N" Value="2" />
+                <Parameter Id="P-CB" Name="Kanal B: Schalten" ParameterType="N" Value="3" />
+                <Parameter Id="P-G" Name="Global" ParameterType="N" Value="4" />
+                </Parameters><ParameterRefs>
+                <ParameterRef Id="R-CA1" RefId="P-CA1" /><ParameterRef Id="R-CA2" RefId="P-CA2" />
+                <ParameterRef Id="R-CB" RefId="P-CB" /><ParameterRef Id="R-G" RefId="P-G" />
+                </ParameterRefs></Static><Dynamic><choose /></Dynamic></ApplicationProgram></KNX>
+                """).Save(stream);
+        using (var stream = archive.CreateEntry("M-0SEC/M-0SEC_A-0002-01-0000.xml").Open())
+            XDocument.Parse("""
+                <KNX><ApplicationProgram><Static><ParameterTypes>
+                <ParameterType Id="U" Name="Opaque"><TypeFuture /></ParameterType>
+                </ParameterTypes><Parameters>
+                <Parameter Id="P-U" Name="Opaque value" ParameterType="U" Value="7" />
+                </Parameters><ParameterRefs><ParameterRef Id="R-U" RefId="P-U" /></ParameterRefs>
+                </Static><Dynamic><choose /></Dynamic></ApplicationProgram></KNX>
+                """).Save(stream);
+    }
+    var sectionVm = new MainWindowViewModel();
+    sectionVm.CreateProject(Knxproj.Load(sectionsPath), null);
+    sectionVm.ProjectPath = sectionsPath;
+    using var sectionPane = new ParameterPane(sectionVm);
+    sectionPane.Load(sectionVm.Devices[0]);
+    Check("Section navigation groups existing channel metadata",
+        sectionPane.Session.Sections.Select(s => s.Title).SequenceEqual(["Kanal A", "Kanal B", "Allgemein"])
+        && sectionPane.Session.Sections[0] is { FirstRow: 0, RowCount: 2 }
+        && sectionPane.Session.Sections[2] is { FirstRow: 3, RowCount: 1 }
+        && sectionPane.FindControl<ItemsControl>("SectionList")!.IsVisible);
+    sectionPane.Session.Rows[0].Value = "9";
+    sectionPane.Session.SelectSection("Kanal B");
+    Check("Section selection changes focus state without hiding drafts or rows",
+        sectionPane.Session.SelectedSection == "Kanal B" && sectionPane.Session.Rows.Length == 4
+        && sectionPane.HasUnappliedChanges);
+    sectionPane.Session.NextSection();
+    Check("Section navigation wraps to the general section", sectionPane.Session.SelectedSection == "Allgemein");
+    sectionPane.Session.PreviousSection();
+    Check("Section navigation steps back", sectionPane.Session.SelectedSection == "Kanal B");
+
+    sectionPane.Session.SetReadOnly("DCA/plug-in does not run here: parameters are read-only.");
+    Check("Explicit read-only mode disables editors, Apply and Reset but keeps values",
+        sectionPane.IsReadOnly && sectionPane.ReadOnlyReason!.Contains("DCA")
+        && !sectionPane.Session.CanApply && !sectionPane.Session.CanReset && !sectionPane.Apply()
+        && sectionPane.FindControl<Border>("ReadOnlyPanel")!.IsVisible
+        && sectionPane.FindControl<TextBlock>("ReadOnlyText")!.Text!.Contains("DCA")
+        && !sectionPane.FindControl<ItemsControl>("ParameterList")!.IsEnabled
+        && !sectionPane.FindControl<Button>("ApplyButton")!.IsVisible
+        && sectionPane.Session.Rows[0].Value == "9");
+    sectionPane.Session.ClearReadOnly();
+    Check("Clearing read-only mode restores editing", !sectionPane.IsReadOnly
+        && sectionPane.FindControl<ItemsControl>("ParameterList")!.IsEnabled);
+
+    sectionPane.Load(sectionVm.Devices[1]);
+    Check("Opaque application data is detected as read-only and kept unchanged",
+        sectionPane.IsReadOnly && sectionPane.ReadOnlyReason!.Contains("TypeFuture")
+        && sectionPane.Session.Rows[0].Value == "7"
+        && sectionVm.Devices[1].Device.ParameterValues.Count == 0
+        && !sectionPane.Session.CanApply);
+    Check("Single-section parameter sets hide the strip", !sectionPane.Session.HasSectionNavigation
+        && !sectionPane.FindControl<ItemsControl>("SectionList")!.IsVisible);
+
+    sectionPane.Load(sectionVm.Devices[0]);
+    sectionPane.Session.Rows[0].Value = "8";
+    var priorProject = sectionPane.Session.ProjectId;
+    var switchedDevice = sectionVm.Devices[0].Device;
+    sectionVm.CreateProject(new Project { Id = "P-SWITCH", Name = "Switched" }, null);
+    Check("Session exposes project identity and stale drafts",
+        sectionPane.Session.ProjectId == "P-SWITCH" && sectionPane.Session.ProjectId != priorProject
+        && sectionPane.Session.IsStale);
+    sectionPane.Refresh();
+    var switchNotice = sectionPane.Session.DraftNotice;
+    Check("Project switch discards drafts with a visible notice and never applies",
+        switchNotice is { Length: > 0 } && switchNotice.Contains("Sections")
+        && !switchNotice.Contains("Switched")
+        && sectionPane.FindControl<Border>("DraftNoticePanel")!.IsVisible
+        && sectionPane.FindControl<TextBlock>("DraftNoticeText")!.Text == switchNotice
+        && !sectionPane.HasUnappliedChanges && switchedDevice.ParameterValues.Count == 0);
+    sectionPane.Session.AcknowledgeNotice();
+    Check("Draft notice can be dismissed", !sectionPane.FindControl<Border>("DraftNoticePanel")!.IsVisible);
+
+    sectionVm.CreateProject(Knxproj.Load(sectionsPath), null);
+    sectionVm.ProjectPath = sectionsPath;
+    sectionPane.Load(sectionVm.Devices[0]);
+    sectionPane.Session.Rows[0].Value = "9";
+    sectionVm.Devices[0].Device.ParameterValues["R-CA1"] = "5";
+    sectionPane.Refresh();
+    Check("Refresh discards stale drafts with its own notice and never applies",
+        sectionPane.Session.DraftNotice is { Length: > 0 } refreshNotice && refreshNotice != switchNotice
+        && sectionPane.FindControl<Border>("DraftNoticePanel")!.IsVisible
+        && sectionPane.Session.Rows[0].Value == "5" && !sectionPane.HasUnappliedChanges
+        && sectionVm.Devices[0].Device.ParameterValues["R-CA1"] == "5");
+
     var paneType = typeof(Knx.App.Views.ParameterPane);
     Check("Pane keeps the embedding contract",
         paneType.GetConstructor(Type.EmptyTypes) is not null

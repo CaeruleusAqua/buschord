@@ -14,6 +14,9 @@ public sealed record ParameterChangePreview(DeviceInstance? Device, IReadOnlyLis
     public bool IsValid => Error is null && Changes.All(c => c.Error is null);
 }
 
+/// <summary>A navigable range of visible parameter rows; <see cref="FirstRow"/> indexes <see cref="ParameterEditingSession.Rows"/>.</summary>
+public sealed record ParameterSection(string Title, int FirstRow, int RowCount);
+
 /// <summary>Project-scoped draft state, independent of the number and lifetime of parameter views.</summary>
 public sealed class ParameterEditingSession
 {
@@ -26,6 +29,7 @@ public sealed class ParameterEditingSession
     private List<ParameterInstance> _instances = [];
     private List<ParameterType> _types = [];
     private readonly Dictionary<DeviceInstance, Draft> _drafts = [];
+    private string? _manualReadOnlyReason;
     private sealed record Draft(List<ParameterInstance> Instances, List<ParameterType> Types,
         Dictionary<string, string?> Baseline, string Signature, string Message);
 
@@ -38,11 +42,27 @@ public sealed class ParameterEditingSession
     public string? EmptyText { get; private set; } = ParameterEmptyState.Text(null, null, 0);
     public string Message { get; private set; } = "";
     public ParameterItemViewModel[] Rows { get; private set; } = [];
+
+    /// <summary>Visible metadata sections of the loaded parameter set; one section means the strip stays hidden.</summary>
+    public ParameterSection[] Sections { get; private set; } = [];
+    public string? SelectedSection { get; private set; }
+    public bool HasSectionNavigation => Sections.Length > 1;
+
+    /// <summary>Identity of the project instance behind the loaded editor, so a host can detect a project switch.</summary>
+    public string? ProjectId => _vm?.Project?.Id;
+    public string? ProjectName => _vm?.Project?.Name;
+
+    /// <summary>Notice for drafts dropped by a project switch or a refresh; never applied silently.</summary>
+    public string? DraftNotice { get; private set; }
+
+    /// <summary>Set for DCA/plug-in or opaque applications: editors and apply stay disabled, values stay untouched.</summary>
+    public string? ReadOnlyReason { get; private set; }
+    public bool IsReadOnly => ReadOnlyReason is not null;
     /// <summary>False as soon as the project or device identity behind the loaded editor is gone.</summary>
-    public bool CanApply => _apply is not null && !IsStale;
+    public bool CanApply => _apply is not null && !IsStale && !IsReadOnly;
     public ParameterChangePreview? Preview { get; private set; }
     private bool IsDirty => _instances.Any(i => i.Value != _baseline.GetValueOrDefault(i.Id));
-    private bool IsStale => _vm is not null && (!ReferenceEquals(_project, _vm.Project) || Device is null
+    public bool IsStale => _vm is not null && (!ReferenceEquals(_project, _vm.Project) || Device is null
         || _vm.Project is null || !ProjectQuery.DeviceList(_vm.Project).Any(d => ReferenceEquals(d, Device)));
 
     /// <summary>Visible rows whose draft value differs from the saved baseline.</summary>
@@ -57,7 +77,7 @@ public sealed class ParameterEditingSession
     };
 
     /// <summary>Core validation of every visible, editable draft row; field editors show the same errors.</summary>
-    public IReadOnlyList<(string Name, string Error)> ValidationErrors => Rows
+    public IReadOnlyList<(string Name, string Error)> ValidationErrors => IsReadOnly ? [] : Rows
         .Where(r => r.IsVisible && r.IsEnabled)
         .Select(r => (r.Name, Valid: ParameterValidation.TryValidate(r.Instance, r.Value, out var error), Error: error))
         .Where(x => !x.Valid)
@@ -85,12 +105,13 @@ public sealed class ParameterEditingSession
     }
 
     /// <summary>True when a pending draft can be restored to its declared default.</summary>
-    public bool CanReset => HasUnappliedChanges && Rows.Any(r => r.IsVisible && r.IsEnabled
+    public bool CanReset => !IsReadOnly && HasUnappliedChanges && Rows.Any(r => r.IsVisible && r.IsEnabled
         && r.Instance.DefaultValue is not null && r.Value != r.Instance.DefaultValue);
 
     /// <summary>Restores visible editable drafts to the parameter's declared default value.</summary>
     public void ResetToDefaults()
     {
+        if (IsReadOnly) return;
         foreach (var row in Rows)
             if (row.IsVisible && row.IsEnabled && row.Instance.DefaultValue is { } value && row.Value != value)
                 row.Value = value;
@@ -124,8 +145,13 @@ public sealed class ParameterEditingSession
 
     public void Load(DeviceRow? device)
     {
+        var sameDevice = ReferenceEquals(_row?.Device, device?.Device);
+        if (!sameDevice) _manualReadOnlyReason = null;
         if (!ReferenceEquals(_project, _vm?.Project))
         {
+            // A project switch never carries drafts over, and never applies them silently.
+            if (_drafts.Count > 0 || IsDirty)
+                DraftNotice = ProjectSwitchNotice(_project?.Name ?? _project?.Id);
             _drafts.Clear();
             _project = _vm?.Project;
         }
@@ -169,9 +195,55 @@ public sealed class ParameterEditingSession
     {
         if (_vm is null) return;
         var drafts = IsDirty || _drafts.Count > 0;
+        var projectChanged = !ReferenceEquals(_project, _vm.Project);
         Load(_row);
-        if (drafts && !HasUnappliedChanges) { Message = ParameterEmptyState.DiscardedText; Publish(); }
+        if (drafts && !HasUnappliedChanges && !projectChanged)
+        {
+            Message = ParameterEmptyState.DiscardedText;
+            DraftNotice = RefreshNotice;
+            Publish();
+        }
     }
+
+    /// <summary>
+    /// Explicit read-only mode for DCA/plug-in and opaque applications. The reason is shown in the
+    /// pane; editors, Apply and Reset stay disabled. Values and opaque data are only read, never rewritten.
+    /// </summary>
+    public void SetReadOnly(string? reason)
+    {
+        _manualReadOnlyReason = string.IsNullOrWhiteSpace(reason) ? null : reason;
+        ApplyReadOnly();
+        Publish();
+    }
+
+    public void ClearReadOnly() => SetReadOnly(null);
+
+    public void AcknowledgeNotice() { DraftNotice = null; Publish(); }
+
+    /// <summary>Selects a section for navigation; the pane scrolls it into view and never filters drafts away.</summary>
+    public void SelectSection(string? title)
+    {
+        SelectedSection = Sections.Any(s => s.Title == title) ? title : null;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void NextSection() => SelectSection(SectionAt(1));
+    public void PreviousSection() => SelectSection(SectionAt(-1));
+    private string? SectionAt(int delta)
+    {
+        if (Sections.Length == 0) return null;
+        var index = Array.FindIndex(Sections, s => s.Title == SelectedSection);
+        if (index < 0) index = delta > 0 ? -1 : 0;
+        return Sections[(index + delta + Sections.Length) % Sections.Length].Title;
+    }
+
+    private string ProjectSwitchNotice(string? previous) => Strings.Language == "en"
+        ? $"Project changed: drafts from {(previous ?? "the previous project")} were discarded and never applied."
+        : $"Projekt gewechselt: Entwürfe aus {(previous ?? "dem vorherigen Projekt")} wurden verworfen und nicht übernommen.";
+
+    private string RefreshNotice => Strings.Language == "en"
+        ? "Project state changed: drafts no longer matched the saved parameters and were discarded. Nothing was applied."
+        : "Projektstand geändert: Entwürfe passten nicht mehr zu den gespeicherten Parametern und wurden verworfen. Es wurde nichts übernommen.";
 
     /// <summary>Pure parameter diff and core validation; never evaluates unknown manufacturer effects.</summary>
     public ParameterChangePreview ReviewChanges()
@@ -202,7 +274,7 @@ public sealed class ParameterEditingSession
 
     public bool Apply()
     {
-        if (_apply is null) return false;
+        if (_apply is null || IsReadOnly || IsStale) return false;
         var apply = _apply;
         var device = Device;
         var instances = _instances;
@@ -214,7 +286,7 @@ public sealed class ParameterEditingSession
             foreach (var instance in instances) baseline[instance.Id] = instance.Value;
             if (device is not null && _drafts.TryGetValue(device, out var draft)
                 && ReferenceEquals(draft.Instances, instances)) _drafts.Remove(device);
-            if (ReferenceEquals(_instances, instances)) { Message = Strings.Get("ParameterSaved"); Publish(); }
+            if (ReferenceEquals(_instances, instances)) { Message = Strings.Get("ParameterSaved"); DraftNotice = null; Publish(); }
             return true;
         }
         catch (Exception ex)
@@ -225,9 +297,9 @@ public sealed class ParameterEditingSession
     }
 
     internal void LoadResolved(string? title, IEnumerable<ParameterInstance> parameters,
-        IEnumerable<ParameterType> types, Func<bool>? apply, string? warning)
+        IEnumerable<ParameterType> types, Func<bool>? apply, string? warning, string? readOnlyReason = null)
     {
-        _drafts.Clear(); _row = null; _apply = apply;
+        _drafts.Clear(); _row = null; _apply = apply; _manualReadOnlyReason = readOnlyReason;
         _instances = parameters.ToList(); _types = types.ToList();
         _baseline = _instances.ToDictionary(i => i.Id, i => i.Value);
         Title = title; Warning = warning ?? ""; Message = "";
@@ -238,15 +310,61 @@ public sealed class ParameterEditingSession
     private void ShowState(string? empty)
     {
         _instances = []; _types = []; _baseline = []; _apply = null;
-        Rows = []; Title = null; Warning = ""; EmptyText = empty; Message = "";
+        Rows = []; Sections = []; SelectedSection = null; Title = null; Warning = ""; EmptyText = empty; Message = "";
+        ApplyReadOnly();
         Publish();
     }
 
-    private void SetRows() => Rows = ParameterItemViewModel.Build(_instances, _types, () =>
+    private void SetRows()
     {
-        // Editing invalidates the reviewed snapshot, never the draft or its validation feedback.
-        Preview = null;
-        Changed?.Invoke(this, EventArgs.Empty);
-    });
+        Rows = ParameterItemViewModel.Build(_instances, _types, () =>
+        {
+            // Editing invalidates the reviewed snapshot, never the draft or its validation feedback.
+            Preview = null;
+            Changed?.Invoke(this, EventArgs.Empty);
+        });
+        Sections = BuildSections(Rows);
+        SelectedSection = Sections.Length > 0 ? SelectedSection : null;
+        ApplyReadOnly();
+    }
+
+    /// <summary>
+    /// Section index from existing instance metadata only: a name such as "Kanal A: Schalten"
+    /// groups by its channel prefix, every other visible row belongs to the general section.
+    /// </summary>
+    private static ParameterSection[] BuildSections(ParameterItemViewModel[] rows)
+    {
+        var general = Strings.Language == "en" ? "General" : "Allgemein";
+        var groups = new List<(string Title, int First, int Count)>();
+        for (var index = 0; index < rows.Length; index++)
+        {
+            if (!rows[index].IsVisible) continue;
+            var title = SectionTitle(rows[index].Instance.Name, general);
+            if (groups.Count > 0 && groups[^1].Title == title) groups[^1] = (title, groups[^1].First, groups[^1].Count + 1);
+            else groups.Add((title, index, 1));
+        }
+        return groups.Select(g => new ParameterSection(g.Title, g.First, g.Count)).ToArray();
+    }
+
+    private static string SectionTitle(string? name, string general)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return general;
+        var separator = name.IndexOf(':');
+        return separator > 0 && name[..separator].Trim() is { Length: > 0 } prefix ? prefix : general;
+    }
+
+    /// <summary>Opaque sets (DCA/plug-in values or unsupported shapes) expose a reason instead of broken editors.</summary>
+    private void ApplyReadOnly() => ReadOnlyReason = _manualReadOnlyReason ?? OpaqueReason();
+
+    private string? OpaqueReason()
+    {
+        var visible = Rows.Where(r => r.IsVisible).ToArray();
+        if (visible.Length == 0 || visible.Any(r => r.IsEnabled)) return null;
+        var reason = visible.Select(r => r.Instance.UnsupportedReason ?? r.Type?.UnsupportedReason).FirstOrDefault(r => r is not null);
+        return reason is null ? null : (Strings.Language == "en"
+            ? $"Opaque application data: {reason} The values are shown read-only and are not executed or rewritten."
+            : $"Opaque Applikationsdaten: {reason} Die Werte werden nur lesend angezeigt und nicht ausgeführt oder umgeschrieben.");
+    }
+
     private void Publish() { Preview = null; Changed?.Invoke(this, EventArgs.Empty); }
 }

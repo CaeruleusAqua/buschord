@@ -64,6 +64,27 @@ try
         && audit.Entries[0].Description == "change 619" && audit.Entries[^1].Description == "change 120");
     audit.Clear();
     Check("Change history clears without touching project/layout", audit.Count == 0 && workspace.Tabs.Count == 0);
+    // Parameter sessions expose project identity and an explicit read-only reason without UI.
+    var parameterVm = new Knx.App.Services.MainWindowViewModel();
+    var parameterProject = new Knx.Project { Id = "P-PARAM", Name = "Parameter" };
+    var parameterInstallation = new Knx.Installation { Id = "I-PARAM" };
+    var parameterArea = new Knx.Area { Id = "A-PARAM", Address = 1 };
+    var parameterLine = new Knx.Line { Id = "L-PARAM", Address = 1 };
+    parameterLine.Devices.Add(new Knx.DeviceInstance { Id = "D-PARAM", Name = "Device", ProductRefId = "" });
+    parameterArea.Lines.Add(parameterLine);
+    parameterInstallation.Areas.Add(parameterArea);
+    parameterProject.Installations.Add(parameterInstallation);
+    parameterVm.CreateProject(parameterProject, null);
+    var parameterSession = new Knx.App.Services.ParameterEditingSession(parameterVm);
+    parameterSession.Load(parameterVm.Devices[0]);
+    parameterSession.SetReadOnly("DCA/plug-in does not run here.");
+    Check("Parameter session exposes project identity and read-only reason",
+        parameterSession.ProjectId == "P-PARAM" && parameterSession.IsReadOnly && !parameterSession.CanApply);
+    parameterSession.ClearReadOnly();
+    var nextParameterProject = new Knx.Project { Id = "P-PARAM-2", Name = "Parameter 2" };
+    parameterVm.CreateProject(nextParameterProject, null);
+    Check("Parameter session reports a switched project as stale", parameterSession.IsStale
+        && parameterSession.ProjectId == "P-PARAM-2");
     Console.WriteLine($"WORKBENCH UI STATE OK ({checks})");
 }
 finally { Directory.Delete(root, recursive: true); }

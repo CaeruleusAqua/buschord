@@ -54,14 +54,16 @@ public sealed partial class ParameterPane : UserControl, IDisposable
 
     public DeviceInstance? Device => Session.Device;
     public bool HasUnappliedChanges => Session.HasUnappliedChanges;
+    public bool IsReadOnly => Session.IsReadOnly;
+    public string? ReadOnlyReason => Session.ReadOnlyReason;
     public event EventHandler? CloseRequested;
     public void Load(DeviceRow? device) => Session.Load(device);
     public void Refresh() => Session.Refresh();
     public bool Apply() => Session.Apply();
     public void DiscardDrafts() => Session.DiscardDrafts();
     internal void LoadResolved(string? title, IEnumerable<ParameterInstance> parameters,
-        IEnumerable<ParameterType> types, Func<bool>? apply, string? warning = null)
-        => Session.LoadResolved(title, parameters, types, apply, warning);
+        IEnumerable<ParameterType> types, Func<bool>? apply, string? warning = null, string? readOnlyReason = null)
+        => Session.LoadResolved(title, parameters, types, apply, warning, readOnlyReason);
     internal void ShowClose() => CloseButton.IsVisible = true;
 
     private static string T(string de, string en) => Strings.Language == "en" ? en : de;
@@ -85,6 +87,19 @@ public sealed partial class ParameterPane : UserControl, IDisposable
         EmptyText.IsVisible = Session.EmptyText is not null;
         MessageText.Text = Session.Message;
         Footer.IsVisible = hasRows;
+
+        // Section navigation and read-only/opaque banner; drafts stay untouched.
+        var sections = Session.HasSectionNavigation ? Session.Sections : null;
+        if (TopLevel.GetTopLevel(SectionList) is not null && !ReferenceEquals(SectionList.ItemsSource, sections))
+            SectionList.ItemsSource = sections;
+        SectionList.IsVisible = hasRows && sections is not null;
+        ParameterList.IsEnabled = !Session.IsReadOnly;
+        ReadOnlyPanel.IsVisible = hasRows && Session.IsReadOnly;
+        ReadOnlyHeading.Text = T("Schreibgeschützt", "Read-only");
+        ReadOnlyText.Text = Session.ReadOnlyReason ?? "";
+        DraftNoticePanel.IsVisible = Session.DraftNotice is { Length: > 0 };
+        DraftNoticeText.Text = Session.DraftNotice ?? "";
+        DismissDraftNoticeButton.Content = T("Hinweis schließen", "Dismiss notice");
 
         // Draft indicator and footer-wide validation summary share the left footer slot.
         DraftPill.IsVisible = hasRows && Session.HasUnappliedChanges;
@@ -118,5 +133,15 @@ public sealed partial class ParameterPane : UserControl, IDisposable
     private void OnApply(object? sender, RoutedEventArgs e) => Apply();
     private void OnDiscard(object? sender, RoutedEventArgs e) => DiscardDrafts();
     private void OnReset(object? sender, RoutedEventArgs e) => Session.ResetToDefaults();
+    private void OnDismissDraftNotice(object? sender, RoutedEventArgs e) => Session.AcknowledgeNotice();
     private void OnClose(object? sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Jumps to a section without filtering rows, so drafts and validation stay intact.</summary>
+    private void OnSection(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string title }) return;
+        Session.SelectSection(title);
+        if (Session.Sections.FirstOrDefault(s => s.Title == title) is not { } section) return;
+        if (ParameterList.ContainerFromIndex(section.FirstRow) is { } container) container.BringIntoView();
+    }
 }

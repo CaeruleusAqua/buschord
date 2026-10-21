@@ -51,13 +51,42 @@
         <TextBlock x:Name="WarningDetail" IsVisible="False" TextWrapping="Wrap" Classes="wb-warning" />
       </StackPanel>
     </Border>
+    <Border x:Name="ReadOnlyPanel" DockPanel.Dock="Top" Classes="wb-panel" CornerRadius="6"
+            BorderThickness="1" Padding="10,7" Margin="0,0,0,10" IsVisible="False">
+      <StackPanel Spacing="2">
+        <TextBlock x:Name="ReadOnlyHeading" FontWeight="SemiBold" FontSize="11" />
+        <TextBlock x:Name="ReadOnlyText" TextWrapping="Wrap" Classes="wb-muted" />
+      </StackPanel>
+    </Border>
+    <Border x:Name="DraftNoticePanel" DockPanel.Dock="Top" Classes="wb-panel" CornerRadius="6"
+            BorderThickness="1" Padding="10,7" Margin="0,0,0,10" IsVisible="False">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBlock x:Name="DraftNoticeText" TextWrapping="Wrap" Classes="wb-warning" VerticalAlignment="Center" />
+        <Button x:Name="DismissDraftNoticeButton" Grid.Column="1" Classes="wb-button wb-compact wb-quiet"
+                Click="OnDismissDraftNotice" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+    <ItemsControl x:Name="SectionList" DockPanel.Dock="Top" IsVisible="False"
+                  Margin="0,0,0,10" HorizontalAlignment="Stretch">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel Orientation="Horizontal" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Button Classes="wb-button wb-compact wb-quiet" Margin="0,0,6,6"
+                  Content="{Binding Title}" Tag="{Binding Title}" Click="OnSection" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
     <TextBlock x:Name="WarningText" DockPanel.Dock="Top" IsVisible="False" TextWrapping="Wrap"
                Text="{loc:Tr ParameterNoticeMore}" Classes="wb-muted" Margin="0,0,0,10" />
     <TextBlock x:Name="EmptyText" DockPanel.Dock="Top" IsVisible="False" TextWrapping="Wrap"
                Classes="wb-muted" Margin="0,0,0,8" />
     <TextBlock x:Name="HeaderText" DockPanel.Dock="Top" Classes="wb-heading"
                Margin="0,0,0,6" Text="{loc:Tr ParameterTitle}" TextWrapping="Wrap" />
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="0,2,2,0">
+    <ScrollViewer x:Name="ParameterScroll" HorizontalScrollBarVisibility="Disabled" Padding="0,2,2,0">
       <ItemsControl x:Name="ParameterList" HorizontalAlignment="Stretch">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
