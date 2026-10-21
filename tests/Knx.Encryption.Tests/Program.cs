@@ -30,7 +30,9 @@ try
         "/21 device numbers assembled to individual addresses");
     Check(addresses.Count == 3 && string.Join(",", addresses.Select(a => a.Address.Raw)) == "256,257,258", "/21 numeric group addresses");
     Check(project.Installations[0].Locations.Roots.Single().Name == "testprojekt", "/21 building tree");
-    Check(devices[1].ComObjectRefs.Count == 8 && devices[1].ComObjectRefs[0].Links.Single() == "GA-1", "/21 device links");
+    Check(devices[1].ComObjectRefs.Count == 8
+        && devices[1].ComObjectRefs[0].Links.Single() == addresses[0].Id,
+        "/21 device links resolve to canonical group-address ids");
 
     // /21 also loads as a plain archive (same XML, no encryption).
     var decrypted21 = EncryptedArchive.ReadAll(Unzip(fixtureBytes)["P-04BF.zip"], "test");

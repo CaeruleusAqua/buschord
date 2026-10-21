@@ -339,6 +339,24 @@ public sealed partial class MainWindowViewModel : ObservableObject
         ProjectEdited?.Invoke(this, description);
     }
 
+    /// <summary>Runs a validated project operation and records undo only when it succeeded.</summary>
+    public bool ApplyProjectOperation(string description, Func<Project, ProjectEditResult> operation)
+    {
+        if (Project is not { } project) { Status = Strings.Get("UxNeedsProject"); return false; }
+        var result = operation(project);
+        if (!result.Ok)
+        {
+            Status = result.Message ?? result.Status.ToString();
+            return false;
+        }
+        _undo.Push(project);
+        NotifyEditState();
+        Refresh();
+        Status = description;
+        ProjectEdited?.Invoke(this, description);
+        return true;
+    }
+
     [RelayCommand]
     private void Undo()
     {

@@ -440,6 +440,7 @@ public partial class WorkbenchWindow : Window
             var activate = ActionButton(tab.Title, () => { CaptureScroll(); Workspace.ActiveTab = tab; }, "quiet");
             activate.MaxWidth = 220; activate.Height = 39; activate.MinWidth = 110;
             AutomationProperties.SetName(activate, W("OpenTab", tab.Title));
+            AutomationProperties.SetItemStatus(activate, tab == Workspace.ActiveTab ? W("Selected") : "");
             if (tab == Workspace.ActiveTab) activeButton = activate;
             header.Children.Add(activate);
             var close = ActionButton("", () => { Workspace.Close(tab); RefreshWorkspace(); }, "quiet", W("CloseTab", tab.Title));
@@ -585,8 +586,144 @@ public partial class WorkbenchWindow : Window
         var label = Label(node.Name); label.FontSize = 11; Grid.SetColumn(label, 1); grid.Children.Add(label);
         var meta = Label(node.Meta); meta.FontSize = 9; meta.Classes.Add("wb-subtle"); Grid.SetColumn(meta, 2); grid.Children.Add(meta);
         ToolTip.SetTip(grid, node.Name + " · " + node.Meta);
+        grid.ContextMenu = BuildNavigationMenu(node);
         return grid;
     }
+
+    private ContextMenu? BuildNavigationMenu(WorkbenchNavNode node)
+    {
+        var menu = new ContextMenu();
+        void Add(string header, Action action)
+        {
+            var item = new MenuItem { Header = header };
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
+        }
+        switch (node.Model)
+        {
+            case Area area:
+                Add(W("NewLine"), () => _ = CreateLineAsync(area));
+                break;
+            case Line line:
+                Add(W("NewSegment"), () => _ = CreateSegmentAsync(line));
+                Add(W("Rename"), () => _ = RenameLineAsync(line));
+                Add(W("Delete"), () => _ = DeleteLineAsync(line));
+                break;
+            case Segment segment:
+                Add(W("Rename"), () => _ = RenameSegmentAsync(segment));
+                Add(W("Delete"), () => _ = DeleteSegmentAsync(segment));
+                break;
+            case DeviceInstance device:
+                Add(W("Rename"), () => _ = RenameDeviceAsync(device));
+                Add(W("Copy"), () => _ = CopyDeviceAsync(device));
+                Add(W("Delete"), () => _ = DeleteDeviceAsync(device));
+                break;
+            case GroupAddressEntry group:
+                Add(W("Rename"), () => _ = RenameGroupAddressAsync(group));
+                Add(W("Copy"), () => _ = CopyGroupAddressAsync(group));
+                Add(W("Delete"), () => _ = DeleteGroupAddressAsync(group));
+                break;
+        }
+        return menu.Items.Count > 0 ? menu : null;
+    }
+
+    private async Task CreateLineAsync(Area area)
+    {
+        var name = await PromptTextAsync(W("NewName"), W("Create"));
+        if (string.IsNullOrWhiteSpace(name)) return;
+        ApplyOperation(W("NewLine"), p => AsResult(ProjectOperations.CreateLine(p, area, name)));
+    }
+
+    private async Task CreateSegmentAsync(Line line)
+    {
+        var name = await PromptTextAsync(W("NewName"), W("Create"));
+        if (string.IsNullOrWhiteSpace(name)) return;
+        ApplyOperation(W("NewSegment"), p => AsResult(ProjectOperations.CreateSegment(p, line, name)));
+    }
+
+    private async Task RenameLineAsync(Line line)
+    {
+        var name = await PromptTextAsync(W("NewName"), W("Rename"));
+        if (string.IsNullOrWhiteSpace(name)) return;
+        ApplyOperation(W("Rename"), p => ProjectOperations.RenameLine(p, line, name));
+    }
+
+    private async Task RenameSegmentAsync(Segment segment)
+    {
+        var name = await PromptTextAsync(W("NewName"), W("Rename"));
+        if (string.IsNullOrWhiteSpace(name)) return;
+        ApplyOperation(W("Rename"), p => ProjectOperations.RenameSegment(p, segment, name));
+    }
+
+    private async Task DeleteLineAsync(Line line)
+    {
+        if (!await ConfirmDialog.AskDeleteAsync(this, line.Name ?? W("Line"))) return;
+        ApplyOperation(W("Delete"), p => ProjectOperations.DeleteLine(p, line));
+    }
+
+    private async Task DeleteSegmentAsync(Segment segment)
+    {
+        if (!await ConfirmDialog.AskDeleteAsync(this, segment.Name ?? W("Segment"))) return;
+        ApplyOperation(W("Delete"), p => ProjectOperations.DeleteSegment(p, segment));
+    }
+
+    private async Task RenameDeviceAsync(DeviceInstance device)
+    {
+        var name = await PromptTextAsync(W("NewName"), W("Rename"));
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var project = ViewModel.Project;
+        var line = project is null ? null : ProjectQuery.LocateDevice(project, device.Address)?.Line;
+        var room = project?.Installations.SelectMany(i => i.Locations.AllNodes)
+            .FirstOrDefault(n => n.DeviceRefs.Contains(device.Id));
+        var error = ViewModel.UpdateDeviceDetails(device, name, device.Address.ToString(), line?.Id, room?.Id);
+        if (error is not null) ViewModel.Status = error;
+        RefreshWorkspace();
+    }
+
+    private async Task CopyDeviceAsync(DeviceInstance device)
+    {
+        if (ViewModel.Project is not { } project) return;
+        var line = ProjectQuery.LocateDevice(project, device.Address)?.Line;
+        if (line is null) { ViewModel.Status = W("TargetLineMissing"); return; }
+        var segment = line.Segments.FirstOrDefault(s => s.Devices.Contains(device));
+        var room = project.Installations.SelectMany(i => i.Locations.AllNodes)
+            .FirstOrDefault(n => n.DeviceRefs.Contains(device.Id));
+        ApplyOperation(W("Copy"), p => AsResult(ProjectOperations.CopyDevice(p, device, line, segment, room?.Id,
+            (device.Name ?? device.Id) + " (2)")));
+    }
+
+    private async Task DeleteDeviceAsync(DeviceInstance device)
+    {
+        if (!await ConfirmDialog.AskDeleteAsync(this, device.Name ?? device.Id)) return;
+        ApplyOperation(W("Delete"), p => ProjectOperations.DeleteDevice(p, device));
+    }
+
+    private async Task RenameGroupAddressAsync(GroupAddressEntry group)
+    {
+        var name = await PromptTextAsync(W("NewName"), W("Rename"));
+        if (string.IsNullOrWhiteSpace(name)) return;
+        ApplyOperation(W("Rename"), p => ProjectOperations.RenameGroupAddress(p, group, name, group.DatapointType));
+    }
+
+    private async Task CopyGroupAddressAsync(GroupAddressEntry group)
+    {
+        ApplyOperation(W("Copy"), p => AsResult(ProjectOperations.CopyGroupAddress(p, group,
+            name: group.Name + " (2)")));
+    }
+
+    private async Task DeleteGroupAddressAsync(GroupAddressEntry group)
+    {
+        if (!await ConfirmDialog.AskDeleteAsync(this, group.Name)) return;
+        ApplyOperation(W("Delete"), p => ProjectOperations.DeleteGroupAddress(p, group));
+    }
+
+    private void ApplyOperation(string description, Func<Project, ProjectEditResult> operation)
+    {
+        if (ViewModel.ApplyProjectOperation(description, operation)) RefreshWorkspace();
+    }
+
+    private static ProjectEditResult AsResult<T>(ProjectEditResult<T> result) =>
+        result.Ok ? new(ProjectEditStatus.Ok) : new(result.Status, result.Message);
 
     private Control BuildObjectRow(WorkbenchRow row)
     {
@@ -757,6 +894,8 @@ public partial class WorkbenchWindow : Window
         InspectorBody.Children.Add(Note($"{W("Monitor")}: {(sessions.Monitor.IsRunning ? W("MonitorRunning", sessions.Monitor.RecordedCount, sessions.Monitor.FilteredRows.Count) : W("MonitorStopped", sessions.Monitor.RecordedCount))}"));
         InspectorBody.Children.Add(ActionButton(W("Monitor"), () => ShowTool("monitor"), "quiet"));
         InspectorBody.Children.Add(Note($"{W("ProgrammingTab")}: {(sessions.Programming.IsRunning ? W("ProgrammingRunning") : W("NoOperations"))}"));
+        var conflicts = sessions.Interfaces.StatusSnapshot().Count(status => status.Blocked.Count > 0);
+        InspectorBody.Children.Add(Note($"{W("InterfaceConflicts")}: {conflicts}"));
         InspectorBody.Children.Add(ActionButton(W("ProgrammingTab"), () => ShowTool("programming"), "quiet"));
         InspectorBody.Children.Add(ActionButton(W("Scan"), () => ShowTool("scan"), "quiet"));
     }
