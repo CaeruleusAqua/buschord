@@ -152,9 +152,10 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 
 - ETS-REA-Berichte: `analysis/ets/project.md`, `addresses.md`, `catalog-parameters.md`, `commissioning.md`, `shell.md` (alle belegt, 2026-10-21).
 - V4-Statusmatrix: `analysis/workbench-v4-status-matrix.md`; Design-/A11y-Berichte: `analysis/workbench-v4-design-*.md`, `analysis/workbench-v4-a11y-dpi.md`.
-- Umgesetzt: Connector-/Adressmodell, Katalogstatus-Metadaten, Importbericht, Download-Sicherheitsgate, simulierte Scan-/Monitorwert-/�nderungswerkzeuge, GA-Formular, Ger�te-Detailbearbeitung, Sidebar-Container, englische Shell, Material-Icons, Katalog-V4-Styling, Projektvergleich/Produktaustausch.
+- Umgesetzt: Connector-/Adressmodell, Katalogstatus-Metadaten, Importbericht, Download-Sicherheitsgate, simulierte Scan-/Monitorwert-/Änderungswerkzeuge, GA-Formular, Geräte-Detailbearbeitung, Sidebar-Container, englische Shell, Material-Icons, Katalog-V4-Styling, Projektvergleich/Produktaustausch.
 
-- Zus�tzlich integriert: Projektbackup/-wiederherstellung, Ger�te-Ladezustand, Katalogstatus/Gating, Sidebar-Container, Projektvergleich/Produktaustausch, Labels/Semantik-Export, Projekt-Suche/-Ersetzen, Demo-Reset, Werkzeug�bersicht, GA-Gegenansicht, Material-Icons, englische Shell.
+- Zusätzlich integriert: Projektbackup/-wiederherstellung, Geräte-Ladezustand, Katalogstatus/Gating, Sidebar-Container, Projektvergleich/Produktaustausch, Labels/Semantik-Export, Projekt-Suche/-Ersetzen, Demo-Reset, Werkzeugübersicht, GA-Gegenansicht, Material-Icons, englische Shell.
+- Recheck-Fixes (`43cff3c`, `e8d83b5`, `1c94f74`): linkable neue GA mit DPT-Bitgröße, Segmenterhalt beim Geräte-Detailedit, tote Suchergebnisse, Katalog-Raumzuordnung, gerätegebundener KO-Monitorfilter, Inspector-Elevation/Dock-Höhe, Werkzeugtexte, Leerzustände und englische Resttexte.
 
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 

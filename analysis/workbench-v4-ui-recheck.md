@@ -1,5 +1,11 @@
 # Workbench V4: visual/UX recheck after the P1/P2 fixes
 
+> **Follow-up integrated:** the confirmed P1 (inspector elevation at 1024, dock clamp at 700 px)
+> and the P2 items (dock label truncation, programming empty state, initial catalog message,
+> group-count/backup/operations English leaks, duplicate sidebar title) were fixed in
+> `e8d83b5`/`43cff3c`. Remaining items are the parameter footer/field width and the hostile
+> resize/clip checks listed below.
+
 Read-only recheck against the live integration checkout at **`fc9d1ea`** ("Add backup list and
 restore flow to the workbench", worktree `C:\projects\ai_work\ets6-rebuild`). Branch
 `agents/workbench-v4/ui-recheck`, worktree `C:\projects\ai_work\agent-wt\workbench-v4-ui-recheck`,

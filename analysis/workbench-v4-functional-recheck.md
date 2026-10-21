@@ -1,4 +1,10 @@
-# Workbench V4 — functional re-check
+# Workbench V4 – functional re-check
+
+> **Follow-up integrated:** P1 (new group address `Bits = null`) and the P2 items (segment loss on
+> device detail edit, dead search-result navigation, catalog room context, device-scoped monitor
+> KO filter) were fixed and covered by tests in `43cff3c`, `e8d83b5` and `1c94f74`. The demo
+> failure/retry path remains untriggerable in the UI by design; real-bus, encryption and DPI
+> limits remain as stated below.
 
 Basis: `fc9d1ea3b2db3ea289e7e4a9b6a53ccdfa17f882` (`development`, “Add backup list and
 restore flow to the workbench”).
