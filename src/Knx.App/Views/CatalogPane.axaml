@@ -4,7 +4,7 @@
              xmlns:views="using:Knx.App.Views"
              x:Class="Knx.App.Views.CatalogPane"
              Classes="wb-root" Background="{DynamicResource WbPaper}">
-  <!-- Opt-in V4 styling: the legacy MainWindow still renders the same pane with Wb tokens. -->
+  <!-- Opt-in V4 styling: shared by the workbench and standalone catalogue views. -->
   <UserControl.Styles>
     <Style Selector="TextBlock.catalog-section">
       <Setter Property="FontSize" Value="12" />

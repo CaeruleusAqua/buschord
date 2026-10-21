@@ -3,19 +3,7 @@
              xmlns:views="using:Knx.App.Views"
              xmlns:sys="using:System"
              xmlns:fluent="using:Avalonia.Themes.Fluent"
-             xmlns:dock="using:Dock.Model.Mvvm.Controls"
              x:Class="Knx.App.App">
-
-  <!-- Dock documents and tools carry an existing control in Context; the host window of a
-       floated panel resolves these templates through the application, not the main window. -->
-  <Application.DataTemplates>
-    <DataTemplate DataType="dock:Document" x:DataType="dock:Document">
-      <ContentControl Content="{Binding Context}" />
-    </DataTemplate>
-    <DataTemplate DataType="dock:Tool" x:DataType="dock:Tool">
-      <ContentControl Content="{Binding Context}" />
-    </DataTemplate>
-  </Application.DataTemplates>
 
   <Application.Resources>
     <ResourceDictionary>
@@ -150,17 +138,6 @@
         <fluent:ColorPaletteResources x:Key="Dark" Accent="#62D1CD" />
       </FluentTheme.Palettes>
     </FluentTheme>
-    <DockFluentTheme />
-
-    <!-- dock tabs follow the app's TabItem look instead of the Fluent defaults -->
-    <Style Selector="DocumentTabStripItem">
-      <Setter Property="FontSize" Value="12.5" />
-      <Setter Property="MinHeight" Value="30" />
-      <Setter Property="Padding" Value="8,2" />
-    </Style>
-    <Style Selector="ToolTabStripItem">
-      <Setter Property="FontSize" Value="12.5" />
-    </Style>
 
     <Style Selector="Window">
       <Setter Property="FontFamily" Value="Segoe UI" />
@@ -493,27 +470,6 @@
       <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
     </Style>
 
-    <!-- Dock tool chrome: 16 px buttons in a 29 px strip, an explicit exception to the tokens. -->
-    <Style Selector="ToolChromeControl Button">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="MinHeight" Value="0" />
-      <Setter Property="Height" Value="16" />
-      <Setter Property="Padding" Value="3" />
-      <Setter Property="CornerRadius" Value="0" />
-    </Style>
-    <Style Selector="ToolChromeControl Button:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
-      <Setter Property="BorderBrush" Value="Transparent" />
-      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
-    </Style>
-    <Style Selector="ToolChromeControl Path">
-      <Setter Property="Fill" Value="{DynamicResource EtsMuted}" />
-    </Style>
-    <Style Selector="ToolChromeControl:active Path">
-      <Setter Property="Fill" Value="{DynamicResource EtsOnAccent}" />
-    </Style>
     <!-- Opt-in V4 resources/classes; not applied to legacy panels. -->
     <StyleInclude Source="avares://BusChord/Workbench/WorkbenchTheme.axaml" />
   </Application.Styles>

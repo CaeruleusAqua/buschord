@@ -74,8 +74,8 @@ public partial class App : Application
             {
                 desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
                 desktop.MainWindow = factory();
-                if (desktop.MainWindow is MainWindow compatibilityWindow)
-                    desktop.ShutdownRequested += (_, _) => compatibilityWindow.RequestShutdown();
+                if (desktop.MainWindow is WorkbenchWindow testWorkbench)
+                    desktop.ShutdownRequested += (_, _) => testWorkbench.RequestShutdown();
                 base.OnFrameworkInitializationCompleted();
                 return;
             }
