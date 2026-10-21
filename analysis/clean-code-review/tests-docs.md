@@ -1,5 +1,10 @@
 # Clean-code review: tests, CI and documentation (V4)
 
+> **Follow-up:** fixed the status-matrix contradictions, device-detail/segment check, search-hit checks,
+> backup documentation and non-fatal save warning, localized scan detail assertion, CONTRIBUTING inventory,
+> tautological severity check and the nonexistent CI project. Remaining: duplicated report fixtures and
+> a short `::notice::` policy for future platform-only suites.
+
 Range: `git diff 12fc904...HEAD -- tests docs .github ets6.sln analysis/workbench-v4-*.md`.
 Base of this review branch: `55ff6e1`. Verified by reading the diff and surrounding
 sources, building `ets6.sln -c Release` (0 errors) and running the eight changed

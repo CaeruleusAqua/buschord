@@ -1,5 +1,9 @@
 # Clean-code review — core libraries
 
+> **Follow-up:** fixed P2 connector/signature drift, range-bound reading/allocation, backup GUID fallback,
+> catalog severity alignment, project-wide building refs; P3 duplicate-state serialization, DPT `DPT-` ids
+> and P012 code stability. Remaining: orphan-connector validation, dead download gate, parser consolidation.
+
 Base `55ff6e1` (branch `agents/clean-review/core`, worktree `agent-wt/clean-review-core`, clean), fixed point `12fc904`. Reviewed `git diff 12fc904...HEAD -- src/Knx.Core src/Knx.Bus` plus surrounding code; CONTRIBUTING.md. `tests/Knx.Workbench.Tests` passes.
 
 ## P1 — bug / data loss

@@ -1,6 +1,6 @@
 # BusChord V4 — Restplan und Todo-Liste
 
-Stand: 2026-10-21. Basis: lokaler Branch `development`, Commit `12fc904` (V4-Workbench integriert).
+Stand: 2026-10-21. Basis: lokaler Branch `development`, Review-Basis `55ff6e1`, Clean-Code-Fixes danach.
 Referenz: `C:\Users\julia\Downloads\knx-workbench-v4-bundle`.
 Dieser Plan führt die verbleibenden Arbeiten aus dem V4-Konzept, den Design-Reviews
 und der ETS-Paritätsanalyse. Er ist die maßgebliche Todo-Liste; erledigte Punkte
@@ -18,7 +18,7 @@ werden hier abgehakt, nicht nur im Chat.
 - [ ] 8. Tastatur, Screenreader, 100/150/200-%-DPI und kleine Fenster abnehmen.
 - [ ] 9. Gesamttests, unabhängige Abnahme, Dokumentation und CI abschließen.
 - [ ] 10. Geprüften Stand auf `development` integrieren und veröffentlichen.
-- [ ] 11. Clean-Code-Review des gesamten V4-Diffs; bestätigte Befunde beheben und Regressionstests ergänzen.
+- [x] 11. Clean-Code-Review des gesamten V4-Diffs; bestätigte Befunde beheben und Regressionstests ergänzen.
 
 ## A. ETS-REA-Analyse (jede Funktion belegen)
 
@@ -43,8 +43,8 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 
 ### B1. Projekt und Arbeitsumgebung
 
-- [ ] Startfläche vollständig: Projekt öffnen/neu, Katalog, letzte Projekte, Demo importieren, Demo zurücksetzen, Suche.
-- [ ] Projekt vergleichen und Produkt ersetzen aus der Workbench erreichbar machen.
+- [x] Startfläche vollständig: Projekt öffnen/neu, Katalog, letzte Projekte, Demo importieren, Demo zurücksetzen, Suche.
+- [x] Projekt vergleichen und Produkt ersetzen aus der Workbench erreichbar machen.
 - [ ] Projekt-Reset mit definierter Behandlung laufender Monitor-/Programmieraufträge.
 - [ ] Layout-Persistenz je Projekt und Fensterpositionen prüfen; Reset ohne Projektdatenverlust.
 - [ ] Projektwechsel-/Undo-/Entwurfsregeln als vollständige Transaktion absichern; fehlgeschlagene Ersetzung erhält alle Sitzungen.
@@ -80,11 +80,11 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 
 ### B5. Katalog
 
-- [ ] `CatalogPane` vollständig auf V4-Design heben (Panel, Zeilen, Buttons, Suche, Leerzustände, Tastatur).
+- [x] `CatalogPane` vollständig auf V4-Design heben (Panel, Zeilen, Buttons, Suche, Leerzustände, Tastatur).
 - [ ] Import/Reload-Fortschritt, Fehler, Abbruch und Hintergrundladen sichtbar.
 - [ ] Einfügen in gewählten Raum/Line/Segment inkl. Adressvorschlag, Namenskonflikt und Undo.
 - [ ] Produkt-/Applikationsvorschau, DPT-/KO-Metadaten und unbekannte Herstellerdaten erklären.
-- [ ] Suche/Filter über Katalog, Hersteller, Produkt, Text und DPT.
+- [x] Suche/Filter über Katalog, Hersteller, Produkt, Text und DPT.
 - [ ] Keine Herstellerdaten im öffentlichen Repository; Testkorpora getrennt.
 
 ### B6. Inbetriebnahme, Bus, Diagnose
@@ -99,12 +99,12 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 
 ### B7. Berichte, Exporte, Demo
 
-- [ ] CSV/HTML/Bericht um aktuelle V4-Felder und Zuordnungsmatrix ergänzen.
-- [ ] Etiketten, Mail-Merge und semantische Exporte aus der Workbench erreichbar.
-- [ ] V4-Demo-JSON vollständig importieren/exportieren; Reset und Beispieldaten.
-- [ ] Vergleichsbericht und Produkt-Ersetzen in die Shell integrieren.
-- [ ] Suche/Ersetzen projektweit mit Vorschau, Stale-Schutz und Undo.
-- [ ] Alle Demo-Daten klar von echten KNX-Daten trennen.
+- [x] CSV/HTML/Bericht um aktuelle V4-Felder und Zuordnungsmatrix ergänzen.
+- [x] Etiketten, Mail-Merge und semantische Exporte aus der Workbench erreichbar.
+- [x] V4-Demo-JSON vollständig importieren/exportieren; Reset und Beispieldaten.
+- [x] Vergleichsbericht und Produkt-Ersetzen in die Shell integrieren.
+- [x] Suche/Ersetzen projektweit mit Vorschau, Stale-Schutz und Undo.
+- [x] Alle Demo-Daten klar von echten KNX-Daten trennen.
 
 ### B8. Shell, Lokalisierung, Barrierefreiheit
 
@@ -153,11 +153,17 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 
 - ETS-REA-Berichte: `analysis/ets/project.md`, `addresses.md`, `catalog-parameters.md`, `commissioning.md`, `shell.md` (alle belegt, 2026-10-21).
 - V4-Statusmatrix: `analysis/workbench-v4-status-matrix.md`; Design-/A11y-Berichte: `analysis/workbench-v4-design-*.md`, `analysis/workbench-v4-a11y-dpi.md`.
-- Umgesetzt: Connector-/Adressmodell, Katalogstatus-Metadaten, Importbericht, Download-Sicherheitsgate, simulierte Scan-/Monitorwert-/Änderungswerkzeuge, GA-Formular, Geräte-Detailbearbeitung, Sidebar-Container, englische Shell, Material-Icons, Katalog-V4-Styling, Projektvergleich/Produktaustausch.
-
-- Zusätzlich integriert: Projektbackup/-wiederherstellung, Geräte-Ladezustand, Katalogstatus/Gating, Sidebar-Container, Projektvergleich/Produktaustausch, Labels/Semantik-Export, Projekt-Suche/-Ersetzen, Demo-Reset, Werkzeugübersicht, GA-Gegenansicht, Material-Icons, englische Shell.
+- Umgesetzt: Connector-/Adressmodell, Katalogstatus-Metadaten und Gating, Importbericht, Download-Sicherheitsgate, simulierte Scan-/Monitorwert-/Änderungswerkzeuge, GA-Formular, Geräte-Detailbearbeitung, Projektbackup/-wiederherstellung, Geräte-Ladezustand, Sidebar-Container, englische Shell, Material-Icons, Katalog-V4-Styling, Projektvergleich/-Produktaustausch, Labels-/Semantik-Export, Projekt-Suche/-Ersetzen, Demo-Reset, Werkzeugübersicht und GA-Gegenansicht.
 - Recheck-Fixes (`43cff3c`, `e8d83b5`, `1c94f74`): linkable neue GA mit DPT-Bitgröße, Segmenterhalt beim Geräte-Detailedit, tote Suchergebnisse, Katalog-Raumzuordnung, gerätegebundener KO-Monitorfilter, Inspector-Elevation/Dock-Höhe, Werkzeugtexte, Leerzustände und englische Resttexte.
 - Abnahme 2026-10-21: Release-Build, alle Testprojekte, Smoke, Screenshot-Selbsttest sowie Workbench-Selftest de/en grün; UI- und Funktions-Recheck als `analysis/workbench-v4-ui-recheck.md` und `analysis/workbench-v4-functional-recheck.md` integriert.
+- Clean-Code-Review: `analysis/clean-code-review/core.md`, `app.md`, `tests-docs.md`; bestätigte P1/P2 und mehrere P3 behoben, verbleibende Grenzen in den Berichten dokumentiert.
+
+## F. Clean-Code-Review (Schritt 11)
+
+- [x] Core/Bus: Atomarität, Pfad-/Fehlerbehandlung, Duplikate, toter Code, API-Kompatibilität.
+- [x] App/Workbench: Riesenmethoden, wiederholte UI-Builder/Switches, Event-Lecks, Thread-/Projektwechsel-Zustand.
+- [x] Tests/Doku: nicht-falsifizierbare Checks, fehlende Regressionen, CI-/Doku-Abweichungen.
+- [x] Bestätigte P1/P2 beheben, Regressionstest ergänzen, Gesamtsuite erneut ausführen.
 
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 

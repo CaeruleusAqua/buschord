@@ -26,9 +26,11 @@ gespeicherte `.knxproj`-Kopie).
   Projektlader das Archiv akzeptiert hat.
 - `Capture` serialisiert ein In-Memory-Projekt **nur auf ausdrücklichen Aufruf**
   in ein temporäres Archiv und sichert das Ergebnis. Kein Timer, kein
-  Hintergrundlauf; UI-Verdrahtung ist offen.
+  Hintergrundlauf; die Workbench bietet `Projekt → Backup jetzt erstellen` und
+  sichert zusätzlich vor jedem Speichern.
 - `List` liefert neueste zuerst. Ohne `projectPath` alle Sicherungen im Root,
-  mit Pfad nur die dieses Projektpfads. Unlesbare oder veraltete Einträge werden
+  mit Pfad die dieses Projektpfads; nach einem Umbenennen wird über die
+  gespeicherte Projekt-GUID zugeordnet. Unlesbare oder veraltete Einträge werden
   übersprungen.
 - `Restore` schreibt an den vom Aufrufer gewählten Pfad; der Backup-Root selbst
   ist als Ziel gesperrt. Bei gleichem Pfad wird das Original ersetzt, sonst
@@ -89,12 +91,13 @@ keinen prozessübergreifenden Lock.
 
 ## Offen / nicht Teil dieses Bausteins
 
-- Keine Verdrahtung in `WorkbenchWindow`, Öffnen/Speichern oder einen
-  Start-Recovery-Dialog.
 - Kein automatisches Backup beim Schließen und kein Auto-Save-Timer.
 - Kein Projektarchiv mit Versionen, Metadaten, Sperren oder Kollaboration.
 - Keine Verschlüsselung der Backup-Dateien; der Backup-Root erbt die
   Dateisystemrechte des Benutzers.
+- Schlägt die Sicherung vor dem Speichern fehl (defektes/zu großes Archiv,
+  gesperrter Backup-Root), warnt die Workbench, speichert das Projekt aber
+  trotzdem; die Meldung erscheint in der Statuszeile.
 
 ## Prüfen
 

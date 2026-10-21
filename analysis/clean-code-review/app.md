@@ -1,5 +1,10 @@
 # Clean-code review — V4 Workbench app slice
 
+> **Follow-up:** fixed P1 cross-installation room assignment/room kind, audit reset on every replacement,
+> backup failure no longer aborts save, single tool factory/id set, localized new status paths, cached
+> catalog program removed, problems view no longer mutates status, direct Escape choice. Remaining:
+> five dialog shells, full `RefreshInspector` split, dead `ProgrammingSession` API.
+
 Base `55ff6e1`, fixed point `12fc904`, scope `src/Knx.App`. `dotnet build src/Knx.App` passes (0 errors); findings are behavioural and structural.
 
 ## P1

@@ -38,7 +38,6 @@ env:
     tests/Knx.WorkbenchSessions.Tests
     tests/Knx.WorkbenchTheme.Tests
     tests/Knx.WorkbenchPerformance.Tests
-    src/Knx.App.Tests
 
 jobs:
   build:
@@ -77,6 +76,7 @@ jobs:
       - name: Console checks
         shell: bash
         run: |
+          echo "::notice::Docking/Shell window suites run only on Windows: they require a native display"
           for project in $(echo "$TEST_PROJECTS" | tr -d '\r'); do
             if [ "$project" = "tests/Knx.Icon.Tests" ]; then
               echo "::notice::skipping $project on Linux: it starts Avalonia with UsePlatformDetect and needs a display"

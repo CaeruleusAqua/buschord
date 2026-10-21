@@ -36,9 +36,11 @@ dotnet run --project tests/Knx.Mcp.Tests
 
 Other console suites: `Knx.Address.Tests`, `Knx.Buildings.Tests`,
 `Knx.Catalog.Tests`, `Knx.CatalogUi.Tests`, `Knx.Diagnostics.Tests`,
-`Knx.Encryption.Tests`, `Knx.Icon.Tests`, `Knx.Monitor.Tests`, `Knx.Owl.Tests`,
-`Knx.ParameterUi.Tests`, `Knx.Search.Tests`, `Knx.SmartLink.Tests`, and
-`src/Knx.App.Tests` for the UI shell. Smoke checks:
+`Knx.Docking.Tests`, `Knx.Encryption.Tests`, `Knx.Icon.Tests`, `Knx.Monitor.Tests`,
+`Knx.Owl.Tests`, `Knx.ParameterUi.Tests`, `Knx.Search.Tests`, `Knx.Shell.Tests`,
+`Knx.SmartLink.Tests`, `Knx.Workbench.Tests`, `Knx.WorkbenchPerformance.Tests`,
+`Knx.WorkbenchSessions.Tests`, `Knx.WorkbenchTheme.Tests` and
+`Knx.WorkbenchUiState.Tests`. Smoke checks:
 
 ```powershell
 dotnet run --project src/Knx.App -- --smoke
