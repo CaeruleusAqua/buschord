@@ -17,7 +17,7 @@ public partial class ReportWindow : Window
 {
     private readonly List<ReportRow> _rows = [];
     private Func<Task>? _primary;
-    private string _csvName = "befunde";
+    private string _csvName = "";
 
     public ReportWindow()
     {
@@ -25,15 +25,17 @@ public partial class ReportWindow : Window
     }
 
     public void Load(string title, string subtitle, IEnumerable<ReportRow> rows,
-        string? primaryText = null, Func<Task>? primary = null, string csvName = "befunde")
+        string? primaryText = null, Func<Task>? primary = null, string? csvName = null)
     {
         Title = title;
         TitleText.Text = title;
         SubtitleText.Text = subtitle;
         _rows.Clear();
         _rows.AddRange(rows);
-        _csvName = csvName;
+        _csvName = csvName ?? Strings.Get("ReportCsvFileName");
         Rows.ItemsSource = _rows;
+        Rows.IsVisible = _rows.Count > 0;
+        EmptyState.IsVisible = _rows.Count == 0;
         PrimaryButton.Content = primaryText ?? Strings.Get("BtnApply");
         PrimaryButton.IsVisible = primary is not null;
         _primary = primary;
@@ -58,7 +60,7 @@ public partial class ReportWindow : Window
             });
             if (file is null) return;
 
-            var sb = new StringBuilder("Stufe;Objekt;Beschreibung\n");
+            var sb = new StringBuilder(Strings.Get("ReportCsvHeader") + "\n");
             foreach (var row in _rows)
                 sb.AppendLine($"{row.Severity};{Escape(row.Title)};{Escape(row.Detail)}");
 

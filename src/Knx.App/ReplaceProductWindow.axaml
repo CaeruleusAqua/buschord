@@ -2,51 +2,69 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="using:Knx.App.Localization"
         x:Class="Knx.App.ReplaceProductWindow"
+        Classes="wb-dialog"
         Title="{loc:Tr ReplaceProductTitle}" Width="720" Height="560" MinWidth="560" MinHeight="420"
         Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
-  <DockPanel Margin="14">
-    <StackPanel DockPanel.Dock="Top" Spacing="8">
-      <TextBlock Classes="muted" TextWrapping="Wrap" Text="{loc:Tr ReplaceHint}" />
-      <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto">
-        <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr ReplaceOldRef}" VerticalAlignment="Center" />
-        <TextBox Grid.Row="0" Grid.Column="1" x:Name="OldBox" Watermark="M-0083_A-008A-25-6CE4" />
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr ReplaceNewRef}" VerticalAlignment="Center" Margin="0,8,0,0" />
-        <TextBox Grid.Row="1" Grid.Column="1" x:Name="NewBox" Watermark="M-0083_A-008A-25-6CE5" Margin="0,8,0,0" />
-        <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Tr ReplaceNewProgram}" VerticalAlignment="Center" Margin="0,8,0,0" />
-        <TextBox Grid.Row="2" Grid.Column="1" x:Name="ProgramBox" Margin="0,8,0,0"
-                 Watermark="M-0083_H-Base_I-0000_A-008A-25-6CE5" />
-      </Grid>
-      <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button Content="{loc:Tr BtnPreview}" Click="OnPreview" />
-        <TextBlock x:Name="SummaryText" VerticalAlignment="Center" Classes="muted" />
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Padding="22,20,22,10">
+      <StackPanel Spacing="4">
+        <TextBlock Text="{loc:Tr ReplaceProductTitle}" Classes="wb-title" />
+        <TextBlock Classes="wb-muted" TextWrapping="Wrap" Text="{loc:Tr ReplaceHint}" />
       </StackPanel>
-    </StackPanel>
-
-    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
-                Spacing="{StaticResource ControlGap}" Margin="0,12,0,0">
-      <Button x:Name="ApplyButton" Content="{loc:Tr BtnReplace}" Classes="primary" Click="OnApply" IsEnabled="False" />
-      <Button Content="{loc:Tr BtnClose}" Click="OnClose" />
-    </StackPanel>
-
-    <Border Classes="panel" Margin="0,10,0,0">
-      <DockPanel>
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="110,*,90" Background="{DynamicResource EtsHeaderRow}">
-          <TextBlock Grid.Column="0" Classes="columnHeader" Text="{loc:Tr ColAddress}" />
-          <TextBlock Grid.Column="1" Classes="columnHeader" Text="{loc:Tr ColType}" />
-          <TextBlock Grid.Column="2" Classes="columnHeader" Text="{loc:Tr ColLinked}" />
-        </Grid>
-        <ListBox x:Name="ResultList">
-          <ListBox.ItemTemplate>
-            <DataTemplate>
-              <Grid ColumnDefinitions="110,*,90" Margin="6,1">
-                <TextBlock Grid.Column="0" Text="{Binding Device.Address}" Classes="mono" />
-                <TextBlock Grid.Column="1" Text="{Binding NewRefId}" Classes="mono" TextTrimming="CharacterEllipsis" />
-                <TextBlock Grid.Column="2" Text="{Binding KeptLinks}" Classes="muted" />
-              </Grid>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-      </DockPanel>
     </Border>
-  </DockPanel>
+
+    <Grid Grid.Row="1" Margin="22,0,22,18" RowDefinitions="Auto,*">
+      <Border Classes="wb-dialog-surface" Padding="18">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="190,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr ReplaceOldRef}" Classes="wb-label" />
+            <TextBox Grid.Row="0" Grid.Column="1" x:Name="OldBox" Classes="wb-field"
+                     Watermark="M-0083_A-008A-25-6CE4" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr ReplaceNewRef}" Classes="wb-label" />
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="NewBox" Classes="wb-field"
+                     Watermark="M-0083_A-008A-25-6CE5" />
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Tr ReplaceNewProgram}" Classes="wb-label" />
+            <TextBox Grid.Row="2" Grid.Column="1" x:Name="ProgramBox" Classes="wb-field"
+                     Watermark="M-0083_H-Base_I-0000_A-008A-25-6CE5" />
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="{loc:Tr BtnPreview}" Classes="wb-button" Click="OnPreview" />
+            <TextBlock x:Name="SummaryText" VerticalAlignment="Center" Classes="wb-muted" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Grid.Row="1" Classes="wb-dialog-surface" Margin="0,12,0,0">
+        <DockPanel>
+          <Border DockPanel.Dock="Top" Background="{DynamicResource WbTableHeader}"
+                  BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="110,*,90">
+              <TextBlock Grid.Column="0" Classes="wb-column-header" Text="{loc:Tr ColAddress}" />
+              <TextBlock Grid.Column="1" Classes="wb-column-header" Text="{loc:Tr ColType}" />
+              <TextBlock Grid.Column="2" Classes="wb-column-header" Text="{loc:Tr ColLinked}" />
+            </Grid>
+          </Border>
+          <ListBox x:Name="ResultList" Classes="wb-list">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="110,*,90">
+                  <TextBlock Grid.Column="0" Text="{Binding Device.Address}" Classes="wb-mono" />
+                  <TextBlock Grid.Column="1" Text="{Binding NewRefId}" Classes="wb-mono" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2" Text="{Binding KeptLinks}" Classes="wb-muted" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+    </Grid>
+
+    <Border Grid.Row="2" Classes="wb-dialog-footer">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Content="{loc:Tr BtnClose}" Classes="wb-button wb-quiet" Click="OnClose" IsCancel="True" />
+        <Button x:Name="ApplyButton" Content="{loc:Tr BtnReplace}" Classes="wb-button wb-primary"
+                Click="OnApply" IsEnabled="False" />
+      </StackPanel>
+    </Border>
+  </Grid>
 </Window>

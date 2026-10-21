@@ -1,41 +1,58 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="using:Knx.App.Localization"
+        xmlns:views="using:Knx.App.Views"
         x:Class="Knx.App.ReportWindow"
+        Classes="wb-dialog"
         Width="900" Height="620" MinWidth="600" MinHeight="360"
-        Title="{Binding Title}" Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
-  <DockPanel Margin="12">
-    <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,10">
-      <TextBlock x:Name="TitleText" FontSize="16" FontWeight="SemiBold" />
-      <TextBlock x:Name="SubtitleText" Classes="muted" TextWrapping="Wrap" />
-    </StackPanel>
+        Title="{loc:Tr UxReport}" Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Padding="22,20,22,10">
+      <StackPanel Spacing="3">
+        <TextBlock x:Name="TitleText" Classes="wb-title" TextWrapping="Wrap" />
+        <TextBlock x:Name="SubtitleText" Classes="wb-muted" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
 
-    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
-                Spacing="{StaticResource ControlGap}" Margin="0,10,0,0">
-      <Button x:Name="PrimaryButton" Content="{loc:Tr BtnApply}" Classes="primary" Click="OnPrimary" IsVisible="False" />
-      <Button Content="{loc:Tr BtnSaveCsvDots}" Click="OnSaveCsv" />
-      <Button Content="{loc:Tr BtnClose}" Click="OnClose" />
-    </StackPanel>
-
-    <Border Classes="panel">
+    <Border Grid.Row="1" Classes="wb-dialog-surface" Margin="22,0,22,18">
       <DockPanel>
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="90,220,*" Background="{DynamicResource EtsHeaderRow}">
-          <TextBlock Grid.Column="0" Classes="columnHeader" Text="{loc:Tr ColSeverity}" />
-          <TextBlock Grid.Column="1" Classes="columnHeader" Text="{loc:Tr ColPath}" />
-          <TextBlock Grid.Column="2" Classes="columnHeader" Text="{loc:Tr ColMessage}" />
+        <Border DockPanel.Dock="Top" Background="{DynamicResource WbTableHeader}"
+                BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="90,220,*">
+            <TextBlock Grid.Column="0" Classes="wb-column-header" Text="{loc:Tr ColSeverity}" />
+            <TextBlock Grid.Column="1" Classes="wb-column-header" Text="{loc:Tr ColPath}" />
+            <TextBlock Grid.Column="2" Classes="wb-column-header" Text="{loc:Tr ColMessage}" />
+          </Grid>
+        </Border>
+        <Grid>
+          <ListBox x:Name="Rows" Classes="wb-list">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="90,220,*">
+                  <TextBlock Grid.Column="0" Text="{Binding Severity}" FontWeight="SemiBold" />
+                  <TextBlock Grid.Column="1" Text="{Binding Title}" Classes="wb-mono" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2" Text="{Binding Detail}" TextWrapping="Wrap" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <StackPanel x:Name="EmptyState" Spacing="8" Margin="20"
+                      HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="False">
+            <views:ConceptIcon Symbol="doc" Width="22" Height="22" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource WbMuted}" />
+            <TextBlock Text="{loc:Tr ReportEmpty}" Classes="wb-muted" TextAlignment="Center" />
+          </StackPanel>
         </Grid>
-        <ListBox x:Name="Rows">
-          <ListBox.ItemTemplate>
-            <DataTemplate>
-              <Grid ColumnDefinitions="90,220,*" Margin="6,1">
-                <TextBlock Grid.Column="0" Text="{Binding Severity}" FontWeight="SemiBold" />
-                <TextBlock Grid.Column="1" Text="{Binding Title}" Classes="mono" TextTrimming="CharacterEllipsis" />
-                <TextBlock Grid.Column="2" Text="{Binding Detail}" TextWrapping="Wrap" />
-              </Grid>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
       </DockPanel>
     </Border>
-  </DockPanel>
+
+    <Border Grid.Row="2" Classes="wb-dialog-footer">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Content="{loc:Tr BtnClose}" Classes="wb-button wb-quiet" Click="OnClose" IsCancel="True" />
+        <Button Content="{loc:Tr BtnSaveCsvDots}" Classes="wb-button" Click="OnSaveCsv" />
+        <Button x:Name="PrimaryButton" Content="{loc:Tr BtnApply}" Classes="wb-button wb-primary"
+                Click="OnPrimary" IsVisible="False" />
+      </StackPanel>
+    </Border>
+  </Grid>
 </Window>

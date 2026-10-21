@@ -151,8 +151,8 @@
       <Setter Property="Foreground" Value="{DynamicResource ToolTipForeground}" />
       <Setter Property="BorderBrush" Value="{DynamicResource ToolTipBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Padding" Value="8,5" />
-      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="8,6" />
+      <Setter Property="CornerRadius" Value="7" />
       <Setter Property="FontSize" Value="11" />
     </Style>
     <Style Selector="ToolTip /template/ ContentPresenter">
@@ -160,8 +160,8 @@
       <Setter Property="TextElement.Foreground" Value="{DynamicResource ToolTipForeground}" />
       <Setter Property="BorderBrush" Value="{DynamicResource ToolTipBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="4" />
-      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="8,6" />
     </Style>
     <Style Selector="ToolTip TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource ToolTipForeground}" />
@@ -472,5 +472,125 @@
 
     <!-- Opt-in V4 resources/classes; not applied to legacy panels. -->
     <StyleInclude Source="avares://BusChord/Workbench/WorkbenchTheme.axaml" />
+
+    <!-- ===== shared V4 dialog chrome =====
+         Dialogs opt in with Window.wb-dialog: 22 px content, 13 px footer, title 22,
+         and surfaces with the 11 px WbDialogRadius token. -->
+    <Style Selector="Window.wb-dialog">
+      <Setter Property="FontFamily" Value="{DynamicResource WbFontFamily}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+      <Setter Property="Background" Value="{DynamicResource WbBackground}" />
+    </Style>
+    <Style Selector="TextBlock.wb-label">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.wb-dialog-surface">
+      <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="{DynamicResource WbDialogRadius}" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="Border.wb-dialog-footer">
+      <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+      <Setter Property="BorderThickness" Value="0,1,0,0" />
+      <Setter Property="Padding" Value="22,13" />
+    </Style>
+    <Style Selector="ListBox.wb-list">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.wb-list ListBoxItem">
+      <Setter Property="MinHeight" Value="{DynamicResource WbRowHeight}" />
+      <Setter Property="Padding" Value="{DynamicResource WbCellPadding}" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    </Style>
+    <Style Selector="ListBox.wb-list ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbHover}" />
+    </Style>
+    <Style Selector="ListBox.wb-list ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbSelected}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}" />
+    </Style>
+    <Style Selector="ListBox.wb-list ListBoxItem TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    </Style>
+    <Style Selector="ListBox.wb-list ListBoxItem:selected TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
+    </Style>
+
+    <!-- Destructive actions keep the outlined button shape but switch border and text to
+         WbError, with a filled hover/pressed state for a clear affordance. -->
+    <Style Selector="Button.wb-button.wb-danger">
+      <Setter Property="Foreground" Value="{DynamicResource WbError}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbError}" />
+    </Style>
+    <Style Selector="Button.wb-button.wb-danger:pointerover:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbError}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbError}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource WbPaper}" />
+    </Style>
+    <Style Selector="Button.wb-button.wb-danger:pressed:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbError}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbError}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource WbPaper}" />
+    </Style>
+    <Style Selector="Button.wb-button.wb-danger:pointerover TextBlock, Button.wb-button.wb-danger:pressed TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource WbPaper}" />
+    </Style>
+    <Style Selector="Button.wb-button.wb-danger:pointerover views|Icon, Button.wb-button.wb-danger:pressed views|Icon">
+      <Setter Property="Foreground" Value="{DynamicResource WbPaper}" />
+    </Style>
+
+    <!-- V4 field geometry for the numeric editor and its spinner. -->
+    <Style Selector="NumericUpDown.wb-field">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Height" Value="30" />
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+    </Style>
+    <Style Selector="NumericUpDown.wb-field TextBox">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="NumericUpDown /template/ ButtonSpinner">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton">
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
+    </Style>
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:disabled">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbHover}" />
+    </Style>
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbTint}" />
+    </Style>
   </Application.Styles>
 </Application>

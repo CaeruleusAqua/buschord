@@ -18,7 +18,7 @@ public partial class NewProjectWindow : Window
     {
         Options = new NewProjectOptions
         {
-            Name = string.IsNullOrWhiteSpace(NameBox.Text) ? "Neues Projekt" : NameBox.Text!,
+            Name = string.IsNullOrWhiteSpace(NameBox.Text) ? Strings.Get("NewProjectTitle") : NameBox.Text!,
             Comment = string.IsNullOrWhiteSpace(CommentBox.Text) ? null : CommentBox.Text,
             GroupAddressStyle = StyleBox.SelectedIndex switch
             {

@@ -22,9 +22,9 @@ public partial class SettingsWindow : Window
         ConfirmDeleteBox.IsChecked = settings.ConfirmDelete;
         BusInterfaceBox.Text = settings.BusInterface;
         TunnelAddressBox.Text = settings.TunnelAddress;
-        RecentList.ItemsSource = settings.RecentProjects.Count == 0
-            ? new[] { Strings.Get("OptionsNoRecent") }
-            : settings.RecentProjects.ToArray();
+        RecentList.ItemsSource = settings.RecentProjects.ToArray();
+        RecentList.IsVisible = settings.RecentProjects.Count > 0;
+        RecentEmpty.IsVisible = settings.RecentProjects.Count == 0;
         Opened += (_, _) => ThemeBox.Focus();
     }
 
