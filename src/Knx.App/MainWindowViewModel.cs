@@ -386,6 +386,40 @@ public sealed partial class MainWindowViewModel : ObservableObject
         });
     }
 
+    public bool CreateGroupAddress(GroupAddress address, string name, string? datapointType, string? effectRoomId = null)
+    {
+        if (Project is not { } project) { Status = Strings.Get("UxNeedsProject"); return false; }
+        var installation = project.Installations.FirstOrDefault();
+        if (installation is null) { Status = Strings.Get("UxNeedsProject"); return false; }
+        if (address.Raw == 0 || ProjectQuery.FindGroupAddress(project, address) is not null)
+        {
+            Status = $"Gruppenadresse {address} ist bereits vergeben.";
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            Status = "Gruppenadresse braucht einen Namen.";
+            return false;
+        }
+        var id = "";
+        Edit($"Gruppenadresse {address} angelegt", p =>
+        {
+            var range = EnsureRangeFor(p, installation, address);
+            id = NextGroupAddressId(p);
+            range.Addresses.Add(new GroupAddressEntry
+            {
+                Id = id, Name = name.Trim(), Address = address,
+                DatapointType = string.IsNullOrWhiteSpace(datapointType) ? null : datapointType.Trim(),
+            });
+            p.Workbench.Groups[id] = new Knx.Workbench.GroupMetadata
+            {
+                Bits = null, Secure = false, EffectRoomId = effectRoomId,
+            };
+        });
+        Status = $"Gruppenadresse {address} angelegt";
+        return id.Length > 0;
+    }
+
     public void DeleteGroupAddress(GroupAddressRow row)
     {
         if (Project is not { } project) return;

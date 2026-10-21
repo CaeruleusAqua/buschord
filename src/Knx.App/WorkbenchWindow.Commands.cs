@@ -22,7 +22,7 @@ public partial class WorkbenchWindow
             {
                 Async(W("MenuNew"), NewProjectAsync), Async(W("MenuOpen"), OpenProjectAsync), Async(W("MenuSave"), async () => await SaveAsync()),
                 Async(W("MenuSaveAs"), async () => await SaveAsync(true)), new Separator(),
-                Item(W("Catalog"), ShowCatalog), Item(W("NewGroupAddress"), () => { ViewModel.AddGroupAddress(); RefreshWorkspace(); }),
+                Item(W("Catalog"), ShowCatalog), Item(W("NewGroupAddress"), ShowNewGroupAddressDialog),
                 Async(W("ExportGroupAddresses"), () => ExportAsync("gruppenadressen.csv", ProjectCsvExporter.GroupAddresses)),
                 Async(W("ExportDevices"), () => ExportAsync("geraete.csv", ProjectCsvExporter.Devices)),
                 Async(W("ExportTopology"), () => ExportAsync("topologie.csv", ProjectCsvExporter.Topology)),
@@ -315,6 +315,43 @@ public partial class WorkbenchWindow
         ObjectTable.SelectedItems?.Clear();
         if (Workspace.ActiveTab is { } tab) tab.SelectedObjectIds.Clear();
         RefreshInspector();
+    }
+
+    private void ShowNewGroupAddressDialog()
+    {
+        if (ViewModel.Project is not { } project) { ViewModel.Status = W("ScanNeedsProject"); return; }
+        var dialog = new Window { Title = W("NewGroupAddress"), Width = 480, Height = 360, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var address = new TextBox { Text = ProjectQuery.NextFreeGroupAddress(project, 1, 1).ToString() };
+        var name = new TextBox();
+        var dpt = new TextBox { Text = "DPST-1-1" };
+        var rooms = project.Installations.SelectMany(i => i.Locations.AllNodes).Where(n => n.Kind == SpaceKind.Room).ToList();
+        var room = new ComboBox { ItemsSource = rooms, PlaceholderText = W("RoomOptional") };
+        room.ItemTemplate = new FuncDataTemplate<SpaceNode>((r, _) => Label(r is null ? "" : r.Path));
+        panel.Children.Add(Label(W("GroupAddress"))); panel.Children.Add(address);
+        panel.Children.Add(Label(W("NameLabel"))); panel.Children.Add(name);
+        panel.Children.Add(Label(W("DatapointType"))); panel.Children.Add(dpt);
+        panel.Children.Add(Label(W("RoomOptional"))); panel.Children.Add(room);
+        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+        actions.Children.Add(ActionButton(W("Create"), () =>
+        {
+            GroupAddress parsed;
+            try { parsed = GroupAddress.Parse(address.Text ?? ""); }
+            catch (Exception ex) when (ex is FormatException or ArgumentOutOfRangeException or OverflowException)
+            { ViewModel.Status = W("InvalidGroupAddress"); return; }
+            if (parsed.Raw == 0) { ViewModel.Status = W("InvalidGroupAddress"); return; }
+            if (!ViewModel.CreateGroupAddress(parsed, name.Text ?? "", dpt.Text,
+                    (room.SelectedItem as SpaceNode)?.Id)) return;
+            dialog.Close();
+            RefreshWorkspace();
+            if (ProjectQuery.FindGroupAddress(ViewModel.Project!, parsed) is { } created)
+                OpenTarget(new("ga", created.Id));
+        }, "primary"));
+        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
+        panel.Children.Add(actions);
+        dialog.Content = panel;
+        dialog.Opened += (_, _) => name.Focus();
+        dialog.ShowDialog(this);
     }
 
     private void ShowBatchLinkDialog()
