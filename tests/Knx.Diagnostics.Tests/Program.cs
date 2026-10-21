@@ -34,6 +34,12 @@ void Check(string name, bool ok, string? detail = null)
         scan.Devices[2].Error);
     Check("scan: Laufzeit begrenzt", scan.Elapsed < TimeSpan.FromSeconds(2), scan.Elapsed.ToString());
     Check("scan: Descriptor-Read als Einzeladresse", session.Sends(Apci.DeviceDescriptorRead) == 3);
+    var descriptorRequests = session.Sent.Where(t => t.Apci == Apci.DeviceDescriptorRead).ToList();
+    var firstFrame = descriptorRequests.Count > 0 ? Cemi.LDataRequest(descriptorRequests[0]) : [];
+    Check("scan: Descriptor-Typ steht in der APCI, nicht als Datum",
+        descriptorRequests.All(t => t.Data is [0x00])
+        && firstFrame is [0x11, 0x00, 0xBC, 0x60, 0x00, 0x00, 0x11, 0x05, 0x01, 0x03, 0x00],
+        Convert.ToHexString(firstFrame));
 }
 
 // ---- 2. Begrenzte Wiederholungen: keine unbegrenzten Retries ----
@@ -273,6 +279,12 @@ internal sealed class FakeSession : IBusDiagnosticSession
     {
         lock (_sent)
             return _sent.Count(t => t.Apci == apci && (address is null || t.Destination == address));
+    }
+
+    /// <summary>Every telegram the diagnostic code sent, for frame-shape checks.</summary>
+    public IReadOnlyList<Telegram> Sent
+    {
+        get { lock (_sent) return _sent.ToList(); }
     }
 
     public Task SendAsync(Telegram telegram, CancellationToken ct = default)

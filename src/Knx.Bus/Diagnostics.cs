@@ -251,13 +251,8 @@ public static class Diagnostics
             ct.ThrowIfCancellationRequested();
             try
             {
-                var response = await RequestAsync(session, new Telegram
-                {
-                    Source = IndividualAddress.Zero,
-                    Destination = address,
-                    Apci = Apci.DeviceDescriptorRead,
-                    Data = [descriptorType],
-                }, address, Apci.DeviceDescriptorResponse, options.ResponseTimeout, ct);
+                var response = await RequestAsync(session, Management.DeviceDescriptorReadTelegram(address, descriptorType),
+                    address, Apci.DeviceDescriptorResponse, options.ResponseTimeout, ct);
 
                 if (response is not null)
                     return new ScannedDevice(address, DeviceDescriptor.Parse(descriptorType, response.Data), null);

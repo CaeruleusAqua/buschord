@@ -30,7 +30,8 @@ public sealed partial class McpServer : IAsyncDisposable
         "project_check and smart_link_suggest for analysis, export_csv/export_semantic/export_labels/report_export for " +
         "exports, project_compare for diffs and catalog_* for manufacturer product databases. For live bus " +
         "access call bus_connect first (mode tunnel searches for a gateway, mode routing joins the multicast " +
-        "group), then bus_read/bus_write/recorder_*; bus_disconnect releases the interface.";
+        "group), then bus_read/recorder_*; bus_disconnect releases the interface. This build is read-only: " +
+        "group writes, device programming and downloads are disabled.";
 
     internal static readonly JsonSerializerOptions Json = new()
     {

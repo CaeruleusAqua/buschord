@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -251,12 +252,13 @@ public sealed partial class McpServer
             BusDiscover),
         new("bus_connect",
             "Open a KNXnet/IP connection. mode=tunnel (default) searches for gateways and connects the first " +
-            "one matching 'device' (name fragment or individual address); mode=routing joins the multicast " +
-            "group without a device. Required before bus_read/bus_write.",
+            "one matching 'device' (name fragment or individual address); mode=routing joins 224.0.23.12 on " +
+            "the KNX segment interface (bind routing port 3671). Required before bus_read.",
             Schema(
                 EnumProp("mode", "Connection type.", ["tunnel", "routing"]),
                 StrProp("device", "Gateway name fragment or individual address; defaults to the first gateway found."),
                 StrProp("own_address", "Individual address used by the tunnel, default 1.1.250."),
+                StrProp("interface", "Local IPv4 address of the NIC on the KNX segment (routing mode only)."),
                 IntProp("timeout_ms", "Gateway search duration in ms (100..10000, default 1500).")),
             BusConnect),
         new("bus_disconnect",
@@ -264,15 +266,16 @@ public sealed partial class McpServer
             Schema(),
             BusDisconnect),
         new("bus_read",
-            "Send a group value read and wait up to 3 s for the matching group telegram. Requires a connected " +
-            "tunnel and reports an error instead of hanging when the bus is unavailable.",
+            "Send a group value read and wait up to timeout_ms for a GroupValueResponse from a real device " +
+            "for the requested group address. Our own L_Data.con echo is ignored. Requires a connected tunnel.",
             Schema(
                 StrProp("group_address", "Group address, e.g. 1/1/1.", true),
-                StrProp("datapoint_type", "Datapoint type for decoding; defaults to the project type.")),
+                StrProp("datapoint_type", "Datapoint type for decoding; defaults to the project type."),
+                IntProp("timeout_ms", "Response timeout in ms (100..10000, default 3000).")),
             BusRead),
         new("bus_write",
-            "Encode value for the datapoint type and send a group value write. The datapoint type defaults to " +
-            "the project's type for that group address.",
+            "Refused: this build is read-only. Group value writes are disabled by policy until the write " +
+            "frame encoding and the safe programming sequence are verified on real hardware.",
             Schema(
                 StrProp("group_address", "Group address, e.g. 1/1/1.", true),
                 StrProp("value", "Value in display form (On/Off, 50%, 21.5) or hex payload.", true),
@@ -287,7 +290,7 @@ public sealed partial class McpServer
             "addresses and read each device descriptor (mask version). Opens its own short-lived tunnelling " +
             "connection, so bus_connect is not required, and writes nothing to the bus. target restricts the " +
             "scan to one line 'area.line'. Compared with the open project it reports duplicate, missing and " +
-            "unexpected addresses. Live frame behaviour is unverified on real hardware.",
+            "unexpected addresses.",
             Schema(
                 StrProp("target", "Optional line filter 'area.line', e.g. 1.1; omit to scan the whole bus."),
                 StrProp("gateway", "Gateway name fragment or IP; defaults to the first gateway found."),
@@ -296,7 +299,7 @@ public sealed partial class McpServer
             BusScanTool),
         new("bus_device_info",
             "Read the device descriptor of one individual address (mask version and descriptor type) over a " +
-            "short-lived read-only tunnel. Sends only DeviceDescriptorRead; unverified on real hardware.",
+            "short-lived read-only tunnel. Sends only a well-formed DeviceDescriptorRead (descriptor type 0).",
             Schema(
                 StrProp("address", "Individual address, e.g. 1.1.5.", true),
                 StrProp("gateway", "Gateway name fragment or IP; defaults to the first gateway found."),
@@ -887,6 +890,13 @@ public sealed partial class McpServer
 
         var mode = (Str(args, "mode") ?? "tunnel").ToLowerInvariant();
         var ownAddress = Str(args, "own_address") ?? "1.1.250";
+        var interfaceText = Str(args, "interface");
+        IPAddress? localAddress = null;
+        if (interfaceText is not null)
+        {
+            if (!IPAddress.TryParse(interfaceText, out localAddress))
+                throw new ToolException($"'{interfaceText}' is not a local IPv4 address");
+        }
         var timeoutMs = Math.Clamp(Int(args, "timeout_ms") ?? 1500, 100, 10000);
         if (!IndividualAddress.TryParse(ownAddress, out var individualAddress))
             throw new ToolException($"'{ownAddress}' is not a valid individual address (x.y.z)");
@@ -895,7 +905,7 @@ public sealed partial class McpServer
         {
             if (mode == "routing")
             {
-                await _bus.ConnectRoutingAsync();
+                await _bus.ConnectRoutingAsync(localAddress);
             }
             else if (mode == "tunnel")
             {
@@ -941,6 +951,7 @@ public sealed partial class McpServer
             mode,
             device = _bus.DeviceName,
             ownAddress,
+            @interface = localAddress?.ToString(),
             state = _bus.State.ToString().ToLowerInvariant(),
         };
     }
@@ -960,62 +971,41 @@ public sealed partial class McpServer
         RequireConnected();
         var address = ParseAddress(Required(args, "group_address"));
         var datapointType = Str(args, "datapoint_type") ?? ProjectDatapointType(address);
+        var timeoutMs = Math.Clamp(Int(args, "timeout_ms") ?? 3000, 100, 10000);
 
-        var completion = new TaskCompletionSource<BusTelegram>(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnTelegram(BusTelegram telegram)
-        {
-            if (telegram.Telegram.IsGroupAddress && telegram.Telegram.Destination.Raw == address.Raw)
-                completion.TrySetResult(telegram);
-        }
-
-        _bus.TelegramReceived += OnTelegram;
+        BusTelegram? received;
         try
         {
-            await _bus.GroupValueReadAsync(address);
-            var received = await completion.Task.WaitAsync(TimeSpan.FromSeconds(3));
-            return new
-            {
-                groupAddress = address.ToString(),
-                datapointType,
-                value = Dpt.Decode(datapointType, received.Telegram.Data),
-                payload = Convert.ToHexString(received.Telegram.Data),
-                source = received.Source,
-                apci = received.Telegram.Apci.ToString(),
-                timestamp = received.Timestamp,
-            };
+            received = await _bus.ReadGroupValueAsync(address, TimeSpan.FromMilliseconds(timeoutMs));
         }
-        catch (TimeoutException)
+        catch (Exception ex) when (ex is not ToolException)
         {
-            throw new ToolException($"no response for {address} within 3000 ms");
+            throw new ToolException($"group read failed: {ex.Message}");
         }
-        finally
-        {
-            _bus.TelegramReceived -= OnTelegram;
-        }
-    }
 
-    private async Task<object> BusWrite(JsonElement args)
-    {
-        RequireConnected();
-        var address = ParseAddress(Required(args, "group_address"));
-        var value = Required(args, "value");
-        var datapointType = Str(args, "datapoint_type") ?? ProjectDatapointType(address);
-        var payload = Dpt.Encode(datapointType, value);
-        if (payload.Length == 0)
+        if (received is null)
             throw new ToolException(
-                $"value '{value}' cannot be encoded for datapoint type '{datapointType ?? "unknown"}'; " +
-                "pass the raw payload as hex");
+                $"no GroupValueResponse for {address} within {timeoutMs} ms; " +
+                "our own L_Data.con confirmation is not a response");
 
-        await _bus.GroupValueWriteAsync(address, payload);
         return new
         {
-            sent = true,
             groupAddress = address.ToString(),
             datapointType,
-            value,
-            payload = Convert.ToHexString(payload),
+            value = Dpt.Decode(datapointType, received.Telegram.Data),
+            payload = Convert.ToHexString(received.Telegram.Data),
+            source = received.Telegram.Source.ToString(),
+            transport = received.Source,
+            apci = received.Telegram.Apci.ToString(),
+            hopCount = received.Telegram.HopCount,
+            timestamp = received.Timestamp,
         };
     }
+
+    private Task<object> BusWrite(JsonElement args)
+        => throw new ToolException(
+            "bus_write is disabled: this build is read-only. Group value writes are blocked by policy " +
+            "until the wire encoding and the safe programming sequence are verified on real hardware.");
 
     private object BusStatus(JsonElement args) => new    {
         connected = _bus.State == BusConnectionState.Connected,

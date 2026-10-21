@@ -184,6 +184,18 @@ var badAddress = await Tool(33, "bus_connect", new { mode = "tunnel", own_addres
 Check("bus_connect validiert die eigene Adresse",
     badAddress["result"]?["isError"]?.GetValue<bool>() == true, badAddress.ToJsonString());
 
+var readTool = tools.FirstOrDefault(t => (string?)t?["name"] == "bus_read");
+Check("bus_read wartet auf eine GroupValueResponse mit Timeout",
+    (string?)readTool?["description"] is { } readDescription
+    && readDescription.Contains("GroupValueResponse", StringComparison.Ordinal)
+    && readTool?["inputSchema"]?["properties"]?["timeout_ms"] is not null,
+    readTool?.ToJsonString() ?? "bus_read fehlt");
+var busWriteRefused = await Tool(35, "bus_write", new { group_address = "1/1/1", value = "On" });
+Check("bus_write wird von der Read-only-Policy abgelehnt",
+    busWriteRefused["result"]?["isError"]?.GetValue<bool>() == true
+    && (busWriteRefused["result"]?["content"]?[0]?["text"]?.GetValue<string>() ?? "")
+        .Contains("read-only", StringComparison.Ordinal), busWriteRefused.ToJsonString());
+
 var busDisconnect = await Tool(34, "bus_disconnect");
 Check("bus_disconnect ist idempotent",
     busDisconnect["result"]?["structuredContent"]?["connected"]?.GetValue<bool>() == false,
