@@ -18,6 +18,7 @@ werden hier abgehakt, nicht nur im Chat.
 - [ ] 8. Tastatur, Screenreader, 100/150/200-%-DPI und kleine Fenster abnehmen.
 - [ ] 9. Gesamttests, unabhängige Abnahme, Dokumentation und CI abschließen.
 - [ ] 10. Geprüften Stand auf `development` integrieren und veröffentlichen.
+- [ ] 11. Clean-Code-Review des gesamten V4-Diffs; bestätigte Befunde beheben und Regressionstests ergänzen.
 
 ## A. ETS-REA-Analyse (jede Funktion belegen)
 
