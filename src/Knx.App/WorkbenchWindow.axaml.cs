@@ -1548,6 +1548,7 @@ public partial class WorkbenchWindow : Window
             e.Handled = true;
         }
         else if (e.Key == Key.Escape && Workspace.InspectorVisible) { Workspace.InspectorVisible = false; e.Handled = true; }
+        else if (e.Key == Key.F1) { ShowHelp(); e.Handled = true; }
     }
     private static string W(string key, params object[] args) => Localization.WorkbenchStrings.Get(key, args);
     private static TextBlock Label(string text) => new() { Text = text, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
