@@ -53,6 +53,9 @@ public partial class CatalogPane : UserControl
         }
     }
 
+    /// <summary>Room that receives a newly inserted device; null inserts only into the line.</summary>
+    public string? PreferredRoomId { get; set; }
+
     /// <summary>Moves keyboard focus to the product search, for a workspace shortcut.</summary>
     public void FocusSearch()
     {
@@ -433,7 +436,7 @@ public partial class CatalogPane : UserControl
         AddressBox.IsEnabled = hasProject;
         NameBox.IsEnabled = hasProject;
         InsertButton.IsEnabled = hasProject && blocker is null;
-        SetInsertStatus(hasProject ? blocker ?? "" : "", error: true);
+        SetInsertStatus(hasProject ? blocker ?? "" : "", error: SelectedProduct is not null);
     }
 
     private string? InsertBlocker()
@@ -498,7 +501,7 @@ public partial class CatalogPane : UserControl
             return;
         }
         var inserted = CatalogBrowser.Insert(_vm, product, program, LineBox.SelectedItem as LineChoice,
-            AddressBox.Text, NameBox.Text, out var message);
+            AddressBox.Text, NameBox.Text, out var message, PreferredRoomId);
         _vm.Status = message;
         if (inserted)
         {

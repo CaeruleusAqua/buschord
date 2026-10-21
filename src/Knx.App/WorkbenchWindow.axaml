@@ -79,7 +79,7 @@
           <Grid x:Name="ObjectToolbar" Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto,170,Auto" Margin="24,9">
             <Button Content="{loc:Wb LinkObjects}" Click="OnLinks"/>
             <Button Grid.Column="1" Content="{loc:Wb Properties}" Classes="quiet" Click="OnInspector"/>
-            <CheckBox x:Name="RelatedBox" Grid.Column="3" Content="{loc:Wb ExternalChannels}" FontSize="11" IsCheckedChanged="OnRelated" Margin="8,0"/>
+            <CheckBox x:Name="RelatedBox" Grid.Column="3" Content="{loc:Wb ExternalChannels}" ToolTip.Tip="{loc:Wb ExternalChannelsTip}" FontSize="11" IsCheckedChanged="OnRelated" Margin="8,0"/>
             <CheckBox x:Name="Unlinked" Grid.Column="4" Content="{loc:Wb WithoutGroupAddress}" FontSize="11" IsCheckedChanged="OnUnlinked" Margin="8,0"/>
             <TextBox x:Name="ObjectSearch" Grid.Column="5" PlaceholderText="{loc:Wb FilterObjects}" TextChanged="OnObjectSearch"/>
             <Button Grid.Column="6" ToolTip.Tip="{loc:Wb ExpandCollapseAll}" AutomationProperties.Name="{loc:Wb ExpandCollapseAllDevices}" Click="OnExpandAll" Classes="quiet"><views:Icon Symbol="UnfoldMore" Width="17" Height="17"/></Button>

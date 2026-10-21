@@ -498,8 +498,9 @@ public partial class WorkbenchWindow : Window
                 if (tool && tab.Target.Id == "catalog")
                 {
                     var line = CurrentLine();
-                    if (ToolPageHost.Content is CatalogPane open) { if (line is not null) open.PreferredLine = line; }
-                    else ToolPageHost.Content = new CatalogPane(ViewModel, _catalogLibrary) { DataContext = ViewModel, PreferredLine = line };
+                    var roomId = Workspace.ActiveTab?.Target is { Kind: "room" } target ? target.Id : null;
+                    if (ToolPageHost.Content is CatalogPane open) { if (line is not null) open.PreferredLine = line; open.PreferredRoomId = roomId; }
+                    else ToolPageHost.Content = new CatalogPane(ViewModel, _catalogLibrary) { DataContext = ViewModel, PreferredLine = line, PreferredRoomId = roomId };
                 }
                 else if (tab.View == "overview") ToolPageHost.Content = CreateProblemsView();
                 for (var i = 0; i < Representations.Children.Count; i++)
@@ -622,11 +623,11 @@ public partial class WorkbenchWindow : Window
     {
         if (ViewModel.Project is not { } project) { InspectorBody.Children.Add(Note(W("ScanNeedsProject"))); return; }
         var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
-        InspectorBody.Children.Add(Note($"{groups.Count} Gruppenadressen"));
+        InspectorBody.Children.Add(Note(W("GroupAddressCount", groups.Count)));
         foreach (var ga in groups.Take(250))
             InspectorBody.Children.Add(ActionButton($"{ga.Address} · {ga.Name}",
                 () => OpenTarget(new("ga", ga.Id)), "quiet"));
-        if (groups.Count > 250) InspectorBody.Children.Add(Note("â€¦"));
+        if (groups.Count > 250) InspectorBody.Children.Add(Note(W("MoreItems")));
     }
 
     private void FillSearchSidebar()
@@ -720,7 +721,7 @@ public partial class WorkbenchWindow : Window
         if (_sessions is not { } sessions) { InspectorBody.Children.Add(Note(W("NoOperations"))); return; }
         InspectorBody.Children.Add(Note($"{W("Monitor")}: {(sessions.Monitor.IsRunning ? W("MonitorRunning", sessions.Monitor.RecordedCount, sessions.Monitor.FilteredRows.Count) : W("MonitorStopped", sessions.Monitor.RecordedCount))}"));
         InspectorBody.Children.Add(ActionButton(W("Monitor"), () => ShowTool("monitor"), "quiet"));
-        InspectorBody.Children.Add(Note($"{W("ProgrammingTab")}: {(sessions.Programming.IsRunning ? W("ScanRunning") : W("NoOperations"))}"));
+        InspectorBody.Children.Add(Note($"{W("ProgrammingTab")}: {(sessions.Programming.IsRunning ? W("ProgrammingRunning") : W("NoOperations"))}"));
         InspectorBody.Children.Add(ActionButton(W("ProgrammingTab"), () => ShowTool("programming"), "quiet"));
         InspectorBody.Children.Add(ActionButton(W("Scan"), () => ShowTool("scan"), "quiet"));
     }
@@ -759,7 +760,7 @@ public partial class WorkbenchWindow : Window
         if (ObjectTable.SelectedItems is { } selected)
             foreach (var row in selected.OfType<WorkbenchRow>()) tab.SelectedObjectIds.Add(row.Key);
         if (CurrentDevice() is { } device) ViewModel.SelectedDevice = device;
-        _sessions?.Monitor.SelectionChanged(SelectedComObjectId());
+        _sessions?.Monitor.SelectionChanged(SelectedComObjectId(), CurrentDevice()?.Device.Id);
         RefreshInspector();
     }
     private void OnExpandAll(object? sender, RoutedEventArgs e)
@@ -783,7 +784,7 @@ public partial class WorkbenchWindow : Window
     private void RefreshInspector()
     {
         InspectorBody.Children.Clear();
-        InspectorTitle.Text = SidebarMode.SelectedItem as string ?? W("SidebarProperties");
+        InspectorTitle.Text = W("SidebarTitle");
         if (_sidebarMode != "properties")
         {
             switch (_sidebarMode)
@@ -942,7 +943,7 @@ public partial class WorkbenchWindow : Window
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(),
             "scan" => CreateScanView(), "changes" => CreateChangesView(),
-            "search" => new SearchPane(ViewModel) { DataContext = ViewModel }, _ => CreateMonitorView()
+            "search" => CreateSearchView(), _ => CreateMonitorView()
         };
         ApplyLayout();
     }
@@ -1006,6 +1007,44 @@ public partial class WorkbenchWindow : Window
         list.ItemTemplate = new FuncDataTemplate<CheckFinding>((f, _) => Note(f is null ? "" : $"{f.Severity} · {f.Code} · {f.Path}\n{f.Message}"));
         return list;
     }
+    private SearchPane CreateSearchView()
+    {
+        var pane = new SearchPane(ViewModel) { DataContext = ViewModel };
+        pane.NavigateRequested += OpenSearchHit;
+        return pane;
+    }
+
+    private void OpenSearchHit(SearchHit hit)
+    {
+        if (ViewModel.Project is not { } project) return;
+        switch (hit.Kind)
+        {
+            case ProjectSearch.DeviceKind:
+                OpenTarget(new("device", hit.Id));
+                break;
+            case ProjectSearch.GroupAddressKind:
+                OpenTarget(new("ga", hit.Id));
+                break;
+            case ProjectSearch.CommunicationObjectKind:
+                if (ProjectQuery.ComObjectRefs(project).FirstOrDefault(r => r.Ref.Id == hit.Id).Device is { } device)
+                    OpenTarget(new("device", device.Id), "relations");
+                break;
+            case ProjectSearch.BuildingKind:
+                if (project.Installations.SelectMany(i => i.Locations.AllNodes).FirstOrDefault(n => n.Id == hit.Id) is { Kind: SpaceKind.Room } room)
+                    OpenTarget(new("room", room.Id));
+                else
+                {
+                    Navigate("building");
+                    NavSearch.Text = hit.Path;
+                }
+                break;
+            default:
+                Navigate("topology");
+                NavSearch.Text = hit.Path;
+                break;
+        }
+    }
+
     private Control CreateMonitorView()
     {
         EnsureSessions();
@@ -1033,7 +1072,7 @@ public partial class WorkbenchWindow : Window
             sessions.Monitor.Configure(mode.SelectedIndex == 1 ? WorkbenchMonitorMode.Bus : WorkbenchMonitorMode.Group, SessionOrigin.Demo, "demo-ip");
         };
         toolbar.Children.Add(mode);
-        toolbar.Children.Add(ActionButton(W("Start"), () =>
+        var start = ActionButton(W("Start"), () =>
         {
             try
             {
@@ -1047,7 +1086,8 @@ public partial class WorkbenchWindow : Window
                 RefreshState();
             }
             catch (Exception ex) { ViewModel.Status = ex.Message; }
-        }, "primary"));
+        }, "primary");
+        toolbar.Children.Insert(0, start);
         var filter = new ComboBox { MinWidth = 190, SelectedIndex = 0 };
         filter.ItemsSource = new[] { W("AllTelegrams"), W("WholeProject"), W("CurrentWorkItem"), W("FollowSelection") };
         filter.SelectedIndex = _monitorScope switch
@@ -1070,7 +1110,7 @@ public partial class WorkbenchWindow : Window
                             _ => new(MonitorScope.Project)
                         });
                         break;
-                    case 3: sessions.Monitor.SetFollowSelection(true, SelectedComObjectId()); break;
+                    case 3: sessions.Monitor.SetFollowSelection(true, SelectedComObjectId(), CurrentDevice()?.Device.Id); break;
                     default: sessions.Monitor.PinFilter(new(MonitorScope.All)); break;
                 }
                 RefreshState();
@@ -1187,6 +1227,22 @@ public partial class WorkbenchWindow : Window
             return grid;
         });
         panel.Children.Add(list);
+        var empty = new TextBlock
+        {
+            Text = W("ProgrammingEmpty"), Classes = { "wb-muted" },
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            IsVisible = sessions.Programming.Jobs.Count == 0
+        };
+        var host = new Grid(); host.Children.Add(list); host.Children.Add(empty);
+        panel.Children.Remove(list); panel.Children.Add(host);
+        if (sessions.Programming.Jobs is System.Collections.Specialized.INotifyCollectionChanged jobsChanged)
+        {
+            void OnJobsChanged(object? _, System.Collections.Specialized.NotifyCollectionChangedEventArgs __)
+                => empty.IsVisible = sessions.Programming.Jobs.Count == 0;
+            jobsChanged.CollectionChanged += OnJobsChanged;
+            host.DetachedFromVisualTree += (_, _) => jobsChanged.CollectionChanged -= OnJobsChanged;
+        }
         return panel;
     }
 
@@ -1429,6 +1485,7 @@ public partial class WorkbenchWindow : Window
             Grid.SetColumn(Inspector, 3);
             Inspector.Width = Math.Clamp(Bounds.Width - navigationWidth - 47 - 5 - 24, 280, 350);
             Inspector.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
+            Inspector.BoxShadow = new BoxShadows(new BoxShadow { Blur = 18, OffsetX = -2, Color = Color.Parse("#40000000") });
             Zones.ColumnDefinitions[4].Width = new(0);
             Zones.ColumnDefinitions[5].Width = new(0);
             InspectorSplitter.IsVisible = false;
@@ -1438,6 +1495,7 @@ public partial class WorkbenchWindow : Window
             Grid.SetColumn(Inspector, 5);
             Inspector.Width = double.NaN;
             Inspector.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+            Inspector.BoxShadow = default;
             Zones.ColumnDefinitions[4].Width = new(Workspace.InspectorVisible ? 5 : 0);
             Zones.ColumnDefinitions[5].Width = new(Workspace.InspectorVisible ? Workspace.InspectorWidth : 0);
             InspectorSplitter.IsVisible = Workspace.InspectorVisible;
@@ -1446,12 +1504,12 @@ public partial class WorkbenchWindow : Window
         Editor.IsVisible = !Workspace.ToolsVisible || !Workspace.ToolsMaximized;
         MainColumn.RowDefinitions[1].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(0) : new(1, GridUnitType.Star);
         MainColumn.RowDefinitions[2].Height = new(Workspace.ToolsVisible ? 5 : 0);
-        MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(1, GridUnitType.Star) : new(Workspace.ToolsVisible ? Math.Min(Workspace.ToolsHeight, Bounds.Height is > 0 and < 700 ? 140 : Workspace.ToolsHeight) : 0);
+        MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(1, GridUnitType.Star) : new(Workspace.ToolsVisible ? Math.Min(Workspace.ToolsHeight, Bounds.Height is > 0 and < 740 ? 140 : Workspace.ToolsHeight) : 0);
         if (Workspace.ToolsVisible && ToolHost.Content is null) ToolHost.Content = Workspace.ActiveTool switch
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), "monitor" => CreateMonitorView(),
             "scan" => CreateScanView(), "changes" => CreateChangesView(),
-            "search" => new SearchPane(ViewModel) { DataContext = ViewModel },
+            "search" => CreateSearchView(),
             _ => Note(W("ToolPlaceholder"))
         };
     }
@@ -1506,7 +1564,7 @@ public partial class WorkbenchWindow : Window
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(),
             "scan" => CreateScanView(), "changes" => CreateChangesView(),
-            "search" => new SearchPane(ViewModel) { DataContext = ViewModel }, _ => CreateMonitorView()
+            "search" => CreateSearchView(), _ => CreateMonitorView()
         };
         var title = Workspace.ActiveTool switch
         {

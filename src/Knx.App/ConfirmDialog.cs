@@ -5,6 +5,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Knx;
+using Knx.App.Localization;
 
 namespace Knx.App;
 
@@ -87,37 +88,36 @@ public sealed class ConfirmDialog : Window
 
     /// <summary>Save / Discard / Cancel before the current project is replaced or the app quits.</summary>
     public static Task<ConfirmChoice> AskUnsavedAsync(Window owner, string project)
-        => ShowAsync(owner, "Ungespeicherte Änderungen",
-            $"Das Projekt „{project}“ enthält ungespeicherte Änderungen.\n\nVor dem Fortfahren speichern?",
-            (Strings.Get("BtnSave"), ConfirmChoice.Save, true),
-            ("Nicht speichern", ConfirmChoice.Discard, false),
+        => ShowAsync(owner, Wb("AskUnsavedTitle"), Wb("AskUnsavedText", project),
+            (Wb("Save"), ConfirmChoice.Save, true),
+            (Wb("DoNotSave"), ConfirmChoice.Discard, false),
             (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, false));
 
     /// <summary>Destructive demo reset; never touches a native project without explicit consent.</summary>
     public static async Task<bool> AskDemoResetAsync(Window owner)
-        => await ShowAsync(owner, "Demo zurücksetzen",
-            "Der aktuelle Demo-Stand wird verworfen und das ursprüngliche Demo-Projekt geladen.\n\nFortfahren?",
+        => await ShowAsync(owner, Wb("AskDemoResetTitle"), Wb("AskDemoResetText"),
             (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, true),
-            ("Zurücksetzen", ConfirmChoice.Yes, false)) == ConfirmChoice.Yes;
+            (Wb("Reset"), ConfirmChoice.Yes, false)) == ConfirmChoice.Yes;
 
     /// <summary>Restoring a backup never overwrites the original without consent.</summary>
     public static async Task<bool> AskRestoreAsync(Window owner)
-        => await ShowAsync(owner, "Sicherung wiederherstellen",
-            "Die ausgewählte Sicherung wird in eine gewählte Datei geschrieben. Die aktuelle Datei bleibt unverändert, solange ein anderer Zielpfad gewählt wird.\n\nFortfahren?",
+        => await ShowAsync(owner, Wb("AskRestoreTitle"), Wb("AskRestoreText"),
             (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, true),
-            ("Wiederherstellen", ConfirmChoice.Yes, false)) == ConfirmChoice.Yes;
+            (Wb("Restore"), ConfirmChoice.Yes, false)) == ConfirmChoice.Yes;
 
     /// <summary>Draft consent is separate from project Save and never applies the editor.</summary>
-    public static async Task<bool> AskDiscardDraftsAsync(Window owner)        => await ShowAsync(owner, "Nicht übernommene Parameter",
-            "Parameterentwürfe wurden noch nicht übernommen. Projekt speichern speichert diese Entwürfe nicht.\n\nEntwürfe verwerfen und fortfahren?",
+    public static async Task<bool> AskDiscardDraftsAsync(Window owner)
+        => await ShowAsync(owner, Wb("AskDiscardTitle"), Wb("AskDiscardText"),
             (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, true),
-            ("Entwürfe verwerfen", ConfirmChoice.Discard, false)) == ConfirmChoice.Discard;
+            (Wb("DiscardDrafts"), ConfirmChoice.Discard, false)) == ConfirmChoice.Discard;
 
     /// <summary>Yes / No before a destructive edit (settings: "ask before deleting").</summary>
     public static async Task<bool> AskDeleteAsync(Window owner, string subject)
-        => await ShowAsync(owner, "Löschen bestätigen", $"{subject} wirklich löschen?",
-            ("Löschen", ConfirmChoice.Yes, false),
+        => await ShowAsync(owner, Wb("AskDeleteTitle"), Wb("AskDeleteText", subject),
+            (Wb("Delete"), ConfirmChoice.Yes, false),
             (Strings.Get("BtnCancel"), ConfirmChoice.No, true)) == ConfirmChoice.Yes;
+
+    private static string Wb(string key, params object[] args) => WorkbenchStrings.Get(key, args);
 
     /// <summary>Single-button message dialog for errors that must not disappear with the status line.</summary>
     public static Task ShowMessageAsync(Window owner, string title, string message)

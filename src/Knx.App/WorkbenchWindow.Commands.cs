@@ -220,8 +220,8 @@ public partial class WorkbenchWindow
         var backups = ProjectBackup.List(path);
         var dialog = new Window { Title = W("Backups"), Width = 720, Height = 460, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         var panel = new StackPanel { Margin = new(16), Spacing = 8 };
-        panel.Children.Add(Note(path ?? W("NoWorkspaces")));
-        if (backups.Count == 0) panel.Children.Add(Note(W("NoWorkspaces")));
+        panel.Children.Add(Note(path ?? W("NoBackups")));
+        if (backups.Count == 0) panel.Children.Add(Note(W("NoBackups")));
         foreach (var backup in backups)
         {
             var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };

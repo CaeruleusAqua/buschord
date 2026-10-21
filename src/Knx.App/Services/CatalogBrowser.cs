@@ -86,7 +86,7 @@ public static class CatalogUiText
         ["RemoveCatalog"] = ("Katalog entfernen", "Remove catalogue"),
         ["RemoveCatalogTip"] = ("Katalogdatei aus der Bibliothek löschen", "Delete the catalogue file from the library"),
         ["Removed"] = ("Katalog entfernt: {0}", "Catalogue removed: {0}"),
-        ["RemoveFailed"] = ("Katalog nicht entfernt (außerhalb der Bibliothek oder gesperrt): {0}",
+        ["NeedRoom"] = ("Der gewählte Raum existiert nicht mehr.", "The selected room no longer exists."),        ["RemoveFailed"] = ("Katalog nicht entfernt (außerhalb der Bibliothek oder gesperrt): {0}",
                             "Catalogue not removed (outside the library or locked): {0}"),
     };
 }
@@ -145,7 +145,7 @@ public static class CatalogBrowser
     }
 
     public static bool Insert(MainWindowViewModel vm, CatalogProduct? product, CatalogApplicationProgram? program,
-        LineChoice? choice, string? requestedAddress, string? name, out string message)
+        LineChoice? choice, string? requestedAddress, string? name, out string message, string? roomId = null)
     {
         message = Strings.Get("StatusNoProject");
         if (vm.Project is not { } project) return false;
@@ -166,6 +166,13 @@ public static class CatalogBrowser
                        select (Area: area, Line: line)).ToList();
         if (targets.Count != 1) return false;
         var (targetArea, target) = targets[0];
+        SpaceNode? room = null;
+        if (roomId is not null)
+        {
+            room = project.Installations.SelectMany(i => i.Locations.AllNodes)
+                .FirstOrDefault(n => n.Id == roomId && n.Kind == SpaceKind.Room);
+            if (room is null) { message = CatalogUiText.Get("NeedRoom"); return false; }
+        }
         message = Strings.Get("CatalogInvalidAddress");
         if (targetArea.Address > 15 || target.Address > 15) return false;
         IndividualAddress address;
@@ -188,7 +195,13 @@ public static class CatalogBrowser
 
         var device = CatalogInstaller.CreateDevice(product, program, address,
             string.IsNullOrWhiteSpace(name) ? product.Name : name.Trim());
-        vm.Edit($"{product.Name} → {device.Name}", _ => ProjectQuery.AddToLine(target, device));
+        vm.Edit($"{product.Name} → {device.Name}", p =>
+        {
+            ProjectQuery.AddToLine(target, device);
+            if (room is not null)
+                p.Installations.SelectMany(i => i.Locations.AllNodes)
+                    .FirstOrDefault(n => n.Id == room.Id)?.AssignDevice(device);
+        });
         vm.SelectedDevice = vm.Devices.FirstOrDefault(row => ReferenceEquals(row.Device, device));
         message = Strings.Get("CatalogInserted", product.Name, address);
         return true;
