@@ -44,7 +44,19 @@ public sealed class WorkbenchMetadata
         }
         foreach (var (key, value) in Groups)
             if (value.Bits is < 1 or > 65535) throw new InvalidDataException($"Group {key} has an invalid bit size.");
+        foreach (var (key, value) in Objects) value.Validate(key);
     }
+}
+
+/// <summary>Per-link facts of one communication object / group address pair (ETS connector).</summary>
+public sealed record ConnectorMetadata
+{
+    public bool Send { get; set; }
+    public bool Acknowledge { get; set; }
+    public int? Priority { get; set; }
+    public int? Slot { get; set; }
+
+    [JsonIgnore] public bool IsDefault => !Send && !Acknowledge && Priority is null && Slot is null;
 }
 
 public sealed class ObjectMetadata
@@ -55,7 +67,42 @@ public sealed class ObjectMetadata
     public bool Active { get; set; } = true;
     public string? ChannelId { get; set; }
     public string? Role { get; set; }
+    /// <summary>Legacy single sending address; kept in sync with <see cref="Connectors"/>.</summary>
     public string? SendingGroupId { get; set; }
+    /// <summary>Explicit per-link connector facts, keyed by group address id. Absent means defaults.</summary>
+    public Dictionary<string, ConnectorMetadata> Connectors { get; set; } = [];
+
+    /// <summary>Effective connector facts; legacy <see cref="SendingGroupId"/> counts as Send.</summary>
+    public ConnectorMetadata Connector(string groupId) =>
+        Connectors.TryGetValue(groupId, out var connector)
+            ? connector with { Send = connector.Send || SendingGroupId == groupId }
+            : new() { Send = SendingGroupId == groupId };
+
+    /// <summary>Rejects malformed entries and normalizes the single-sending invariant.</summary>
+    internal void Validate(string key)
+    {
+        if (Connectors is null) throw new InvalidDataException($"Object {key} has null connector metadata.");
+        foreach (var (groupId, connector) in Connectors)
+        {
+            if (string.IsNullOrWhiteSpace(groupId) || connector is null)
+                throw new InvalidDataException($"Object {key} has an invalid connector entry.");
+            if (connector.Priority is < 0 or > 3)
+                throw new InvalidDataException($"Object {key} has an invalid connector priority.");
+            if (connector.Slot is < 0)
+                throw new InvalidDataException($"Object {key} has an invalid connector slot.");
+        }
+        var sending = Connectors.Where(p => p.Value.Send).Select(p => p.Key).ToList();
+        if (sending.Count > 1)
+            throw new InvalidDataException($"Object {key} has more than one sending connector.");
+        if (sending.Count == 1)
+        {
+            if (SendingGroupId is { } legacy && legacy != sending[0])
+                throw new InvalidDataException($"Object {key} has conflicting sending addresses.");
+            SendingGroupId = sending[0];
+        }
+        // Without an explicit connector flag the legacy SendingGroupId stays authoritative;
+        // Connector() reports it as Send and the first connector edit replaces it.
+    }
 }
 
 public sealed class DeviceMetadata
@@ -77,7 +124,30 @@ public sealed class GroupMetadata
 /// <summary>Rows reference the actual native entities; metadata may be absent for native imports.</summary>
 public sealed record ObjectRow(ObjectKey Key, DeviceInstance Device, ComObjectInstanceRef Object,
     ObjectMetadata? Metadata, string? InstalledRoomId, string? LineId, bool External);
-public sealed record LinkError(ObjectKey Key, string Reason);
+/// <summary>Why a link or connector was rejected. Mirrors the ETS cases this model can observe.</summary>
+public enum LinkValidationReason
+{
+    None,
+    Missing,
+    NoSelection,
+    UnknownCapability,
+    Inactive,
+    BitSize,
+    DatapointType,
+    LongMainType,
+    SecureCapability,
+    Priority,
+    Slot,
+}
+
+/// <summary>Typed link validation result; <see cref="Message"/> is the UI-compatible text.</summary>
+public sealed record LinkValidation(LinkValidationReason Reason, string Message)
+{
+    public static readonly LinkValidation Valid = new(LinkValidationReason.None, "");
+    [JsonIgnore] public bool Ok => Reason == LinkValidationReason.None;
+}
+
+public sealed record LinkError(ObjectKey Key, string Reason, LinkValidationReason Code = LinkValidationReason.None);
 public sealed record MutationResult(bool Ok, int Changed, IReadOnlyList<LinkError> Errors, IReadOnlyList<string> Warnings);
 public sealed record ModeEffect(ObjectKey Key, bool Active, IReadOnlyList<string> RetainedGroupIds);
 public sealed record ModePreview(bool Supported, bool Changed, string Reason, string DeviceId, string Mode,
