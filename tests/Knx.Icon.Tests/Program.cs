@@ -40,6 +40,14 @@ var app = Application.Current!;
     ("Stop", null),
     ("Link", null),
     ("Tune", null),
+
+    // Workbench V4 shell affordances from analysis/workbench-v4-design-visual.md P2-5.
+    ("UnfoldMore", null),
+    ("OpenInNew", null),
+    ("Fullscreen", null),
+    ("Close", null),
+    ("KeyboardArrowDown", null),
+    ("KeyboardArrowRight", null),
 ];
 
 foreach (var (name, expected) in icons)
