@@ -277,6 +277,19 @@ if (args is ["--live", var liveHost, ..])
 // ---- 7. Handshake, ACK- und Sequenz-Zustandsmaschine gegen strengen Loopback-Fake ----
 var (ok, detail) = await RunLoopbackAsync();
 Check("tunnel connect + ack + download + disconnect", ok, detail);
+var gatedBus = new KnxBus();
+try
+{
+    await gatedBus.DownloadAsync(new KnxDevice
+    {
+        ControlEndpoint = new IPEndPoint(IPAddress.Loopback, 3671), Name = "gated", Serial = [1, 2, 3, 4, 5, 6],
+        MulticastAddress = "224.0.23.12", MacAddress = "00:00:00:00:00:00", FriendlyName = "gated",
+        KnxAddress = "1.1.16", SupportedFamilies = [1]
+    }, new IndividualAddress(1, 1, 16), new TestProgram("gated", new byte[] { 1 }, 0x60, 1), new Progress<DownloadProgress>());
+    Check("real download is safety-gated", false);
+}
+catch (NotSupportedException) { Check("real download is safety-gated", true); }
+await gatedBus.DisposeAsync();
 var (rejectOk, rejectDetail) = await MalformedConnectRejectedAsync();
 Check("fake rejects malformed CONNECT_REQUEST", rejectOk, rejectDetail);
 var (retryOk, retryDetail) = await AckRetryAsync();

@@ -705,9 +705,16 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         if (_bus is null || !CanDownload) return;
         var row = SelectedDevice!;
-        var progress = new Progress<DownloadProgress>(p => Status = $"Download {p.Stage} {p.Percent}% – {p.Message}");
-        var result = await _bus.DownloadAsync(SelectedDeviceOnBus!, row.Address, new FileProgram(imagePath), progress);
-        Status = result.Success ? "Download OK" : $"Download fehlgeschlagen: {result.Message}";
+        var progress = new Progress<DownloadProgress>(p => Status = $"Download {p.Stage} {p.Percent}% - {p.Message}");
+        try
+        {
+            var result = await _bus.DownloadAsync(SelectedDeviceOnBus!, row.Address, new FileProgram(imagePath), progress);
+            Status = result.Success ? "Download OK" : $"Download fehlgeschlagen: {result.Message}";
+        }
+        catch (NotSupportedException ex)
+        {
+            Status = ex.Message;
+        }
     }
 
     private void OnTelegram(BusTelegram telegram)

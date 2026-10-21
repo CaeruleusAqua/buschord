@@ -8,6 +8,9 @@ namespace Knx.Bus;
 /// </summary>
 public sealed class KnxBus : IAsyncDisposable
 {
+    // The current writer targets a fixed memory address without descriptor/mask/programming-mode
+    // verification. Keep real device writes behind this gate until that sequence is verified.
+    private static readonly bool SafeDownloadImplemented = false;
     private IUdpTransport? _transport;
     private KnxTunnel? _tunnel;
     private KnxRouting? _routing;
@@ -64,6 +67,10 @@ public sealed class KnxBus : IAsyncDisposable
     public async Task<Knx.Bus.DownloadResult> DownloadAsync(KnxDevice device, IndividualAddress deviceAddress,
         IApplicationProgram program, IProgress<Knx.Bus.DownloadProgress> progress, CancellationToken ct = default)
     {
+        if (!SafeDownloadImplemented)
+            throw new NotSupportedException(
+                "Real device download is disabled: descriptor/mask read, programming mode and " +
+                "verified load procedures are not implemented. Use the explicit simulation instead.");
         using var transport = UdpTransport.Broadcast();
         await using var tunnel = new KnxTunnel(transport, device.ControlEndpoint, new IndividualAddress(1, 1, 250));
         await tunnel.ConnectAsync(ct);
