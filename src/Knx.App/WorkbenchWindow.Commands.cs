@@ -58,6 +58,7 @@ public partial class WorkbenchWindow
                 Item(W("ToolsOverview"), ShowToolsOverview),
                 Item(W("ProjectCheck"), () => ShowTool("problems")), Item(W("Monitor"), () => ShowTool("monitor")),
                 Item(W("Scan"), () => ShowTool("scan")), Item(W("Changes"), () => ShowTool("changes")),
+                Item(W("SidebarSearch"), () => ShowTool("search")),
                 Item(W("Catalog"), ShowCatalog), Async(W("ExportRecording"), ExportRecordingAsync),
                 Item(W("SecureOverview"), ShowSecureOverview),
                 Item(W("HelpTip"), ShowHelp)
@@ -275,6 +276,7 @@ public partial class WorkbenchWindow
         Add(W("Monitor"), () => ShowTool("monitor"));
         Add(W("ProgrammingTab"), () => ShowTool("programming"));
         Add(W("Scan"), () => ShowTool("scan"));
+        Add(W("SidebarSearch"), () => ShowTool("search"));
         Add(W("Changes"), () => ShowTool("changes"));
         Add(W("Problems"), () => ShowTool("problems"));
         Add(W("Catalog"), ShowCatalog);

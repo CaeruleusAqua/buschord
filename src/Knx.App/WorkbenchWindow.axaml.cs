@@ -129,7 +129,7 @@ public partial class WorkbenchWindow : Window
             button.Classes.Add("wb-view-tab");
             Representations.Children.Add(button);
         }
-        foreach (var (key, title) in new[] { ("monitor", W("Monitor")), ("programming", W("ProgrammingTab")), ("scan", W("Scan")), ("changes", W("Changes")), ("problems", W("Problems")) })
+        foreach (var (key, title) in new[] { ("monitor", W("Monitor")), ("programming", W("ProgrammingTab")), ("scan", W("Scan")), ("search", W("SidebarSearch")), ("changes", W("Changes")), ("problems", W("Problems")) })
         {
             var tool = key;
             var button = ActionButton(title, () => ShowTool(tool), "quiet");
@@ -336,7 +336,7 @@ public partial class WorkbenchWindow : Window
         {
             CaptureNavigatorScroll();
             Title = ViewModel.Title;
-            if (Workspace.ActiveTool is not ("monitor" or "problems" or "programming" or "scan" or "changes")) Workspace.ActiveTool = "monitor";
+            if (Workspace.ActiveTool is not ("monitor" or "problems" or "programming" or "scan" or "changes" or "search")) Workspace.ActiveTool = "monitor";
             var p = ViewModel.Project;
             if (!ReferenceEquals(_shownProject, p))
             {
@@ -348,7 +348,7 @@ public partial class WorkbenchWindow : Window
             {
                 Workspace.ChangeProject(p.Id);
                 if (_layoutPath is not null) Workspace.TryRestoreLayout(_layoutPath, t => t == new WorkbenchTarget("tool", "catalog") || WorkbenchProjection.Resolve(p, t) is not null);
-                if (Workspace.ActiveTool is not ("monitor" or "problems" or "programming" or "scan" or "changes")) Workspace.ActiveTool = "monitor";
+                if (Workspace.ActiveTool is not ("monitor" or "problems" or "programming" or "scan" or "changes" or "search")) Workspace.ActiveTool = "monitor";
                 foreach (var nav in Workspace.Navigators.Values) nav.ExpandedIds.Add("project:" + p.Id);
                 foreach (var space in p.Installations.SelectMany(i => i.Locations.Roots)) Workspace.Navigators["building"].ExpandedIds.Add("space:" + space.Id);
             }
@@ -626,7 +626,7 @@ public partial class WorkbenchWindow : Window
         foreach (var ga in groups.Take(250))
             InspectorBody.Children.Add(ActionButton($"{ga.Address} · {ga.Name}",
                 () => OpenTarget(new("ga", ga.Id)), "quiet"));
-        if (groups.Count > 250) InspectorBody.Children.Add(Note("…"));
+        if (groups.Count > 250) InspectorBody.Children.Add(Note("â€¦"));
     }
 
     private void FillSearchSidebar()
@@ -918,7 +918,7 @@ public partial class WorkbenchWindow : Window
 
     public void ShowTool(string tool)
     {
-        if (tool is not ("monitor" or "problems" or "programming" or "scan" or "changes")) throw new ArgumentException("Unknown tool.", nameof(tool));
+        if (tool is not ("monitor" or "problems" or "programming" or "scan" or "changes" or "search" or "search")) throw new ArgumentException("Unknown tool.", nameof(tool));
         EnsureSessions();
         Workspace.ActiveTool = tool;
         Workspace.ToolsVisible = true;
@@ -927,7 +927,8 @@ public partial class WorkbenchWindow : Window
         ToolHost.Content = tool switch
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(),
-            "scan" => CreateScanView(), "changes" => CreateChangesView(), _ => CreateMonitorView()
+            "scan" => CreateScanView(), "changes" => CreateChangesView(),
+            "search" => new SearchPane(ViewModel) { DataContext = ViewModel }, _ => CreateMonitorView()
         };
         ApplyLayout();
     }
@@ -1436,6 +1437,7 @@ public partial class WorkbenchWindow : Window
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(), "monitor" => CreateMonitorView(),
             "scan" => CreateScanView(), "changes" => CreateChangesView(),
+            "search" => new SearchPane(ViewModel) { DataContext = ViewModel },
             _ => Note(W("ToolPlaceholder"))
         };
     }
@@ -1489,7 +1491,8 @@ public partial class WorkbenchWindow : Window
         var content = Workspace.ActiveTool switch
         {
             "problems" => CreateProblemsView(), "programming" => CreateProgrammingView(),
-            "scan" => CreateScanView(), "changes" => CreateChangesView(), _ => CreateMonitorView()
+            "scan" => CreateScanView(), "changes" => CreateChangesView(),
+            "search" => new SearchPane(ViewModel) { DataContext = ViewModel }, _ => CreateMonitorView()
         };
         var title = Workspace.ActiveTool switch
         {
