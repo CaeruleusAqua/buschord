@@ -397,4 +397,223 @@ var unrecordedRow = DeviceProgrammingReport.Check(reportProject, new Dictionary<
 Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoadFlags.All,
     "diagnostics report flags an unrecorded device");
 
-Console.WriteLine("Workbench checks OK: identity, strict JSON, scope, atomic links, connector metadata/sending invariant, typed validation, address allocation, mode preview, signatures, native extension/archive and undo.");
+// Project check: identifiers, address bounds, line membership, range/style consistency, references,
+// catalogue application status. Each rule gets its own case; a clean project must stay finding-free.
+{
+    static DeviceInstance Device(string id, string address, string application = "APP-OK") => new()
+    {
+        Id = id,
+        Address = IndividualAddress.Parse(address),
+        Name = id,
+        ProductRefId = "M-1",
+        Hardware2ProgramRefId = application,
+    };
+
+    static ComObjectInstanceRef ComRef(string id, params string[] links)
+    {
+        var comObject = new ComObjectInstanceRef { Id = id, ComObjectId = id, Text = id };
+        comObject.Links.AddRange(links);
+        return comObject;
+    }
+
+    static GroupAddressEntry GroupEntry(string id, int main, int middle, int sub, string? dpt = "DPST-1-1") => new()
+    {
+        Id = id,
+        Name = id,
+        Address = GroupAddress.ThreeLevel((byte)main, (byte)middle, (byte)sub),
+        DatapointType = dpt,
+    };
+
+    static Project CleanProject()
+    {
+        var sample = new Project { Id = "P-CHECK", Name = "Check" };
+        var installation = new Installation { Id = "I-CHECK", Name = "Haus" };
+        var area = new Area { Id = "A-1", Address = 1 };
+        var line = new Line { Id = "L-1", Address = 1, Name = "Hauptlinie" };
+        var device = Device("D-1", "1.1.5");
+        device.ComObjectRefs.Add(ComRef("O-1", "GA-1"));
+        line.Devices.Add(device);
+        area.Lines.Add(line);
+        installation.Areas.Add(area);
+        var main = new GroupRange { Id = "GR-1", Name = "Haupt 1", RangeStart = 0, RangeEnd = 2047 };
+        var middle = new GroupRange { Id = "GR-2", Name = "Mittel 1", RangeStart = 0, RangeEnd = 255 };
+        middle.Addresses.Add(GroupEntry("GA-1", 1, 1, 1));
+        main.Ranges.Add(middle);
+        installation.MainRanges.Add(main);
+        sample.Installations.Add(installation);
+        return sample;
+    }
+
+    static string Describe(IEnumerable<CheckFinding> findings)
+        => string.Join("; ", findings.Select(f => $"{f.Code} {f.Severity} {f.Path}"));
+    static bool Has(IReadOnlyList<CheckFinding> findings, string code, CheckSeverity severity)
+        => findings.Any(f => f.Code == code && f.Severity == severity);
+
+    var clean = CleanProject();
+    var cleanFindings = ProjectCheck.Run(clean);
+    Check(cleanFindings.Count == 0, "project check: clean project is finding-free -> " + Describe(cleanFindings));
+    var cleanXml = Knxproj.ToXml(clean).ToString();
+    var cleanRepeat = ProjectCheck.Run(clean);
+    Check(cleanRepeat.Select(f => f.Code + f.Path + f.Message)
+            .SequenceEqual(cleanFindings.Select(f => f.Code + f.Path + f.Message)),
+        "project check: deterministic order and content");
+    Check(Knxproj.ToXml(clean).ToString() == cleanXml && cleanFindings.Count == 0,
+        "project check: read-only and repeatable on a clean project");
+
+    var duplicateArea = CleanProject();
+    duplicateArea.Installations[0].Areas.Add(new Area { Id = "A-1B", Address = 1 });
+    Check(Has(ProjectCheck.Run(duplicateArea), "P015", CheckSeverity.Error), "project check: duplicate area address");
+
+    var duplicateLine = CleanProject();
+    duplicateLine.Installations[0].Areas[0].Lines.Add(new Line { Id = "L-1B", Address = 1 });
+    Check(Has(ProjectCheck.Run(duplicateLine), "P016", CheckSeverity.Error), "project check: duplicate line address");
+
+    var badSegment = CleanProject();
+    badSegment.Installations[0].Areas[0].Lines[0].Segments.Add(new Segment { Id = "S-16", Address = 16 });
+    Check(Has(ProjectCheck.Run(badSegment), "P013", CheckSeverity.Error), "project check: segment address bound");
+
+    var duplicateSegment = CleanProject();
+    var segmentLine = duplicateSegment.Installations[0].Areas[0].Lines[0];
+    segmentLine.Segments.Add(new Segment { Id = "S-A", Address = 2 });
+    segmentLine.Segments.Add(new Segment { Id = "S-B", Address = 2 });
+    var duplicateSegmentFindings = ProjectCheck.Run(duplicateSegment);
+    Check(Has(duplicateSegmentFindings, "P012", CheckSeverity.Warning), "project check: duplicate segment address");
+    Check(Has(duplicateSegmentFindings, "P014", CheckSeverity.Info),
+        "project check: multi-segment line reports missing coupler evidence as info");
+
+    var misplaced = CleanProject();
+    var secondLine = new Line { Id = "L-2", Address = 2 };
+    secondLine.Devices.Add(misplaced.Installations[0].Areas[0].Lines[0].Devices[0]);
+    misplaced.Installations[0].Areas[0].Lines[0].Devices.Clear();
+    misplaced.Installations[0].Areas[0].Lines.Add(secondLine);
+    Check(Has(ProjectCheck.Run(misplaced), "P024", CheckSeverity.Error), "project check: device line membership");
+
+    var unmodeledArea = CleanProject();
+    unmodeledArea.Installations[0].Areas[0].Lines[0].Devices[0].Address = IndividualAddress.Parse("3.1.5");
+    Check(!Has(ProjectCheck.Run(unmodeledArea), "P024", CheckSeverity.Error),
+        "project check: partial installation does not invent a membership error");
+
+    var absoluteBounds = CleanProject();
+    var absoluteMiddle = absoluteBounds.Installations[0].MainRanges[0].Ranges[0];
+    absoluteMiddle.RangeStart = 0x900;
+    absoluteMiddle.RangeEnd = 0x9FF;
+    Check(!Has(ProjectCheck.Run(absoluteBounds), "P033", CheckSeverity.Warning),
+        "project check: absolute range bounds are not a false positive");
+
+    var offsetBounds = CleanProject();
+    var offsetMiddle = offsetBounds.Installations[0].MainRanges[0].Ranges[0];
+    offsetMiddle.RangeStart = 10;
+    offsetMiddle.RangeEnd = 20;
+    Check(Has(ProjectCheck.Run(offsetBounds), "P033", CheckSeverity.Warning),
+        "project check: address outside its range bounds");
+
+    var styleMismatch = CleanProject();
+    styleMismatch.Installations[0].MainRanges[0].Addresses.Add(GroupEntry("GA-MAIN", 1, 2, 3));
+    Check(Has(ProjectCheck.Run(styleMismatch), "P034", CheckSeverity.Warning),
+        "project check: three-level address directly in a main range");
+
+    var twoLevelMismatch = CleanProject();
+    twoLevelMismatch.Installations[0].GroupAddressStyle = GroupAddressStyle.TwoLevel;
+    Check(Has(ProjectCheck.Run(twoLevelMismatch), "P034", CheckSeverity.Warning),
+        "project check: two-level style rejects nested ranges");
+
+    var brokenRange = CleanProject();
+    brokenRange.Installations[0].MainRanges.Add(new GroupRange
+    {
+        Id = "GR-BAD", Name = "Kaputt", RangeStart = 3000, RangeEnd = 2000,
+    });
+    Check(Has(ProjectCheck.Run(brokenRange), "P035", CheckSeverity.Warning),
+        "project check: inverted range bounds");
+
+    var duplicateId = CleanProject();
+    var sameId = Device("D-1", "1.1.6");
+    duplicateId.Installations[0].Areas[0].Lines[0].Devices.Add(sameId);
+    Check(Has(ProjectCheck.Run(duplicateId), "P050", CheckSeverity.Warning), "project check: duplicate identifier");
+
+    var emptyId = CleanProject();
+    emptyId.Installations[0].Areas[0].Lines[0].Devices[0] = Device(" ", "1.1.5");
+    emptyId.Installations[0].Areas[0].Lines[0].Devices[0].ComObjectRefs.Add(ComRef("O-1", "GA-1"));
+    Check(Has(ProjectCheck.Run(emptyId), "P051", CheckSeverity.Error), "project check: empty identifier");
+
+    var orphanLocation = CleanProject();
+    var orphanNode = orphanLocation.Installations[0].Locations.Add(null, "Haus", SpaceKind.Building, "B-1");
+    orphanNode.AssignDevice("ghost");
+    Check(Has(ProjectCheck.Run(orphanLocation), "P043", CheckSeverity.Error),
+        "project check: building reference to a missing device");
+
+    var staleMetadata = CleanProject();
+    staleMetadata.Workbench.Devices["ghost"] = new DeviceMetadata();
+    staleMetadata.Workbench.Groups["ghost"] = new GroupMetadata();
+    staleMetadata.Workbench.Objects[new ObjectKey("D-1", "ghost").ToString()] = new ObjectMetadata();
+    var staleFindings = ProjectCheck.Run(staleMetadata);
+    Check(staleFindings.Count(f => f.Code == "P052" && f.Severity == CheckSeverity.Warning) == 3,
+        "project check: stale workbench metadata references -> " + Describe(staleFindings));
+
+    var ipLine = CleanProject();
+    ipLine.Installations[0].Areas[0].Lines[0].MediumTypeRefId = "MT-5";
+    Check(Has(ProjectCheck.Run(ipLine), "P060", CheckSeverity.Info),
+        "project check: IP line reports unverified router/backbone coupling as info");
+
+    var applications = CleanProject();
+    var applicationLine = applications.Installations[0].Areas[0].Lines[0];
+    applicationLine.Devices.Add(Device("D-BROKEN", "1.1.6", "APP-BROKEN"));
+    applicationLine.Devices.Add(Device("D-INCOMPLETE", "1.1.7", "APP-INCOMPLETE"));
+    applicationLine.Devices.Add(Device("D-MISSING", "1.1.8", "APP-MISSING"));
+    var catalogue = new Dictionary<string, Knx.Catalog.CatalogApplicationProgram>
+    {
+        ["APP-BROKEN"] = new() { Id = "APP-BROKEN", Broken = true },
+        ["APP-INCOMPLETE"] = new() { Id = "APP-INCOMPLETE", DownloadInfoIncomplete = true },
+    };
+    var withoutCatalogue = ProjectCheck.Run(applications);
+    Check(!withoutCatalogue.Any(f => f.Code is "P070" or "P071" or "P072"),
+        "project check: no catalogue means no application findings");
+    var withCatalogue = ProjectCheck.Run(applications, catalogue);
+    Check(Has(withCatalogue, "P070", CheckSeverity.Error), "project check: broken application program");
+    Check(Has(withCatalogue, "P071", CheckSeverity.Warning), "project check: incomplete download information");
+    Check(Has(withCatalogue, "P072", CheckSeverity.Info), "project check: unregistered application program");
+
+    var demoFindings = ProjectCheck.Run(WorkbenchJson.CreateDemo());
+    Check(demoFindings.All(f => f.Severity != CheckSeverity.Error),
+        "project check: demo project has no errors -> " + Describe(demoFindings.Where(f => f.Severity == CheckSeverity.Error)));
+    Check(!demoFindings.Any(f => f.Code == "P052"),
+        "project check: demo workbench metadata is consistent -> " + Describe(demoFindings.Where(f => f.Code == "P052")));
+
+    var malformed = CleanProject();
+    var malformedInstallation = malformed.Installations[0];
+    malformedInstallation.Areas[0].Address = 16;
+    malformedInstallation.Areas[0].Lines[0].Address = 16;
+    malformedInstallation.Areas[0].Lines[0].MediumTypeRefId = "MT-5";
+    malformedInstallation.Areas[0].Lines[0].Segments.Add(new Segment { Id = "S-X", Address = 16 });
+    var malformedDevice = Device("D-1", "0.0.0");
+    malformedDevice.ComObjectRefs.Add(ComRef("O-X", "GA-MISSING"));
+    malformedInstallation.Areas[0].Lines[0].Devices.Clear();
+    malformedInstallation.Areas[0].Lines[0].Devices.Add(malformedDevice);
+    malformedInstallation.Areas[0].Lines[0].Devices.Add(Device("D-1", "1.1.2"));
+    malformedInstallation.Areas[0].Lines[0].Segments.Add(new Segment { Id = "S-Y", Address = 0 });
+    var malformedMiddle = malformedInstallation.MainRanges[0].Ranges[0];
+    malformedMiddle.Addresses.Add(GroupEntry("GA-DUP", 1, 1, 1));
+    malformedMiddle.Addresses.Add(GroupEntry("GA-NODPT", 1, 1, 2, null));
+    malformed.Installations[0].MainRanges[0].Addresses.Add(GroupEntry("GA-STYLE", 1, 2, 3));
+    malformed.Workbench.Devices["ghost"] = new DeviceMetadata();
+    var malformedFindings = ProjectCheck.Run(malformed);
+    var expectedCodes = new[]
+    {
+        "P010", "P011", "P013", "P014", "P020", "P032", "P034", "P041", "P042", "P050", "P052", "P060",
+    };
+    Check(expectedCodes.All(code => malformedFindings.Any(f => f.Code == code)),
+        "project check: malformed project reports every structural family -> " + Describe(malformedFindings));
+    Check(malformedFindings.All(f => !string.IsNullOrWhiteSpace(f.Code) && !string.IsNullOrWhiteSpace(f.Path)
+            && !string.IsNullOrWhiteSpace(f.Message)),
+        "project check: every finding carries code, path and reason");
+    Check(ParseSeverities(malformedFindings), "project check: every finding has a known severity");
+    Check(ProjectCheck.Count(malformedFindings, CheckSeverity.Error) > 0
+          && ProjectCheck.Count(malformedFindings, CheckSeverity.Error)
+          + ProjectCheck.Count(malformedFindings, CheckSeverity.Warning)
+          + ProjectCheck.Count(malformedFindings, CheckSeverity.Info) == malformedFindings.Count,
+        "project check: severity counters cover all findings");
+
+    static bool ParseSeverities(IEnumerable<CheckFinding> findings)
+        => findings.All(f => f.Severity is CheckSeverity.Info or CheckSeverity.Warning or CheckSeverity.Error);
+}
+
+Console.WriteLine("Workbench checks OK: identity, strict JSON, scope, atomic links, connector metadata/sending invariant, typed validation, address allocation, mode preview, signatures, native extension/archive, undo and project check.");
