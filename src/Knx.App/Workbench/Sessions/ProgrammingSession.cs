@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using Knx.Workbench;
 
 namespace Knx.App.Workbench;
 
@@ -33,7 +34,10 @@ public sealed class ProgrammingJob : SessionState
 
 public sealed record DownloadedDeviceState(string DeviceId, string Signature, DateTimeOffset At, SessionOrigin Origin);
 
-/// <summary>Only demo execution is enabled here. Success means simulated, never a real device download.</summary>
+/// <summary>
+/// Demo-only programming queue. A successful simulation records a <see cref="DeviceProgrammingState"/> in the
+/// versioned side file; no real bus write or download exists here and <see cref="ProgrammingJob.Origin"/> stays Demo.
+/// </summary>
 public sealed class ProgrammingSession : SessionState, IAsyncDisposable
 {
     private readonly InterfaceCoordinator _interfaces;
@@ -42,7 +46,7 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
     private readonly Func<ProgrammingJob, CancellationToken, Task> _execute;
     private readonly ObservableCollection<ProgrammingJob> _jobs = [];
     private readonly SnapshotCollection<DownloadedDeviceState> _downloaded = new();
-    private readonly Dictionary<string, DownloadedDeviceState> _states = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DeviceProgrammingState> _states = new(StringComparer.Ordinal);
     private CancellationTokenSource? _cancellation;
     private Task _run = Task.CompletedTask;
     private bool _running, _disposed;
@@ -60,6 +64,8 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
 
     public ReadOnlyObservableCollection<ProgrammingJob> Jobs { get; }
     public ReadOnlyObservableCollection<DownloadedDeviceState> Downloaded { get; }
+    /// <summary>Rich per-device programming state, including failed attempts and partial loads.</summary>
+    public IReadOnlyDictionary<string, DeviceProgrammingState> DeviceStates => _states;
     public bool IsRunning => _running;
     public string? ActiveDeviceId => _activeDevice;
     public event EventHandler? DownloadedChanged;
@@ -80,13 +86,49 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
         return job;
     }
 
+    /// <summary>Signature drift or an incomplete load makes a device need programming.</summary>
     public bool NeedsProgramming(string deviceId)
     {
         VerifyAccess(); ThrowIfDisposed();
         var project = _project();
         var device = project is null ? null : ProjectQuery.DeviceList(project).FirstOrDefault(d => d.Id == deviceId);
         return device is not null && (!_states.TryGetValue(deviceId, out var state) ||
-            state.Signature != _freeze(project!, device).Signature);
+            state.NeedsProgramming(_freeze(project!, device).Signature));
+    }
+
+    /// <summary>The recorded state of one device; null when no attempt was recorded in this session.</summary>
+    public DeviceProgrammingState? DeviceState(string deviceId)
+    {
+        VerifyAccess(); ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(deviceId);
+        return _states.GetValueOrDefault(deviceId);
+    }
+
+    /// <summary>Project-check projection using this session's signature provider; it does not mutate the project.</summary>
+    public IReadOnlyList<DeviceProgrammingStatus> CheckProgramming()
+    {
+        VerifyAccess(); ThrowIfDisposed();
+        var project = _project() ?? throw new InvalidOperationException("No project is open.");
+        return DeviceProgrammingReport.Check(project, _states, (p, d) => _freeze(p, d).Signature);
+    }
+
+    /// <summary>
+    /// Clears only the flags invalidated by a classified change. Pure name/room classes are no-ops.
+    /// Returns false when no state exists or no flag changed.
+    /// </summary>
+    public bool ResetForChange(string deviceId, DeviceChangeKind change)    {
+        VerifyAccess(); ThrowIfDisposed();
+        _ = DeviceProgrammingState.AffectedFlags(change);
+        var project = _project() ?? throw new InvalidOperationException("No project is open.");
+        if (ProjectQuery.DeviceList(project).All(d => d.Id != deviceId))
+            throw new ArgumentException("Device is not in the current project.", nameof(deviceId));
+        if (IsDeviceBusy(deviceId))
+            throw new InvalidOperationException("Cannot reset programming state while the device is programming.");
+        if (!_states.TryGetValue(deviceId, out var state)) return false;
+        var reset = state.ResetForChange(change);
+        if (reset == state) return false;
+        _states[deviceId] = reset;
+        return true;
     }
 
     public bool IsDeviceBusy(string deviceId) => IsRunning && ActiveDeviceId == deviceId;
@@ -138,11 +180,14 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
                     }
                     catch (Exception ex)
                     {
-                        job.Change(ProgrammingJobStatus.Failed, ex is OperationCanceledException ? "Cancelled; no success recorded." : ex.Message);
+                        var error = ex is OperationCanceledException ? "Cancelled; no success recorded."
+                            : string.IsNullOrWhiteSpace(ex.Message) ? ex.GetType().Name : ex.Message;
+                        RecordFailure(job, error);
+                        job.Change(ProgrammingJobStatus.Failed, error);
                         continue;
                     }
                     finally { _activeDevice = null; OnPropertyChanged(nameof(ActiveDeviceId)); }
-                    _states[job.DeviceId] = new(job.DeviceId, job.Configuration.Signature, DateTimeOffset.UtcNow, SessionOrigin.Demo);
+                    RecordSuccess(job);
                     job.Change(ProgrammingJobStatus.Done);
                     PublishDownloaded();
                 }
@@ -151,34 +196,60 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
         finally { _running = false; OnPropertyChanged(nameof(IsRunning)); }
     }
 
+    private void RecordSuccess(ProgrammingJob job)
+    {
+        var state = _states.GetValueOrDefault(job.DeviceId) ?? DeviceProgrammingState.Empty(job.DeviceId);
+        _states[job.DeviceId] = state.ApplySuccess(LoadFlags(job.Operation), job.Configuration.Signature,
+            DateTimeOffset.UtcNow, job.InterfaceId, OriginOf(job.Origin));
+    }
+
+    private void RecordFailure(ProgrammingJob job, string error)
+    {
+        var state = _states.GetValueOrDefault(job.DeviceId) ?? DeviceProgrammingState.Empty(job.DeviceId);
+        _states[job.DeviceId] = state.ApplyFailure(error, DateTimeOffset.UtcNow, job.InterfaceId, OriginOf(job.Origin));
+    }
+
+    // Only explicitly named partial operations are partial; an unknown label stays a full demo load.
+    private static DeviceLoadFlags LoadFlags(string operation) => operation switch
+    {
+        "address" or "individual-address" => DeviceLoadFlags.IndividualAddress,
+        "application" or "application-program" => DeviceLoadFlags.ApplicationProgram,
+        "parameters" => DeviceLoadFlags.Parameters,
+        "group-addresses" or "group-communication" => DeviceLoadFlags.GroupAddresses,
+        "configuration" or "medium" => DeviceLoadFlags.Configuration,
+        _ => DeviceLoadFlags.All,
+    };
+
+    // Real execution is not available; the mapping stays explicit for a future real transport.
+    private static ProgrammingOrigin OriginOf(SessionOrigin origin) =>
+        origin == SessionOrigin.Real ? ProgrammingOrigin.Real : ProgrammingOrigin.Demo;
+
     public void Cancel() { VerifyAccess(); _cancellation?.Cancel(); }
 
-    /// <summary>Persist separately from project/undo/layout. Contains signatures, not configuration payloads or keys.</summary>
+    /// <summary>Persist separately from project/undo/layout. Contains flags, hashes, timestamps, counters and error text, not payloads or keys.</summary>
     public string ExportDownloadedJson()
     {
         VerifyAccess(); ThrowIfDisposed();
-        return JsonSerializer.Serialize(new ComparisonFile(1, _project()?.Id,
-            _states.Values.OrderBy(s => s.DeviceId, StringComparer.Ordinal).ToArray()));
+        return DeviceProgrammingStates.Serialize(_project()?.Id, _states.Values);
     }
 
     public void ImportDownloadedJson(string json)
     {
         VerifyAccess(); ThrowIfDisposed();
-        if (IsRunning) throw new InvalidOperationException("Cannot replace comparison state during programming.");
-        var file = JsonSerializer.Deserialize<ComparisonFile>(json) ?? throw new FormatException("Missing comparison state.");
-        if (file.Version != 1 || file.ProjectId != _project()?.Id || file.Devices is null ||
-            file.Devices.Any(d => d is null || string.IsNullOrWhiteSpace(d.DeviceId) || string.IsNullOrWhiteSpace(d.Signature) ||
-                !Enum.IsDefined(d.Origin)) || file.Devices.Select(d => d.DeviceId).Distinct().Count() != file.Devices.Length)
-            throw new FormatException("Invalid comparison file or project identity.");
+        if (IsRunning) throw new InvalidOperationException("Cannot replace programming state during programming.");
+        var states = DeviceProgrammingStates.Parse(json, _project()?.Id);
         _states.Clear();
-        foreach (var state in file.Devices) _states.Add(state.DeviceId, state);
+        foreach (var (deviceId, state) in states) _states[deviceId] = state;
         PublishDownloaded();
     }
 
-    private sealed record ComparisonFile(int Version, string? ProjectId, DownloadedDeviceState[] Devices);
     private void PublishDownloaded()
     {
-        _downloaded.Replace(_states.Values.OrderBy(s => s.DeviceId, StringComparer.Ordinal));
+        _downloaded.Replace(_states.Values
+            .Where(s => s.LastSuccessAt is not null)
+            .OrderBy(s => s.DeviceId, StringComparer.Ordinal)
+            .Select(s => new DownloadedDeviceState(s.DeviceId, s.ImageHash!, s.LastSuccessAt!.Value,
+                s.Origin == ProgrammingOrigin.Real ? SessionOrigin.Real : SessionOrigin.Demo)));
         DownloadedChanged?.Invoke(this, EventArgs.Empty);
     }
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);

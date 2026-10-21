@@ -342,4 +342,59 @@ AddressStrategy.TryNextGroup(allocationInstallation, out _);
 Check(Knxproj.ToXml(allocation).ToString() == beforeAllocation && allocationInstallation.Areas.Count == 1,
     "allocation does not mutate the project");
 
+// Device programming state: change-to-flag mapping, success/failure history, side file and pure report.
+Check(DeviceProgrammingState.AffectedFlags(DeviceChangeKind.Name | DeviceChangeKind.Room) == DeviceLoadFlags.None,
+    "name/room changes invalidate no load flag");
+Check(DeviceProgrammingState.AffectedFlags(DeviceChangeKind.IndividualAddress) == DeviceLoadFlags.IndividualAddress,
+    "address change invalidates the address flag only");
+Check(DeviceProgrammingState.AffectedFlags(DeviceChangeKind.Topology) == DeviceLoadFlags.IndividualAddress,
+    "topology change invalidates the address flag only");
+Check(DeviceProgrammingState.AffectedFlags(DeviceChangeKind.Product) ==
+    (DeviceLoadFlags.ApplicationProgram | DeviceLoadFlags.Parameters | DeviceLoadFlags.GroupAddresses),
+    "product change invalidates app, parameters and links");
+Check(DeviceProgrammingState.AffectedFlags(DeviceChangeKind.Parameters) == DeviceLoadFlags.Parameters,
+    "parameter change invalidates parameters only");
+Check(DeviceProgrammingState.AffectedFlags(DeviceChangeKind.GroupAddressLink) == DeviceLoadFlags.GroupAddresses,
+    "group link change invalidates group addresses only");
+Check(DeviceProgrammingState.AffectedFlags(DeviceChangeKind.Configuration) == DeviceLoadFlags.Configuration,
+    "configuration change invalidates configuration only");
+var stateTime = DateTimeOffset.UtcNow;
+var programming = DeviceProgrammingState.Empty("device")
+    .ApplyFailure("first failure", stateTime.AddSeconds(-1), "demo-ip", ProgrammingOrigin.Demo)
+    .ApplySuccess(DeviceLoadFlags.Parameters, "ABC", stateTime, "demo-ip", ProgrammingOrigin.Demo);
+Check(programming.Flags == DeviceLoadFlags.Parameters && programming.Attempts == 2 && programming.LastError is null
+    && programming.Origin == ProgrammingOrigin.Demo && programming.NeedsProgramming("ABC"),
+    "partial success stays incomplete and needs programming");
+var resetProgramming = programming.ResetForChange(DeviceChangeKind.Parameters);
+Check(resetProgramming.Flags == DeviceLoadFlags.None && resetProgramming.LastSuccessAt == programming.LastSuccessAt
+    && resetProgramming.NeedsProgramming("ABC"), "reset clears only affected flags and keeps success history");
+var stateJson = DeviceProgrammingStates.Serialize("P", [programming]);
+var stateParsed = DeviceProgrammingStates.Parse(stateJson, "P");
+Check(stateParsed["device"] == programming, "programming state JSON roundtrip");
+try
+{
+    DeviceProgrammingStates.Parse(stateJson.Replace("\"ProjectId\":\"P\"", "\"ProjectId\":\"Q\""), "P");
+    throw new Exception("Accepted foreign programming state");
+}
+catch (FormatException) { Check(true, "programming state rejects project mismatch"); }
+try
+{
+    DeviceProgrammingStates.Parse(stateJson.Replace("\"Version\":2", "\"Version\":1"), "P");
+    throw new Exception("Accepted unknown programming state version");
+}
+catch (FormatException) { Check(true, "programming state rejects unknown version"); }
+var reportProject = WorkbenchJson.CreateDemo();
+var reportDevice = ProjectQuery.DeviceList(reportProject).First();
+var reportState = DeviceProgrammingState.Empty(reportDevice.Id).ApplySuccess(DeviceLoadFlags.All,
+    WorkbenchProject.ConfigurationSignature(reportProject, reportDevice.Id), stateTime, "demo-ip", ProgrammingOrigin.Demo);
+var report = DeviceProgrammingReport.Check(reportProject,
+    new Dictionary<string, DeviceProgrammingState> { [reportDevice.Id] = reportState });
+var reportRow = report.Single(r => r.DeviceId == reportDevice.Id);
+Check(!reportRow.NeedsProgramming && reportRow.MissingFlags == DeviceLoadFlags.None && !reportRow.SignatureDrift
+    && reportRow.Origin == ProgrammingOrigin.Demo, "diagnostics report sees a fully loaded device");
+var unrecordedRow = DeviceProgrammingReport.Check(reportProject, new Dictionary<string, DeviceProgrammingState>())
+    .Single(r => r.DeviceId == reportDevice.Id);
+Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoadFlags.All,
+    "diagnostics report flags an unrecorded device");
+
 Console.WriteLine("Workbench checks OK: identity, strict JSON, scope, atomic links, connector metadata/sending invariant, typed validation, address allocation, mode preview, signatures, native extension/archive and undo.");

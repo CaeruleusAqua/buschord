@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Knx.Workbench;
 
 namespace Knx.App.Workbench;
 
@@ -36,5 +37,34 @@ public static class DeviceConfigurationSnapshot
             }).ToArray(),
         });
         return new(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))), payload);
+    }
+
+    /// <summary>
+    /// Deterministic classification of two frozen payloads for <c>ProgrammingSession.ResetForChange</c>.
+    /// Name/room edits are absent from the payload and therefore classify as <see cref="DeviceChangeKind.None"/>.
+    /// An unknown payload difference falls back to <see cref="DeviceChangeKind.Configuration"/> rather than
+    /// claiming that nothing bus-relevant changed.
+    /// </summary>
+    public static DeviceChangeKind ClassifyChange(FrozenConfiguration before, FrozenConfiguration after)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
+        if (before.Signature == after.Signature) return DeviceChangeKind.None;
+        using var previous = JsonDocument.Parse(before.PayloadJson);
+        using var current = JsonDocument.Parse(after.PayloadJson);
+        var change = DeviceChangeKind.None;
+        if (!Same("ProductRefId") || !Same("Hardware2ProgramRefId")) change |= DeviceChangeKind.Product;
+        if (!Same("Address")) change |= DeviceChangeKind.IndividualAddress;
+        if (!Same("Area") || !Same("Line") || !Same("Segment") ||
+            !Same("AreaAddress") || !Same("LineAddress") || !Same("SegmentAddress"))
+            change |= DeviceChangeKind.Topology;
+        if (!Same("Medium")) change |= DeviceChangeKind.Configuration;
+        if (!Same("Parameters")) change |= DeviceChangeKind.Parameters;
+        if (!Same("Objects")) change |= DeviceChangeKind.GroupAddressLink;
+        return change == DeviceChangeKind.None ? DeviceChangeKind.Configuration : change;
+
+        bool Same(string name) => previous.RootElement.TryGetProperty(name, out var left) &&
+            current.RootElement.TryGetProperty(name, out var right) &&
+            left.GetRawText() == right.GetRawText();
     }
 }

@@ -52,6 +52,28 @@ MutationResult result = WorkbenchProject.AddLinks(project, [key], "central-off",
   It excludes labels, room/effect placement and revision counters.
   Opaque native manufacturer XML remains preserved, not evaluated as application
   dynamics or a complete programmable device image.
+- `DeviceProgrammingState` (`DeviceProgrammingState.cs`) records what is known to be
+  loaded into one device, separate from project dirty/undo state: five load flags
+  (`IndividualAddress`, `ApplicationProgram`, `Parameters`, `GroupAddresses`,
+  `Configuration`), an image/program hash, last attempt/success timestamps, attempts,
+  last error, interface id and explicit `ProgrammingOrigin.Demo|Real`. A successful
+  attempt ORs the loaded flags and replaces the hash; a failed attempt only updates
+  attempt/error/interface and never the success fields. `NeedsProgramming(signature)`
+  is conservative: an incomplete flag set or a different hash needs programming.
+  `ProgrammingOrigin.Real` is reserved; only demo execution exists.
+- `DeviceChangeKind` maps a classified change to the flags it invalidates:
+  `IndividualAddress`/`Topology` → address, `Product` → application program +
+  parameters + group addresses, `Parameters` → parameters, `GroupAddressLink` →
+  group addresses, `Configuration` → configuration. `Name`/`Room` invalidate nothing.
+  `DeviceConfigurationSnapshot.ClassifyChange(before, after)` deterministically derives
+  the class from two frozen payloads; `ProgrammingSession.ResetForChange(deviceId, kind)`
+  applies it and is not an undo step.
+- `ProgrammingSession.DeviceState(deviceId)` / `DeviceStates` expose the rich state;
+  `ProgrammingSession.Downloaded` remains the successful-load projection for existing
+  callers. `DeviceProgrammingReport.Check(project, states, signatureProvider)` is a
+  pure diagnostics/project-check helper reporting `NeedsProgramming`, missing flags,
+  signature drift, origin and last success per device. Pass the same signature provider
+  that produced the states.
 - `Associations` yields report DTOs including all inactive links and explicit
   sending choice. Escape fields at the actual HTML/CSV export boundary.
 - `WorkbenchJson.Import/Export` reads/writes the bundle envelope
@@ -64,9 +86,17 @@ MutationResult result = WorkbenchProject.AddLinks(project, [key], "central-off",
 Supplemental facts serialize as a versioned `Workbench` element in
 `urn:buschord:project:1`, with a JSON `Data` attribute. This is an explicitly
 BusChord-owned extension, **not** a claim of ETS interoperability. Existing native
-XML/archive preservation and undo snapshot mechanisms remain in use. Downloaded
-signatures / successful device states belong outside project Undo; the fixture's
-revision fields exist only for V4 wire-format compatibility.
+XML/archive preservation and undo snapshot mechanisms remain in use.
+
+Device programming state uses its own versioned JSON side file
+(`DeviceProgrammingStates`, version 2, project-id bound, sorted by device id),
+never the project or its undo stack. Import parses and validates the complete file
+before swapping state; malformed entries, unknown flags, duplicate device ids,
+inconsistent attempt/success data and foreign project ids are rejected atomically.
+The file stores signatures, counters, timestamps, interface id and error text only —
+no frozen configuration payloads, parameter values, keys or other secrets. The old
+version-1 comparison file is not silently reinterpreted because it cannot prove the
+five flags.
 
 Strict full-DPT/bit-size and explicit Secure capability checks implement the
 reference's conservative linking rule, not complete KNX/manufacturer conformity.
@@ -74,6 +104,12 @@ Adding a link with unknown native capabilities is refused with an explanation.
 
 ## Not implemented
 
+- No real bus write or download is wired to `ProgrammingSession`. Every job remains
+  explicit `Demo`; a `Real` programming origin exists only as a reserved model value.
+- Device read-back, image building, partial/differential download and secure
+  commissioning (certificates, tool keys, FDSK, sequence counters) are unsupported.
+- The reset hook is caller-driven (`ClassifyChange` + `ResetForChange`), not a global
+  interception of every project mutation command.
 - Coupler/segment topology fields (`Area.IsBackbone`/`MainLine`, segment
   `Number`, `MediumTypeId`, `DomainAddress`, `CouplerDevice`) are not modeled.
   Their native XML attribute names are unverified, so writing them would invent

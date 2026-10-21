@@ -1,9 +1,11 @@
 using System.Collections.Specialized;
 using System.Collections.Concurrent;
 using System.Text;
+using System.Text.Json.Nodes;
 using Knx;
 using Knx.App.Workbench;
 using Knx.Bus;
+using Knx.Workbench;
 
 var checks = 0;
 void Check(string name, bool condition)
@@ -184,6 +186,177 @@ await using (var queue = new ProgrammingSession(coordinator, () => project, demo
     var previousDownloaded = queue.Downloaded.Single();
     var laterFailed = queue.Enqueue(device.Id); await queue.RunAsync();
     Check("later failure preserves previous successful baseline", laterFailed.Status == ProgrammingJobStatus.Failed && queue.Downloaded.Single() == previousDownloaded);
+}
+
+// ETS-style programming state: five load flags, attempt history, change classification, undo independence and persistence.
+var stateProject = WorkbenchJson.CreateDemo();
+var stateDevice = ProjectQuery.DeviceList(stateProject).First();
+var stateLine = ProjectQuery.Devices(stateProject).First(d => d.Device.Id == stateDevice.Id).Line!;
+var stateRoom = stateProject.Installations.Single().Locations.AllNodes.First();
+DeviceChangeKind ClassifyState(FrozenConfiguration before) =>
+    DeviceConfigurationSnapshot.ClassifyChange(before, DeviceConfigurationSnapshot.Freeze(stateProject, stateDevice));
+async Task ReloadState(ProgrammingSession queue)
+{
+    queue.Enqueue(stateDevice.Id);
+    await queue.RunAsync();
+}
+
+var stateFail = true;
+await using (var failingQueue = new ProgrammingSession(coordinator, () => stateProject,
+    demoExecutor: (_, _) => stateFail ? Task.FromException(new IOException("Synthetic state failure")) : Task.CompletedTask))
+{
+    var failedJob = failingQueue.Enqueue(stateDevice.Id);
+    await failingQueue.RunAsync();
+    var failed = failingQueue.DeviceState(stateDevice.Id)!;
+    Check("failed job records attempt/error without success state", failed.Flags == DeviceLoadFlags.None
+        && failed.LastSuccessAt is null && failed.LastAttemptAt is not null && failed.Attempts == 1
+        && failed.Origin is null && failed.LastAttemptOrigin == ProgrammingOrigin.Demo
+        && failed.LastError!.Contains("Synthetic state failure") && failingQueue.Downloaded.Count == 0);
+    Check("failed attempt still needs programming", failingQueue.NeedsProgramming(stateDevice.Id));
+    stateFail = false;
+    failingQueue.Retry(failedJob); await failingQueue.RunAsync();
+    var retried = failingQueue.DeviceState(stateDevice.Id)!;
+    Check("retry success sets all five flags and clears the error", retried.Flags == DeviceLoadFlags.All
+        && retried.IsFullyLoaded && retried.LastError is null && retried.Attempts == 2
+        && retried.LastSuccessAt is not null && retried.Origin == ProgrammingOrigin.Demo);
+    var successAt = retried.LastSuccessAt; var successHash = retried.ImageHash;
+    stateFail = true;
+    failingQueue.Enqueue(stateDevice.Id); await failingQueue.RunAsync();
+    var afterFailure = failingQueue.DeviceState(stateDevice.Id)!;
+    Check("failure after success preserves flags/hash/time", afterFailure.Flags == DeviceLoadFlags.All
+        && afterFailure.ImageHash == successHash && afterFailure.LastSuccessAt == successAt
+        && afterFailure.Attempts == 3 && afterFailure.LastError!.Contains("Synthetic state failure"));
+    Check("failure after success preserves downloaded baseline", failingQueue.Downloaded.Single().Signature == successHash
+        && failingQueue.Downloaded.Single().At == successAt);
+}
+
+await using (var stateQueue = new ProgrammingSession(coordinator, () => stateProject))
+{
+    var fullJob = stateQueue.Enqueue(stateDevice.Id);
+    await stateQueue.RunAsync();
+    var loaded = stateQueue.DeviceState(stateDevice.Id)!;
+    Check("success records all five flags, timestamp, interface and demo origin", loaded.Flags == DeviceLoadFlags.All
+        && loaded.IsFullyLoaded && loaded.Attempts == 1 && loaded.LastSuccessAt is not null
+        && loaded.LastAttemptAt == loaded.LastSuccessAt && loaded.LastError is null
+        && loaded.InterfaceId == "demo-ip" && loaded.Origin == ProgrammingOrigin.Demo
+        && loaded.LastAttemptOrigin == ProgrammingOrigin.Demo);
+    Check("success stores the frozen image/program hash", loaded.ImageHash == fullJob.Configuration.Signature
+        && stateQueue.Downloaded.Single().Signature == fullJob.Configuration.Signature
+        && stateQueue.Downloaded.Single().Origin == SessionOrigin.Demo);
+    Check("matching full load needs no programming and unknown device has no state",
+        !stateQueue.NeedsProgramming(stateDevice.Id) && stateQueue.DeviceState("missing") is null);
+
+    var baseline = DeviceConfigurationSnapshot.Freeze(stateProject, stateDevice);
+    stateDevice.Name = "Renamed state device"; stateRoom.Name = "Renamed room";
+    var nameChange = ClassifyState(baseline);
+    Check("name/room edits classify as no programming change", nameChange == DeviceChangeKind.None);
+    Check("name/room edits reset no flag", !stateQueue.ResetForChange(stateDevice.Id, nameChange)
+        && stateQueue.DeviceState(stateDevice.Id)!.Flags == DeviceLoadFlags.All && !stateQueue.NeedsProgramming(stateDevice.Id));
+
+    stateDevice.Address = new IndividualAddress(1, 1, 250);
+    var addressChange = ClassifyState(baseline);
+    Check("address change classifies as individual address", addressChange.HasFlag(DeviceChangeKind.IndividualAddress));
+    Check("address reset clears only the address flag", stateQueue.ResetForChange(stateDevice.Id, addressChange)
+        && stateQueue.DeviceState(stateDevice.Id)!.Flags == (DeviceLoadFlags.All & ~DeviceLoadFlags.IndividualAddress)
+        && stateQueue.NeedsProgramming(stateDevice.Id));
+    await ReloadState(stateQueue);
+
+    var otherLine = new Line { Id = "STATE-LINE-2", Address = 9, MediumTypeRefId = stateLine.MediumTypeRefId };
+    var beforeTopology = DeviceConfigurationSnapshot.Freeze(stateProject, stateDevice);
+    ProjectQuery.FindAreaOf(stateProject, stateLine)!.Lines.Add(otherLine);
+    ProjectQuery.RemoveDevice(stateProject, stateDevice); ProjectQuery.AddToLine(otherLine, stateDevice);
+    var topologyChange = ClassifyState(beforeTopology);
+    Check("topology move classifies as topology", topologyChange.HasFlag(DeviceChangeKind.Topology));
+    Check("topology reset clears only the address flag", stateQueue.ResetForChange(stateDevice.Id, topologyChange)
+        && stateQueue.DeviceState(stateDevice.Id)!.Flags == (DeviceLoadFlags.All & ~DeviceLoadFlags.IndividualAddress));
+    await ReloadState(stateQueue);
+
+    baseline = DeviceConfigurationSnapshot.Freeze(stateProject, stateDevice);
+    stateDevice.ProductRefId = "STATE-PRODUCT-2";
+    var productChange = ClassifyState(baseline);
+    Check("product change classifies as product", productChange.HasFlag(DeviceChangeKind.Product));
+    Check("product reset keeps address and configuration loaded", stateQueue.ResetForChange(stateDevice.Id, productChange)
+        && stateQueue.DeviceState(stateDevice.Id)!.Flags ==
+            (DeviceLoadFlags.All & ~(DeviceLoadFlags.ApplicationProgram | DeviceLoadFlags.Parameters | DeviceLoadFlags.GroupAddresses)));
+    await ReloadState(stateQueue);
+
+    baseline = DeviceConfigurationSnapshot.Freeze(stateProject, stateDevice);
+    stateDevice.ParameterValues["state-parameter"] = "42";
+    var parameterChange = ClassifyState(baseline);
+    Check("parameter change classifies as parameters only", parameterChange == DeviceChangeKind.Parameters);
+    Check("parameter reset clears only parameters", stateQueue.ResetForChange(stateDevice.Id, parameterChange)
+        && stateQueue.DeviceState(stateDevice.Id)!.Flags == (DeviceLoadFlags.All & ~DeviceLoadFlags.Parameters));
+    await ReloadState(stateQueue);
+
+    baseline = DeviceConfigurationSnapshot.Freeze(stateProject, stateDevice);
+    stateDevice.ComObjectRefs[0].Links.Add("STATE-UNKNOWN-GA");
+    var linkChange = ClassifyState(baseline);
+    Check("group link change classifies as group addresses only", linkChange == DeviceChangeKind.GroupAddressLink);
+    Check("group link reset clears only group addresses", stateQueue.ResetForChange(stateDevice.Id, linkChange)
+        && stateQueue.DeviceState(stateDevice.Id)!.Flags == (DeviceLoadFlags.All & ~DeviceLoadFlags.GroupAddresses));
+    await ReloadState(stateQueue);
+
+    baseline = DeviceConfigurationSnapshot.Freeze(stateProject, stateDevice);
+    otherLine.MediumTypeRefId = "MT-STATE";
+    var configurationChange = ClassifyState(baseline);
+    Check("medium change classifies as configuration only", configurationChange == DeviceChangeKind.Configuration);
+    Check("configuration reset clears only configuration", stateQueue.ResetForChange(stateDevice.Id, configurationChange)
+        && stateQueue.DeviceState(stateDevice.Id)!.Flags == (DeviceLoadFlags.All & ~DeviceLoadFlags.Configuration));
+    await ReloadState(stateQueue);
+
+    var history = new UndoStack(); history.Reset(stateProject);
+    var steps = history.Steps;
+    var beforeReset = stateQueue.DeviceState(stateDevice.Id)!;
+    stateQueue.ResetForChange(stateDevice.Id, DeviceChangeKind.Parameters);
+    var stateAfterReset = stateQueue.DeviceState(stateDevice.Id);
+    Check("programming reset is not a project undo step", history.Steps == steps
+        && stateAfterReset!.Flags == (beforeReset.Flags & ~DeviceLoadFlags.Parameters));
+    stateDevice.ParameterValues["undo-parameter"] = "1";
+    history.Push(stateProject);
+    var undone = history.Undo()!;
+    Check("project undo does not rewrite programming state", undone.Id == stateProject.Id
+        && stateQueue.DeviceState(stateDevice.Id) == stateAfterReset);
+    await ReloadState(stateQueue);
+
+    var persisted = stateQueue.ExportDownloadedJson();
+    var persistedNode = JsonNode.Parse(persisted)!.AsObject();
+    Check("programming persistence is versioned and payload-free", (int)persistedNode["Version"]! == 2
+        && !persisted.Contains("PayloadJson") && !persisted.Contains("ParameterValues") && !persisted.Contains("state-parameter"));
+    await using (var restoredState = new ProgrammingSession(coordinator, () => stateProject))
+    {
+        restoredState.ImportDownloadedJson(persisted);
+        Check("programming state roundtrip keeps flags, history and projection",
+            restoredState.DeviceState(stateDevice.Id) == stateQueue.DeviceState(stateDevice.Id)
+            && restoredState.Downloaded.Single() == stateQueue.Downloaded.Single());
+        var original = restoredState.DeviceState(stateDevice.Id);
+        void RejectState(string name, Action<JsonObject> corrupt)
+        {
+            var node = JsonNode.Parse(persisted)!.AsObject();
+            corrupt(node);
+            try { restoredState.ImportDownloadedJson(node.ToJsonString()); throw new Exception("Expected " + name); }
+            catch (FormatException) { Check(name, restoredState.DeviceState(stateDevice.Id) == original); }
+        }
+        RejectState("wrong programming-state version is rejected atomically", n => n["Version"] = 1);
+        RejectState("foreign project programming state is rejected atomically", n => n["ProjectId"] = "other");
+        RejectState("duplicate device programming state is rejected atomically",
+            n => n["Devices"]!.AsArray().Add(n["Devices"]![0]!.DeepClone()));
+        RejectState("unknown load flag is rejected atomically", n => n["Devices"]![0]!["Flags"] = "IndividualAddress, Bogus");
+        RejectState("negative attempt count is rejected atomically", n => n["Devices"]![0]!["Attempts"] = -1);
+        RejectState("success without image hash is rejected atomically", n => n["Devices"]![0]!["ImageHash"] = null);
+        RejectState("null device list is rejected atomically", n => n["Devices"] = null);
+        try { restoredState.ImportDownloadedJson("{"); throw new Exception("Expected malformed state JSON"); }
+        catch (FormatException) { Check("malformed programming-state JSON is rejected atomically", restoredState.DeviceState(stateDevice.Id) == original); }
+    }
+
+    var report = stateQueue.CheckProgramming();
+    var loadedRow = report.Single(r => r.DeviceId == stateDevice.Id);
+    Check("diagnostics report sees a fully loaded device", !loadedRow.NeedsProgramming
+        && loadedRow.MissingFlags == DeviceLoadFlags.None && !loadedRow.SignatureDrift && loadedRow.Origin == ProgrammingOrigin.Demo);
+    stateQueue.ResetForChange(stateDevice.Id, DeviceChangeKind.Parameters);
+    stateDevice.ParameterValues["report-parameter"] = "1";
+    var driftRow = stateQueue.CheckProgramming().Single(r => r.DeviceId == stateDevice.Id);
+    Check("diagnostics report exposes missing flags and signature drift", driftRow.NeedsProgramming
+        && driftRow.MissingFlags == DeviceLoadFlags.Parameters && driftRow.SignatureDrift);
 }
 
 var cancellationEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
