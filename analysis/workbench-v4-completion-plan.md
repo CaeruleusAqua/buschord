@@ -230,9 +230,11 @@ wenn Implementierung, fokussierter Test und Abnahmeevidenz im Abschnitt
 - [x] **H2.4 SearchPane:** V4-Compact-Tool statt Legacy-Full-Page; Filter/
   Ergebnisse primär, Ersetzen aufklappbar, keine Mini-Scrollboxen; Suche/
   Ersetzen/Stale-Schutz/Undo unverändert. (`39be758`, `ab0f8a4`)
-- [ ] **H2.5 ParameterPane:** `wb-root`, `wb-field`, einheitliche
+- [x] **H2.5 ParameterPane:** `wb-root`, `wb-field`, einheitliche
   `wb-label`-Hierarchie, Abschnittsnavigation, Sticky-Footer, Draft-/Read-only-
   Zustände; Demo-Form und natives Pane teilen dieselbe Feldbreite/Aktionen.
+  (`39be758`, `6b3fb83`; DemoForm nutzt dieselbe Geometrie/Validierung,
+  vollständige Pane-Wiederverwendung ist als nicht sinnvoll dokumentiert)
 - [x] **H2.6 CatalogPane-Rest:** Filterbuttonhöhe/Label-Hierarchie an die
   30-px-Felder angleichen; keine Funktionsänderung. (`39be758`)
 
