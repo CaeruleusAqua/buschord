@@ -8,8 +8,8 @@ werden hier abgehakt, nicht nur im Chat.
 
 ## Steps
 
-- [ ] 1. ETS-Referenz je Funktionsbereich mit REA neu analysieren und dokumentieren.
-- [ ] 2. V4-Restlücken aus Akzeptanzmatrix, UX- und Visual-Review konsolidieren.
+- [x] 1. ETS-Referenz je Funktionsbereich mit REA neu analysieren und dokumentieren.
+- [x] 2. V4-Restlücken aus Akzeptanzmatrix, UX- und Visual-Review konsolidieren.
 - [ ] 3. Shell/Design abschließen: Katalog, Icons, Fokus, DPI, Dark/Light, Englisch.
 - [ ] 4. Projekt-, Raum-, Linien-, Geräte- und Gruppenadressfunktionen vervollständigen.
 - [ ] 5. Katalog, Parameter, dynamische Herstellerlogik und DCA-Grenzen abschließen.
@@ -147,3 +147,9 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 3. Main integriert, prüft und startet die nächste Welle erst nach stabilem
    Zwischenstand.
 4. Jede erledigte Checkbox wird mit Commit/TEST-ID ergänzt.
+
+## Fortschritt
+
+- ETS-REA-Berichte: `analysis/ets/project.md`, `addresses.md`, `catalog-parameters.md`, `commissioning.md`, `shell.md` (alle belegt, 2026-10-21).
+- V4-Statusmatrix: `analysis/workbench-v4-status-matrix.md`; Design-/A11y-Berichte: `analysis/workbench-v4-design-*.md`, `analysis/workbench-v4-a11y-dpi.md`.
+- Umgesetzt: Connector-/Adressmodell, Katalogstatus-Metadaten, Importbericht, Download-Sicherheitsgate, simulierte Scan-/Monitorwert-/�nderungswerkzeuge, GA-Formular, Ger�te-Detailbearbeitung, Sidebar-Container, englische Shell, Material-Icons, Katalog-V4-Styling, Projektvergleich/Produktaustausch.
