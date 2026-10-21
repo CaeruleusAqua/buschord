@@ -124,11 +124,6 @@ public partial class WorkbenchWindow : Window
         };
         NavTree.ItemTemplate = new FuncDataTemplate<NavEntry>((entry, _) => entry is null ? new Border() : BuildNavRow(entry));
         ObjectTable.ItemTemplate = new FuncDataTemplate<WorkbenchRow>((row, _) => row is null ? new Border() : BuildObjectRow(row));
-        SidebarMode.ItemsSource = new[]
-        {
-            W("SidebarProperties"), W("SidebarGroups"), W("SidebarSearch"), W("SidebarWorkspaces"), W("SidebarOperations")
-        };
-        SidebarMode.SelectedIndex = 0;
         SidebarMode.SelectionChanged += (_, _) =>
         {
             if (_refreshing || SidebarMode.SelectedIndex < 0) return;
@@ -138,7 +133,63 @@ public partial class WorkbenchWindow : Window
             };
             RefreshInspector();
         };
+        RelabelSidebarModes();
         BuildMenus();
+        BuildNavigation();
+        BuildRepresentationTabs();
+        BuildToolTabs();
+        Knx.Strings.Instance.PropertyChanged += OnStringsChanged;
+        ViewModel.PropertyChanged += OnModelChanged;
+        ViewModel.Devices.CollectionChanged += OnDevicesChanged;
+        ViewModel.CatalogLoaded += OnCatalogLoaded;
+        ViewModel.ProjectEdited += OnProjectEdited;
+        Workspace.PropertyChanged += OnWorkspaceChanged;
+        SizeChanged += (_, _) => ApplyLayout();
+        AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Tunnel);
+        NavTree.AddHandler(KeyDownEvent, OnNavigatorKeyDown, RoutingStrategies.Tunnel);
+        ObjectTable.AddHandler(KeyDownEvent, OnTableKeyDown, RoutingStrategies.Tunnel);
+        // Device rows are drag sources; line and segment rows (and a line work item's table) accept drops.
+        AddHandler(PointerMovedEvent, OnDragWatchMoved, RoutingStrategies.Tunnel);
+        AddHandler(PointerReleasedEvent, (_, _) => ResetDragWatch(), RoutingStrategies.Tunnel);
+        foreach (var surface in new Control[] { NavTree, ObjectTable })
+        {
+            DragDrop.SetAllowDrop(surface, true);
+            surface.AddHandler(DragDrop.DragOverEvent, OnDeviceDragOver);
+            surface.AddHandler(DragDrop.DragLeaveEvent, (_, _) => ClearDropHighlight());
+            surface.AddHandler(DragDrop.DropEvent, OnDeviceDrop);
+        }
+        Closing += OnClosing;
+        foreach (var splitter in new[] { NavSplitter, InspectorSplitter, ToolsSplitter })
+        {
+            splitter.AddHandler(PointerReleasedEvent, (_, _) => RememberSizes(), RoutingStrategies.Tunnel);
+            splitter.KeyUp += (_, _) => RememberSizes();
+        }
+        Closed += (_, _) =>
+        {
+            ViewModel.PropertyChanged -= OnModelChanged;
+            ViewModel.Devices.CollectionChanged -= OnDevicesChanged;
+            ViewModel.CatalogLoaded -= OnCatalogLoaded;
+            ViewModel.ProjectEdited -= OnProjectEdited;
+            Workspace.PropertyChanged -= OnWorkspaceChanged;
+            Knx.Strings.Instance.PropertyChanged -= OnStringsChanged;
+            _sessionTimer?.Stop();
+            _parameters.Dispose();
+            _ = DisposeSessionsAsync();
+            foreach (var tool in _toolWindows.ToArray()) tool.Close();
+        };
+        if (_layoutPath is not null) Workspace.TryRestoreLayout(_layoutPath);
+        RefreshWorkspace();
+    }
+
+    private static string DefaultLayoutPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BusChord", "workbench-layout.json");
+
+    /// <summary>Perspective strip and activity rail; rebuilt only for a language change.</summary>
+    private void BuildNavigation()
+    {
+        Perspectives.Children.Clear();
+        Rail.Children.Clear();
+        _railButtons.Clear();
+        _railAccents.Clear();
         (Button Button, Grid Host) AddRail(string key, string title, string symbol, Action run)
         {
             var button = ActionButton("", run, "quiet", title);
@@ -215,6 +266,12 @@ public partial class WorkbenchWindow : Window
                 host.Children.Add(_monitorDot);
             }
         }
+    }
+
+    /// <summary>Objects/parameters/relations/overview tabs; labels are regenerated on a language change.</summary>
+    private void BuildRepresentationTabs()
+    {
+        Representations.Children.Clear();
         foreach (var (key, title) in new[] { ("objects", W("CommunicationObjects")), ("params", W("Parameters")), ("relations", W("Relations")), ("overview", W("Overview")) })
         {
             var view = key;
@@ -226,6 +283,13 @@ public partial class WorkbenchWindow : Window
             tab.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space) { SetRepresentation(view); e.Handled = true; } };
             Representations.Children.Add(tab);
         }
+    }
+
+    /// <summary>Bottom tool tabs; rebuilt on a language change so headers, tips and names follow.</summary>
+    private void BuildToolTabs()
+    {
+        ToolTabs.Children.Clear();
+        _compactToolTabs = false;
         foreach (var (key, title) in new[] { ("monitor", W("Monitor")), ("programming", W("ProgrammingTab")), ("scan", W("Scan")), ("search", W("SidebarSearch")), ("changes", W("Changes")), ("problems", W("Problems")) })
         {
             var tool = key;
@@ -237,48 +301,60 @@ public partial class WorkbenchWindow : Window
             tab.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space) { ShowTool(tool); e.Handled = true; } };
             ToolTabs.Children.Add(tab);
         }
-        ViewModel.PropertyChanged += OnModelChanged;
-        ViewModel.Devices.CollectionChanged += OnDevicesChanged;
-        ViewModel.CatalogLoaded += OnCatalogLoaded;
-        ViewModel.ProjectEdited += OnProjectEdited;
-        Workspace.PropertyChanged += OnWorkspaceChanged;
-        SizeChanged += (_, _) => ApplyLayout();
-        AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Tunnel);
-        NavTree.AddHandler(KeyDownEvent, OnNavigatorKeyDown, RoutingStrategies.Tunnel);
-        ObjectTable.AddHandler(KeyDownEvent, OnTableKeyDown, RoutingStrategies.Tunnel);
-        // Device rows are drag sources; line and segment rows (and a line work item's table) accept drops.
-        AddHandler(PointerMovedEvent, OnDragWatchMoved, RoutingStrategies.Tunnel);
-        AddHandler(PointerReleasedEvent, (_, _) => ResetDragWatch(), RoutingStrategies.Tunnel);
-        foreach (var surface in new Control[] { NavTree, ObjectTable })
-        {
-            DragDrop.SetAllowDrop(surface, true);
-            surface.AddHandler(DragDrop.DragOverEvent, OnDeviceDragOver);
-            surface.AddHandler(DragDrop.DragLeaveEvent, (_, _) => ClearDropHighlight());
-            surface.AddHandler(DragDrop.DropEvent, OnDeviceDrop);
-        }
-        Closing += OnClosing;
-        foreach (var splitter in new[] { NavSplitter, InspectorSplitter, ToolsSplitter })
-        {
-            splitter.AddHandler(PointerReleasedEvent, (_, _) => RememberSizes(), RoutingStrategies.Tunnel);
-            splitter.KeyUp += (_, _) => RememberSizes();
-        }
-        Closed += (_, _) =>
-        {
-            ViewModel.PropertyChanged -= OnModelChanged;
-            ViewModel.Devices.CollectionChanged -= OnDevicesChanged;
-            ViewModel.CatalogLoaded -= OnCatalogLoaded;
-            ViewModel.ProjectEdited -= OnProjectEdited;
-            Workspace.PropertyChanged -= OnWorkspaceChanged;
-            _sessionTimer?.Stop();
-            _parameters.Dispose();
-            _ = DisposeSessionsAsync();
-            foreach (var tool in _toolWindows.ToArray()) tool.Close();
-        };
-        if (_layoutPath is not null) Workspace.TryRestoreLayout(_layoutPath);
-        RefreshWorkspace();
+        SyncToolTabs();
     }
 
-    private static string DefaultLayoutPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BusChord", "workbench-layout.json");
+    private void SyncToolTabs()
+    {
+        foreach (var tab in ToolTabs.Children.OfType<TabItem>())
+        {
+            if (tab.Tag is not string tool) continue;
+            var active = tool == Workspace.ActiveTool;
+            tab.IsSelected = active;
+            AutomationProperties.SetItemStatus(tab, active ? W("Selected") : "");
+        }
+    }
+
+    private void RelabelSidebarModes()
+    {
+        var previous = _refreshing;
+        _refreshing = true;
+        try
+        {
+            SidebarMode.ItemsSource = new[]
+            {
+                W("SidebarProperties"), W("SidebarGroups"), W("SidebarSearch"), W("SidebarWorkspaces"), W("SidebarOperations")
+            };
+            SidebarMode.SelectedIndex = _sidebarMode switch { "groups" => 1, "search" => 2, "workspaces" => 3, "operations" => 4, _ => 0 };
+        }
+        finally { _refreshing = previous; }
+    }
+
+    private void OnStringsChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // Strings raises "Item[]" and "" for one change; react once.
+        if (e.PropertyName != "Item[]" || _shuttingDown) return;
+        if (Dispatcher.UIThread.CheckAccess()) ApplyLanguage();
+        else Dispatcher.UIThread.Post(ApplyLanguage);
+    }
+
+    /// <summary>
+    /// Re-renders shell-generated text after <see cref="Knx.Strings.Language"/> changed.
+    /// Workspace, project, open tabs, layout and undo history are only read, never reset.
+    /// </summary>
+    private void ApplyLanguage()
+    {
+        if (_shuttingDown) return;
+        BuildMenus();
+        BuildNavigation();
+        BuildRepresentationTabs();
+        BuildToolTabs();
+        RelabelSidebarModes();
+        RefreshWorkspace();
+        UpdateMonitorPulse();
+        // The bottom panel writes its text in code; re-selecting the active tool rebuilds it.
+        if (Workspace.ToolsVisible) ShowTool(Workspace.ActiveTool);
+    }
 
     private string? ProjectLayoutPath(string projectId)
     {
@@ -1812,12 +1888,7 @@ public partial class WorkbenchWindow : Window
             Workspace.ToolsMaximized = false;
             _searchForcedMaximize = false;
         }
-        foreach (var tab in ToolTabs.Children.OfType<TabItem>())
-        {
-            var activeTool = Equals(tab.Tag, tool);
-            tab.IsSelected = activeTool;
-            AutomationProperties.SetItemStatus(tab, activeTool ? W("Selected") : "");
-        }
+        SyncToolTabs();
         ToolHost.Content = CreateToolView(tool);
         ApplyLayout();
     }

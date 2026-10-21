@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using Avalonia.Data;
 using Avalonia.Markup.Xaml;
 using Avalonia.Metadata;
 
@@ -8,9 +10,35 @@ namespace Knx.App.Localization;
 /// <see cref="Knx.Strings.Language"/> ("de" unless --lang=en or the settings choose English).
 /// Kept apart from the legacy <see cref="Knx.Strings"/> dictionary so both shells keep
 /// their own vocabulary; the lookup and XAML pattern are the same.
+/// <see cref="Instance"/> is the indexer source behind {loc:Wb Key}: it forwards every
+/// language change of <see cref="Knx.Strings.Instance"/> to bound controls.
 /// </summary>
-public static class WorkbenchStrings
+public sealed class WorkbenchStrings : INotifyPropertyChanged
 {
+    /// <summary>Binding source for XAML and generated shell text.</summary>
+    public static WorkbenchStrings Instance { get; } = new();
+
+    /// <summary>Static-to-static subscription: no window or control is retained.</summary>
+    private WorkbenchStrings()
+    {
+        Knx.Strings.Instance.PropertyChanged += (_, e) =>
+        {
+            // Strings raises "Item[]" and "" for one change; react once.
+            if (e.PropertyName == "Item[]") Refresh();
+        };
+    }
+
+    public string this[string key] => Get(key);
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void Refresh()
+    {
+        // Avalonia indexer bindings listen for the indexer property name "Item".
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item"));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    }
+
     public static string Get(string key, params object[] args)
     {
         var text = Map.TryGetValue(key, out var entry)
@@ -535,5 +563,6 @@ public sealed class WbExtension : MarkupExtension
     [ConstructorArgument("key")]
     public string Key { get; set; } = "";
 
-    public override object ProvideValue(IServiceProvider serviceProvider) => WorkbenchStrings.Get(Key);
+    public override object ProvideValue(IServiceProvider serviceProvider) =>
+        new Binding($"[{Key}]") { Source = WorkbenchStrings.Instance, Mode = BindingMode.OneWay };
 }

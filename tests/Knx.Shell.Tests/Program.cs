@@ -3,8 +3,10 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Xml.Linq;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Platform.Storage;
@@ -154,6 +156,57 @@ internal static class Program
         Pane = PaneOf(Shell);
         try
         {
+            // Live language switch: an already open window follows Strings.Language without reopening,
+            // for bound XAML text and for shell-generated menus, rail, tool tabs and status labels.
+            Strings.Language = "de";
+            var german = NewShell();
+            german.Show();
+            var splash = new SplashWindow();
+            try
+            {
+                string MenuHeader(int index) => new List<MenuItem>(
+                    ((IEnumerable)german.FindControl<Menu>("MainMenu")!.ItemsSource!).Cast<MenuItem>())[index].Header as string ?? "";
+                string PerspectiveTitle() =>
+                    (german.FindControl<UniformGrid>("Perspectives")!.Children[0] as Button)?.Content is TextBlock text ? text.Text ?? "" : "";
+                string RailTitle() => german.FindControl<StackPanel>("Rail")!.Children.OfType<Grid>()
+                    .SelectMany(g => g.Children.OfType<Button>()).Select(b => AutomationProperties.GetName(b) ?? "").FirstOrDefault() ?? "";
+                string ToolTabTitle() => AutomationProperties.GetName(
+                    german.FindControl<StackPanel>("ToolTabs")!.Children.OfType<TabItem>().First(t => Equals(t.Tag, "changes"))) ?? "";
+                bool StatusLine(string text) => german.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == text);
+                bool ToolBody(string text) => german.GetLogicalDescendants().OfType<Button>().Any(b => Equals(b.Content, text));
+                bool SplashTagline(string text) => splash.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == text);
+                void CheckLanguage(string language)
+                {
+                    Check(language + ": bound XAML label", german.FindControl<TextBox>("NavSearch")!.PlaceholderText == WorkbenchStrings.Get("NavSearchWatermark"));
+                    Check(language + ": bound XAML button", Equals(german.FindControl<Button>("CompareButton")!.Content, WorkbenchStrings.Get("ComparePinned")));
+                    Check(language + ": bound legacy XAML label", SplashTagline(Strings.Get("SplashTagline")));
+                    Check(language + ": bound status line", StatusLine(WorkbenchStrings.Get("StatusLocalOnly")));
+                    Check(language + ": generated menu", MenuHeader(0) == WorkbenchStrings.Get("MenuProject"));
+                    Check(language + ": generated perspective", PerspectiveTitle() == WorkbenchStrings.Get("PerspectiveBuilding"));
+                    Check(language + ": generated rail tooltip and name", RailTitle() == WorkbenchStrings.Get("PerspectiveBuilding"));
+                    Check(language + ": generated tool tab", ToolTabTitle() == WorkbenchStrings.Get("Changes"));
+                    Check(language + ": generated tool panel", ToolBody(WorkbenchStrings.Get("ClearDisplay")));
+                    Check(language + ": bound automation name", AutomationProperties.GetName(german.FindControl<Button>("ExpandAllButton")!)
+                        == WorkbenchStrings.Get("ExpandCollapseAllDevices"));
+                }
+                var workspace = german.Workspace;
+                german.Workspace.ToolsVisible = true;
+                german.ShowTool("changes");
+                CheckLanguage("de");
+                Strings.Language = "en";
+                CheckLanguage("en");
+                Check("live switch keeps the workspace instance", ReferenceEquals(workspace, german.Workspace) && german.IsVisible);
+                Strings.Language = "de";
+                CheckLanguage("de");
+            }
+            finally
+            {
+                Strings.Language = "en";
+                splash.Close();
+                german.RequestShutdown();
+                german.Close();
+            }
+
             var project = new Project { Id = "P-Shell", Name = "Synthetic shell regression" };
             var installation = new Installation { Id = "I" };
             var area = new Area { Id = "A", Address = 1 };

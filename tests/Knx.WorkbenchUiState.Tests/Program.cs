@@ -263,6 +263,10 @@ try
             if (string.IsNullOrWhiteSpace(de) || string.IsNullOrWhiteSpace(en)) untranslated.Add(key);
         }
         Check("every shell string exists in de and en", untranslated.Count == 0);
+        var untranslatedCore = Knx.Strings.Catalogue
+            .Where(p => string.IsNullOrWhiteSpace(p.Value.De) || string.IsNullOrWhiteSpace(p.Value.En))
+            .Select(p => p.Key).ToList();
+        Check("every core string exists in de and en", untranslatedCore.Count == 0);
         Knx.Strings.Language = "de"; var deTitle = WorkbenchStrings.Get("HelpTitle");
         Knx.Strings.Language = "en"; var enTitle = WorkbenchStrings.Get("HelpTitle");
         Check("documentation title and compare action are localized",
