@@ -428,6 +428,54 @@ try
         Check("Export JSON: Kontext loc", parsed.RootElement.GetProperty("@context").TryGetProperty("loc", out var loc)
             && loc.GetString() == SemanticExport.LocNamespace);
     }
+
+    // --- ProjectOperations: building references survive moves and never outlive devices ---
+    {
+        var project = NewProject(Dev("dev-1", "1.1.1"), Dev("dev-2", "1.1.2"));
+        var installation = project.Installations[0];
+        var area = installation.Areas[0];
+        var line = area.Lines[0];
+        var target = new Line { Id = "L-2", Address = 2, Name = "Linie 2" };
+        area.Lines.Add(target);
+        var tree = installation.Locations;
+        var house = tree.Add(null, "Haus", SpaceKind.Building, "SP-house");
+        var floor = tree.Add(house, "EG", SpaceKind.Floor, "SP-floor");
+        var roomA = tree.Add(floor, "Wohnen", SpaceKind.Room, "SP-roomA");
+        var roomB = tree.Add(floor, "Kueche", SpaceKind.Room, "SP-roomB");
+        roomA.AssignDevice("dev-1");
+        roomB.AssignDevice("dev-2");
+        roomA.DeviceRefs.Add("dev-1"); // stale duplicate reference
+
+        var moved = ProjectOperations.MoveDevice(project, ProjectQuery.DeviceList(project).Single(d => d.Id == "dev-1"),
+            target, null, "SP-roomB");
+        Check("Ops: Verschieben entfernt doppelte alte Raumreferenz",
+            moved.Ok && roomB.DeviceRefs.Count(id => id == "dev-1") == 1 && roomA.DeviceRefs.Count == 0,
+            string.Join(",", roomA.DeviceRefs));
+
+        var copy = ProjectOperations.CopyDevice(project, ProjectQuery.DeviceList(project).Single(d => d.Id == "dev-2"),
+            target, null, "SP-roomA", "Kopie");
+        var copiedDevice = copy.Value!;
+        Check("Ops: Kopie erhält genau eine Zielraumreferenz",
+            copy.Ok && roomA.DeviceRefs.Count(id => id == copiedDevice.Id) == 1
+            && tree.AllDeviceRefs().Count(id => id == copiedDevice.Id) == 1,
+            string.Join(",", roomA.DeviceRefs));
+        Check("Ops: Quelle bleibt im Raum", roomB.DeviceRefs.Contains("dev-2"));
+
+        var deleted = ProjectOperations.DeleteDevice(project, ProjectQuery.DeviceList(project).Single(d => d.Id == "dev-1"));
+        Check("Ops: Löschen entfernt jede Raumreferenz",
+            deleted.Ok && !tree.AllDeviceRefs().Contains("dev-1"), string.Join(",", tree.AllDeviceRefs()));
+
+        var refsBefore = tree.AllDeviceRefs().ToList();
+        var area2 = new Area { Id = "A-2", Address = 2, Name = "OG" };
+        installation.Areas.Add(area2);
+        Check("Ops: Linienverschieben lässt Gebäudereferenzen unverändert",
+            ProjectOperations.MoveLine(project, target, area2).Ok
+            && tree.AllDeviceRefs().SequenceEqual(refsBefore), string.Join(",", tree.AllDeviceRefs()));
+        var segment = ProjectOperations.CreateSegment(project, target, "Segment").Value!;
+        Check("Ops: Segmentverschieben lässt Gebäudereferenzen unverändert",
+            ProjectOperations.MoveSegment(project, segment, line).Ok
+            && tree.AllDeviceRefs().SequenceEqual(refsBefore), string.Join(",", tree.AllDeviceRefs()));
+    }
 }
 finally
 {

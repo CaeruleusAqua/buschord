@@ -655,4 +655,75 @@ Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoad
         "project check: severity counters cover all findings");
 }
 
-Console.WriteLine("Workbench checks OK: identity, strict JSON, scope, atomic links, connector metadata/sending invariant, typed validation, address allocation, mode preview, signatures, native extension/archive, undo and project check.");
+// Project operations on the demo model: copied external channel metadata, moved device keeps
+// workbench facts, group-address move/delete keep links consistent and undo atomically.
+{
+    static Line WorkbenchLine(Project project, string id)
+        => project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).Single(l => l.Id == id);
+
+    var copyProject = WorkbenchJson.CreateDemo();
+    var copyUndo = new UndoStack(); copyUndo.Reset(copyProject);
+    var source = ProjectQuery.DeviceList(copyProject).Single(d => d.Id == "taster-living");
+    var copyResult = ProjectOperations.CopyDevice(copyProject, source, WorkbenchLine(copyProject, "1.2"), null, "office", null, copyUndo);
+    var copy = copyResult.Value!;
+    Check(copyResult.Ok && copy.Address.ToString() == "1.2.1", "operations: demo device copy succeeds with a fresh address");
+    Check(copyProject.Workbench.Devices[copy.Id].Application == copyProject.Workbench.Devices[source.Id].Application
+        && WorkbenchProject.Metadata(copyProject, new ObjectKey(copy.Id, "taster-living-switch"))?.ChannelId == "a"
+        && WorkbenchProject.Metadata(copyProject, new ObjectKey(copy.Id, "taster-living-switch"))?.SendingGroupId == "living-switch",
+        "operations: copy keeps device and external channel metadata");
+    Check(copy.ComObjectRefs.Single(o => o.Id == "taster-living-switch").Links.Contains("living-switch")
+        && copy.ParameterValues.OrderBy(p => p.Key).SequenceEqual(source.ParameterValues.OrderBy(p => p.Key)),
+        "operations: copy keeps object links and parameter overrides");
+    Check(BuildingTree.DevicesUnder(copyProject.Installations[0].Locations.Find("office")!).Contains(copy.Id)
+        && copyProject.Workbench.Objects.Keys.Any(k => k.Contains(copy.Id, StringComparison.Ordinal)),
+        "operations: copy lives in the target room and keeps its own metadata");
+    Check(copyUndo.Steps == 1, "operations: device copy is one undo step");
+    Check(!ProjectQuery.DeviceList(copyUndo.Undo()!).Any(d => d.Id == copy.Id), "operations: undoing the copy leaves the demo intact");
+
+    var moveProject = WorkbenchJson.CreateDemo();
+    var moveUndo = new UndoStack(); moveUndo.Reset(moveProject);
+    var moving = ProjectQuery.DeviceList(moveProject).Single(d => d.Id == "taster-kitchen");
+    var movingKey = new ObjectKey(moving.Id, "taster-kitchen-switch").ToString();
+    var originalChannel = moveProject.Workbench.Objects[movingKey].ChannelId;
+    var moveResult = ProjectOperations.MoveDevice(moveProject, moving, WorkbenchLine(moveProject, "1.2"), null, "office", moveUndo);
+    Check(moveResult.Ok && moving.Address.ToString() == "1.2.1", "operations: move to another line/room succeeds");
+    Check(moveProject.Workbench.Objects[movingKey].ChannelId == originalChannel
+        && moving.ComObjectRefs.Single(o => o.Id == "taster-kitchen-switch").Links.Contains("kitchen-switch")
+        && BuildingTree.DevicesUnder(moveProject.Installations[0].Locations.Find("office")!).Contains(moving.Id)
+        && !BuildingTree.DevicesUnder(moveProject.Installations[0].Locations.Find("kitchen")!).Contains(moving.Id),
+        "operations: move keeps device id, object metadata and links");
+    Check(moveUndo.Steps == 1, "operations: device move is one undo step");
+
+    var gaProject = WorkbenchJson.CreateDemo();
+    var gaUndo = new UndoStack(); gaUndo.Reset(gaProject);
+    var gaInstallation = gaProject.Installations[0];
+    var switchGa = ProjectQuery.FindGroupAddressById(gaProject, "living-switch")!;
+    var moved = ProjectOperations.MoveGroupAddress(gaProject, switchGa, GroupAddress.Parse("1/0/10"), gaUndo);
+    Check(moved.Ok && switchGa.Address.ToString() == "1/0/10"
+        && ProjectQuery.FindRangeFor(gaInstallation, switchGa.Address) is not null,
+        "operations: group address move succeeds");
+    var switchKey = new ObjectKey("taster-living", "taster-living-switch");
+    Check(WorkbenchProject.Metadata(gaProject, switchKey)!.SendingGroupId == "living-switch"
+        && gaProject.Workbench.Objects[switchKey.ToString()].Connectors.Count == 0,
+        "operations: group address move keeps links and sending facts");
+
+    var copiedGa = ProjectOperations.CopyGroupAddress(gaProject, switchGa, GroupAddress.Parse("1/0/11"), "Kopie", gaUndo);
+    Check(copiedGa.Ok && copiedGa.Value!.Id != switchGa.Id
+        && !ProjectQuery.ComObjectRefs(gaProject).Any(r => r.Ref.Links.Contains(copiedGa.Value.Id))
+        && WorkbenchProject.CheckLink(gaProject, switchKey, copiedGa.Value.Id).Ok
+        && gaProject.Workbench.Groups[copiedGa.Value.Id].Bits == 1,
+        "operations: group address copy is unlinked but linkable");
+    var deleting = ProjectOperations.DeleteGroupAddress(gaProject, ProjectQuery.FindGroupAddressById(gaProject, "living-status")!, gaUndo);
+    Check(deleting.Ok && deleting.Message is not null
+        && !ProjectQuery.ComObjectRefs(gaProject).Any(r => r.Ref.Links.Contains("living-status"))
+        && gaProject.Workbench.Objects.Values.All(m => m.SendingGroupId != "living-status")
+        && !gaProject.Workbench.Groups.ContainsKey("living-status"),
+        "operations: group address delete removes links and clears the sending address");
+    var restoredGa = gaUndo.Undo()!;
+    Check(ProjectQuery.FindGroupAddressById(restoredGa, "living-status") is not null
+        && ProjectQuery.ComObjectRefs(restoredGa).Any(r => r.Ref.Links.Contains("living-status"))
+        && restoredGa.Workbench.Objects.Values.Any(m => m.SendingGroupId == "living-status"),
+        "operations: undo restores the deleted group address with its links");
+}
+
+Console.WriteLine("Workbench checks OK: identity, strict JSON, scope, atomic links, connector metadata/sending invariant, typed validation, address allocation, mode preview, signatures, native extension/archive, undo, project operations and project check.");

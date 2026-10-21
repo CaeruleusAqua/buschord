@@ -689,5 +689,423 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         Strings.Available.Count == 2);
 }
 
+// --- ProjectOperations: atomare Geräte-, Linien-, Segment- und Gruppenadress-Aktionen ---
+{
+    // Two installations, rooms, lines with/without segments and group ranges; one device with
+    // channel, communication object/link, parameter value and workbench metadata.
+    Project OpsProject()
+    {
+        var p = new Project { Id = "P-OPS", Name = "Ops" };
+        var inst1 = new Installation { Id = "I-1", Name = "Haus A", Address = new IndividualAddress(1, 1, 0) };
+        var inst2 = new Installation { Id = "I-2", Name = "Haus B", Address = new IndividualAddress(2, 1, 0) };
+        var area1 = new Area { Id = "A-1", Address = 1, Name = "EG" };
+        var area2 = new Area { Id = "A-2", Address = 2, Name = "OG" };
+        var areaB = new Area { Id = "A-B", Address = 1, Name = "Fremd" };
+        var line1 = new Line { Id = "L-1-1", Address = 1, Name = "Linie 1" };
+        var line2 = new Line { Id = "L-1-2", Address = 2, Name = "Linie 2" };
+        var segment = new Segment { Id = "S-1-1-0", Address = 0, Name = "Segment" };
+        var device = Dev("1.1.1", "Taster");
+        device.Channels.Add(new ChannelInstance { Id = "CH-1", Name = "Kanal 1" });
+        device.ComObjectRefs.Add(ComRef("CO-1", "Schalten", "GA-1"));
+        device.ParameterValues["mode"] = "\"switch\"";
+        segment.Devices.Add(device);
+        line1.Segments.Add(segment);
+        area1.Lines.Add(line1);
+        area1.Lines.Add(line2);
+        inst1.Areas.Add(area1);
+        inst1.Areas.Add(area2);
+        var lineB = new Line { Id = "L-2-1", Address = 1, Name = "Linie B" };
+        areaB.Lines.Add(lineB);
+        inst2.Areas.Add(areaB);
+        p.Installations.Add(inst1);
+        p.Installations.Add(inst2);
+
+        var house = inst1.Locations.Add(null, "Haus", SpaceKind.Building, "SP-house");
+        var floor = inst1.Locations.Add(house, "EG", SpaceKind.Floor, "SP-floor");
+        var roomA = inst1.Locations.Add(floor, "Wohnen", SpaceKind.Room, "roomA");
+        inst1.Locations.Add(floor, "Kueche", SpaceKind.Room, "roomB");
+        roomA.AssignDevice(device);
+        inst2.Locations.Add(null, "Haus B", SpaceKind.Building, "SP-houseB");
+
+        var main = new GroupRange { Id = "GR-1", Name = "Haupt 1", RangeStart = 1, RangeEnd = 1 };
+        var middle = new GroupRange { Id = "GR-1-1", Name = "Mittel 1", RangeStart = 1, RangeEnd = 1 };
+        middle.Addresses.Add(Ga("GA-1", "Decke", 1, 1, 1));
+        middle.Addresses.Add(Ga("GA-2", "Status", 1, 1, 2));
+        main.Ranges.Add(middle);
+        inst1.MainRanges.Add(main);
+
+        p.Workbench.Objects[new Knx.Workbench.ObjectKey(device.Id, "CO-1").ToString()] =
+            new Knx.Workbench.ObjectMetadata
+            {
+                Dpt = "1.001", Bits = 1, ChannelId = "CH-1", SendingGroupId = "GA-1",
+                Connectors = { ["GA-1"] = new Knx.Workbench.ConnectorMetadata { Send = true } },
+            };
+        p.Workbench.Groups["GA-1"] = new Knx.Workbench.GroupMetadata
+            { Bits = 1, Secure = false, EffectRoomId = "roomA" };
+        return p;
+    }
+
+    static Line OpsLine(Project p, string id) => p.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).Single(l => l.Id == id);
+    static Area OpsArea(Project p, string id) => p.Installations.SelectMany(i => i.Areas).Single(a => a.Id == id);
+    static DeviceInstance OpsDevice(Project p, string address) => ProjectQuery.DeviceList(p).Single(d => d.Address.ToString() == address);
+    static string OpsXml(Project p) => Knxproj.ToXml(p).ToString();
+
+    // Move across segment/line/room: new address only when the line changes, one undo step,
+    // no stale building reference, links/channels/parameters preserved.
+    {
+        var p = OpsProject();
+        var undo = new UndoStack(); undo.Reset(p);
+        var device = OpsDevice(p, "1.1.1");
+        var target = OpsLine(p, "L-1-2");
+        var result = ProjectOperations.MoveDevice(p, device, target, null, "roomB", undo);
+        Check("Ops: Gerät verschieben ok", result.Ok, result.Message);
+        Check("Ops: Gerät in Ziellinie", target.Devices.Contains(device)
+            && !OpsLine(p, "L-1-1").Segments[0].Devices.Contains(device));
+        Check("Ops: Gerät bekommt freie Zieladresse", device.Address == new IndividualAddress(1, 2, 1),
+            device.Address.ToString());
+        Check("Ops: alte Raumreferenz entfernt, neue gesetzt",
+            p.Installations[0].Locations.Find("roomA")!.DeviceRefs.Count == 0
+            && p.Installations[0].Locations.Find("roomB")!.DeviceRefs.SequenceEqual([device.Id]));
+        Check("Ops: Links/Kanäle/Parameter bleiben", device.ComObjectRefs[0].Links.SequenceEqual(["GA-1"])
+            && device.Channels.Single().Id == "CH-1" && device.ParameterValues["mode"] == "\"switch\"");
+        Check("Ops: Verschieben ist ein Undo-Schritt", undo.Steps == 1, undo.Steps.ToString());
+
+        var restored = undo.Undo()!;
+        Check("Ops: Undo stellt Segment/Adresse/Raum wieder her",
+            OpsLine(restored, "L-1-1").Segments[0].Devices.Single().Address.ToString() == "1.1.1"
+            && restored.Installations[0].Locations.Find("roomA")!.DeviceRefs.Count == 1,
+            string.Join(",", restored.Installations[0].Locations.Find("roomA")!.DeviceRefs));
+        var redone = undo.Redo()!;
+        Check("Ops: Redo verschiebt erneut", OpsDevice(redone, "1.2.1") is not null && undo.Steps == 1);
+
+        var fresh = OpsProject();
+        var history = new UndoStack(); history.Reset(fresh);
+        var before = OpsXml(fresh);
+        var mismatch = ProjectOperations.MoveDevice(fresh, OpsDevice(fresh, "1.1.1"), OpsLine(fresh, "L-2-1"), null, "roomA", history);
+        Check("Ops: Raum/Linie aus fremder Installation abgelehnt",
+            mismatch.Status == ProjectEditStatus.InstallationMismatch && OpsXml(fresh) == before && history.Steps == 0,
+            mismatch.Status.ToString());
+
+        var identical = OpsProject();
+        var identicalUndo = new UndoStack(); identicalUndo.Reset(identical);
+        var noop = ProjectOperations.MoveDevice(identical, OpsDevice(identical, "1.1.1"), OpsLine(identical, "L-1-1"),
+            OpsLine(identical, "L-1-1").Segments[0], null, identicalUndo);
+        Check("Ops: Verschieben an denselben Platz ist folgenlos",
+            noop.Ok && OpsDevice(identical, "1.1.1") is not null && identicalUndo.Steps == 0);
+
+        var sameLine = OpsProject();
+        var sameLineUndo = new UndoStack(); sameLineUndo.Reset(sameLine);
+        var sameLineDevice = OpsDevice(sameLine, "1.1.1");
+        var sameLineResult = ProjectOperations.MoveDevice(sameLine, sameLineDevice, OpsLine(sameLine, "L-1-1"), null, null, sameLineUndo);
+        Check("Ops: Segment nach Linienwurzel behält Adresse und Raum",
+            sameLineResult.Ok && sameLineDevice.Address.ToString() == "1.1.1"
+            && OpsLine(sameLine, "L-1-1").Devices.Contains(sameLineDevice)
+            && sameLine.Installations[0].Locations.Find("roomA")!.DeviceRefs.Contains(sameLineDevice.Id)
+            && sameLineUndo.Steps == 1);
+    }
+
+    // Copy: new id and address, independent channel/object/parameter copies, copied workbench
+    // metadata (external channel facts) and one undo step.
+    {
+        var p = OpsProject();
+        var undo = new UndoStack(); undo.Reset(p);
+        var source = OpsDevice(p, "1.1.1");
+        var result = ProjectOperations.CopyDevice(p, source, OpsLine(p, "L-1-2"), null, "roomB", "Kopie", undo);
+        var copy = result.Value!;
+        Check("Ops: Gerät kopieren ok", result.Ok, result.Message);
+        Check("Ops: Kopie hat neue Id und Adresse",
+            copy.Id != source.Id && copy.Address == new IndividualAddress(1, 2, 1), $"{copy.Id} {copy.Address}");
+        Check("Ops: Kopie erhält Objekt, Link, Kanal und Parameter",
+            copy.ComObjectRefs.Count == 1 && copy.ComObjectRefs[0].Links.SequenceEqual(["GA-1"])
+            && copy.Channels.Single().Name == "Kanal 1" && copy.ParameterValues["mode"] == "\"switch\"");
+        copy.ComObjectRefs[0].Links.Add("GA-2");
+        copy.Channels[0].Channels.Add(new ChannelInstance { Id = "CH-X", Name = "X" });
+        copy.ParameterValues["mode"] = "\"dim\"";
+        Check("Ops: Kopie ist tief, Quelle unverändert",
+            source.ComObjectRefs[0].Links.SequenceEqual(["GA-1"]) && source.Channels[0].Channels.Count == 0
+            && source.ParameterValues["mode"] == "\"switch\"");
+        var copyKey = new Knx.Workbench.ObjectKey(copy.Id, "CO-1").ToString();
+        var sourceKey = new Knx.Workbench.ObjectKey(source.Id, "CO-1").ToString();
+        Check("Ops: externe Kanal-Metadaten kopiert",
+            p.Workbench.Objects[copyKey].ChannelId == "CH-1"
+            && p.Workbench.Objects[copyKey].Connectors["GA-1"].Send,
+            p.Workbench.Objects[copyKey].ChannelId);
+        p.Workbench.Objects[copyKey].ChannelId = "CH-2";
+        Check("Ops: Metadaten-Kopie ist unabhängig", p.Workbench.Objects[sourceKey].ChannelId == "CH-1");
+        Check("Ops: Kopie im Zielraum", p.Installations[0].Locations.Find("roomB")!.DeviceRefs.SequenceEqual([copy.Id]));
+        Check("Ops: Kopieren ist ein Undo-Schritt", undo.Steps == 1);
+        var restored = undo.Undo()!;
+        Check("Ops: Undo entfernt nur die Kopie", ProjectQuery.DeviceList(restored).Count() == 1
+            && restored.Installations[0].Locations.Find("roomB")!.DeviceRefs.Count == 0);
+
+        var collision = OpsProject();
+        OpsLine(collision, "L-1-1").Devices.Add(new DeviceInstance
+        {
+            Id = "1.2.1", ProductRefId = "P", Address = new IndividualAddress(1, 1, 5), Name = "Belegt",
+        });
+        var collisionCopy = ProjectOperations.CopyDevice(collision, OpsDevice(collision, "1.1.1"),
+            OpsLine(collision, "L-1-2"), null, null);
+        Check("Ops: Kopie weicht belegter Geräte-ID aus",
+            collisionCopy.Ok && collisionCopy.Value!.Id == "1.2.1-2", collisionCopy.Value?.Id);
+    }
+
+    // Delete: removes the device, every stale building reference and its workbench metadata.
+    {
+        var p = OpsProject();
+        var undo = new UndoStack(); undo.Reset(p);
+        var device = OpsDevice(p, "1.1.1");
+        p.Installations[0].Locations.Find("SP-floor")!.DeviceRefs.Add(device.Id);
+        p.Workbench.Objects[new Knx.Workbench.ObjectKey(device.Id, "GC-STALE").ToString()] = new Knx.Workbench.ObjectMetadata();
+        undo.Push(p);
+        var result = ProjectOperations.DeleteDevice(p, device, undo);
+        Check("Ops: Gerät löschen ok", result.Ok);
+        Check("Ops: Gerät aus Topologie und Gebäude entfernt",
+            !ProjectQuery.DeviceList(p).Any() && !p.Installations[0].Locations.AllDeviceRefs().Any());
+        Check("Ops: Geräte-/Objektmetadaten entfernt",
+            !p.Workbench.Devices.ContainsKey(device.Id) && p.Workbench.Objects.Count == 0);
+        Check("Ops: Löschen ist ein Undo-Schritt", undo.Steps == 2);
+        var restored = undo.Undo()!;
+        Check("Ops: Undo stellt Gerät, Referenzen und Metadaten wieder her",
+            ProjectQuery.DeviceList(restored).Single().Id == device.Id
+            && restored.Installations[0].Locations.AllDeviceRefs().Count() == 2
+            && restored.Workbench.Objects.Count == 2);
+    }
+
+    // Full line: allocation is refused without mutation and without an undo step.
+    {
+        var p = OpsProject();
+        var fullLine = OpsLine(p, "L-1-2");
+        for (var number = 1; number <= 255; number++)
+            fullLine.Devices.Add(new DeviceInstance
+            {
+                Id = "FULL-" + number, ProductRefId = "P", Address = new IndividualAddress(1, 2, (byte)number),
+            });
+        var undo = new UndoStack(); undo.Reset(p);
+        var before = OpsXml(p);
+        var result = ProjectOperations.MoveDevice(p, OpsDevice(p, "1.1.1"), fullLine, null, null, undo);
+        Check("Ops: volle Linie lehnt Verschieben ab",
+            result.Status == ProjectEditStatus.NoFreeAddress && OpsXml(p) == before && undo.Steps == 0,
+            result.Status.ToString());
+
+        var fullLines = OpsProject();
+        var fullArea = OpsArea(fullLines, "A-1");
+        fullArea.Lines.Clear();
+        for (byte number = 0; number <= 15; number++)
+            fullArea.Lines.Add(new Line { Id = "FL-" + number, Address = number });
+        var lineUndo = new UndoStack(); lineUndo.Reset(fullLines);
+        var lineBefore = OpsXml(fullLines);
+        var lineResult = ProjectOperations.CreateLine(fullLines, fullArea, "Nix", null, null, lineUndo);
+        Check("Ops: volle Bereichsadressen lehnen Linie ab",
+            lineResult.Status == ProjectEditStatus.NoFreeAddress && OpsXml(fullLines) == lineBefore && lineUndo.Steps == 0,
+            lineResult.Status.ToString());
+    }
+
+    // Lines: bounds, duplicates, rename, move with device rebasing, delete guard, undo/redo.
+    {
+        var p = OpsProject();
+        var undo = new UndoStack(); undo.Reset(p);
+        var area1 = OpsArea(p, "A-1");
+        var created = ProjectOperations.CreateLine(p, area1, " Neu ", null, null, undo);
+        var createdLine = created.Value!;
+        Check("Ops: Linie anlegen mit nächster freier Adresse",
+            created.Ok && createdLine.Address == 0 && createdLine.Name == "Neu" && area1.Lines.Contains(createdLine), createdLine.Address.ToString());
+        Check("Ops: Linien-ID ist eindeutig", p.Installations[0].Areas.SelectMany(a => a.Lines).Count(l => l.Id == createdLine.Id) == 1);
+        Check("Ops: Linie anlegen ist ein Undo-Schritt", undo.Steps == 1);
+
+        var before = OpsXml(p);
+        Check("Ops: doppelte Linienadresse abgelehnt",
+            ProjectOperations.CreateLine(p, area1, "Dup", 1, null, undo).Status == ProjectEditStatus.AddressInUse);
+        Check("Ops: Linienadresse 16 abgelehnt",
+            ProjectOperations.CreateLine(p, area1, "Out", 16, null, undo).Status == ProjectEditStatus.AddressOutOfRange);
+        Check("Ops: leerer Linienname abgelehnt",
+            ProjectOperations.RenameLine(p, createdLine, "  ", undo).Status == ProjectEditStatus.EmptyName);
+        Check("Ops: abgelehnte Linienaktionen verändern nichts",
+            OpsXml(p) == before && undo.Steps == 1, undo.Steps.ToString());
+        Check("Ops: Linie umbenennen", ProjectOperations.RenameLine(p, createdLine, "Leer", undo).Ok && createdLine.Name == "Leer" && undo.Steps == 2);
+        Check("Ops: unveränderter Name erzeugt keinen Schritt",
+            ProjectOperations.RenameLine(p, createdLine, "Leer", undo).Ok && undo.Steps == 2);
+
+        var line2 = OpsLine(p, "L-1-2");
+        var movedDevice = Dev("1.2.7", "OG-Gerät");
+        line2.Devices.Add(movedDevice);
+        undo.Push(p);
+        var moved = ProjectOperations.MoveLine(p, line2, OpsArea(p, "A-2"), null, undo);
+        Check("Ops: Linie in anderen Bereich verschieben", moved.Ok, moved.Message);
+        Check("Ops: Linienadresse im Zielbereich frei gewählt",
+            line2.Address == 0 && OpsArea(p, "A-2").Lines.Contains(line2) && !OpsArea(p, "A-1").Lines.Contains(line2),
+            line2.Address.ToString());
+        Check("Ops: Geräteadresse folgt der Linie",
+            movedDevice.Address == new IndividualAddress(2, 0, 7), movedDevice.Address.ToString());
+        Check("Ops: Linienverschieben ist ein Undo-Schritt",
+            undo.Steps == 4, undo.Steps.ToString());
+
+        before = OpsXml(p);
+        Check("Ops: Linie nicht zwischen Installationen verschiebbar",
+            ProjectOperations.MoveLine(p, line2, OpsArea(p, "A-B"), null, undo).Status == ProjectEditStatus.InstallationMismatch
+            && OpsXml(p) == before);
+        Check("Ops: nichtleere Linie nicht löschbar",
+            ProjectOperations.DeleteLine(p, OpsLine(p, "L-1-1"), undo).Status == ProjectEditStatus.NotEmpty);
+        Check("Ops: leere Linie löschen", ProjectOperations.DeleteLine(p, createdLine, undo).Ok && !area1.Lines.Contains(createdLine));
+        var restored = undo.Undo()!;
+        Check("Ops: Undo stellt gelöschte Linie wieder her", OpsArea(restored, "A-1").Lines.Any(l => l.Id == createdLine.Id));
+        var redone = undo.Redo()!;
+        Check("Ops: Redo löscht erneut", redone.Installations[0].Areas.SelectMany(a => a.Lines).All(l => l.Id != line.Id));
+    }
+
+    // Segments: bounds, duplicates, collision guard, rebasing, delete guard, undo.
+    {
+        var p = OpsProject();
+        var undo = new UndoStack(); undo.Reset(p);
+        var line1 = OpsLine(p, "L-1-1");
+        var created = ProjectOperations.CreateSegment(p, line1, " Neu ", null, null, undo);
+        var createdSegment = created.Value!;
+        Check("Ops: Segment anlegen mit nächster freier Adresse",
+            created.Ok && createdSegment.Address == 1 && line1.Segments.Contains(createdSegment), createdSegment.Address.ToString());
+        var before = OpsXml(p);
+        Check("Ops: doppelte Segmentadresse abgelehnt",
+            ProjectOperations.CreateSegment(p, line1, "Dup", 0, null, undo).Status == ProjectEditStatus.AddressInUse);
+        Check("Ops: Segmentadresse 16 abgelehnt",
+            ProjectOperations.CreateSegment(p, line1, "Out", 16, null, undo).Status == ProjectEditStatus.AddressOutOfRange);
+        Check("Ops: leerer Segmentname abgelehnt",
+            ProjectOperations.RenameSegment(p, createdSegment, "", undo).Status == ProjectEditStatus.EmptyName);
+        Check("Ops: abgelehnte Segmentaktionen verändern nichts", OpsXml(p) == before && undo.Steps == 1);
+        Check("Ops: Segment umbenennen", ProjectOperations.RenameSegment(p, createdSegment, "Flur", undo).Ok
+            && createdSegment.Name == "Flur" && undo.Steps == 2);
+
+        var source = line1.Segments.Single(s => s.Id == "S-1-1-0");
+        var line2 = OpsLine(p, "L-1-2");
+        line2.Devices.Add(Dev("1.2.1", "Belegt"));
+        undo.Push(p);
+        before = OpsXml(p);
+        Check("Ops: Segment mit Adresskollision abgelehnt",
+            ProjectOperations.MoveSegment(p, source, line2, null, undo).Status == ProjectEditStatus.AddressInUse
+            && OpsXml(p) == before);
+        var emptyLine = ProjectOperations.CreateLine(p, OpsArea(p, "A-1"), "Ziel", null, null, undo).Value!;
+        var moved = ProjectOperations.MoveSegment(p, source, emptyLine, null, undo);
+        Check("Ops: Segment in leere Linie verschieben", moved.Ok, moved.Message);
+        Check("Ops: Segmentgerät folgt der Ziellinie",
+            source.Devices.Single().Address == new IndividualAddress(1, emptyLine.Address, 1),
+            source.Devices.Single().Address.ToString());
+        Check("Ops: Segmentverschieben ist ein Undo-Schritt", undo.Steps == 5, undo.Steps.ToString());
+        Check("Ops: nichtleeres Segment nicht löschbar",
+            ProjectOperations.DeleteSegment(p, source, undo).Status == ProjectEditStatus.NotEmpty);
+        Check("Ops: leeres Segment löschen",
+            ProjectOperations.DeleteSegment(p, createdSegment, undo).Ok && !line1.Segments.Contains(createdSegment));
+        var restored = undo.Undo()!;
+        Check("Ops: Undo stellt Segment wieder her", OpsLine(restored, "L-1-1").Segments.Any(s => s.Id == createdSegment.Id));
+
+        var fullSegments = OpsProject();
+        var segmentLine = OpsLine(fullSegments, "L-1-1");
+        segmentLine.Segments.Clear();
+        for (byte number = 0; number <= 15; number++)
+            segmentLine.Segments.Add(new Segment { Id = "FS-" + number, Address = number });
+        var segmentUndo = new UndoStack(); segmentUndo.Reset(fullSegments);
+        var segmentBefore = OpsXml(fullSegments);
+        var segmentResult = ProjectOperations.CreateSegment(fullSegments, segmentLine, "Nix", null, null, segmentUndo);
+        Check("Ops: volle Segmentadressen lehnen Segment ab",
+            segmentResult.Status == ProjectEditStatus.NoFreeAddress && OpsXml(fullSegments) == segmentBefore && segmentUndo.Steps == 0,
+            segmentResult.Status.ToString());
+    }
+
+    // Group addresses: next free suggestion, range maintenance, duplicates, copy/move/rename,
+    // deletion that removes links and sending facts without choosing a replacement.
+    {
+        var p = OpsProject();
+        var undo = new UndoStack(); undo.Reset(p);
+        var opsInstallation = p.Installations[0];
+        var created = ProjectOperations.CreateGroupAddress(p, null, " Neu ", "1.001", opsInstallation, null, undo,
+            new Knx.Workbench.GroupMetadata { Bits = 1, Secure = false });
+        var entry = created.Value!;
+        Check("Ops: GA anlegen nutzt nächste freie Adresse",
+            created.Ok && entry.Address == GroupAddress.ThreeLevel(1, 1, 3) && entry.Name == "Neu",
+            entry.Address.ToString());
+        Check("Ops: neue GA ist mit ihren Metadaten verknüpfbar",
+            Knx.Workbench.WorkbenchProject.CheckLink(p, new Knx.Workbench.ObjectKey(OpsDevice(p, "1.1.1").Id, "CO-1"), entry.Id).Ok);
+        Check("Ops: GA anlegen ist ein Undo-Schritt", undo.Steps == 1);
+
+        var before = OpsXml(p);
+        Check("Ops: doppelte GA abgelehnt",
+            ProjectOperations.CreateGroupAddress(p, GroupAddress.ThreeLevel(1, 1, 3), "Dup", null, opsInstallation, null, undo)
+                .Status == ProjectEditStatus.AddressInUse);
+        Check("Ops: leerer GA-Name abgelehnt",
+            ProjectOperations.CreateGroupAddress(p, GroupAddress.ThreeLevel(1, 2, 1), " ", null, opsInstallation, null, undo)
+                .Status == ProjectEditStatus.EmptyName);
+        Check("Ops: abgelehnte GA-Aktionen verändern nichts", OpsXml(p) == before && undo.Steps == 1);
+
+        var far = ProjectOperations.CreateGroupAddress(p, GroupAddress.ThreeLevel(1, 2, 5), "Fern", null, opsInstallation, null, undo);
+        Check("Ops: GA außerhalb der Bereiche legt Mittelbereich an",
+            far.Ok && ProjectQuery.FindRangeFor(opsInstallation, far.Value!.Address)?.Id == "GR-2",
+            ProjectQuery.FindRangeFor(opsInstallation, far.Value!.Address)?.Id ?? "(fehlt)");
+        Check("Ops: Bereichs-ID eindeutig",
+            ProjectQuery.AllRanges(opsInstallation).Select(r => r.Id).Distinct().Count() == ProjectQuery.AllRanges(opsInstallation).Count());
+
+        Check("Ops: GA umbenennen", ProjectOperations.RenameGroupAddress(p, entry, "Umbenannt", "DPST-1-1", undo).Ok
+            && entry.Name == "Umbenannt" && entry.DatapointType == "DPST-1-1");
+        var stepsAfterRename = undo.Steps;
+
+        var copySource = ProjectQuery.FindGroupAddress(p, GroupAddress.ThreeLevel(1, 1, 1))!;
+        var copy = ProjectOperations.CopyGroupAddress(p, copySource, null, "Kopie", undo);
+        Check("Ops: GA kopieren", copy.Ok && copy.Value!.Id != copySource.Id
+            && copy.Value.Address == GroupAddress.ThreeLevel(1, 1, 4), copy.Value?.Address.ToString());
+        Check("Ops: GA-Kopie erhält Metadaten, aber keine Links",
+            p.Workbench.Groups[copy.Value!.Id].Bits == 1 && copy.Value.Description == copySource.Description
+            && !ProjectQuery.ComObjectRefs(p).Any(r => r.Ref.Links.Contains(copy.Value.Id)));
+        var copyAddress = copy.Value.Address;
+        Check("Ops: GA-Kopie auf belegte Adresse abgelehnt",
+            ProjectOperations.CopyGroupAddress(p, copySource, copySource.Address, null, undo).Status == ProjectEditStatus.AddressInUse
+            && ProjectQuery.FindGroupAddress(p, copyAddress)?.Id == copy.Value.Id);
+
+        var second = ProjectQuery.FindGroupAddress(p, GroupAddress.ThreeLevel(1, 1, 2))!;
+        var newRangeMove = ProjectOperations.MoveGroupAddress(p, second, GroupAddress.ThreeLevel(2, 3, 4), undo);
+        Check("Ops: GA in neuen Bereich verschieben legt Haupt-/Mittelbereich an",
+            newRangeMove.Ok && second.Address == GroupAddress.ThreeLevel(2, 3, 4)
+            && ProjectQuery.FindRangeFor(opsInstallation, second.Address)?.Id == "GR-4",
+            ProjectQuery.FindRangeFor(opsInstallation, second.Address)?.Id ?? "(fehlt)");
+
+        var source = ProjectQuery.FindGroupAddress(p, GroupAddress.ThreeLevel(1, 1, 1))!;
+        var moved = ProjectOperations.MoveGroupAddress(p, source, GroupAddress.ThreeLevel(1, 2, 6), undo);
+        Check("Ops: GA verschieben", moved.Ok && source.Address == GroupAddress.ThreeLevel(1, 2, 6)
+            && ProjectQuery.FindRangeFor(opsInstallation, source.Address)?.Id == "GR-2",
+            source.Address.ToString());
+        Check("Ops: GA-Verschieben behält Links",
+            ProjectQuery.ComObjectRefs(p).Single().Ref.Links.SequenceEqual(["GA-1"]));
+        before = OpsXml(p);
+        Check("Ops: GA auf belegte Adresse verschieben abgelehnt",
+            ProjectOperations.MoveGroupAddress(p, source, copy.Value.Address, undo).Status == ProjectEditStatus.AddressInUse
+            && OpsXml(p) == before);
+
+        var linkedObject = ProjectQuery.ComObjectRefs(p).Single().Ref;
+        linkedObject.Links.Add("GA-2");
+        var deleting = ProjectOperations.DeleteGroupAddress(p, source, undo);
+        Check("Ops: GA löschen entfernt Links, Metadaten und Sendeadresse",
+            deleting.Ok && linkedObject.Links.SequenceEqual(["GA-2"])
+            && !p.Workbench.Groups.ContainsKey("GA-1")
+            && p.Workbench.Objects.Values.Single().SendingGroupId is null
+            && !p.Workbench.Objects.Values.Single().Connectors.ContainsKey("GA-1"));
+        Check("Ops: Löschen ersetzt die Sendeadresse nicht still", deleting.Message is not null, deleting.Message);
+        Check("Ops: GA-Löschen ist genau ein Undo-Schritt", undo.Steps == stepsAfterRename + 4, undo.Steps.ToString());
+        var restored = undo.Undo()!;
+        Check("Ops: Undo stellt GA samt Link und Sendeadresse wieder her",
+            ProjectQuery.FindGroupAddressById(restored, "GA-1") is not null
+            && ProjectQuery.ComObjectRefs(restored).Single().Ref.Links.Contains("GA-1")
+            && restored.Workbench.Objects.Values.Single().SendingGroupId == "GA-1");
+
+        // Full range: no allocation, no mutation, no undo step.
+        var full = OpsProject();
+        full.Installations[0].MainRanges.Clear();
+        var fullRange = new GroupRange { Id = "GR-FULL", RangeStart = 1, RangeEnd = 3 };
+        fullRange.Addresses.Add(Ga("FULL-1", "eins", 0, 0, 1));
+        fullRange.Addresses.Add(Ga("FULL-2", "zwei", 0, 0, 2));
+        fullRange.Addresses.Add(Ga("FULL-3", "drei", 0, 0, 3));
+        full.Installations[0].MainRanges.Add(fullRange);
+        var fullUndo = new UndoStack(); fullUndo.Reset(full);
+        var fullBefore = OpsXml(full);
+        var fullResult = ProjectOperations.CreateGroupAddress(full, null, "Nix", null, full.Installations[0], null, fullUndo);
+        Check("Ops: volle GA-Reichweite lehnt Anlegen ab",
+            fullResult.Status == ProjectEditStatus.NoFreeAddress && OpsXml(full) == fullBefore && fullUndo.Steps == 0,
+            fullResult.Status.ToString());
+    }
+}
+
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER: {string.Join("; ", failures)}");
 return failures.Count == 0 ? 0 : 1;
