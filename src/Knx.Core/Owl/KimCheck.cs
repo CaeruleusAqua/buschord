@@ -22,9 +22,9 @@ public static class KimCheck
             {
                 findings.Add(point.DatapointTypeCode is null
                     ? new(CheckSeverity.Warning, "K003", path,
-                        $"Funktionspunkt '{point.Label ?? point.Subject}' hat keinen Datapoint-Typ.")
+                        Strings.Get("KimMissingDpt", point.Label ?? point.Subject))
                     : new(CheckSeverity.Error, "K001", path,
-                        $"Datapoint-Typ '{point.DatapointTypeCode}' existiert nicht in der Ontologie."));
+                        Strings.Get("KimUnknownDpt", point.DatapointTypeCode)));
             }
             else
             {
@@ -37,13 +37,13 @@ public static class KimCheck
             var path = device.Address?.ToString() ?? device.Subject;
             if (string.IsNullOrWhiteSpace(device.ProductRefId))
                 findings.Add(new(CheckSeverity.Warning, "K002", path,
-                    $"Gerät '{device.Label ?? device.Subject}' hat kein Produkt."));
+                    Strings.Get("KimNoProduct", device.Label ?? device.Subject)));
         }
 
         foreach (var link in kim.PointLinks)
             if (!points.Contains(link.Target))
                 findings.Add(new(CheckSeverity.Error, "K005", link.Subject,
-                    $"Verknüpfung core:hasPoint zeigt auf keinen existierenden Funktionspunkt '{link.Target}'."));
+                    Strings.Get("KimMissingPoint", link.Target)));
 
         return findings;
     }
@@ -54,11 +54,10 @@ public static class KimCheck
 
         if (point.DeclaredMajor is int declared && declared != dpt.Major)
             findings.Add(new(CheckSeverity.Warning, "K004", path,
-                $"Datapoint-Typ '{point.DatapointTypeCode}' gehört zu Haupttyp {dpt.Major}, exportiert ist {declared}."));
+                Strings.Get("KimWrongMajor", point.DatapointTypeCode, dpt.Major, declared)));
 
         if (dpt is { FieldBits: int fieldBits, BitSize: int bitSize } && fieldBits > bitSize)
             findings.Add(new(CheckSeverity.Warning, "K004", path,
-                $"Datapoint-Typ '{dpt.Code}' hat {dpt.FieldCount} Datenfeld(er) mit {fieldBits} bit, " +
-                $"knx:dptBitSizeMax erlaubt nur {bitSize} bit."));
+                Strings.Get("KimTooManyBits", dpt.Code, dpt.FieldCount, fieldBits, bitSize)));
     }
 }

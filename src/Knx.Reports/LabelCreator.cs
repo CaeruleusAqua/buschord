@@ -46,7 +46,7 @@ public static class LabelCreator
 
     public static string ToCsv(IEnumerable<Label> labels)
     {
-        var sb = new StringBuilder("Adresse;Titel;Untertitel;Zusatz\n");
+        var sb = new StringBuilder(Strings.Get("CsvLabelHeader") + "\n");
         foreach (var l in labels)
             sb.AppendLine($"{l.Address};{Escape(l.Title)};{Escape(l.Subtitle)};{Escape(l.Extra)}");
         return sb.ToString();

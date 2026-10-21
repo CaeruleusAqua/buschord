@@ -272,8 +272,10 @@ public partial class WorkbenchWindow
         foreach (var a in Knx.Workbench.WorkbenchProject.Associations(project))
         {
             foreach (var value in new[] { a.DeviceAddress, a.DeviceName, a.Number.ToString(),
-                a.ObjectName, a.Dpt ?? "", a.Bits?.ToString() ?? "", a.Flags ?? "", a.Active ? "ja" : "nein",
-                a.GroupAddress, a.GroupName, a.Sending ? "ja" : "nein", a.InstalledRoomId ?? "" })
+                a.ObjectName, a.Dpt ?? "", a.Bits?.ToString() ?? "", a.Flags ?? "",
+                a.Active ? Strings.Get("CsvYes") : Strings.Get("CsvNo"),
+                a.GroupAddress, a.GroupName, a.Sending ? Strings.Get("CsvYes") : Strings.Get("CsvNo"),
+                a.InstalledRoomId ?? "" })
                 builder.Append(GroupMonitor.CsvField(value)).Append(';');
             builder.Length -= 1;
             builder.Append("\r\n");
