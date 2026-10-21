@@ -73,9 +73,9 @@ var fixture = """
             </Parameters>
             <ComObjectTable>
               <ComObject Id="CO-1" Name="Switch" Text="Switch" FunctionText="Switching"
-                         Number="1" ObjectSize="1 Bit"/>
+                         Number="1" ObjectSize="1 Bit" DatapointType="DPST-1-1"/>
               <ComObject Id="CO-2" Name="Status" Text="Status" FunctionText="Status"
-                         Number="2" ObjectSize="1 Bit"/>
+                         Number="2" ObjectSize="1 Bit" DatapointType="DPST-1-1"/>
             </ComObjectTable>
           </Static>
         </ApplicationProgram>
@@ -202,6 +202,9 @@ Check("Parameter-Name (Basistext)", program1?.ParameterInstances[0].Name == "Bri
     program1?.ParameterInstances[0].Name);
 Check("ComObject-Funktionstext (de)",
     program1?.ComObjects[0].Name == "Schalten", program1?.ComObjects[0].Name);
+Check("ComObject-DPT-Metadaten",
+    program1?.ComObjects[0].DatapointType == "DPST-1-1" && program1.ComObjects[0].SizeInBit > 0,
+    program1?.ComObjects[0].DatapointType);
 Check("FindProgram ueber Hardware2Program", ReferenceEquals(catalog.FindProgram("M-00FA_H-1_HP-1"), program1));
 Check("FindProgramFor ueber CatalogItem", ReferenceEquals(catalog.FindProgramFor(product1!), program1));
 Check("FindProgramFor Produkt 2",

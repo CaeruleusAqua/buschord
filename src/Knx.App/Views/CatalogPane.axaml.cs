@@ -1,6 +1,7 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Knx;
 using Knx.App.Services;
 using Knx.Catalog;
@@ -20,8 +21,12 @@ public partial class CatalogPane : UserControl
     private List<KnxProductCatalog> _catalogs = [];
     private CatalogProduct? _shownProduct;
     private string? _suggestion;
+    private string? _suggestedName;
     private string _message = "";
     private Line? _preferredLine;
+    private string? _preferredRoomId;
+    private CancellationTokenSource? _operation;
+    private bool _watchingBackground;
     private bool _busy;
 
     public CatalogPane() : this(new MainWindowViewModel()) { }
@@ -33,8 +38,11 @@ public partial class CatalogPane : UserControl
         InitializeComponent();
         RemoveCatalogButton.Content = CatalogUiText.Get("RemoveCatalog");
         ToolTip.SetTip(RemoveCatalogButton, CatalogUiText.Get("RemoveCatalogTip"));
+        SegmentCaption.Text = CatalogUiText.Get("TargetSegment");
         Loaded += OnLoaded;
+        DetachedFromVisualTree += (_, _) => UnwatchBackground();
         FillLines();
+        UpdateRoomContext();
     }
 
     /// <summary>Completes once the catalogue data is bound (or the load failed); used by screenshots.</summary>
@@ -54,7 +62,16 @@ public partial class CatalogPane : UserControl
     }
 
     /// <summary>Room that receives a newly inserted device; null inserts only into the line.</summary>
-    public string? PreferredRoomId { get; set; }
+    public string? PreferredRoomId
+    {
+        get => _preferredRoomId;
+        set
+        {
+            if (_preferredRoomId == value) return;
+            _preferredRoomId = value;
+            UpdateRoomContext();
+        }
+    }
 
     /// <summary>Moves keyboard focus to the product search, for a workspace shortcut.</summary>
     public void FocusSearch()
@@ -84,21 +101,31 @@ public partial class CatalogPane : UserControl
         _ = LoadAsync(reload: false);
     }
 
-    /// <summary>Shows the library while it is read; the thread-safe service does the parsing off the UI thread.</summary>
+    /// <summary>
+    /// Shows the library while it is read; the thread-safe service does the parsing off the UI
+    /// thread. Cancel abandons only this waiter: the shared parse finishes in the background
+    /// and the pane rebinds through <see cref="CatalogLibrary.Changed"/>.
+    /// </summary>
     private async Task LoadAsync(bool reload)
     {
         if (_busy) return;
         _busy = true;
+        var operation = new CancellationTokenSource();
+        _operation = operation;
         SetLoading(true);
         try
         {
             var progress = new Progress<CatalogProgress>(ShowProgress);
             var snapshot = reload
-                ? await _library.ReloadAsync(progress)
-                : await _library.GetAsync(progress);
+                ? await _library.ReloadAsync(progress, operation.Token)
+                : await _library.GetAsync(progress, operation.Token);
             Bind(snapshot);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            WatchBackgroundLoad();
+            SetMessage(CatalogUiText.Get("LoadCancelled"));
+        }
         catch (Exception ex)
         {
             SetMessage(Strings.Get("CatalogLoadError", ex.Message));
@@ -106,6 +133,8 @@ public partial class CatalogPane : UserControl
         finally
         {
             _busy = false;
+            if (ReferenceEquals(_operation, operation)) _operation = null;
+            operation.Dispose();
             SetLoading(false);
             _ready.TrySetResult();
         }
@@ -114,15 +143,54 @@ public partial class CatalogPane : UserControl
     private void SetLoading(bool loading)
     {
         LoadingState.IsVisible = loading;
+        ImportButton.IsEnabled = !loading;
+        ReloadButton.IsEnabled = !loading;
+        CancelButton.IsVisible = loading;
+        CancelButton.IsEnabled = loading;
         if (loading)
         {
             if (_catalogs.Count == 0) LibraryHeader.Text = Strings.Get("CatalogLibrary");
             LoadingText.Text = Strings.Get("CatalogLoading");
         }
+        UpdateInsertState();
     }
 
     private void ShowProgress(CatalogProgress progress) =>
-        LoadingText.Text = Strings.Get("CatalogLoadingCount", progress.Loaded, progress.Total);
+        LoadingText.Text = progress.File is { Length: > 0 } file
+            ? CatalogUiText.Get("LoadingFile", progress.Loaded, progress.Total, file)
+            : Strings.Get("CatalogLoadingCount", progress.Loaded, progress.Total);
+
+    private void OnCancelLoad(object? sender, RoutedEventArgs e)
+    {
+        // Do not kill the shared parse: cancel the waiter, keep loading in the background.
+        CancelButton.IsEnabled = false;
+        _operation?.Cancel();
+    }
+
+    /// <summary>A cancelled wait still binds the snapshot once the shared parse publishes it.</summary>
+    private void WatchBackgroundLoad()
+    {
+        if (_watchingBackground) return;
+        _watchingBackground = true;
+        _library.Changed += OnBackgroundLoaded;
+        // The load may have published between the cancellation and this subscription: bind
+        // the current snapshot now instead of waiting for an event that already happened.
+        if (_library.Current is not null) Bind(_library.Current);
+    }
+
+    private void OnBackgroundLoaded(object? sender, EventArgs e) => Dispatcher.UIThread.Post(() =>
+    {
+        UnwatchBackground();
+        Bind(_library.Current);
+        if (_library.Current is { Errors.Count: 0 }) SetMessage(CatalogUiText.Get("LoadContinued"));
+    });
+
+    private void UnwatchBackground()
+    {
+        if (!_watchingBackground) return;
+        _watchingBackground = false;
+        _library.Changed -= OnBackgroundLoaded;
+    }
 
     private void Bind(CatalogSnapshot? snapshot, IEnumerable<string>? importErrors = null)
     {
@@ -169,8 +237,39 @@ public partial class CatalogPane : UserControl
         LineBox.ItemsSource = lines;
         if (PreferredLineOrFallback() is { } selected) SelectLine(selected);
         else if (lines.Count > 0) LineBox.SelectedIndex = 0;
+        RefreshSegments();
         SuggestAddress();
+        SuggestName();
+        UpdateRoomContext();
         UpdateInsertState();
+    }
+
+    /// <summary>Fills the segment target from the selected line; hidden when the line has none.</summary>
+    private void RefreshSegments()
+    {
+        var previous = (SegmentBox.SelectedItem as SegmentChoice)?.Id;
+        var segments = CatalogBrowser.Segments(_vm.Project, LineBox.SelectedItem as LineChoice);
+        SegmentBox.ItemsSource = segments;
+        SegmentBox.SelectedItem = segments.FirstOrDefault(segment => segment.Id == previous)
+            ?? segments.FirstOrDefault();
+        SegmentTarget.IsVisible = segments.Count > 0;
+        SegmentBox.IsEnabled = _vm.Project is not null && segments.Count > 0;
+    }
+
+    /// <summary>Shows the room context the caller passed in (e.g. opened from a room tab).</summary>
+    private void UpdateRoomContext()
+    {
+        if (RoomContext is null) return;
+        var room = _preferredRoomId is not null && _vm.Project is { } project
+            ? project.Installations.SelectMany(installation => installation.Locations.AllNodes)
+                .FirstOrDefault(node => node.Id == _preferredRoomId && node.Kind == SpaceKind.Room)
+            : null;
+        RoomContext.Text = _preferredRoomId is null
+            ? CatalogUiText.Get("NoRoomContext")
+            : room is not null
+                ? CatalogUiText.Get("RoomContext", room.Name)
+                : CatalogUiText.Get("NeedRoom");
+        RoomContext.Classes.Set("wb-error", _preferredRoomId is not null && room is null);
     }
 
     private Line? PreferredLineOrFallback() => _preferredLine
@@ -196,7 +295,7 @@ public partial class CatalogPane : UserControl
 
     private async void OnImport(object? sender, RoutedEventArgs e)
     {
-        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+        if (_busy || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
         try
         {
             var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -207,34 +306,42 @@ public partial class CatalogPane : UserControl
             });
             if (files.Count == 0) return;
 
-            var imported = new List<KnxProductCatalog>();
+            var paths = new List<string>();
             var errors = new List<string>();
             foreach (var file in files)
             {
-                if (file.TryGetLocalPath() is not { } path)
-                {
-                    errors.Add(Strings.Get("CatalogLocalFileRequired", file.Name));
-                    continue;
-                }
-                try
-                {
-                    // Import parses the new file; keep that off the UI thread like the library load.
-                    imported.Add(await Task.Run(() => _library.Store.Import(path)));
-                }
-                catch (Exception ex)
-                {
-                    errors.Add(Strings.Get("CatalogLoadError", Path.GetFileName(path) + ": " + ex.Message));
-                }
+                if (file.TryGetLocalPath() is { } path) paths.Add(path);
+                else errors.Add(Strings.Get("CatalogLocalFileRequired", file.Name));
             }
-            // Merge into the cached snapshot instead of re-parsing the whole library.
-            var snapshot = _library.Add(imported);
-            if (snapshot is null)
+
+            _busy = true;
+            var operation = new CancellationTokenSource();
+            _operation = operation;
+            SetLoading(true);
+            try
             {
-                await _library.GetAsync();
-                snapshot = _library.Add(imported);
+                var progress = new Progress<CatalogImportProgress>(item =>
+                    LoadingText.Text = CatalogUiText.Get("Importing", item.Loaded, item.Total, item.File));
+                var result = await _library.ImportAsync(paths, progress, operation.Token);
+                errors.AddRange(result.Errors.Select(error =>
+                    Strings.Get("CatalogLoadError", Path.GetFileName(error.File) + ": " + error.Message)));
+                Bind(result.Snapshot, errors);
+                if (result.Canceled)
+                    AddError(CatalogUiText.Get("ImportCancelled", result.Catalogs.Count, paths.Count));
+                else if (result.Catalogs.Count > 0 && errors.Count == 0)
+                    SetMessage(Strings.Get("CatalogImported", result.Catalogs.Count));
             }
-            Bind(snapshot, errors);
-            if (imported.Count > 0 && errors.Count == 0) SetMessage(Strings.Get("CatalogImported", imported.Count));
+            catch (OperationCanceledException)
+            {
+                SetMessage(CatalogUiText.Get("LoadCancelled"));
+            }
+            finally
+            {
+                _busy = false;
+                if (ReferenceEquals(_operation, operation)) _operation = null;
+                operation.Dispose();
+                SetLoading(false);
+            }
         }
         catch (Exception ex)
         {
@@ -285,9 +392,14 @@ public partial class CatalogPane : UserControl
     private void OnSectionChanged(object? sender, SelectionChangedEventArgs e) => ApplyFilters();
     private void OnLineChanged(object? sender, SelectionChangedEventArgs e)
     {
+        RefreshSegments();
         SuggestAddress();
+        SuggestName();
+        UpdateRoomContext();
         UpdateInsertState();
     }
+
+    private void OnSegmentChanged(object? sender, SelectionChangedEventArgs e) => UpdateInsertState();
 
     private void OnAddressChanged(object? sender, TextChangedEventArgs e) => UpdateInsertState();
 
@@ -302,7 +414,7 @@ public partial class CatalogPane : UserControl
         if (ProductList is null || SectionBox is null) return;
         var products = SelectedCatalog?.Products ?? [];
         var previous = SelectedProduct;
-        var filtered = CatalogBrowser.Filter(products, SearchBox?.Text,
+        var filtered = CatalogBrowser.Filter(SelectedCatalog, SearchBox?.Text,
             SectionBox.SelectedIndex > 0 ? SectionBox.SelectedItem as string : null);
         ProductList.ItemsSource = filtered;
         ProductList.SelectedItem = previous is not null && filtered.Contains(previous) ? previous : filtered.FirstOrDefault();
@@ -324,7 +436,9 @@ public partial class CatalogPane : UserControl
         {
             _shownProduct = product;
             NameBox.Text = product?.Name ?? "";
+            _suggestedName = product?.Name;
             SuggestAddress();
+            SuggestName();
         }
         ShowDetails(product);
         UpdateInsertState();
@@ -337,16 +451,31 @@ public partial class CatalogPane : UserControl
         DetailsEmpty.IsVisible = product is null;
         if (product is null || SelectedCatalog is not { } catalog) return;
         var program = FindProgram(catalog, product);
-        Add(Strings.Get("CatalogManufacturer"), catalog.Manufacturer?.Name);
+        Add(Strings.Get("CatalogManufacturer"),
+            catalog.Manufacturer?.Name ?? CatalogUiText.Get("UnknownManufacturer"));
         Add(Strings.Get("ColName"), product.Name);
         Add(Strings.Get("ColMessage"), product.Description);
         Add(Strings.Get("CatalogOrderNumber"), product.OrderNumber);
         Add(Strings.Get("CatalogProgram"), program?.Name);
+        Add(CatalogUiText.Get("DatapointTypes"), string.Join(" · ", CatalogBrowser.DatapointTypes(catalog, product)));
         Add(CatalogUiText.Get("Programs"), product.ProgramRefIds.Count.ToString());
         Add(Strings.Get("CatalogComObjects"), program?.ComObjects.Count.ToString());
         Add(Strings.Get("CatalogPaths"), product.CatalogPaths.Count > 0 ? string.Join(" · ", product.CatalogPaths) : null);
         Add("Id", product.Id);
         AddApplicationStatus(program);
+        if (program is null)
+        {
+            Details.Children.Add(new TextBlock
+            {
+                Text = CatalogUiText.Get("UnknownVendorData"),
+                Classes = { "muted" },
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            });
+        }
+        else
+        {
+            AddComObjects(program);
+        }
 
         void Add(string label, string? value)
         {
@@ -394,6 +523,38 @@ public partial class CatalogPane : UserControl
             Add(CatalogUiText.Get("MaskVersion"), application.MaskVersion);
         }
 
+        // Bounded preview of the application's communication objects with their DPT metadata.
+        void AddComObjects(CatalogApplicationProgram application)
+        {
+            Details.Children.Add(new TextBlock
+            {
+                Text = CatalogUiText.Get("ComObjectsPreview"), Classes = { "muted" }, Margin = new Avalonia.Thickness(0, 4, 0, 0),
+            });
+            if (application.ComObjects.Count == 0)
+            {
+                Details.Children.Add(new TextBlock { Text = CatalogUiText.Get("NoComObjects"), Classes = { "muted" } });
+                return;
+            }
+            const int limit = 20;
+            foreach (var comObject in application.ComObjects.Take(limit))
+            {
+                var parts = new List<string> { $"#{comObject.Number}", comObject.Name };
+                if (!string.IsNullOrWhiteSpace(comObject.DatapointType)) parts.Add("DPT " + comObject.DatapointType);
+                if (comObject.SizeInBit > 0) parts.Add($"{comObject.SizeInBit} {CatalogUiText.Get("Bits")}");
+                Details.Children.Add(new TextBlock
+                {
+                    Text = string.Join(" · ", parts), Classes = { "catalog-com" },
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                });
+            }
+            if (application.ComObjects.Count > limit)
+                Details.Children.Add(new TextBlock
+                {
+                    Text = CatalogUiText.Get("MoreComObjects", application.ComObjects.Count - limit),
+                    Classes = { "muted" },
+                });
+        }
+
         static void AddBadge(WrapPanel panel, bool shown, string key, string classes)
         {
             if (!shown) return;
@@ -424,15 +585,26 @@ public partial class CatalogPane : UserControl
         if (current.Length == 0 || current == previous) AddressBox.Text = _suggestion ?? "";
     }
 
+    /// <summary>Fills a free device name, without replacing a name the user typed.</summary>
+    private void SuggestName()
+    {
+        if (SelectedProduct is not { } product) { _suggestedName = null; return; }
+        var previous = _suggestedName;
+        _suggestedName = CatalogBrowser.UniqueName(_vm.Project, LineBox.SelectedItem as LineChoice, product.Name);
+        var current = NameBox.Text?.Trim() ?? "";
+        if (current.Length == 0 || current == previous) NameBox.Text = _suggestedName;
+    }
+
     private void UpdateInsertState()
     {
         var hasProject = _vm.Project is not null;
         var blocker = hasProject ? InsertBlocker() : null;
         UxNeedsProject.IsVisible = !hasProject;
-        LineBox.IsEnabled = hasProject;
-        AddressBox.IsEnabled = hasProject;
-        NameBox.IsEnabled = hasProject;
-        InsertButton.IsEnabled = hasProject && blocker is null;
+        LineBox.IsEnabled = hasProject && !_busy;
+        SegmentBox.IsEnabled = hasProject && !_busy && SegmentBox.ItemsSource is List<SegmentChoice> { Count: > 0 };
+        AddressBox.IsEnabled = hasProject && !_busy;
+        NameBox.IsEnabled = hasProject && !_busy;
+        InsertButton.IsEnabled = hasProject && !_busy && blocker is null;
         SetInsertStatus(hasProject ? blocker ?? "" : "", error: SelectedProduct is not null);
     }
 
@@ -500,15 +672,18 @@ public partial class CatalogPane : UserControl
             return;
         }
         var inserted = CatalogBrowser.Insert(_vm, product, program, LineBox.SelectedItem as LineChoice,
-            AddressBox.Text, NameBox.Text, out var message, PreferredRoomId);
+            AddressBox.Text, NameBox.Text, out var message, PreferredRoomId,
+            (SegmentBox.SelectedItem as SegmentChoice)?.Id);
         _vm.Status = message;
         if (inserted)
         {
             AddressBox.Text = "";
             SuggestAddress();
+            SuggestName();
             UpdateInsertState();
         }
-        SetInsertStatus(message, error: !inserted);
+        SetInsertStatus(inserted ? message + " · " + CatalogUiText.Get("InsertUndoHint") : message,
+            error: !inserted);
     }
 
     private void OnClose(object? sender, RoutedEventArgs e) =>

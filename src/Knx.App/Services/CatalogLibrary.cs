@@ -3,13 +3,23 @@ using Knx.Catalog;
 namespace Knx.App.Services;
 
 /// <summary>How much of the local library has been read, in library files.</summary>
-public sealed record CatalogProgress(int Loaded, int Total);
+public sealed record CatalogProgress(int Loaded, int Total, string? File = null);
 
 /// <summary>One immutable view of the local catalogue library.</summary>
 public sealed record CatalogSnapshot(
     IReadOnlyList<KnxProductCatalog> Catalogs,
     IReadOnlyList<CatalogLoadError> Errors,
     int ProductCount);
+
+/// <summary>Progress of a multi-file import, one step per selected file.</summary>
+public sealed record CatalogImportProgress(int Loaded, int Total, string File);
+
+/// <summary>Outcome of one import run; errors are per file and never abort the remaining files.</summary>
+public sealed record CatalogImportResult(
+    IReadOnlyList<KnxProductCatalog> Catalogs,
+    IReadOnlyList<CatalogLoadError> Errors,
+    bool Canceled,
+    CatalogSnapshot? Snapshot);
 
 /// <summary>
 /// Session-wide cached loader for the local catalogue library. Parses the library once on a
@@ -61,20 +71,71 @@ public sealed class CatalogLibrary
         return cancellationToken.CanBeCanceled ? load.WaitAsync(cancellationToken) : load;
     }
 
-    /// <summary>Forces a fresh parse; waits for an in-flight load first, then reports the new snapshot.</summary>
+    /// <summary>
+    /// Forces a fresh parse; waits for an in-flight load first, then reports the new snapshot.
+    /// Cancelling only abandons this waiter: the parse keeps running, the old snapshot stays
+    /// readable until the new one is published, and no cached state is discarded.
+    /// </summary>
     public async Task<CatalogSnapshot> ReloadAsync(IProgress<CatalogProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        if (cancellationToken.IsCancellationRequested)
+            return await Task.FromCanceled<CatalogSnapshot>(cancellationToken);
+
         while (true)
         {
             Task<CatalogSnapshot>? pending;
             lock (_gate) pending = _loading;
             if (pending is null) break;
-            try { await pending.ConfigureAwait(false); }
+            try { await pending.WaitAsync(cancellationToken).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch { /* a failed load is simply replaced by the reload below */ }
         }
-        lock (_gate) _snapshot = null;
-        return await GetAsync(progress, cancellationToken).ConfigureAwait(false);
+
+        Task<CatalogSnapshot> reload;
+        lock (_gate)
+        {
+            if (progress is not null) _sinks.Add(progress);
+            // Do not clear _snapshot: until the new parse publishes, Current keeps serving the
+            // last good library, so a cancelled reload cannot leave the pane empty.
+            reload = _loading ??= LoadAsync();
+        }
+        return cancellationToken.CanBeCanceled
+            ? await reload.WaitAsync(cancellationToken).ConfigureAwait(false)
+            : await reload.ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Imports catalogue files on a background thread, one at a time, reporting progress and
+    /// collecting per-file errors. Cancellation stops before the next file; the files already
+    /// imported are merged into the snapshot so nothing done so far is lost.
+    /// </summary>
+    public async Task<CatalogImportResult> ImportAsync(IReadOnlyList<string> paths,
+        IProgress<CatalogImportProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        var imported = new List<KnxProductCatalog>();
+        var errors = new List<CatalogLoadError>();
+        var canceled = false;
+        for (var index = 0; index < paths.Count; index++)
+        {
+            if (cancellationToken.IsCancellationRequested) { canceled = true; break; }
+            var path = paths[index];
+            progress?.Report(new CatalogImportProgress(index + 1, paths.Count, Path.GetFileName(path)));
+            try
+            {
+                imported.Add(await Task.Run(() => _store.Import(path), cancellationToken).ConfigureAwait(false));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                canceled = true;
+                break;
+            }
+            catch (Exception ex)
+            {
+                errors.Add(new CatalogLoadError(path, ex.Message));
+            }
+        }
+        return new CatalogImportResult(imported, errors, canceled, Add(imported));
     }
 
     /// <summary>
@@ -137,7 +198,7 @@ public sealed class CatalogLibrary
         {
             IProgress<CatalogProgress>[] sinks;
             lock (owner._gate) sinks = owner._sinks.ToArray();
-            var progress = new CatalogProgress(value.Loaded, value.Total);
+            var progress = new CatalogProgress(value.Loaded, value.Total, value.File);
             foreach (var sink in sinks) sink.Report(progress);
         }
     }

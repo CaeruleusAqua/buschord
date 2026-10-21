@@ -5,6 +5,9 @@ namespace Knx.App.Services;
 public sealed record LineChoice(string ProjectId, string? ProjectGuid, string InstallationId,
     string AreaId, string LineId, string Text);
 
+/// <summary>Segment of the selected line; the insert target below the line.</summary>
+public sealed record SegmentChoice(string Id, string Text);
+
 /// <summary>What a catalogue application is used for; every use has its own blocking rules.</summary>
 public enum CatalogUse
 {
@@ -86,8 +89,31 @@ public static class CatalogUiText
         ["RemoveCatalog"] = ("Katalog entfernen", "Remove catalogue"),
         ["RemoveCatalogTip"] = ("Katalogdatei aus der Bibliothek löschen", "Delete the catalogue file from the library"),
         ["Removed"] = ("Katalog entfernt: {0}", "Catalogue removed: {0}"),
-        ["NeedRoom"] = ("Der gewählte Raum existiert nicht mehr.", "The selected room no longer exists."),        ["RemoveFailed"] = ("Katalog nicht entfernt (außerhalb der Bibliothek oder gesperrt): {0}",
+        ["NeedRoom"] = ("Der gewählte Raum existiert nicht mehr.", "The selected room no longer exists."),
+        ["RemoveFailed"] = ("Katalog nicht entfernt (außerhalb der Bibliothek oder gesperrt): {0}",
                             "Catalogue not removed (outside the library or locked): {0}"),
+        ["TargetSegment"] = ("Ziel-Segment", "Target segment"),
+        ["SegmentLabel"] = ("Segment {0}", "Segment {0}"),
+        ["SegmentMissing"] = ("Das gewählte Segment existiert nicht mehr.", "The selected segment no longer exists."),
+        ["NameAdjusted"] = ("Name bereits vergeben, eingefügt als {0}", "Name already in use, inserted as {0}"),
+        ["RoomContext"] = ("Raum: {0}", "Room: {0}"),
+        ["NoRoomContext"] = ("Ohne Raumzuordnung", "No room assignment"),
+        ["DatapointTypes"] = ("Datapoint-Typen", "Datapoint types"),
+        ["ComObjectsPreview"] = ("Kommunikationsobjekte", "Communication objects"),
+        ["NoComObjects"] = ("Keine Kommunikationsobjekte deklariert", "No communication objects declared"),
+        ["MoreComObjects"] = ("… und {0} weitere", "… and {0} more"),
+        ["UnknownManufacturer"] = ("Hersteller unbekannt", "Manufacturer unknown"),
+        ["UnknownVendorData"] = ("Herstellerdaten nicht auflösbar: Die Applikation dieses Produkts ist in der Katalogdatei nicht deklariert oder verweist auf nicht unterstützte Herstellerdaten. Es werden keine Parameter oder Kommunikationsobjekte erfunden; das Einfügen bleibt möglich, die Parametrierung bleibt leer.",
+                                 "Vendor data cannot be resolved: this product's application is not declared in the catalogue file, or it references unsupported vendor data. No parameters or communication objects are invented; insert remains possible with an empty parameter set."),
+        ["Bits"] = ("Bit", "bit"),
+        ["Importing"] = ("Importiere {0}/{1}: {2}", "Importing {0}/{1}: {2}"),
+        ["LoadingFile"] = ("Lade {0}/{1}: {2}", "Loading {0}/{1}: {2}"),
+        ["ImportCancelled"] = ("Import abgebrochen: {0} von {1} Katalogen übernommen",
+                               "Import cancelled: {0} of {1} catalogues kept"),
+        ["LoadCancelled"] = ("Laden abgebrochen; es läuft im Hintergrund weiter und erscheint automatisch.",
+                             "Loading cancelled; it continues in the background and appears automatically."),
+        ["LoadContinued"] = ("Laden im Hintergrund abgeschlossen.", "Background loading finished."),
+        ["InsertUndoHint"] = ("Einfügen mit Strg+Z rückgängig machen.", "Undo the insert with Ctrl+Z."),
     };
 }
 
@@ -110,12 +136,75 @@ public static class CatalogBrowser
         return CatalogBlockReason.None;
     }
 
-    public static List<CatalogProduct> Filter(IEnumerable<CatalogProduct> products, string? search, string? section)
+    /// <summary>Filter without catalogue context: product fields only.</summary>
+    public static List<CatalogProduct> Filter(IEnumerable<CatalogProduct> products, string? search, string? section) =>
+        Filter(products, search, section, null);
+
+    /// <summary>
+    /// Filter with catalogue context, so the search also covers manufacturer, catalogue name,
+    /// application text and communication-object datapoint types (e.g. "1.001" or "DPST-1-1").
+    /// </summary>
+    public static List<CatalogProduct> Filter(KnxProductCatalog? catalog, string? search, string? section) =>
+        Filter(catalog?.Products ?? [], search, section, catalog);
+
+    private static List<CatalogProduct> Filter(IEnumerable<CatalogProduct> products, string? search,
+        string? section, KnxProductCatalog? catalog)
     {
         var query = search?.Trim() ?? "";
-        return products.Where(p => (string.IsNullOrEmpty(section) || p.CatalogPaths.Contains(section)) &&
-            (query.Length == 0 || new[] { p.Name, p.OrderNumber, p.Id, p.Description }
-                .Any(text => text?.Contains(query, StringComparison.OrdinalIgnoreCase) == true))).ToList();
+        return products.Where(product =>
+            (string.IsNullOrEmpty(section) || product.CatalogPaths.Contains(section)) &&
+            (query.Length == 0 || Matches(product, query, catalog))).ToList();
+    }
+
+    private static bool Matches(CatalogProduct product, string query, KnxProductCatalog? catalog)
+    {
+        if (new[] { product.Name, product.OrderNumber, product.Id, product.Description, catalog?.Name,
+                    catalog?.Manufacturer?.Id, catalog?.Manufacturer?.Name }
+                .Any(text => text?.Contains(query, StringComparison.OrdinalIgnoreCase) == true))
+            return true;
+        if (catalog is null) return false;
+        CatalogApplicationProgram? program;
+        // ponytail: the first search may resolve lazy split-archive parts on the caller thread;
+        // build a background search index if that ever becomes noticeable on large catalogues.
+        try { program = catalog.FindProgramFor(product); }
+        catch (Exception) { return false; }
+        if (program is null) return false;
+        if (new[] { program.Name, program.Id, program.ApplicationNumber, program.ApplicationVersion,
+                    program.RegistrationStatus, program.MaskVersion }
+                .Any(text => text?.Contains(query, StringComparison.OrdinalIgnoreCase) == true))
+            return true;
+        if (program.ComObjects.Any(comObject =>
+                new[] { comObject.Name, comObject.Id }
+                    .Any(text => text?.Contains(query, StringComparison.OrdinalIgnoreCase) == true) ||
+                MatchesDatapointType(comObject.DatapointType, query)))
+            return true;
+        return product.ProgramRefIds.Any(text => text.Contains(query, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Datapoint search accepts the ETS id and the dotted/short forms ("DPST-1-1", "1.001", "DPT-1").</summary>
+    private static bool MatchesDatapointType(string? datapointType, string query)
+    {
+        if (string.IsNullOrWhiteSpace(datapointType)) return false;
+        if (datapointType.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
+        try { return ProjectWizard.NormaliseDpt(datapointType) == ProjectWizard.NormaliseDpt(query); }
+        catch (Exception) { return false; }
+    }
+
+    /// <summary>Distinct datapoint types declared by the product's application program.</summary>
+    public static List<string> DatapointTypes(KnxProductCatalog? catalog, CatalogProduct? product)
+    {
+        if (catalog is null || product is null) return [];
+        try
+        {
+            return catalog.FindProgramFor(product)?.ComObjects
+                .Select(comObject => comObject.DatapointType)
+                .Where(type => !string.IsNullOrWhiteSpace(type))
+                .Select(type => type!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? [];
+        }
+        catch (Exception) { return []; }
     }
 
     public static List<string> Sections(IEnumerable<CatalogProduct> products) => products
@@ -129,8 +218,46 @@ public static class CatalogBrowser
          select new LineChoice(project.Id, project.Guid, installation.Id, area.Id, line.Id,
              $"{installation.Name ?? installation.Id} · {area.Address}.{line.Address}  {line.Name}".Trim())).ToList();
 
+    /// <summary>Segments of the chosen line; empty when the line has none or the choice is stale.</summary>
+    public static List<SegmentChoice> Segments(Project? project, LineChoice? choice)
+    {
+        if (project is null || Resolve(project, choice) is not { } target) return [];
+        return target.Line.Segments
+            .Select(segment => new SegmentChoice(segment.Id, segment.Name is { Length: > 0 } name
+                ? CatalogUiText.Get("SegmentLabel", segment.Address) + " · " + name
+                : CatalogUiText.Get("SegmentLabel", segment.Address)))
+            .ToList();
+    }
+
     /// <summary>Lowest free device address on the chosen line; null when the line is full or the choice is stale.</summary>
     public static string? SuggestAddress(Project? project, LineChoice? choice)
+    {
+        if (project is null || Resolve(project, choice) is not { } target) return null;
+        try { return ProjectQuery.NextFreeDeviceAddress(project, target.Area.Address, target.Line.Address).ToString(); }
+        catch (InvalidOperationException) { return null; }
+    }
+
+    /// <summary>
+    /// Free device name on the chosen line. Existing names are never reused; a conflict gets
+    /// the next " (2)", " (3)" suffix. Returns the requested name when no target is known.
+    /// </summary>
+    public static string UniqueName(Project? project, LineChoice? choice, string? requested)
+    {
+        var name = string.IsNullOrWhiteSpace(requested) ? "Device" : requested.Trim();
+        if (project is null || Resolve(project, choice) is not { } target) return name;
+        var used = target.Line.Devices.Concat(target.Line.Segments.SelectMany(segment => segment.Devices))
+            .Select(device => device.Name?.Trim())
+            .Where(existing => !string.IsNullOrEmpty(existing))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!used.Contains(name)) return name;
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{name} ({suffix})";
+            if (!used.Contains(candidate)) return candidate;
+        }
+    }
+
+    private static (Area Area, Line Line)? Resolve(Project? project, LineChoice? choice)
     {
         if (project is null || choice is null
             || choice.ProjectId != project.Id || choice.ProjectGuid != project.Guid) return null;
@@ -139,13 +266,12 @@ public static class CatalogBrowser
                        from area in installation.Areas where area.Id == choice.AreaId
                        from line in area.Lines where line.Id == choice.LineId
                        select (Area: area, Line: line)).ToList();
-        if (targets.Count != 1) return null;
-        try { return ProjectQuery.NextFreeDeviceAddress(project, targets[0].Area.Address, targets[0].Line.Address).ToString(); }
-        catch (InvalidOperationException) { return null; }
+        return targets.Count == 1 ? targets[0] : null;
     }
 
     public static bool Insert(MainWindowViewModel vm, CatalogProduct? product, CatalogApplicationProgram? program,
-        LineChoice? choice, string? requestedAddress, string? name, out string message, string? roomId = null)
+        LineChoice? choice, string? requestedAddress, string? name, out string message, string? roomId = null,
+        string? segmentId = null)
     {
         message = Strings.Get("StatusNoProject");
         if (vm.Project is not { } project) return false;
@@ -158,14 +284,19 @@ public static class CatalogBrowser
             return false;
         }
         message = Strings.Get("CatalogNeedLine");
-        if (choice is null || choice.ProjectId != project.Id || choice.ProjectGuid != project.Guid) return false;
-        var targets = (from installation in project.Installations
-                       where installation.Id == choice.InstallationId
-                       from area in installation.Areas where area.Id == choice.AreaId
-                       from line in area.Lines where line.Id == choice.LineId
-                       select (Area: area, Line: line)).ToList();
-        if (targets.Count != 1) return false;
-        var (targetArea, target) = targets[0];
+        if (Resolve(project, choice) is not { } target) return false;
+        var (targetArea, targetLine) = target;
+        Segment? segment = null;
+        if (segmentId is not null)
+        {
+            segment = targetLine.Segments.FirstOrDefault(candidate => candidate.Id == segmentId);
+            if (segment is null) { message = CatalogUiText.Get("SegmentMissing"); return false; }
+        }
+        else if (targetLine.Segments.Count > 0)
+        {
+            // Compatibility: without a segment choice the first segment receives the device.
+            segment = targetLine.Segments[0];
+        }
         SpaceNode? room = null;
         if (roomId is not null)
         {
@@ -174,11 +305,11 @@ public static class CatalogBrowser
             if (room is null) { message = CatalogUiText.Get("NeedRoom"); return false; }
         }
         message = Strings.Get("CatalogInvalidAddress");
-        if (targetArea.Address > 15 || target.Address > 15) return false;
+        if (targetArea.Address > 15 || targetLine.Address > 15) return false;
         IndividualAddress address;
         if (string.IsNullOrWhiteSpace(requestedAddress))
         {
-            try { address = ProjectQuery.NextFreeDeviceAddress(project, targetArea.Address, target.Address); }
+            try { address = ProjectQuery.NextFreeDeviceAddress(project, targetArea.Address, targetLine.Address); }
             catch (InvalidOperationException) { message = Strings.Get("CatalogLineFull"); return false; }
         }
         else
@@ -189,21 +320,26 @@ public static class CatalogBrowser
                 || !byte.TryParse(parts[1], out var l) || l > 15
                 || !IndividualAddress.TryParse(requestedAddress.Trim(), out address)) return false;
         }
-        if (address.Area != targetArea.Address || address.Line != target.Address || address.Device == 0) return false;
+        if (address.Area != targetArea.Address || address.Line != targetLine.Address || address.Device == 0) return false;
         message = Strings.Get("CatalogDuplicateAddress", address);
         if (ProjectQuery.FindDevice(project, address) is not null) return false;
 
-        var device = CatalogInstaller.CreateDevice(product, program, address,
-            string.IsNullOrWhiteSpace(name) ? product.Name : name.Trim());
+        var requestedName = string.IsNullOrWhiteSpace(name) ? product.Name : name.Trim();
+        var finalName = UniqueName(project, choice, requestedName);
+        var device = CatalogInstaller.CreateDevice(product, program, address, finalName);
+        // Segment placement and room assignment belong to the same undo step as the device.
         vm.Edit($"{product.Name} → {device.Name}", p =>
         {
-            ProjectQuery.AddToLine(target, device);
+            if (segment is not null) segment.Devices.Add(device);
+            else targetLine.Devices.Add(device);
             if (room is not null)
                 p.Installations.SelectMany(i => i.Locations.AllNodes)
                     .FirstOrDefault(n => n.Id == room.Id)?.AssignDevice(device);
         });
         vm.SelectedDevice = vm.Devices.FirstOrDefault(row => ReferenceEquals(row.Device, device));
         message = Strings.Get("CatalogInserted", product.Name, address);
+        if (!string.Equals(finalName, requestedName, StringComparison.Ordinal))
+            message += " · " + CatalogUiText.Get("NameAdjusted", finalName);
         return true;
     }
 }

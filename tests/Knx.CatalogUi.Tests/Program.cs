@@ -96,6 +96,58 @@ Check("full line has no suggestion", CatalogBrowser.SuggestAddress(current, choi
 Check("stale choice has no suggestion", CatalogBrowser.SuggestAddress(current, choice with { LineId = "missing" }) is null);
 Check("foreign project has no suggestion", CatalogBrowser.SuggestAddress(current, choice with { ProjectId = "other" }) is null);
 
+// ---- line + segment target, room context and name conflicts ----
+var segVm = new MainWindowViewModel();
+var segProject = new Project { Id = "P-SEG", Name = "Segments" };
+var segInstallation = new Installation { Id = "I-SEG" };
+var segArea = new Area { Id = "A-SEG", Address = 3 };
+var segLine = new Line { Id = "L-SEG", Address = 3 };
+var firstSegment = new Segment { Id = "SG-1", Name = "First", Address = 1 };
+var secondSegment = new Segment { Id = "SG-2", Name = "Second", Address = 2 };
+segLine.Segments.Add(firstSegment);
+segLine.Segments.Add(secondSegment);
+segArea.Lines.Add(segLine);
+segInstallation.Areas.Add(segArea);
+segInstallation.Locations.Roots.Add(new SpaceNode { Id = "R-SEG", Kind = SpaceKind.Room, Name = "Room" });
+segProject.Installations.Add(segInstallation);
+segVm.CreateProject(segProject, null);
+var segChoice = CatalogBrowser.Lines(segProject).Single();
+Line LiveLine() => segVm.Project!.Installations[0].Areas[0].Lines[0];
+SpaceNode LiveRoom() => segVm.Project!.Installations[0].Locations.Roots.Single();
+Check("segment list follows the line",
+    CatalogBrowser.Segments(segProject, segChoice).Select(item => item.Id).SequenceEqual(["SG-1", "SG-2"]));
+Check("segment list rejects a foreign line", CatalogBrowser.Segments(segProject, segChoice with { LineId = "missing" }).Count == 0);
+Check("suggested name is free", CatalogBrowser.UniqueName(segProject, segChoice, "Aktor") == "Aktor");
+var segProgram = new CatalogApplicationProgram { Id = "AP-SEG" };
+segProgram.ComObjects.Add(new ComObject { Id = "CO-SEG", Name = "Switch", Number = 1 });
+Check("insert into segment and room",
+    CatalogBrowser.Insert(segVm, switcher, segProgram, segChoice, "3.3.1", "Aktor", out _, "R-SEG", "SG-2")
+    && LiveLine().Segments[0].Devices.Count == 0 && LiveLine().Segments[1].Devices.Count == 1
+    && LiveLine().Segments[1].Devices[0].Name == "Aktor"
+    && LiveRoom().DeviceRefs.SequenceEqual(["3.3.1"]));
+Check("name conflict gets the next free suffix", CatalogBrowser.UniqueName(segProject, segChoice, "Aktor") == "Aktor (2)");
+Check("segment insert is a single undo step", segVm.CanUndo);
+segVm.UndoCommand.Execute(null);
+Check("one undo removes segment placement and room assignment",
+    !ProjectQuery.DeviceList(segVm.Project!).Any()
+    && LiveLine().Segments[0].Devices.Count == 0 && LiveLine().Segments[1].Devices.Count == 0
+    && LiveRoom().DeviceRefs.Count == 0 && !segVm.CanUndo);
+segVm.RedoCommand.Execute(null);
+Check("redo restores the segment device", LiveLine().Segments[1].Devices.Count == 1
+    && LiveRoom().DeviceRefs.Count == 1);
+Check("duplicate name is suffixed on insert",
+    CatalogBrowser.Insert(segVm, switcher, segProgram, segChoice, "3.3.2", "Aktor", out var renameMessage, "R-SEG", "SG-2")
+    && LiveLine().Segments[1].Devices.Count == 2 && LiveLine().Segments[1].Devices[1].Name == "Aktor (2)"
+    && renameMessage.Contains("Aktor (2)", StringComparison.Ordinal));
+segVm.UndoCommand.Execute(null);
+Check("undo after a suffixed insert keeps the first device",
+    LiveLine().Segments[1].Devices.Count == 1 && LiveLine().Segments[1].Devices[0].Name == "Aktor"
+    && LiveRoom().DeviceRefs.Count == 1);
+Check("missing segment is rejected without mutation",
+    !CatalogBrowser.Insert(segVm, switcher, segProgram, segChoice, "3.3.3", null, out var missingSegment, "R-SEG", "SG-MISSING")
+    && missingSegment == CatalogUiText.Get("SegmentMissing")
+    && LiveLine().Segments[1].Devices.Count == 1);
+
 var scratch = Path.Combine(Path.GetTempPath(), "catalog-ui-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(scratch);
 try
@@ -104,15 +156,35 @@ try
     using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
     using (var writer = new StreamWriter(zip.CreateEntry("knxprod.xml").Open()))
         writer.Write("""
-            <KNX><ManufacturerData><Manufacturer RefId="M-UI"><Hardware><Hardware Id="H-1"><Products>
-            <Product Id="P-UI" Text="Fixture" OrderNumber="UI-1" />
-            </Products></Hardware></Hardware></Manufacturer></ManufacturerData></KNX>
+            <KNX><ManufacturerData><Manufacturer RefId="M-UI">
+            <Hardware><Hardware Id="H-1"><Products>
+            <Product Id="P-UI" Text="Fixture" OrderNumber="UI-1" VisibleDescription="Search text" />
+            </Products>
+            <Hardware2Programs><Hardware2Program Id="HP-1"><ApplicationProgramRef RefId="A-UI"/></Hardware2Program></Hardware2Programs>
+            </Hardware></Hardware>
+            <ApplicationPrograms><ApplicationProgram Id="A-UI" Name="Fixture application"><Static><ComObjectTable>
+            <ComObject Id="CO-UI" Name="Switch" Text="Switch" Number="1" ObjectSize="1 Bit" DatapointType="DPST-1-1" />
+            </ComObjectTable></Static></ApplicationProgram></ApplicationPrograms>
+            <Languages><Language Identifier="de-DE"><TranslationUnit RefId="M-UI">
+            <TranslationElement RefId="M-UI"><Translation AttributeName="Name" Text="Musterhersteller" /></TranslationElement>
+            </TranslationUnit></Language></Languages>
+            </Manufacturer></ManufacturerData></KNX>
             """);
     var wrapper = Path.Combine(scratch, "vendor.zip");
     using (var zip = ZipFile.Open(wrapper, ZipArchiveMode.Create)) zip.CreateEntryFromFile(path, "fixture.knxprod");
     var store = new CatalogStore(Path.Combine(scratch, "library"));
     Check("knxprod import into scratch", store.Import(path).Products.Single().Id == "P-UI");
     Check("vendor zip import into scratch", store.Import(wrapper).Products.Single().Id == "P-UI");
+    var searchCatalog = KnxProductCatalog.Open(path);
+    var searchProduct = searchCatalog.Products.Single();
+    foreach (var query in new[] { "M-UI", "Musterhersteller", "Fixture", "UI-1", "Search text",
+                                  "Fixture application", "Switch", "DPST-1-1", "1.001", "DPT-1" })
+        Check("catalogue search " + query,
+            CatalogBrowser.Filter(searchCatalog, query, null).SequenceEqual([searchProduct]));
+    Check("catalogue search keeps section filter",
+        CatalogBrowser.Filter(searchCatalog, "1.001", "Missing").Count == 0);
+    Check("product DPT metadata",
+        CatalogBrowser.DatapointTypes(searchCatalog, searchProduct).SequenceEqual(["DPST-1-1"]));
     File.WriteAllText(Path.Combine(store.Directory, "broken.knxprod"), "invalid");
     Check("nonfatal library load errors", store.LoadAll().Count == 1 && store.LoadErrors.Count == 1);
 }
@@ -152,7 +224,9 @@ try
     Check("single flight returns one snapshot", ReferenceEquals(snapshotA, snapshotB));
     Check("snapshot has catalogue, products and no errors",
         snapshotA.Catalogs.Count == 1 && snapshotA.ProductCount == 1 && snapshotA.Errors.Count == 0);
-    Check("progress reports every library file", reports.SequenceEqual([new CatalogProgress(1, 1)]));
+    Check("progress reports every library file",
+        reports.Select(report => (report.Loaded, report.Total)).SequenceEqual([(1, 1)])
+        && reports[0].File is { Length: > 0 });
     var cached = library.GetAsync();
     Check("loaded snapshot is cached", cached.IsCompletedSuccessfully && ReferenceEquals(cached.Result, snapshotA));
 
@@ -188,6 +262,42 @@ try
     var afterRemove = await library.ReloadAsync();
     Check("reload after remove shows the remaining library",
         afterRemove.Catalogs.Count == 2 && afterRemove.ProductCount == 2 && afterRemove.Errors.Count == 1);
+
+    // Cancelled reload/navigation must never discard the last good snapshot.
+    var beforeCancel = library.Current!;
+    using (var canceledReload = new CancellationTokenSource())
+    {
+        canceledReload.Cancel();
+        var reloadObserved = false;
+        try { await library.ReloadAsync(null, canceledReload.Token); }
+        catch (OperationCanceledException) { reloadObserved = true; }
+        Check("cancelled reload keeps the last snapshot",
+            reloadObserved && ReferenceEquals(library.Current, beforeCancel));
+    }
+    Check("cancelled reload leaves the library readable",
+        ReferenceEquals(await library.GetAsync(), beforeCancel));
+
+    // Import reports per-file progress, keeps good files and names broken ones.
+    var goodImport = WriteCatalog("fourth", "P-4");
+    var badImport = Path.Combine(libraryRoot, "import-broken.knxprod");
+    File.WriteAllText(badImport, "invalid");
+    var importProgress = new List<CatalogImportProgress>();
+    var import = await library.ImportAsync([goodImport, badImport],
+        new SyncProgress<CatalogImportProgress>(importProgress.Add));
+    Check("import reports progress per file",
+        importProgress.Select(item => (item.Loaded, item.Total)).SequenceEqual([(1, 2), (2, 2)])
+        && importProgress[0].File == Path.GetFileName(goodImport)
+        && importProgress[1].File == Path.GetFileName(badImport));
+    Check("import keeps good files and reports errors",
+        import.Catalogs.Count == 1 && import.Errors.Count == 1
+        && Path.GetFileName(import.Errors[0].File) == Path.GetFileName(badImport)
+        && import.Snapshot is { Catalogs.Count: 3 });
+    var canceledImport = await library.ImportAsync([goodImport], null, new CancellationToken(canceled: true));
+    Check("cancelled import changes nothing",
+        canceledImport.Canceled && canceledImport.Catalogs.Count == 0);
+    var afterImport = await library.ReloadAsync();
+    Check("reload after cancelled attempts still sees the imported file",
+        afterImport.Catalogs.Count == 3 && afterImport.ProductCount == 3);
 
     var fresh = new CatalogLibrary(new CatalogStore(Path.Combine(libraryRoot, "fresh")));
     var canceled = false;
