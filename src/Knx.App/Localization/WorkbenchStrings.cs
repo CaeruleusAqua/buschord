@@ -199,6 +199,7 @@ public static class WorkbenchStrings
         ["Changes"] = ("Änderungen", "Changes"),
         ["ChangesEmpty"] = ("Noch keine Änderungen in diesem Projekt.", "No project changes yet."),
         ["ChangesWindowTitle"] = ("BusChord · Änderungen", "BusChord · Changes"),
+        ["ToolsOverview"] = ("Werkzeugübersicht", "Tools overview"),
         ["SidebarProperties"] = ("Eigenschaften", "Properties"),
         ["SidebarGroups"] = ("Gruppen", "Groups"),
         ["SidebarSearch"] = ("Suche", "Search"),

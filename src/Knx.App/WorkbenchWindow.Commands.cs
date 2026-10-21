@@ -55,6 +55,7 @@ public partial class WorkbenchWindow
             } },
             new() { Header = W("MenuTools"), ItemsSource = new object[]
             {
+                Item(W("ToolsOverview"), ShowToolsOverview),
                 Item(W("ProjectCheck"), () => ShowTool("problems")), Item(W("Monitor"), () => ShowTool("monitor")),
                 Item(W("Scan"), () => ShowTool("scan")), Item(W("Changes"), () => ShowTool("changes")),
                 Item(W("Catalog"), ShowCatalog), Async(W("ExportRecording"), ExportRecordingAsync),
@@ -264,6 +265,24 @@ public partial class WorkbenchWindow
             ViewModel.Status = W("DemoImportFailedStatus", ex.Message);
             await ConfirmDialog.ShowMessageAsync(this, W("DemoImportFailed"), ex.Message);
         }
+    }
+
+    private void ShowToolsOverview()
+    {
+        var dialog = new Window { Title = W("ToolsOverview"), Width = 620, Height = 420, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        void Add(string title, Action run) => panel.Children.Add(ActionButton(title, () => { dialog.Close(); run(); }, "quiet"));
+        Add(W("Monitor"), () => ShowTool("monitor"));
+        Add(W("ProgrammingTab"), () => ShowTool("programming"));
+        Add(W("Scan"), () => ShowTool("scan"));
+        Add(W("Changes"), () => ShowTool("changes"));
+        Add(W("Problems"), () => ShowTool("problems"));
+        Add(W("Catalog"), ShowCatalog);
+        Add(W("SecureOverview"), ShowSecureOverview);
+        Add(W("HelpTip"), ShowHelp);
+        panel.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
+        dialog.Content = panel;
+        dialog.ShowDialog(this);
     }
 
     private void ShowSecureOverview()
