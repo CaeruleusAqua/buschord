@@ -6,6 +6,17 @@ Domain-/Session-Tests. Status:
 **done** = im Produktpfad vorhanden und geprüft; **partial** = vorhanden, aber
 Ablauf/Validierung/UX unvollständig; **missing** = nicht erreichbar.
 
+## Delta nach Welle A/B (2026-10-21)
+
+Neu **done**: 18 (alles auswählen), 19 (Auswahl aufheben), 24 (GA-Gegenansicht im Inspektor),
+32 (In Topologie zeigen), 37 (Gerät Name/Adresse/Linie/Raum), 38/39 (GA-Formular), 44 (Werkzeugübersicht),
+51–53 (simulierter Monitorwert lesen/schreiben), 57 (Linien-Scan), 59 (Änderungsverlauf), 76/77 (Demo-Reset).
+Weiter **partial/missing**: 04/17 (KO-Detail/Checkbox), 07 (Dokumentationsansicht), 20/22 (tiefer Inspektor),
+26 (eingefrorene Auswahl), 34 (sichtbarer Verwerfen-Button für native Parameter), 60 (alle zehn Werkzeugarten),
+64 (Selektion im Menü), 69 (vollständiges Konzept statt Hilfe-Dialog).
+Projekt-Tabs, Panel-Selektor mit sechs Panels und Multi-Projekt-Betrieb bleiben als bewusste
+Ein-Platzhalter-/Ein-Projekt-Grenze dokumentiert.
+
 | # | Aktion | Status | Ort / Restlücke |
 |---:|---|---|---|
 | 01 | open-scope | done | `OpenTarget`, drei Navigatorperspektiven |

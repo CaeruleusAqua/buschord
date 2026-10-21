@@ -153,3 +153,5 @@ belegten Ablauf, technische API/Dateiformate, FehlerfÃ¤lle, Vertrauensgrad
 - ETS-REA-Berichte: `analysis/ets/project.md`, `addresses.md`, `catalog-parameters.md`, `commissioning.md`, `shell.md` (alle belegt, 2026-10-21).
 - V4-Statusmatrix: `analysis/workbench-v4-status-matrix.md`; Design-/A11y-Berichte: `analysis/workbench-v4-design-*.md`, `analysis/workbench-v4-a11y-dpi.md`.
 - Umgesetzt: Connector-/Adressmodell, Katalogstatus-Metadaten, Importbericht, Download-Sicherheitsgate, simulierte Scan-/Monitorwert-/Änderungswerkzeuge, GA-Formular, Geräte-Detailbearbeitung, Sidebar-Container, englische Shell, Material-Icons, Katalog-V4-Styling, Projektvergleich/Produktaustausch.
+
+- Zusätzlich integriert: Projektbackup/-wiederherstellung, Geräte-Ladezustand, Katalogstatus/Gating, Sidebar-Container, Projektvergleich/Produktaustausch, Labels/Semantik-Export, Projekt-Suche/-Ersetzen, Demo-Reset, Werkzeugübersicht, GA-Gegenansicht, Material-Icons, englische Shell.
