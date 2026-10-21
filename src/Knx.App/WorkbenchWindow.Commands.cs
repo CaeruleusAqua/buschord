@@ -34,6 +34,7 @@ public partial class WorkbenchWindow
                 Async(W("ExportSemanticJsonLd"), () => ExportSemanticAsync(SemanticExport.SemanticFormat.JsonLd, "semantik.jsonld", "jsonld")),
                 Async(W("CompareProjects"), CompareProjectsAsync),
                 Async(W("ReplaceProduct"), ReplaceProductAsync),
+                Item(W("CreateBackup"), CreateBackup),
                 Async(W("ExportDemoJson"), ExportDemoJsonAsync),
                 Async(W("ImportDemoJson"), ImportDemoJsonAsync),
                 Async(W("ResetDemo"), ResetDemoAsync),
@@ -122,9 +123,14 @@ public partial class WorkbenchWindow
             {
                 var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = project.Name + ".knxproj", DefaultExtension = "knxproj" });
                 if (file?.TryGetLocalPath() is not { } path) return false;
+                if (File.Exists(path)) ProjectBackup.Create(path);
                 ViewModel.SaveProjectAs(path);
             }
-            else ViewModel.SaveProject();
+            else
+            {
+                if (File.Exists(ViewModel.ProjectPath)) ProjectBackup.Create(ViewModel.ProjectPath);
+                ViewModel.SaveProject();
+            }
             if (_parameters.HasUnappliedChanges) ViewModel.Status = W("SavedWithDrafts");
             return true;
         }
@@ -205,6 +211,17 @@ public partial class WorkbenchWindow
         if (file?.TryGetLocalPath() is not { } path) return;
         await File.WriteAllTextAsync(path, json, new UTF8Encoding(false));
         ViewModel.Status = W("DemoExported");
+    }
+
+    private void CreateBackup()
+    {
+        if (ViewModel.Project is not { } project) { ViewModel.Status = W("ScanNeedsProject"); return; }
+        try
+        {
+            var info = ProjectBackup.Capture(project, ViewModel.ProjectPath.Length == 0 ? null : ViewModel.ProjectPath);
+            ViewModel.Status = W("BackupCreated", Path.GetFileName(info.BackupPath));
+        }
+        catch (Exception ex) { ViewModel.Status = W("BackupFailed", ex.Message); }
     }
 
     private async Task ExportLabelsAsync()
