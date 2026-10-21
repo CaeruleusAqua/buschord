@@ -8,7 +8,7 @@ namespace Knx.App.Workbench;
 
 public enum WorkbenchMonitorMode { Group, Bus }
 public enum MonitorScope { All, Project, Room, GroupAddress, ComObject, Device, None }
-public sealed record MonitorFilter(MonitorScope Scope, string? Id = null);
+public sealed record MonitorFilter(MonitorScope Scope, string? Id = null, string? DeviceId = null);
 public sealed record WorkbenchTelegram(DateTimeOffset Timestamp, string Source, string Destination,
     string Service, string? DatapointType, string Value, SessionOrigin Origin,
     string? GroupAddressId = null, string? DeviceId = null, string DataHex = "", bool IsGroup = true);
@@ -234,18 +234,18 @@ public sealed class MonitorSession : SessionState, IDisposable
         OnPropertyChanged(nameof(FollowSelection)); OnPropertyChanged(nameof(Filter)); Refilter();
     }
 
-    public void SetFollowSelection(bool follow, string? selectedComObjectId = null)
+    public void SetFollowSelection(bool follow, string? selectedComObjectId = null, string? selectedDeviceId = null)
     {
         VerifyAccess(); ThrowIfDisposed(); _follow = follow;
         OnPropertyChanged(nameof(FollowSelection));
-        if (follow) SelectionChanged(selectedComObjectId);
+        if (follow) SelectionChanged(selectedComObjectId, selectedDeviceId);
     }
 
-    public void SelectionChanged(string? selectedComObjectId)
+    public void SelectionChanged(string? selectedComObjectId, string? selectedDeviceId = null)
     {
         VerifyAccess(); ThrowIfDisposed();
         if (!_follow) return;
-        _filter = selectedComObjectId is null ? new(MonitorScope.None) : new(MonitorScope.ComObject, selectedComObjectId);
+        _filter = selectedComObjectId is null ? new(MonitorScope.None) : new(MonitorScope.ComObject, selectedComObjectId, selectedDeviceId);
         OnPropertyChanged(nameof(Filter)); Refilter();
     }
 
@@ -289,7 +289,8 @@ public sealed class MonitorSession : SessionState, IDisposable
         else if (_filter.Scope == MonitorScope.Project)
             ids = _project() is { } p ? ProjectQuery.GroupAddresses(p).Select(g => g.Id).ToHashSet() : new HashSet<string>();
         else if (_filter.Scope == MonitorScope.ComObject)
-            ids = _project() is { } p ? ProjectQuery.ComObjectRefs(p).Where(o => o.Ref.Id == _filter.Id)
+            ids = _project() is { } p ? ProjectQuery.ComObjectRefs(p)
+                .Where(o => o.Ref.Id == _filter.Id && (_filter.DeviceId is null || o.Device.Id == _filter.DeviceId))
                 .SelectMany(o => o.Ref.Links).ToHashSet() : new HashSet<string>();
         else if (_filter.Scope == MonitorScope.Device)
             ids = _project() is { } p ? ProjectQuery.ComObjectRefs(p).Where(o => o.Device.Id == _filter.Id)

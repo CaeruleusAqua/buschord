@@ -279,6 +279,11 @@ internal static class WorkbenchCheck
                 await window.Sessions.Programming.RunAsync();
                 Check("demo programming queue records simulated success", job.Status == ProgrammingJobStatus.Done && !window.Sessions.Programming.NeedsProgramming("taster-living"));
                 Check("demo JSON roundtrip remains available", Knx.Workbench.WorkbenchJson.Import(Knx.Workbench.WorkbenchJson.Export(demo)).Id == demo.Id);
+                var newAddress = ProjectQuery.NextFreeGroupAddress(window.ViewModel.Project!, 15, 7);
+                Check("new group address receives a linkable DPT bit size", window.ViewModel.CreateGroupAddress(newAddress, "Selftest", "DPST-9-1")
+                    && ProjectQuery.FindGroupAddress(window.ViewModel.Project!, newAddress) is { } createdGa
+                    && window.ViewModel.Project!.Workbench.Groups[createdGa.Id].Bits == 16);
+                window.ViewModel.UndoCommand.Execute(null);
                 window.ShowTool("monitor");
                 Check("monitor tool is visible before project replacement", window.FindControl<ContentControl>("ToolHost")!.Content is not null);
                 LoadFixture(window);

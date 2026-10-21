@@ -75,8 +75,9 @@ using (var monitor = new MonitorSession(coordinator, () => project))
     Check("hidden capture continues without any display/view calls", monitor.RecordedCount == 600 && monitor.Rows.Count == 0);
     monitor.FlushDisplay(); monitor.FlushDisplay();
     Check("bounded 500-row display, one coalesced reset", monitor.Rows.Count == 500 && resets == 1);
-    monitor.SetFollowSelection(true, ko.Id);
-    Check("KO follows ALL linked GAs", monitor.FilteredRows.Count == 500);
+    monitor.SetFollowSelection(true, ko.Id, device.Id);
+    Check("KO follows ALL linked GAs of the selected device", monitor.FilteredRows.Count == 500
+        && monitor.Filter.DeviceId == device.Id);
     ko.Links.Remove("G2"); monitor.RefreshFilter();
     Check("follow reevaluates changed KO membership", monitor.FilteredRows.Count == 250);
     ko.Links.Add("G2"); monitor.RefreshFilter();

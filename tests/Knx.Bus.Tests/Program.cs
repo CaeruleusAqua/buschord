@@ -211,6 +211,10 @@ if (args is ["--live", var liveHost, ..])
     Check("DPST-5-1 decode", Dpt.Decode("DPST-5-1", [0x80]) == "50%", Dpt.Decode("DPST-5-1", [0x80]));
     Check("DPST-5-1 encode", Dpt.Encode("DPST-5-1", "50") is [0x80], Convert.ToHexString(Dpt.Encode("DPST-5-1", "50")));
     Check("raw hex", Dpt.Decode(null, [0xAB, 0xCD]) == "AB-CD");
+    Check("DPT bit sizes cover project and human ids", Dpt.TryBitSize("DPST-1-1", out var b1) && b1 == 1
+        && Dpt.TryBitSize("9.001", out var b9) && b9 == 16
+        && Dpt.TryBitSize("DPST-5-1", out var b5) && b5 == 8
+        && !Dpt.TryBitSize("not-a-dpt", out _) && !Dpt.TryBitSize(null, out _));
 }
 
 // ---- 6. Discovery-Parser (SEARCH_RESPONSE) ----

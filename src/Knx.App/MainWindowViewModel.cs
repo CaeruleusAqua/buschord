@@ -377,12 +377,15 @@ public sealed partial class MainWindowViewModel : ObservableObject
         {
             var address = ProjectQuery.NextFreeGroupAddress(p, 1, 1);
             var range = EnsureRangeFor(p, installation, address);
+            var id = NextGroupAddressId(p);
             range.Addresses.Add(new GroupAddressEntry
             {
-                Id = NextGroupAddressId(p),
+                Id = id,
                 Name = "Neue Gruppenadresse",
                 Address = address,
+                DatapointType = "DPST-1-1",
             });
+            p.Workbench.Groups[id] = new Knx.Workbench.GroupMetadata { Bits = 1, Secure = false };
         });
     }
 
@@ -401,6 +404,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
             Status = "Gruppenadresse braucht einen Namen.";
             return false;
         }
+        var dpt = string.IsNullOrWhiteSpace(datapointType) ? null : datapointType.Trim();
+        if (dpt is null || !Dpt.TryBitSize(dpt, out var bits))
+        {
+            Status = "Gruppenadresse braucht einen unterstützten Datentyp (z. B. DPST-1-1).";
+            return false;
+        }
         var id = "";
         Edit($"Gruppenadresse {address} angelegt", p =>
         {
@@ -413,7 +422,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             });
             p.Workbench.Groups[id] = new Knx.Workbench.GroupMetadata
             {
-                Bits = null, Secure = false, EffectRoomId = effectRoomId,
+                Bits = bits, Secure = false, EffectRoomId = effectRoomId,
             };
         });
         Status = $"Gruppenadresse {address} angelegt";
@@ -431,6 +440,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         var targetLine = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines)
             .FirstOrDefault(l => l.Id == lineId);
         if (targetLine is null) return "Ziel-Linie fehlt.";
+        var sourceLine = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines)
+            .FirstOrDefault(l => l.Devices.Contains(device) || l.Segments.Any(s => s.Devices.Contains(device)));
+        var sourceSegmentId = sourceLine?.Segments.FirstOrDefault(s => s.Devices.Contains(device))?.Id;
+        var keepSegment = sourceLine is not null && sourceLine.Id == targetLine.Id && sourceSegmentId is not null;
         var targetRoom = roomId is null ? null
             : project.Installations.SelectMany(i => i.Locations.AllNodes).FirstOrDefault(n => n.Id == roomId);
         if (roomId is not null && targetRoom is null) return "Ziel-Raum fehlt.";
@@ -454,7 +467,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
                     installation.Locations.Find(targetRoom.Id)?.AssignDevice(device);
             }
             var destinationLine = p.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).First(l => l.Id == targetLine.Id);
-            destinationLine.Devices.Add(device);
+            if (keepSegment && destinationLine.Segments.FirstOrDefault(s => s.Id == sourceSegmentId) is { } targetSegment)
+                targetSegment.Devices.Add(device);
+            else
+                destinationLine.Devices.Add(device);
             device.Address = address;
             device.Name = name.Trim();
         });
