@@ -99,6 +99,25 @@ ausdrücklich im Inspektor gewählt und ist unabhängig vom T-Flag.
 Das frühere Ribbon-/Dock-Hauptfenster existiert nur noch als
 Kompatibilitätsprüfstand für ältere Tests; es ist nicht die Produktoberfläche.
 
+### 2.5 Werkzeuge, Suche und Sicherungen
+
+Die Werkzeugleiste unten enthält **Monitor**, **Programmierung**, **Scan**,
+**Suche/Ersetzen**, **Änderungen** und **Prüfmeldungen**. Ausblenden beendet
+Monitor- oder Programmier-Sitzungen nicht. Die Werkzeugübersicht im Menü
+`Werkzeuge` öffnet dieselben Orte, Secure-Übersicht und Hilfe.
+
+Der Inspektor hat einen Bereichswähler: Eigenschaften, Gruppen, Suche,
+Arbeitsbereiche und Vorgänge. Arbeitsbereiche speichern nur das Layout unter
+`%APPDATA%\BusChord\workspaces`; Projektdaten bleiben unberührt.
+
+`Projekt → Projekt vergleichen …` öffnet einen nativen Vergleich mit einem zweiten
+`.knxproj`. `Produkt ersetzen …` und die Label-/Semantik-Exporte sind ebenfalls im
+Projektmenü. Vor jedem Speichern wird eine lokale Sicherung der vorhandenen Datei
+angelegt; `Sicherungen …` listet sie und schreibt eine gewählte Sicherung atomar
+in eine neue Datei. Der Download bleibt gesperrt, bis Descriptor-, Mask- und
+Programming-Mode-Prüfungen implementiert sind; die Workbench-Programmierung ist
+eine gekennzeichnete Simulation.
+
 ## 3. Katalog
 
 Der Katalog ist ein Tab des Arbeitsbereichs, kein eigenes Fenster. Er ist über die
