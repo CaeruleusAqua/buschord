@@ -46,6 +46,12 @@ public static class Knxproj
         return ArchiveState.Load(path, password);
     }
 
+    /// <summary>True when the failure is a missing or wrong ETS6 project password.</summary>
+    public static bool IsPasswordError(Exception exception) =>
+        exception is InvalidDataException &&
+        (exception.Message == EncryptedArchive.PasswordRequiredMessage ||
+         exception.Message == EncryptedArchive.WrongPasswordMessage);
+
     /// <summary>
     /// Lädt die Application-Program-XML (KSXML) eines Geräts aus dem Projektarchiv.
     /// Accepted RefId forms: "M-00FA_H-Base_I-0000_A-0001-0E-1234" (Hardware2Program)

@@ -106,8 +106,51 @@ public partial class WorkbenchWindow
     {
         if (!await ConfirmDiscardAsync()) return;
         await ResetSessionsForReplacementAsync();
-        try { ViewModel.LoadProject(path); _parameters.DiscardDrafts(); ViewModel.Status = W("ProjectLoaded", ViewModel.Project?.Name ?? ""); RefreshWorkspace(); }
-        catch (Exception ex) { ViewModel.Status = W("ProjectLoadFailedStatus", ex.Message); await ConfirmDialog.ShowMessageAsync(this, W("ProjectLoadFailed"), ex.Message); RefreshWorkspace(); }
+        try
+        {
+            string? password = null;
+            while (true)
+            {
+                try
+                {
+                    ViewModel.LoadProject(path, password);
+                    break;
+                }
+                catch (InvalidDataException ex) when (Knxproj.IsPasswordError(ex))
+                {
+                    password = await PromptPasswordAsync(ex.Message);
+                    if (password is null) { RefreshWorkspace(); return; }
+                }
+            }
+            _parameters.DiscardDrafts();
+            ViewModel.Status = W("ProjectLoaded", ViewModel.Project?.Name ?? "");
+            RefreshWorkspace();
+        }
+        catch (Exception ex)
+        {
+            ViewModel.Status = W("ProjectLoadFailedStatus", ex.Message);
+            await ConfirmDialog.ShowMessageAsync(this, W("ProjectLoadFailed"), ex.Message);
+            RefreshWorkspace();
+        }
+    }
+
+    private async Task<string?> PromptPasswordAsync(string message)
+    {
+        var dialog = CreateDialog(W("Password"), 460, 230);
+        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        panel.Children.Add(Note(message));
+        panel.Children.Add(Note(W("PasswordPrompt")));
+        var box = new TextBox { PasswordChar = '●' };
+        panel.Children.Add(box);
+        string? result = null;
+        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+        actions.Children.Add(ActionButton(W("Open"), () => { result = box.Text; dialog.Close(); }, "primary"));
+        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
+        panel.Children.Add(actions);
+        dialog.Content = panel;
+        dialog.Opened += (_, _) => box.Focus();
+        await dialog.ShowDialog(this);
+        return result;
     }
 
     private async Task NewProjectAsync()

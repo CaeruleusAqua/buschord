@@ -45,6 +45,8 @@ try
 
     // 3. Password errors are distinguishable and user-readable.
     ExpectMessage(() => Knxproj.Load(fixture), "requires the project password", "missing password");
+    try { Knxproj.Load(fixture); }
+    catch (Exception ex) { Check(Knxproj.IsPasswordError(ex), "password error classification"); }
     ExpectMessage(() => Knxproj.Load(fixture, "not-the-password"), "Wrong project password", "wrong password");
     // 4. Encrypted projects cannot be saved back (no silent plaintext downgrade).
     var saveTarget = Path.Combine(directory, "copy.knxproj");

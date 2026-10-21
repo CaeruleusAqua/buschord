@@ -25,6 +25,9 @@ public static class WorkbenchStrings
         // ---- shell, navigation and perspectives ----
         ["Project"] = ("Projekt", "Project"),
         ["ProjectProperties"] = ("Projekteigenschaften", "Project properties"),
+        ["Password"] = ("Projektpasswort", "Project password"),
+        ["PasswordPrompt"] = ("Dieses ETS-Projekt ist passwortgeschützt. Gib das in ETS vergebene Projektpasswort ein, nicht das ZIP-Passwort.", "This ETS project is password-protected. Enter the ETS project password, not the ZIP password."),
+        ["Open"] = ("Öffnen", "Open"),
         ["Comment"] = ("Kommentar", "Comment"),
         ["ProjectOverview"] = ("Projektübersicht", "Project overview"),
         ["ProjectTools"] = ("Projektwerkzeuge", "Project tools"),

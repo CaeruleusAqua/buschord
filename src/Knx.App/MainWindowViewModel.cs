@@ -240,9 +240,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     // ---------- project lifecycle ----------
 
-    public void LoadProject(string path)
+    public void LoadProject(string path, string? password = null)
     {
-        var project = Knxproj.Load(path);
+        var project = Knxproj.Load(path, password);
         var undo = new UndoStack();
         undo.Reset(project);
         RememberProject(path);
