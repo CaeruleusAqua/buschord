@@ -128,8 +128,10 @@ jobs:
         run: dotnet run --project tests/Knx.ParameterUi.Tests -c Release --no-build -- --native
       - name: Project lifecycle window regressions (Windows only)
         run: dotnet run --project tests/Knx.Shell.Tests -c Release
-      - name: Workbench native self-check (Windows only)
-        run: dotnet run --project src/Knx.App -c Release --no-build -- --workbench-selftest --theme=light
+      - name: Workbench native self-check de/light (Windows only)
+        run: dotnet run --project src/Knx.App -c Release --no-build -- --workbench-selftest --theme=light --lang=de
+      - name: Workbench native self-check en/dark (Windows only)
+        run: dotnet run --project src/Knx.App -c Release --no-build -- --workbench-selftest --theme=dark --lang=en
 
   ci:
     name: ci
