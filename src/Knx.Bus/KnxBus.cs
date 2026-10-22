@@ -95,20 +95,25 @@ public sealed class KnxBus : IAsyncDisposable
         return await _tunnel.ReadGroupValueAsync(address, timeout, ct);
     }
 
-    /// <summary>Flashes an application program to a device over a fresh tunnel.</summary>
-    public async Task<Knx.Bus.DownloadResult> DownloadAsync(KnxDevice device, IndividualAddress deviceAddress,
+    /// <summary>
+    /// Flashes an application program to a device over a fresh tunnel. Disabled by policy: a future
+    /// implementation must read the descriptor, build a plan with <see cref="DownloadPreflight"/> and
+    /// hand a ready plan to <see cref="DownloadSession.RunAsync"/>.
+    /// </summary>
+    public Task<Knx.Bus.DownloadResult> DownloadAsync(KnxDevice device, IndividualAddress deviceAddress,
         IApplicationProgram program, IProgress<Knx.Bus.DownloadProgress> progress, CancellationToken ct = default)
     {
         if (!WritesEnabled)
             throw new NotSupportedException(
-                "Real device download is disabled: descriptor/mask read, programming mode and " +
-                "verified load procedures are not implemented. Use the explicit simulation instead.");
-        using var transport = UdpTransport.Broadcast();
-        await using var tunnel = new KnxTunnel(transport, device.ControlEndpoint, new IndividualAddress(1, 1, 250));
-        await tunnel.ConnectAsync(ct);
-        var session = new DownloadSession(tunnel, deviceAddress, program);
-        session.Progress += p => progress.Report(p);
-        return await session.RunAsync(ct);
+                "Real device download is disabled by the read-only policy: descriptor/mask read, " +
+                "programming mode and verified load procedures are not implemented. A future download " +
+                "must pass the read-only DownloadPreflight gate (DownloadSession.RunAsync requires a " +
+                "ready plan). Use the explicit simulation instead.");
+
+        // Not reachable while WritesEnabled is false: the old fixed-address writer is gone because it
+        // never passed the gate. Rebuild the pipeline on top of DownloadPreflight and a ready plan.
+        throw new NotSupportedException(
+            "Real device download is not implemented: no ready DownloadPreflight plan exists; no frame was sent.");
     }
 
     public async ValueTask DisposeAsync()

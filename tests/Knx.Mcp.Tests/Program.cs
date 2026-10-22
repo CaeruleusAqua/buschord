@@ -47,7 +47,7 @@ Check("ping answers with an object", ping["result"] is JsonObject, ping.ToJsonSt
 
 var listed = await Call(3, "tools/list");
 var tools = listed["result"]?["tools"]?.AsArray() ?? new JsonArray();
-Check("tools/list returns 48 tools", tools.Count == 48, tools.Count.ToString());
+Check("tools/list returns 49 tools", tools.Count == 49, tools.Count.ToString());
 Check("every tool has a snake_case name",
     tools.All(t => (string?)t?["name"] is { Length: > 0 } name &&
                    name.All(c => char.IsLower(c) || char.IsDigit(c) || c == '_')));
@@ -313,7 +313,7 @@ Check("communication_objects_list rejects a missing device",
     (await Tool(51, "communication_objects_list", new { device_address = "0.0.99" }))["result"]?["isError"]?.GetValue<bool>() == true);
 await using (var emptyServer = new McpServer())
 {
-    foreach (var name in new[] { "communication_objects_list", "group_link_add", "group_link_remove" })
+    foreach (var name in new[] { "communication_objects_list", "group_link_add", "group_link_remove", "download_plan" })
     {
         var response = await emptyServer.HandleAsync(JsonSerializer.Serialize(new
         {
@@ -364,6 +364,44 @@ Check("undo restores removed manual link", Knx.ProjectQuery.DeviceList(server.Pr
 await Tool(61, "redo");
 Check("redo removes manual link", Knx.ProjectQuery.DeviceList(server.Project!).Single().ComObjectRefs[0].Links.Count == 0);
 Check("manual tools leave bus disconnected", (await Tool(62, "bus_status"))["result"]?["structuredContent"]?["connected"]?.GetValue<bool>() == false);
+
+// ---------------------------------------------------------------- download preflight (read-only)
+
+var downloadPlanTool = tools.FirstOrDefault(t => (string?)t?["name"] == "download_plan");
+Check("download_plan ist als read-only beschrieben",
+    (string?)downloadPlanTool?["description"] is { } planDescription
+    && planDescription.Contains("read-only", StringComparison.OrdinalIgnoreCase)
+    && planDescription.Contains("dry run", StringComparison.OrdinalIgnoreCase),
+    downloadPlanTool?.ToJsonString() ?? "download_plan fehlt");
+
+var downloadPlan = await Tool(90, "download_plan", new { device_address = "0.0.1" });
+var planContent = downloadPlan["result"]?["structuredContent"];
+var planBlockers = planContent?["plan"]?["blockers"]?.AsArray() ?? new JsonArray();
+Check("download_plan liefert einen Read-only-Status",
+    downloadPlan["result"]?["isError"] is null
+    && planContent?["readOnly"]?.GetValue<bool>() == true
+    && planContent?["writesEnabled"]?.GetValue<bool>() == false
+    && planContent?["realDownloadAvailable"]?.GetValue<bool>() == false,
+    downloadPlan.ToJsonString());
+Check("download_plan verweigert ohne Descriptor, Programm und Bestätigungen",
+    planContent?["plan"]?["ready"]?.GetValue<bool>() == false
+    && planBlockers.Count(b => (string?)b?["code"] == "descriptor_missing") == 1
+    && planBlockers.Count(b => (string?)b?["code"] == "program_missing") == 1
+    && planContent?["confirmations"]?["programmingMode"]?.GetValue<bool>() == false
+    && planContent?["confirmations"]?["address"]?.GetValue<bool>() == false
+    && planContent?["confirmations"]?["dryRun"]?.GetValue<bool>() == false,
+    downloadPlan.ToJsonString());
+Check("download_plan druckt den Dry Run",
+    (string?)planContent?["plan"]?["dryRun"] is { Length: > 0 } downloadDryRun
+    && downloadDryRun.Contains("0.0.1") && downloadDryRun.Contains("no program"),
+    downloadPlan.ToJsonString());
+Check("download_plan nennt Gerät und Zeile aus dem Projekt",
+    (string?)planContent?["device"]?["address"] == "0.0.1" && planContent?["device"]?["line"] is not null,
+    downloadPlan.ToJsonString());
+
+var downloadPlanUnknown = await Tool(91, "download_plan", new { device_address = "0.0.99" });
+Check("download_plan lehnt ein unbekanntes Gerät ab",
+    downloadPlanUnknown["result"]?["isError"]?.GetValue<bool>() == true, downloadPlanUnknown.ToJsonString());
 
 // ---------------------------------------------------------------- report export
 

@@ -123,6 +123,13 @@ management-frame send; they send no write/programming frames and never change a 
 telegrams, acks, errors (by kind), rate per second/minute and telegrams per source. It works
 offline and returns zeros until a connection delivers telegrams.
 
+`download_plan(device_address, gateway?, timeout_ms?, response_timeout_ms?)` is the read-only
+preflight and dry run for a future device download: it reports the gate checks (descriptor/mask,
+programming mode, confirmed address/line, program match, parameter/link completeness,
+confirmations), the computed image chunks and the printable dry run. It sends no programming
+frame; with `gateway` it only reads the descriptor like `bus_device_info`. `writesEnabled` stays
+`false` and a real download remains disabled.
+
 The diagnostic logic itself is in `src/Knx.Bus/Diagnostics.cs` and takes an
 `IBusDiagnosticSession`, so it is usable and tested without hardware
 (`tests/Knx.Diagnostics.Tests`). The wire behaviour of scan and descriptor frames is **unverified

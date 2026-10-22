@@ -366,7 +366,11 @@ try
     }, new IndividualAddress(1, 1, 16), new TestProgram("gated", new byte[] { 1 }, 0x60, 1), new Progress<DownloadProgress>());
     Check("real download is safety-gated", false);
 }
-catch (NotSupportedException) { Check("real download is safety-gated", true); }
+catch (NotSupportedException ex)
+{
+    Check("real download is safety-gated", true);
+    Check("real download names the preflight gate", ex.Message.Contains("DownloadPreflight"), ex.Message);
+}
 try
 {
     await gatedBus.GroupValueWriteAsync(new GroupAddress(0x0001), [0x01], 1);
@@ -395,6 +399,126 @@ var (readTimeoutOk, readTimeoutDetail) = await BusWireChecks.ReadGroupValueAsync
 Check("confirmation echo alone does not satisfy a read", readTimeoutOk, readTimeoutDetail);
 var (routingOk, routingDetail) = await BusWireChecks.RoutingJoinAsync();
 Check("routing joins, decodes and leaves the multicast group", routingOk, routingDetail);
+
+// ---- 7b. Download-Preflight: Dry-Run-Plan und Verweigerung ohne ein einziges Frame ----
+{
+    var target = new IndividualAddress(1, 1, 16);
+    var program = new TestProgram("Test-App", new byte[] { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22 }, 0x0060, 2);
+    var knownMask = DeviceDescriptor.Parse(0x00, [0x07, 0xB0]);
+
+    DownloadPreflightRequest Ready() => new()
+    {
+        DeviceAddress = target,
+        Program = program,
+        Descriptor = knownMask,
+        ProgrammingMode = true,
+        AddressConfirmed = true,
+        DryRunConfirmed = true,
+        ExpectedArea = 1,
+        ExpectedLine = 1,
+    };
+
+    var plan = DownloadPreflight.Plan(Ready());
+    Check("preflight: ready dry-run plan", plan.Ready, string.Join("; ", plan.Blockers.Select(b => b.Message)));
+    Check("preflight: chunks cover the image deterministically",
+        plan.Chunks.Count == 4
+        && plan.Chunks[0] is { Address: 0x0060, Length: 2 }
+        && plan.Chunks[3] is { Address: 0x0066, Length: 2 },
+        string.Join(", ", plan.Chunks.Select(c => $"0x{c.Address:X4}/{c.Length}")));
+    Check("preflight: every chunk fits one memory-write frame",
+        plan.Chunks.All(c => c.Length is >= 1 and <= 12));
+    Check("preflight: image hash is the SHA-256 of the image",
+        plan.ImageHash == Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(program.Image)));
+    Check("preflight: mask check names the management model",
+        plan.MaskVersion == 0x07B0 && plan.Checks.Any(c => c.Code == DownloadCheckCode.MaskKnown));
+    var dryRun = plan.Describe();
+    Check("preflight: dry run names target, mask and addresses",
+        dryRun.Contains("1.1.16") && dryRun.Contains("0x07B0") && dryRun.Contains("0x0060"),
+        dryRun.Split('\n')[0]);
+
+    // The planned chunks encode to exactly the management frames a download would send.
+    var firstChunkFrame = Management.MemoryWrite(target, plan.Chunks[0].Address, program.Image[..2]);
+    Check("preflight: first planned chunk encodes to the memory-write frame",
+        firstChunkFrame is [0x11, 0x00, 0xBC, 0x60, 0x00, 0x00, 0x11, 0x10, 0x05, 0x02, 0x80, 0x00, 0x60, 0xAA, 0xBB],
+        Convert.ToHexString(firstChunkFrame));
+    Check("preflight: planned chunk round-trips through the codec",
+        Cemi.ParseLData(firstChunkFrame) is { Apci: Apci.MemoryWrite, Destination: var chunkDestination, Data: [0x00, 0x60, 0xAA, 0xBB] }
+        && chunkDestination == target);
+    var lastChunk = plan.Chunks[^1];
+    var lastChunkFrame = Management.MemoryWrite(target, lastChunk.Address, program.Image[^lastChunk.Length..]);
+    Check("preflight: last planned chunk address is start + offset",
+        lastChunkFrame is [0x11, 0x00, 0xBC, 0x60, 0x00, 0x00, 0x11, 0x10, 0x05, 0x02, 0x80, 0x00, 0x66, 0x11, 0x22],
+        Convert.ToHexString(lastChunkFrame));
+
+    var unknownMask = DownloadPreflight.Plan(Ready() with { Descriptor = DeviceDescriptor.Parse(0x00, [0x12, 0x34]) });
+    Check("preflight: unsupported mask blocks",
+        !unknownMask.Ready && unknownMask.Blockers.Any(b => b.Code == DownloadCheckCode.MaskUnknown),
+        string.Join("; ", unknownMask.Blockers.Select(b => b.Message)));
+    var noDescriptor = DownloadPreflight.Plan(Ready() with { Descriptor = null });
+    Check("preflight: missing descriptor blocks",
+        !noDescriptor.Ready && noDescriptor.Blockers.Any(b => b.Code == DownloadCheckCode.DescriptorMissing));
+    var wrongLine = DownloadPreflight.Plan(Ready() with { ExpectedLine = 2 });
+    Check("preflight: wrong line blocks",
+        !wrongLine.Ready && wrongLine.Blockers.Any(b => b.Code == DownloadCheckCode.AddressLineMismatch));
+    var unconfirmedAddress = DownloadPreflight.Plan(Ready() with { AddressConfirmed = false });
+    Check("preflight: unconfirmed address blocks",
+        !unconfirmedAddress.Ready && unconfirmedAddress.Blockers.Any(b => b.Code == DownloadCheckCode.AddressNotConfirmed));
+    var noProgrammingMode = DownloadPreflight.Plan(Ready() with { ProgrammingMode = false });
+    Check("preflight: missing programming mode blocks",
+        !noProgrammingMode.Ready && noProgrammingMode.Blockers.Any(b => b.Code == DownloadCheckCode.ProgrammingModeMissing));
+    var incomplete = DownloadPreflight.Plan(Ready() with
+    {
+        MissingParameters = ["Kanal A: Helligkeit"],
+        MissingLinks = ["Objekt 1 -> 1/1/1"],
+    });
+    Check("preflight: incomplete parameters and links block",
+        !incomplete.Ready
+        && incomplete.Blockers.Any(b => b.Code == DownloadCheckCode.ParametersIncomplete)
+        && incomplete.Blockers.Any(b => b.Code == DownloadCheckCode.LinksIncomplete));
+    var noProgram = DownloadPreflight.Plan(Ready() with { Program = null });
+    Check("preflight: missing program image blocks",
+        !noProgram.Ready && noProgram.Blockers.Any(b => b.Code == DownloadCheckCode.ProgramMissing));
+    var oversizedChunk = DownloadPreflight.Plan(Ready() with { Program = new TestProgram("bad", [1, 2], 0x0060, 13) });
+    Check("preflight: chunk size above the memory-write limit blocks",
+        !oversizedChunk.Ready && oversizedChunk.Blockers.Any(b => b.Code == DownloadCheckCode.ChunkSizeInvalid));
+    var rangeOverflow = DownloadPreflight.Plan(Ready() with { Program = new TestProgram("bad", [1, 2], 0xFFFF, 2) });
+    Check("preflight: image beyond the address space blocks",
+        !rangeOverflow.Ready && rangeOverflow.Blockers.Any(b => b.Code == DownloadCheckCode.ImageRangeInvalid));
+    var programMismatch = DownloadPreflight.Plan(Ready() with
+    {
+        ExpectedApplicationId = "M-1_A-1", ApplicationId = "M-1_A-2",
+    });
+    Check("preflight: program mismatch blocks",
+        !programMismatch.Ready && programMismatch.Blockers.Any(b => b.Code == DownloadCheckCode.ProgramMismatch));
+    var dryRunUnconfirmed = DownloadPreflight.Plan(Ready() with { DryRunConfirmed = false });
+    Check("preflight: unconfirmed dry run blocks",
+        !dryRunUnconfirmed.Ready && dryRunUnconfirmed.Blockers.Any(b => b.Code == DownloadCheckCode.DryRunNotConfirmed));
+    var deviceZero = DownloadPreflight.Plan(Ready() with { DeviceAddress = new IndividualAddress(1, 1, 0) });
+    Check("preflight: address x.y.0 blocks",
+        !deviceZero.Ready && deviceZero.Blockers.Any(b => b.Code == DownloadCheckCode.AddressInvalid));
+
+    // Refusals happen before the first frame: the tunnel is never connected, so any send would throw.
+    var log = new DownloadAttemptLog();
+    var refusalTunnel = new KnxTunnel(new LoopbackPair().Client, new IPEndPoint(IPAddress.Loopback, 3671),
+        new IndividualAddress(15, 15, 250));
+    var refusalSession = new DownloadSession(refusalTunnel, target, program, "test-fake", log);
+    var refused = await refusalSession.RunAsync(noDescriptor);
+    Check("preflight: session refuses a non-ready plan before sending",
+        !refused.Success && refused.Message.Contains("refused by preflight"), refused.Message);
+    Check("preflight: refusal writes one attempt-log entry",
+        log.Count == 1 && !log.Entries[0].Success && log.Entries[0].FailureCause is not null
+        && log.Entries[0].Device == "1.1.16" && log.Entries[0].Interface == "test-fake",
+        log.Count.ToString());
+    var otherPlan = DownloadPreflight.Plan(Ready() with { DeviceAddress = new IndividualAddress(1, 1, 17) });
+    var wrongTarget = await refusalSession.RunAsync(otherPlan);
+    Check("preflight: session refuses a plan for another device before sending",
+        !wrongTarget.Success && wrongTarget.Message.Contains("refused") && log.Count == 2, wrongTarget.Message);
+    var otherImage = DownloadPreflight.Plan(Ready() with { Program = new TestProgram("other", [0x01], 0x0060, 1) });
+    var wrongImage = await refusalSession.RunAsync(otherImage);
+    Check("preflight: session refuses a plan for another image before sending",
+        !wrongImage.Success && wrongImage.Message.Contains("different image") && log.Count == 3, wrongImage.Message);
+    await refusalTunnel.DisposeAsync();
+}
 
 // ---- 8. KNX Data Secure: Schlüsselableitung, Keyring, S-A_Data, Secure Wrapper ----
 var dac = Convert.FromHexString("000102030405060708090A0B0C0D0E0F");
@@ -742,15 +866,30 @@ async Task<(bool Ok, string Detail)> RunLoopbackAsync()
         Check("loopback: group write with sequence 0", tg.Apci == Apci.GroupValueWrite && tg.Data is [0x01]
             && requests.Count == 1 && requests[0][2] == 0, Convert.ToHexString(requests.FirstOrDefault() ?? []));
 
-        // 3. Download mit 4 Chunks (2 Bytes/Chunk)
+        // 3. Download mit 4 Chunks (2 Bytes/Chunk), nur mit bereitstehendem Preflight-Plan.
         IApplicationProgram program = new TestProgram("Test-App", new byte[] { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22 }, 0x0060, 2);
-        var session = new DownloadSession(tunnel, new IndividualAddress(1, 1, 16), program);
+        var plan = DownloadPreflight.Plan(new DownloadPreflightRequest
+        {
+            DeviceAddress = new IndividualAddress(1, 1, 16),
+            Program = program,
+            Descriptor = DeviceDescriptor.Parse(0x00, [0x07, 0xB0]),
+            ProgrammingMode = true,
+            AddressConfirmed = true,
+            DryRunConfirmed = true,
+            ExpectedArea = 1,
+            ExpectedLine = 1,
+        });
+        var attemptLog = new DownloadAttemptLog();
+        var session = new DownloadSession(tunnel, new IndividualAddress(1, 1, 16), program, "loopback-fake",
+            attemptLog);
         var stages = new List<DownloadStage>();
         session.Progress += p => Console.WriteLine($"[dl] {p.Stage} {p.Percent}% {p.Message}");
-        var result = await session.RunAsync();
+        var result = await session.RunAsync(plan);
 
         var written = fake.Memory.Count;
-        var downloaded = result.Success && written == program.Image.Length;
+        var attemptLogged = attemptLog.Count == 1 && attemptLog.Entries[0].Success
+            && attemptLog.Entries[0].Interface == "loopback-fake" && attemptLog.Entries[0].ImageHash is not null;
+        var downloaded = result.Success && written == program.Image.Length && attemptLogged;
 
         // 4. DISCONNECT_REQUEST: channel + 0 + HPAI, Antwort wird abgewartet.
         await tunnel.CloseAsync();
@@ -761,8 +900,8 @@ async Task<(bool Ok, string Detail)> RunLoopbackAsync()
             disconnect is null ? "kein DISCONNECT_REQUEST" : Convert.ToHexString(disconnect));
 
         var summary = downloaded
-            ? $"{stages.Count} Fortschritts-Events, {written} Bytes verifiziert"
-            : result.Message + $" (geschrieben={written})";
+            ? $"{stages.Count} Fortschritts-Events, {written} Bytes verifiziert, {attemptLog.Count} Log-Eintrag"
+            : result.Message + $" (geschrieben={written}, attemptLog={attemptLogged})";
         return (downloaded && handshake && closed && fake.Violations.Count == 0, summary);
     }
     finally
@@ -1318,7 +1457,7 @@ internal sealed class FakeKnxDevice
         switch (t.Apci)
         {
             case Apci.DeviceDescriptorRead:
-                return Indication(Response(t, Apci.DeviceDescriptorResponse, [0x00, 0x40, 0x01, 0x01]));
+                return Indication(Response(t, Apci.DeviceDescriptorResponse, [0x00, 0x07, 0xB0]));
             case Apci.MemoryResponse:
             case Apci.MemoryRead:
             {

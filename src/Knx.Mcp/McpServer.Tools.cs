@@ -312,6 +312,19 @@ public sealed partial class McpServer
             "connection delivered telegrams; works offline and returns zeros without a connection.",
             Schema(IntProp("window_ms", "Trailing window in ms (100..3600000, default 60000).")),
             Sync(BusStatisticsTool)),
+        new("download_plan",
+            "Read-only preflight and dry run for a future device download: reports the gate checks " +
+            "(descriptor/mask, programming mode, confirmed address/line, program match, parameter/link " +
+            "completeness, confirmations), the computed image chunks, the printable dry run and the " +
+            "attempt-log status. Sends no programming frame and never downloads; with 'gateway' it reads " +
+            "the descriptor over a short-lived read-only tunnel (like bus_device_info). " +
+            "Real downloads stay disabled (writesEnabled false).",
+            Schema(
+                StrProp("device_address", "Individual address of a project device, e.g. 1.1.5.", true),
+                StrProp("gateway", "Optional gateway to read the descriptor from; omit for a purely offline plan."),
+                IntProp("timeout_ms", "Gateway search duration in ms (100..10000, default 1500)."),
+                IntProp("response_timeout_ms", "Descriptor response timeout in ms (100..5000, default 1000).")),
+            DownloadPlanTool),
         new("catalog_library",
             "List the product catalogues (.knxprod) in the local library with manufacturer, product " +
             "count and any files that failed to parse.",
@@ -1119,6 +1132,100 @@ public sealed partial class McpServer
                 : "No KNXnet/IP connection is active, so no telegrams are counted yet.",
         };
     }
+
+    private async Task<object> DownloadPlanTool(JsonElement args)
+    {
+        var project = Current;
+        var address = ParseIndividualAddress(Required(args, "device_address"));
+        var located = ProjectQuery.LocateDevice(project, address)
+            ?? throw new ToolException($"device {address} not found in the project");
+
+        // A descriptor read is the only live step and it is read-only; without 'gateway' the plan
+        // stays offline and reports the missing descriptor as a blocker.
+        DeviceDescriptor? descriptor = null;
+        if (Str(args, "gateway") is { Length: > 0 } gateway)
+        {
+            var timeoutMs = Math.Clamp(Int(args, "timeout_ms") ?? 1500, 100, 10000);
+            var responseTimeoutMs = Math.Clamp(Int(args, "response_timeout_ms") ?? 1000, 100, 5000);
+            var options = new ScanOptions { ResponseTimeout = TimeSpan.FromMilliseconds(responseTimeoutMs) };
+            BusScan scan;
+            try
+            {
+                scan = await BusDiagnostics.WithSessionAsync(gateway, timeoutMs,
+                    session => Diagnostics.ScanAsync(session, [address], options));
+            }
+            catch (Exception ex) when (ex is not ToolException)
+            {
+                throw new ToolException($"descriptor read failed: {ex.Message}");
+            }
+            descriptor = scan.Devices[0].Descriptor;
+        }
+
+        var programRef = located.Device.Hardware2ProgramRefId is { Length: > 0 } reference ? reference : null;
+        var plan = DownloadPreflight.Plan(new DownloadPreflightRequest
+        {
+            DeviceAddress = address,
+            Descriptor = descriptor,
+            // This build cannot query programming mode read-only, and no agent can confirm on site.
+            ProgrammingMode = false,
+            AddressConfirmed = false,
+            DryRunConfirmed = false,
+            ExpectedArea = located.Area.Address,
+            ExpectedLine = located.Line?.Address,
+            ExpectedApplicationId = programRef,
+        });
+
+        return new
+        {
+            readOnly = true,
+            writesEnabled = KnxBus.WritesEnabled,
+            realDownloadAvailable = false,
+            device = new
+            {
+                address = address.ToString(),
+                name = located.Device.Name,
+                area = located.Area.Address,
+                line = located.Line?.Address,
+                productRefId = located.Device.ProductRefId,
+                programRefId = programRef,
+            },
+            descriptor = descriptor is null ? null : new
+            {
+                type = descriptor.Type,
+                maskVersion = descriptor.MaskVersion is { } mask ? $"0x{mask:X4}" : null,
+                mask = descriptor.MaskName,
+                description = descriptor.Describe(),
+            },
+            confirmations = new { programmingMode = false, address = false, dryRun = false },
+            plan = new
+            {
+                ready = plan.Ready,
+                target = plan.DeviceAddress.ToString(),
+                program = plan.ProgramName,
+                imageHash = plan.ImageHash,
+                imageBytes = plan.ImageLength,
+                startAddress = $"0x{plan.StartAddress:X4}",
+                maskVersion = plan.MaskVersion is { } planMask ? $"0x{planMask:X4}" : null,
+                chunks = plan.Chunks.Select(c => new { address = $"0x{c.Address:X4}", bytes = c.Length }).ToList(),
+                blockers = plan.Blockers.Select(DownloadCheckJson).ToList(),
+                warnings = plan.Warnings.Select(DownloadCheckJson).ToList(),
+                dryRun = plan.Describe(),
+            },
+            attemptLog = new
+            {
+                writtenFor = "every DownloadSession.RunAsync (real or refused)",
+                entries = 0,
+                note = "no download ran: the real write path is disabled by policy",
+            },
+        };
+    }
+
+    private static object DownloadCheckJson(DownloadCheck check) => new
+    {
+        code = JsonNamingPolicy.SnakeCaseLower.ConvertName(check.Code.ToString()),
+        severity = check.Severity.ToString().ToLowerInvariant(),
+        message = check.Message,
+    };
 
     private static object Statistics(BusStatisticsSnapshot snapshot) => new
     {
