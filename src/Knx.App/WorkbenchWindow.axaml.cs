@@ -88,6 +88,7 @@ public partial class WorkbenchWindow : Window
         _layoutPath = layoutPath;
         _catalogLibrary = catalogLibrary ?? CatalogLibrary.Shared;
         InitializeComponent();
+        InitializeWindowChrome();
         DataContext = ViewModel;
         ClosingBehavior = WindowClosingBehavior.OwnerWindowOnly;
         _parameterSession = new(ViewModel);
@@ -346,6 +347,8 @@ public partial class WorkbenchWindow : Window
     {
         if (_shuttingDown) return;
         BuildMenus();
+        BuildWindowMenu();
+        UpdateWindowChrome();
         BuildNavigation();
         BuildRepresentationTabs();
         BuildToolTabs();
@@ -2519,6 +2522,7 @@ public partial class WorkbenchWindow : Window
     private void ApplyLayout(double? widthOverride = null)
     {
         var width = widthOverride ?? Bounds.Width;
+        ApplyTopbarLayout(width);
         var narrow = width is > 0 and < 1100;
         var navigationWidth = narrow ? 210 : Workspace.NavigatorWidth;
         var toolsHeight = Workspace.ToolsVisible
@@ -2743,6 +2747,12 @@ public partial class WorkbenchWindow : Window
     private void OnShellKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Handled) return;
+        if (e.Key == Key.Space && e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+        {
+            ShowWindowMenu();
+            e.Handled = true;
+            return;
+        }
         if (RouteUndoRedo(e)) return;
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {

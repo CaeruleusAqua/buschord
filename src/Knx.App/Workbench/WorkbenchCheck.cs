@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Chrome;
 using Avalonia.Interactivity;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -164,6 +165,78 @@ internal static class WorkbenchCheck
                     .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text.Text));
                 Check("tooltip content is wrapped in a themed TextBlock",
                     themedTip is not null && !string.IsNullOrWhiteSpace(themedTip.Text));
+                // Variant-A shell chrome: settings, roles and the same nearest-role walk Windows uses.
+                var topbar = window.FindControl<Border>("Topbar")!;
+                var chromeMinimize = window.FindControl<Button>("ChromeMinimize")!;
+                var chromeMaximize = window.FindControl<Button>("ChromeMaximize")!;
+                var chromeClose = window.FindControl<Button>("ChromeClose")!;
+                var mainMenu = window.FindControl<Menu>("MainMenu")!;
+                var topbarSearch = window.FindControl<Button>("TopbarSearch")!;
+                var programming = topbar.GetVisualDescendants().OfType<Button>()
+                    .First(button => Equals(button.Content, WorkbenchStrings.Get("Programming")));
+                Point Center(Control control) =>
+                    control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), window)!.Value;
+                WindowDecorationsElementRole RoleAt(Point point)
+                {
+                    if (window.InputHitTest(point) is not Visual hit) return WindowDecorationsElementRole.None;
+                    for (Visual? visual = hit; visual is not null; visual = visual.GetVisualParent())
+                    {
+                        var role = WindowDecorationProperties.GetElementRole(visual);
+                        if (role != WindowDecorationsElementRole.None) return role;
+                    }
+                    return WindowDecorationsElementRole.None;
+                }
+                Check("chrome: variant A keeps the native frame and a 49 px caption strip",
+                    window.WindowDecorations == WindowDecorations.Full && window.ExtendClientAreaToDecorationsHint
+                    && Math.Abs(window.ExtendClientAreaTitleBarHeightHint - 49) < 0.1
+                    && window.WindowDecorationsTheme is not null
+                    && Math.Abs(topbar.Bounds.Height - 49) < 0.5);
+                Check("chrome: roles mark the drag strip and every user control",
+                    WindowDecorationProperties.GetElementRole(topbar) == WindowDecorationsElementRole.TitleBar
+                    && WindowDecorationProperties.GetElementRole(mainMenu) == WindowDecorationsElementRole.User
+                    && WindowDecorationProperties.GetElementRole(topbarSearch) == WindowDecorationsElementRole.User
+                    && WindowDecorationProperties.GetElementRole(programming) == WindowDecorationsElementRole.User
+                    && WindowDecorationProperties.GetElementRole(window.FindControl<Button>("WindowMenuButton")!)
+                        == WindowDecorationsElementRole.User);
+                Check("chrome: caption blocks are 46 x 49 with native roles",
+                    chromeMinimize.Bounds.Width == 46 && chromeMinimize.Bounds.Height == 49
+                    && chromeMaximize.Bounds.Width == 46 && chromeMaximize.Bounds.Height == 49
+                    && chromeClose.Bounds.Width == 46 && chromeClose.Bounds.Height == 49
+                    && WindowDecorationProperties.GetElementRole(chromeMinimize) == WindowDecorationsElementRole.MinimizeButton
+                    && WindowDecorationProperties.GetElementRole(chromeMaximize) == WindowDecorationsElementRole.MaximizeButton
+                    && WindowDecorationProperties.GetElementRole(chromeClose) == WindowDecorationsElementRole.CloseButton);
+                Check("chrome: buttons are named and identified for UIA",
+                    AutomationProperties.GetAutomationId(chromeMinimize) == "ChromeMinimize"
+                    && AutomationProperties.GetAutomationId(chromeMaximize) == "ChromeMaximize"
+                    && AutomationProperties.GetAutomationId(chromeClose) == "ChromeClose"
+                    && AutomationProperties.GetName(chromeMinimize) == WorkbenchStrings.Get("WindowMinimize")
+                    && AutomationProperties.GetName(chromeMaximize) == WorkbenchStrings.Get("WindowMaximize")
+                    && AutomationProperties.GetName(chromeClose) == WorkbenchStrings.Get("WindowClose"));
+                var searchOrigin = topbarSearch.TranslatePoint(new Point(0, topbarSearch.Bounds.Height / 2), window)!.Value;
+                Check("chrome: hit matrix resolves caption, drag and user regions",
+                    RoleAt(Center(chromeMinimize)) == WindowDecorationsElementRole.MinimizeButton
+                    && RoleAt(Center(chromeMaximize)) == WindowDecorationsElementRole.MaximizeButton
+                    && RoleAt(Center(chromeClose)) == WindowDecorationsElementRole.CloseButton
+                    && RoleAt(Center(mainMenu)) == WindowDecorationsElementRole.User
+                    && RoleAt(Center(topbarSearch)) == WindowDecorationsElementRole.User
+                    && RoleAt(Center(programming)) == WindowDecorationsElementRole.User
+                    && RoleAt(new Point(searchOrigin.X - 20, searchOrigin.Y)) == WindowDecorationsElementRole.TitleBar);
+                var windowMenu = topbar.ContextMenu!;
+                Check("chrome: custom window menu replaces the unavailable system menu",
+                    windowMenu.Items.OfType<MenuItem>().Select(item => item.Header).SequenceEqual(new[]
+                    {
+                        WorkbenchStrings.Get("WindowRestore"), WorkbenchStrings.Get("WindowMove"),
+                        WorkbenchStrings.Get("WindowSize"), WorkbenchStrings.Get("WindowMinimize"),
+                        WorkbenchStrings.Get("WindowMaximize"), WorkbenchStrings.Get("WindowClose")
+                    }));
+                window.RaiseEvent(new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent, Key = Key.Space, KeyModifiers = KeyModifiers.Alt
+                });
+                await Task.Delay(80);
+                Check("chrome: Alt+Space opens the custom window menu", windowMenu.IsOpen);
+                windowMenu.Close();
+                await Task.Delay(40);
                 IEnumerable<MenuItem> MenuItems(IEnumerable? items) => items?.OfType<MenuItem>()
                     .SelectMany(item => new[] { item }.Concat(MenuItems(item.ItemsSource))) ?? [];
                 var helpItem = MenuItems(window.FindControl<Menu>("MainMenu")!.ItemsSource)
@@ -754,6 +827,25 @@ internal static class WorkbenchCheck
                 Check("compare explains a project without group addresses instead of opening a window",
                     window.ViewModel.Status == WorkbenchStrings.Get("CompareNoGroupAddress")
                     && desktop.Windows.Count == windowsBeforeEmpty);
+
+                var fullSearch = window.FindControl<TextBlock>("TopbarSearchFull")!;
+                window.ApplyLayoutForWidth(1024);
+                Check("chrome: compact search below 1040 DIP", !fullSearch.IsVisible);
+                window.ApplyLayoutForWidth(1440);
+                Check("chrome: full search returns above 1040 DIP", fullSearch.IsVisible);
+
+                window.WindowState = WindowState.Maximized;
+                await Task.Delay(150);
+                Check("chrome: maximize keeps the 49 px strip and swaps to the restore name",
+                    window.WindowState == WindowState.Maximized
+                    && Math.Abs(topbar.Bounds.Height - 49) < 0.5
+                    && AutomationProperties.GetName(chromeMaximize) == WorkbenchStrings.Get("WindowRestore")
+                    && Math.Abs(chromeMaximize.Bounds.Width - 46) < 0.5);
+                window.WindowState = WindowState.Normal;
+                await Task.Delay(150);
+                Check("chrome: restore swaps the maximize name back",
+                    window.WindowState == WindowState.Normal
+                    && AutomationProperties.GetName(chromeMaximize) == WorkbenchStrings.Get("WindowMaximize"));
 
                 Console.WriteLine(failures.Count == 0 ? "WORKBENCH NATIVE OK" : $"WORKBENCH FAILURES: {failures.Count}");
                 window.RequestShutdown(); desktop.Shutdown(failures.Count == 0 ? 0 : 1);

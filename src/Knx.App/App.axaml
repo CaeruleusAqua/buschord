@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Knx.App.Views"
              xmlns:sys="using:System"
+             xmlns:chrome="using:Avalonia.Controls.Chrome"
              xmlns:fluent="using:Avalonia.Themes.Fluent"
              x:Class="Knx.App.App">
 
@@ -25,6 +26,23 @@
       <sys:Double x:Key="IconSizeRibbon">20</sys:Double>
       <sys:Double x:Key="IconSizeCard">32</sys:Double>
       <Thickness x:Key="FocusRing">2</Thickness>
+
+      <!-- The single decorations theme shared by the shell: an explicitly empty overlay.
+           A theme without a Template leaves Fluent's 30 px caption and 45 x 30 buttons drawn
+           over the app strip (S0 finding F1); the empty overlay is the form that suppresses
+           both while keeping the 49 px native caption strip, DWM frame and animations. -->
+      <ControlTheme x:Key="WbWindowDecorationsTheme" TargetType="chrome:WindowDrawnDecorations">
+        <Setter Property="DefaultTitleBarHeight" Value="49" />
+        <Setter Property="Template">
+          <WindowDrawnDecorationsTemplate>
+            <WindowDrawnDecorationsContent>
+              <WindowDrawnDecorationsContent.Overlay>
+                <Panel Height="{TemplateBinding TitleBarHeight}" IsHitTestVisible="False" />
+              </WindowDrawnDecorationsContent.Overlay>
+            </WindowDrawnDecorationsContent>
+          </WindowDrawnDecorationsTemplate>
+        </Setter>
+      </ControlTheme>
 
       <ResourceDictionary.ThemeDictionaries>
 

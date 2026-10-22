@@ -6,8 +6,10 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Chrome;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.LogicalTree;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -156,6 +158,30 @@ internal static class Program
         Pane = PaneOf(Shell);
         try
         {
+            // Variant-A shell chrome: the native frame stays, only its drawn caption is replaced.
+            var topbar = Shell.FindControl<Border>("Topbar")!;
+            var chromeMinimize = Shell.FindControl<Button>("ChromeMinimize")!;
+            var chromeMaximize = Shell.FindControl<Button>("ChromeMaximize")!;
+            var chromeClose = Shell.FindControl<Button>("ChromeClose")!;
+            Check("chrome: variant A settings", Shell.WindowDecorations == WindowDecorations.Full
+                && Shell.ExtendClientAreaToDecorationsHint
+                && Math.Abs(Shell.ExtendClientAreaTitleBarHeightHint - 49) < 0.1
+                && Shell.WindowDecorationsTheme is not null);
+            Check("chrome: 49 px strip is the caption region",
+                Math.Abs(topbar.Bounds.Height - 49) < 0.5
+                && WindowDecorationProperties.GetElementRole(topbar) == WindowDecorationsElementRole.TitleBar
+                && WindowDecorationProperties.GetElementRole(Shell.FindControl<Menu>("MainMenu")!) == WindowDecorationsElementRole.User);
+            Check("chrome: caption blocks keep native roles and sizes",
+                chromeMinimize.Bounds is { Width: 46, Height: 49 }
+                && chromeMaximize.Bounds is { Width: 46, Height: 49 }
+                && chromeClose.Bounds is { Width: 46, Height: 49 }
+                && WindowDecorationProperties.GetElementRole(chromeMinimize) == WindowDecorationsElementRole.MinimizeButton
+                && WindowDecorationProperties.GetElementRole(chromeMaximize) == WindowDecorationsElementRole.MaximizeButton
+                && WindowDecorationProperties.GetElementRole(chromeClose) == WindowDecorationsElementRole.CloseButton);
+            Check("chrome: caption names and custom window menu", AutomationProperties.GetName(chromeMaximize) == WorkbenchStrings.Get("WindowMaximize")
+                && AutomationProperties.GetName(chromeClose) == WorkbenchStrings.Get("WindowClose")
+                && topbar.ContextMenu is { } windowMenu && windowMenu.Items.OfType<MenuItem>().Count() == 6);
+
             // Live language switch: an already open window follows Strings.Language without reopening,
             // for bound XAML text and for shell-generated menus, rail, tool tabs and status labels.
             Strings.Language = "de";
