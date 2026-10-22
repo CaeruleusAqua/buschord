@@ -475,6 +475,33 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
   `refs/pull/1/head` (nicht löschbar, `deny updating a hidden ref`) können
   alte Objekte bis GC/Support halten – GitHub-Support-Purge einplanen.
 
+### H11. Reifegrad für komplette KNX-Projekte (Assessments 2026-10-22)
+
+- [x] **H11.1 Gesamtprojekt:** `analysis/readiness-full-project.md`
+  (`012cc8f`). Verdict: **nicht bereit** für End-to-End, **pilotfähig**
+  für den Offline-Teil (Projekt→Topologie→GA→Links→statische Parameter→
+  Exporte). Blocker: Hardware-/Busstromplanung, physische Adressierung,
+  Download-Pipeline, Abnahmeprotokoll, DCA-Geräte.
+- [x] **H11.2 ETS-Inbetriebnahme:** `analysis/ets-commissioning-parity.md`
+  (`c300937`). Verdict: **NO-GO** für echte Inbetriebnahme; bedingtes GO als
+  read-only-Begleiter nach den drei offenen Live-Prüfungen.
+- [x] **H11.3 Übergabe/Bauherren:** `analysis/handover-readiness.md`
+  (`83b5953`). Verdict: **nicht übergabereif**; heute nur manuell
+  zusammengestellte Teilpakete.
+- [ ] **H11.4 Hardware-/Busplanung:** Busstrom, Segment-/Kopplerfelder
+  parsen und Projektprüfungen ergänzen (Agent `agents/impl/hardware-planning`).
+- [ ] **H11.5 Abnahmeprotokoll:** HTML/CSV-Protokoll mit Geräte-/GA-/Link-
+  Matrix, Testzeilen, Unterschrift und Simulationskennzeichnung (Agent
+  `agents/impl/acceptance-protocol`).
+- [ ] **H11.6 Download-Gate:** Descriptor-/Masken-/Programming-Mode-
+  Vorprüfung, Dry-Run und Versuchsprotokoll; Schreibpfad bleibt gesperrt
+  (Agent `agents/impl/download-gate`).
+- [ ] **H11.7 Übergabepaket:** Raum-/Funktionsbuch, Signatur-/Parameterbericht,
+  Revision/Change-Log, Paket+Manifest/Hash, Bedienungsanleitung und
+  Kontakt-/Datenschutzseiten.
+- [ ] **H11.8 Portfolio/Multi-Projekt** und Versions-/Archivstrategie mit
+  ehrlichem Signaturstatus.
+
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
 - DCA/Plugin-Hosting: read-only Erkennung und Sperre, kein In-Process-Host (32-bit-ETS, COM/.NET-Framework, keine Sandbox).
