@@ -78,6 +78,17 @@ foreach (var (module, file, map) in maps)
 }
 Check("i18n: both languages are registered", Strings.Available.Contains("de") && Strings.Available.Contains("en"),
     string.Join(",", Strings.Available));
+var originalLanguage = Strings.Language;
+Strings.Language = "en-US";
+Check("i18n: en-US resolves to the English base catalog", Strings.Language == "en",
+    Strings.Get("MenuFile"));
+Strings.Language = "de-AT";
+Check("i18n: de-AT resolves to the German base catalog", Strings.Language == "de",
+    Strings.Get("MenuFile"));
+Strings.Language = "fr-FR";
+Check("i18n: unsupported language falls back to German", Strings.Language == "de",
+    Strings.Get("MenuFile"));
+Strings.Language = originalLanguage;
 
 // --- G2: every referenced key exists in the map its call site resolves against ---
 var locTr = new Regex(@"\{loc:Tr\s+([A-Za-z][A-Za-z0-9]*)\s*\}", RegexOptions.CultureInvariant);

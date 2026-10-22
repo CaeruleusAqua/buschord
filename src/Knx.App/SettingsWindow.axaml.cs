@@ -18,7 +18,7 @@ public partial class SettingsWindow : Window
         _settings = settings;
         InitializeComponent();
         ThemeBox.SelectedIndex = settings.Theme switch { "Light" => 1, "Dark" => 2, _ => 0 };
-        LanguageBox.SelectedIndex = settings.Language == "en" ? 1 : 0;
+        LanguageBox.SelectedIndex = Strings.Normalize(settings.Language) == "en" ? 1 : 0;
         ConfirmDeleteBox.IsChecked = settings.ConfirmDelete;
         BusInterfaceBox.Text = settings.BusInterface;
         TunnelAddressBox.Text = settings.TunnelAddress;

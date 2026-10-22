@@ -436,9 +436,10 @@ automatische Hardcoded-Text-Prüfung.
   verbotene deutsche Literale in `en`, Pseudo-Lokalisierung, Report-/CSV-
   Sprachtests und Screenshots. (`f53aa74`, `tests/Knx.Localization.Tests`;
   Ausnahmen-Liste und README dokumentiert)
-- [ ] **H9.5 Pilot:** dritte Sprache (z. B. Französisch oder Niederländisch)
-  end-to-end mit echten Ressourcen, Tests und Abnahme; keine Maschinen-
-  übersetzung ohne Review.
+- [ ] **H9.5 Pilot:** dritte Sprache end-to-end mit echten Ressourcen, Tests
+  und Abnahme; keine Maschinenübersetzung ohne Review. Priorisierung und
+  Statusmodell: `analysis/language-roadmap.md` (P0 de/en, P1 it/fr/es/nl,
+  P2 zh-CN/pl; Pilot **fr**). Offen: Übersetzer/Review und Katalogmigration.
 - [x] **H9.6 Grenzen:** Projekt-/Gerätenamen, Herstellertexte und technische
   CSV-Werte bleiben Daten, nicht UI-Sprache; DPT-/KNX-Codes werden nicht
   übersetzt. (in `analysis/i18n-text-inventory.md` und den Übersetzungs-
@@ -541,8 +542,9 @@ werden:
   belegt; ein Linien-/Bus-Scan lief read-only, lieferte aber 0 Responder und
   damit keinen positiven Gerätenachweis (dafür wäre ein Gerät im
   Programmiermodus nötig). Reale Schreibzugriffe bleiben gesperrt.
-- **H12.3 Dritte Sprache:** Sprachwahl und menschliche Übersetzung/Review
-  fehlen; Architektur, Workflow und CI-Gates sind fertig.
+- **H12.3 Dritte Sprache:** Sprachwahl und Priorisierung liegen vor
+  (`analysis/language-roadmap.md`: P0 de/en, P1 it/fr/es/nl, P2 zh-CN/pl);
+  menschliche Übersetzung/Review und die Katalogmigration fehlen.
 - **H12.4 GitHub-Purge:** `refs/pull/1/head` und gecachte Blobs lassen sich
   nicht per Git/API löschen; GitHub-Support-Ticket nötig. Token und
   Test-Zugangsdaten rotieren.

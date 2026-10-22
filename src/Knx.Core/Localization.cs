@@ -20,10 +20,23 @@ public sealed class Strings : INotifyPropertyChanged
         get => _language;
         set
         {
-            if (value == _language) return;
-            _language = Available.Contains(value) ? value : "de";
+            var normalized = Normalize(value);
+            if (normalized == _language) return;
+            _language = normalized;
             Instance.Refresh();
         }
+    }
+
+    /// <summary>
+    /// Maps a BCP-47 tag to the base code this build ships: <c>de-DE</c>/<c>de-AT</c>
+    /// become <c>de</c>, <c>en-US</c>/<c>en-GB</c> become <c>en</c>. Unknown or
+    /// empty input falls back to German, matching the previous behaviour.
+    /// </summary>
+    public static string Normalize(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return "de";
+        var baseCode = code.Trim().Replace('_', '-').Split('-', 2)[0].ToLowerInvariant();
+        return Available.Contains(baseCode) ? baseCode : "de";
     }
 
     public static IReadOnlyList<string> Available { get; } = ["de", "en"];
