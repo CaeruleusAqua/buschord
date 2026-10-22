@@ -458,14 +458,14 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
 - [ ] **H10.6 Release-Entscheidung:** verbleibende P3
   (Klartext-Backups, `CatalogUse.Download`, Import-Atomarität,
   `.signature`) dokumentieren oder beheben.
-- [ ] **H10.7 Git-History:** Rewrite ausgeführt (filter-repo, Mirror-Backup
+- [x] **H10.7 Git-History:** Rewrite ausgeführt und veröffentlicht
+  (filter-repo, Mirror-Backup
   `C:\projects\ai_work\buschord-history-backup-20261022-061415.git`):
-  beide Fixture-Pfade sind aus allen 219 Commits entfernt, Clean-Branches
-  `development-rewritten` (`caabd4b`) und `main-rewritten` (`49feddd`) sind
-  gepusht, `cla-signatures` ist force-gepusht. Offen: `development`/`main`
-  sind geschützt und lehnen Force-Push ab; dafür kurzfristig „Allow force
-  pushes“ freigeben oder gültigen Admin-Token bereitstellen. Danach
-  Zugangsdaten rotieren und GitHub-Support/GC für alte Objekte prüfen.
+  beide Fixture-Pfade sind aus allen 219 Commits entfernt; `development`
+  (`6771031`) und `main` (`49feddd`) sind force-gepusht, die Schutzregeln
+  wurden danach exakt wiederhergestellt, Clean-Branches gelöscht. Offen:
+  exponierte Test-Zugangsdaten und der im Chat genannte GitHub-Token
+  rotieren; GitHub-Caches/Forks können alte Objekte bis GC/Support halten.
 
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
