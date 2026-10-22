@@ -811,6 +811,7 @@ public partial class WorkbenchWindow : Window
                 start.Children.Add(ActionButton(W("OpenProjectEllipsis"), () => _ = GuardAsync(OpenProjectAsync), "primary"));
                 start.Children.Add(ActionButton(W("NewProjectEllipsis"), () => _ = GuardAsync(NewProjectAsync)));
                 start.Children.Add(ActionButton(W("DeviceFromCatalogEllipsis"), ShowCatalog));
+                start.Children.Add(ActionButton(W("PortfolioStart"), () => _ = GuardAsync(ShowPortfolioAsync), "quiet"));
                 foreach (var recent in ViewModel.RecentProjects)
                     start.Children.Add(ActionButton(recent.Name, () => _ = OpenPathAsync(recent.Path), "quiet"));
                 ToolPageHost.Content = start;

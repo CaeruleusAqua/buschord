@@ -1,12 +1,15 @@
 using System.Text;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Knx.App.Services;
 using Knx.App.Views;
 using Knx.App.Workbench;
+using Knx.Portfolio;
 using Knx.ProjectCompare;
 using Knx.Reports;
 using Knx.Workbench;
@@ -26,6 +29,7 @@ public partial class WorkbenchWindow
             {
                 Async(W("MenuNew"), NewProjectAsync), Async(W("MenuOpen"), OpenProjectAsync), Async(W("MenuSave"), async () => await SaveAsync()),
                 Async(W("MenuSaveAs"), async () => await SaveAsync(true)), new Separator(),
+                Async(W("Portfolio"), ShowPortfolioAsync),
                 Item(W("Catalog"), ShowCatalog), Item(W("NewGroupAddress"), ShowNewGroupAddressDialog),
                 Async(W("ExportGroupAddresses"), () => ExportAsync("gruppenadressen.csv", ProjectCsvExporter.GroupAddresses)),
                 Async(W("ExportDevices"), () => ExportAsync("geraete.csv", ProjectCsvExporter.Devices)),
@@ -140,9 +144,9 @@ public partial class WorkbenchWindow
         if (files.FirstOrDefault()?.TryGetLocalPath() is { } path) await OpenPathAsync(path);
     }
 
-    private async Task OpenPathAsync(string path)
+    private async Task<bool> OpenPathAsync(string path)
     {
-        if (!await ConfirmDiscardAsync()) return;
+        if (!await ConfirmDiscardAsync()) return false;
         try
         {
             Project loaded;
@@ -157,7 +161,7 @@ public partial class WorkbenchWindow
                 catch (InvalidDataException ex) when (Knxproj.IsPasswordError(ex))
                 {
                     password = await PromptPasswordAsync(ex.Message);
-                    if (password is null) return;
+                    if (password is null) return false;
                 }
             }
             await ResetSessionsForReplacementAsync();
@@ -165,12 +169,14 @@ public partial class WorkbenchWindow
             ViewModel.AdoptProject(loaded, path);
             ViewModel.Status = W("ProjectLoaded", ViewModel.Project?.Name ?? "");
             RefreshWorkspace();
+            return true;
         }
         catch (Exception ex)
         {
             ViewModel.Status = W("ProjectLoadFailedStatus", ex.Message);
             await ConfirmDialog.ShowMessageAsync(this, W("ProjectLoadFailed"), ex.Message);
             RefreshWorkspace();
+            return false;
         }
     }
 
@@ -323,6 +329,290 @@ public partial class WorkbenchWindow
         dialog.Content = DialogLayout(new ScrollViewer { Content = panel },
             DialogActions(ActionButton(W("Cancel"), dialog.Close, "quiet")));
         await dialog.ShowDialog(this);
+    }
+
+    private PortfolioRegistry? _portfolio;
+
+    /// <summary>
+    /// Portfolio next to the effective settings file, seeded once from the recent list. It is a
+    /// separate document: <see cref="AppSettings"/> never learns about it and stays single-project.
+    /// </summary>
+    internal PortfolioRegistry Portfolio
+    {
+        get
+        {
+            if (_portfolio is not null) return _portfolio;
+            var registry = new PortfolioRegistry(WorkbenchPortfolio.StoragePath(AppSettings.Path));
+            _portfolio = registry;
+            try
+            {
+                registry.Seed(ViewModel.Settings);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+            {
+                ViewModel.Status = W("PortfolioSeedFailed", ex.Message);
+            }
+            return registry;
+        }
+    }
+
+    /// <summary>Project → portfolio: one list, one open project at a time, no parallel project tabs.</summary>
+    internal async Task ShowPortfolioAsync() => await CreatePortfolioWindow().ShowDialog(this);
+
+    /// <summary>Builds the portfolio surface without showing it, so screenshots can capture it.</summary>
+    internal Window CreatePortfolioWindow()
+    {
+        var registry = Portfolio;
+        var dialog = CreateDialog(W("PortfolioTitle"), 900, 640);
+        dialog.MinWidth = 720;
+        dialog.MinHeight = 420;
+
+        var body = new Grid { RowDefinitions = new("Auto,*") };
+        var header = new StackPanel { Margin = new(22, 18, 22, 10), Spacing = 4 };
+        header.Children.Add(Note(W("PortfolioIntro")));
+        var count = new TextBlock { FontSize = 10, Classes = { "wb-muted" } };
+        header.Children.Add(count);
+        var message = Note("");
+        AutomationProperties.SetLiveSetting(message, AutomationLiveSetting.Polite);
+        header.Children.Add(message);
+        body.Children.Add(header);
+
+        var rows = new StackPanel();
+        var scroll = new ScrollViewer
+        {
+            Content = rows, Margin = new(22, 0, 22, 8),
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+        };
+        Grid.SetRow(scroll, 1);
+        body.Children.Add(scroll);
+
+        void Report(string text) => message.Text = text;
+        void Render()
+        {
+            rows.Children.Clear();
+            var entries = registry.Entries;
+            count.Text = W("PortfolioCount", entries.Count);
+            if (entries.Count == 0)
+            {
+                rows.Children.Add(EmptyState("folder", W("PortfolioEmpty"), W("PortfolioEmptyHint")));
+                return;
+            }
+            foreach (var entry in entries)
+                rows.Children.Add(BuildPortfolioRow(dialog, registry, entry, Render, Report));
+        }
+
+        void AddCurrent()
+        {
+            var name = ViewModel.Project?.Name ?? "";
+            var result = WorkbenchPortfolio.AddCurrent(registry, ViewModel.ProjectPath, name);
+            Report(result.Status switch
+            {
+                PortfolioActionStatus.Done => W("PortfolioAdded", name),
+                PortfolioActionStatus.AlreadyRegistered => W("PortfolioAlready"),
+                PortfolioActionStatus.ProjectNotSaved => W("PortfolioNoProject"),
+                PortfolioActionStatus.FileMissing => W("PortfolioFileMissingNow"),
+                _ => PortfolioActionError(result, registry),
+            });
+            Render();
+        }
+
+        void CheckAll()
+        {
+            var checkedCount = 0;
+            foreach (var entry in registry.Entries)
+            {
+                if (!File.Exists(entry.Path)) continue;
+                checkedCount++;
+                WorkbenchPortfolio.Refresh(registry, entry.Id);
+            }
+            Report(W("PortfolioChecked", checkedCount));
+            Render();
+        }
+
+        Render();
+        dialog.Content = DialogLayout(body, DialogActions(
+            ActionButton(W("PortfolioCheckAll"), CheckAll, "quiet"),
+            ActionButton(W("Close"), dialog.Close, "quiet"),
+            ActionButton(W("PortfolioAddCurrent"), AddCurrent, "primary")));
+        dialog.Opened += (_, _) => Render();
+        return dialog;
+    }
+
+    /// <summary>One portfolio row: status, path, revision/hash, last open and safe actions.</summary>
+    private Control BuildPortfolioRow(Window owner, PortfolioRegistry registry, PortfolioEntry entry,
+        Action render, Action<string> report)
+    {
+        var state = registry.State(entry);
+        var left = new StackPanel { Spacing = 2 };
+        var title = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+        title.Children.Add(new TextBlock
+        {
+            Text = entry.Name, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        var stateLabel = new TextBlock
+        {
+            Text = W(WorkbenchPortfolio.StateKey(state)), FontSize = 10, FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        stateLabel.Classes.Add(state switch
+        {
+            PortfolioState.Missing => "wb-error",
+            PortfolioState.Changed => "wb-warning",
+            _ => "wb-success",
+        });
+        title.Children.Add(stateLabel);
+        left.Children.Add(title);
+        left.Children.Add(new TextBlock
+        {
+            Text = entry.Path, FontSize = 11, Classes = { "wb-muted" },
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        var stamp = WorkbenchPortfolio.TimestampLabel(entry.LastOpenedUtc);
+        left.Children.Add(new TextBlock
+        {
+            Text = W("PortfolioRevision", entry.Revision, WorkbenchPortfolio.ShortHash(entry))
+                + " · " + W("PortfolioLastOpened", stamp.Length == 0 ? W("PortfolioNeverOpened") : stamp),
+            FontSize = 10, Classes = { "wb-subtle" },
+        });
+        if (state == PortfolioState.Missing)
+            left.Children.Add(new TextBlock { Text = W("PortfolioMissingHint"), FontSize = 10, TextWrapping = TextWrapping.Wrap, Classes = { "wb-error" } });
+        else if (state == PortfolioState.Changed)
+            left.Children.Add(new TextBlock { Text = W("PortfolioChangedHint"), FontSize = 10, TextWrapping = TextWrapping.Wrap, Classes = { "wb-warning" } });
+
+        var actions = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        if (state == PortfolioState.Missing)
+        {
+            actions.Children.Add(ActionButton(W("PortfolioLocate"), () => _ = GuardAsync(async () =>
+            {
+                var files = await owner.StorageProvider.OpenFilePickerAsync(new()
+                {
+                    Title = W("PortfolioLocateTitle"), AllowMultiple = false,
+                    FileTypeFilter = [new(W("KnxProjectFile")) { Patterns = ["*.knxproj"] }],
+                });
+                if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
+                var result = WorkbenchPortfolio.Locate(registry, entry.Id, path);
+                report(result.Status switch
+                {
+                    PortfolioActionStatus.Done or PortfolioActionStatus.Unchanged => W("PortfolioLocated", path),
+                    PortfolioActionStatus.DuplicatePath => W("PortfolioDuplicate", registry.Find(result.EntryId ?? "")?.Name ?? ""),
+                    _ => PortfolioActionError(result, registry),
+                });
+                render();
+            }), "quiet"));
+        }
+        else
+        {
+            actions.Children.Add(ActionButton(W("Open"), () =>
+            {
+                // A modal portfolio must not own the project-replacement prompts; open after it closed.
+                owner.Close();
+                Dispatcher.UIThread.Post(() => _ = GuardAsync(async () =>
+                {
+                    if (await OpenPortfolioEntryAsync(entry.Id)) ViewModel.Status = W("PortfolioOpened", entry.Name);
+                }));
+            }, "primary"));
+            actions.Children.Add(ActionButton(W("PortfolioRefresh"), () =>
+            {
+                var result = WorkbenchPortfolio.Refresh(registry, entry.Id);
+                report(result.Status switch
+                {
+                    PortfolioActionStatus.Updated => W("PortfolioRefreshed", registry.Find(entry.Id)?.Revision ?? entry.Revision),
+                    PortfolioActionStatus.Unchanged => W("PortfolioUnchanged"),
+                    _ => PortfolioActionError(result, registry),
+                });
+                render();
+            }, "quiet"));
+        }
+        actions.Children.Add(ActionButton(W("Rename"), () => _ = GuardAsync(async () =>
+        {
+            var name = await PromptPortfolioNameAsync(owner, entry.Name);
+            if (name is null) return;
+            var result = WorkbenchPortfolio.Rename(registry, entry.Id, name);
+            report(result.Ok ? W("PortfolioRenamed") : PortfolioActionError(result, registry));
+            render();
+        }), "quiet"));
+        actions.Children.Add(ActionButton(W("PortfolioRemoveEntry"), () => _ = GuardAsync(async () =>
+        {
+            if (!await ConfirmPortfolioRemoveAsync(owner, entry.Name)) return;
+            var result = WorkbenchPortfolio.Remove(registry, entry.Id);
+            report(result.Ok ? W("PortfolioRemoved", entry.Name) : PortfolioActionError(result, registry));
+            render();
+        }), "quiet"));
+
+        var grid = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 10 };
+        grid.Children.Add(left);
+        Grid.SetColumn(actions, 1);
+        grid.Children.Add(actions);
+        var row = new Border { Child = grid, Padding = new(0, 10), BorderThickness = new(0, 0, 0, 1) };
+        row.Bind(Border.BorderBrushProperty, row.GetResourceObservable("WbLine"));
+        ToolTip.SetTip(row, state switch
+        {
+            PortfolioState.Missing => W("PortfolioMissingHint"),
+            PortfolioState.Changed => W("PortfolioChangedHint"),
+            _ => entry.Path,
+        });
+        return row;
+    }
+
+    private string PortfolioActionError(PortfolioResult result, PortfolioRegistry registry) => result.Status switch
+    {
+        PortfolioActionStatus.EntryMissing => W("PortfolioEntryMissing"),
+        PortfolioActionStatus.FileMissing => W("PortfolioFileMissingNow"),
+        PortfolioActionStatus.ProjectNotSaved => W("PortfolioNoProject"),
+        PortfolioActionStatus.InvalidName => W("PortfolioNameRequired"),
+        PortfolioActionStatus.DuplicatePath => W("PortfolioDuplicate", registry.Find(result.EntryId ?? "")?.Name ?? ""),
+        PortfolioActionStatus.AlreadyRegistered => W("PortfolioAlready"),
+        _ => W("PortfolioFailed"),
+    };
+
+    /// <summary>Opens a portfolio entry through the normal project replacement path.</summary>
+    internal async Task<bool> OpenPortfolioEntryAsync(string id)
+    {
+        var target = WorkbenchPortfolio.OpenTarget(Portfolio, id);
+        if (target.Status != PortfolioActionStatus.Done || target.Path is not { } path)
+        {
+            ViewModel.Status = target.Status == PortfolioActionStatus.FileMissing
+                ? W("PortfolioFileMissingNow") : W("PortfolioEntryMissing");
+            return false;
+        }
+        if (!await OpenPathAsync(path)) return false;
+        WorkbenchPortfolio.MarkOpened(Portfolio, id);
+        return true;
+    }
+
+    private async Task<string?> PromptPortfolioNameAsync(Window owner, string current)
+    {
+        var dialog = CreateDialog(W("PortfolioRenameTitle"), 460, 240);
+        var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
+        panel.Children.Add(Note(W("PortfolioRenamePrompt")));
+        var box = new TextBox { Text = current };
+        AutomationProperties.SetName(box, W("PortfolioRenamePrompt"));
+        panel.Children.Add(box);
+        string? result = null;
+        dialog.Content = DialogLayout(panel, DialogActions(
+            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            ActionButton(W("Rename"), () => { result = box.Text; dialog.Close(); }, "primary")));
+        dialog.Opened += (_, _) => { box.Focus(); box.SelectAll(); };
+        await dialog.ShowDialog(owner);
+        return result;
+    }
+
+    private async Task<bool> ConfirmPortfolioRemoveAsync(Window owner, string name)
+    {
+        var dialog = CreateDialog(W("PortfolioRemoveTitle"), 460, 250);
+        var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
+        panel.Children.Add(Note(W("PortfolioRemoveText", name)));
+        var confirmed = false;
+        dialog.Content = DialogLayout(panel, DialogActions(
+            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            ActionButton(W("PortfolioRemoveEntry"), () => { confirmed = true; dialog.Close(); }, "primary")));
+        await dialog.ShowDialog(owner);
+        return confirmed;
     }
 
     private async Task RestoreBackupAsync(Window dialog, ProjectBackupInfo backup)

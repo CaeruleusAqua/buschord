@@ -1,6 +1,7 @@
 using Knx;
 using Knx.App.Localization;
 using Knx.App.Workbench;
+using Knx.Portfolio;
 using System.IO.Compression;
 using System.Text;
 
@@ -293,6 +294,130 @@ try
         new WorkbenchTarget("ga", "GA-missing")) == new WorkbenchTarget("ga", "GA-C-1"));
     Check("compare needs a project and a group address", WorkbenchCompare.Resolve(null, null) is null
         && WorkbenchCompare.Resolve(new Project { Id = "P-EMPTY", Name = "Empty" }, null) is null);
+
+    // Project portfolio: one entry list, one edited project, and no write to any project file.
+    var portfolioRoot = Path.Combine(root, "portfolio");
+    Directory.CreateDirectory(portfolioRoot);
+    var settingsFile = Path.Combine(portfolioRoot, "settings.json");
+    File.WriteAllText(settingsFile, "{}");
+    var firstProject = Path.Combine(portfolioRoot, "haus.knxproj");
+    var secondProject = Path.Combine(portfolioRoot, "halle.knxproj");
+    var absentProject = Path.Combine(portfolioRoot, "weg.knxproj");
+    File.WriteAllText(firstProject, "haus");
+    File.WriteAllText(secondProject, "halle");
+    var portfolioSettings = new AppSettings { LastProject = firstProject, RecentProjects = [firstProject, secondProject, absentProject] };
+    var settingsBytes = File.ReadAllBytes(settingsFile);
+    var portfolioPath = WorkbenchPortfolio.StoragePath(settingsFile);
+    Check("portfolio document sits next to the settings, not inside them",
+        Path.GetFileName(portfolioPath) == "portfolio.json" && portfolioPath != settingsFile);
+    var portfolio = new PortfolioRegistry(portfolioPath);
+    var seeded = portfolio.Seed(portfolioSettings);
+    Check("portfolio seeding adopts only existing recent projects",
+        seeded == 2 && portfolio.Entries.Count == 2 && portfolio.FindByPath(absentProject) is null);
+    Check("portfolio seeding leaves settings, recents and project files untouched",
+        File.ReadAllBytes(settingsFile).SequenceEqual(settingsBytes)
+        && portfolioSettings.RecentProjects.SequenceEqual([firstProject, secondProject, absentProject])
+        && File.ReadAllText(firstProject) == "haus");
+    Check("portfolio seeding keeps the last project most recent",
+        portfolio.Entries[0].Path == Path.GetFullPath(firstProject));
+    var firstEntry = portfolio.FindByPath(firstProject)!;
+    var secondEntry = portfolio.FindByPath(secondProject)!;
+    var firstBytes = File.ReadAllBytes(firstProject);
+    var secondBytes = File.ReadAllBytes(secondProject);
+
+    var thirdProject = Path.Combine(portfolioRoot, "neubau.knxproj");
+    File.WriteAllText(thirdProject, "neubau");
+    var thirdBytes = File.ReadAllBytes(thirdProject);
+    var added = WorkbenchPortfolio.AddCurrent(portfolio, thirdProject, "Neubau");
+    var addedEntry = added.EntryId is { } addedId ? portfolio.Find(addedId) : null;
+    Check("portfolio adds the current project with its display name",
+        added.Ok && addedEntry is { Name: "Neubau" }
+        && addedEntry.Path == Path.GetFullPath(thirdProject));
+    Check("portfolio add leaves the project file untouched", File.ReadAllBytes(thirdProject).SequenceEqual(thirdBytes));
+    Check("portfolio add is idempotent",
+        WorkbenchPortfolio.AddCurrent(portfolio, thirdProject, "Neubau").Status == PortfolioActionStatus.AlreadyRegistered
+        && portfolio.Entries.Count == 3);
+    Check("portfolio never adds unsaved or missing projects",
+        WorkbenchPortfolio.AddCurrent(portfolio, null, "Lost").Status == PortfolioActionStatus.ProjectNotSaved
+        && WorkbenchPortfolio.AddCurrent(portfolio, "", "Lost").Status == PortfolioActionStatus.ProjectNotSaved
+        && WorkbenchPortfolio.AddCurrent(portfolio, absentProject, "Weg").Status == PortfolioActionStatus.FileMissing
+        && portfolio.Entries.Count == 3);
+
+    var revisionBeforeRename = portfolio.Find(added.EntryId!)!.Revision;
+    var renamed = WorkbenchPortfolio.Rename(portfolio, added.EntryId!, "  Neubau Nord  ");
+    Check("portfolio rename changes the display name only",
+        renamed.Ok && portfolio.Find(added.EntryId!) is { } renamedEntry
+        && renamedEntry.Name == "Neubau Nord" && renamedEntry.Path == addedEntry.Path
+        && renamedEntry.Revision == revisionBeforeRename
+        && File.ReadAllBytes(thirdProject).SequenceEqual(thirdBytes));
+    Check("portfolio rejects an empty name and an unknown entry",
+        WorkbenchPortfolio.Rename(portfolio, added.EntryId!, "  ").Status == PortfolioActionStatus.InvalidName
+        && WorkbenchPortfolio.Rename(portfolio, "pf-000000000000", "X").Status == PortfolioActionStatus.EntryMissing
+        && portfolio.Find(added.EntryId!)!.Name == "Neubau Nord");
+
+    var opened = WorkbenchPortfolio.OpenTarget(portfolio, added.EntryId!);
+    Check("portfolio open resolves an existing file without touching it",
+        opened.Ok && opened.Path == addedEntry.Path && File.ReadAllBytes(thirdProject).SequenceEqual(thirdBytes));
+    var lastOpenedBefore = portfolio.Find(added.EntryId!)!.LastOpenedUtc;
+    Check("portfolio records only a successful open",
+        WorkbenchPortfolio.MarkOpened(portfolio, added.EntryId!)
+        && portfolio.Find(added.EntryId!)!.LastOpenedUtc >= lastOpenedBefore
+        && File.ReadAllBytes(thirdProject).SequenceEqual(thirdBytes));
+
+    File.AppendAllText(secondProject, " geändert");
+    var revisionBeforeRefresh = portfolio.Find(secondEntry.Id)!.Revision;
+    Check("portfolio reports a changed file from its recorded size",
+        portfolio.State(portfolio.Find(secondEntry.Id)!) == PortfolioState.Changed);
+    Check("portfolio maps every file state to a localized label key",
+        WorkbenchPortfolio.StateKey(PortfolioState.Ok) == "PortfolioStateOk"
+        && WorkbenchPortfolio.StateKey(PortfolioState.Changed) == "PortfolioStateChanged"
+        && WorkbenchPortfolio.StateKey(PortfolioState.Missing) == "PortfolioStateMissing");
+    var refreshed = WorkbenchPortfolio.Refresh(portfolio, secondEntry.Id);
+    Check("portfolio refresh records revision and hash without writing the file",
+        refreshed.Status == PortfolioActionStatus.Updated
+        && portfolio.Find(secondEntry.Id)!.Revision == revisionBeforeRefresh + 1
+        && File.ReadAllText(secondProject) == "halle geändert");
+    Check("portfolio refresh reports an already current entry",
+        WorkbenchPortfolio.Refresh(portfolio, secondEntry.Id).Status == PortfolioActionStatus.Unchanged);
+
+    var movedProject = Path.Combine(portfolioRoot, "halle-neu.knxproj");
+    File.Move(secondProject, movedProject);
+    Check("portfolio blocks opening and refreshing a missing file, but keeps the entry",
+        portfolio.State(portfolio.Find(secondEntry.Id)!) == PortfolioState.Missing
+        && WorkbenchPortfolio.OpenTarget(portfolio, secondEntry.Id).Status == PortfolioActionStatus.FileMissing
+        && WorkbenchPortfolio.Refresh(portfolio, secondEntry.Id).Status == PortfolioActionStatus.FileMissing
+        && portfolio.Find(secondEntry.Id) is not null && portfolio.Entries.Count == 3);
+    var located = WorkbenchPortfolio.Locate(portfolio, secondEntry.Id, movedProject);
+    Check("portfolio repoints a moved file without rewriting it",
+        located.Ok && portfolio.Find(secondEntry.Id)!.Path == Path.GetFullPath(movedProject)
+        && File.ReadAllText(movedProject) == "halle geändert");
+    Check("portfolio refuses a path that belongs to another entry",
+        WorkbenchPortfolio.Locate(portfolio, secondEntry.Id, thirdProject).Status == PortfolioActionStatus.DuplicatePath);
+
+    var removed = WorkbenchPortfolio.Remove(portfolio, added.EntryId!);
+    Check("portfolio removal deletes only the registry entry",
+        removed.Ok && portfolio.Find(added.EntryId!) is null && File.Exists(thirdProject)
+        && File.ReadAllBytes(thirdProject).SequenceEqual(thirdBytes));
+    Check("portfolio removal of an unknown entry changes nothing",
+        WorkbenchPortfolio.Remove(portfolio, added.EntryId!).Status == PortfolioActionStatus.EntryMissing);
+
+    var reopened = new PortfolioRegistry(portfolioPath);
+    Check("portfolio mutations persist across reopen",
+        reopened.Entries.Count == 2 && reopened.Entries.All(entry => portfolio.Find(entry.Id) is { } live
+            && live.Name == entry.Name && live.Path == entry.Path && live.Revision == entry.Revision
+            && live.SizeBytes == entry.SizeBytes && live.LastOpenedUtc == entry.LastOpenedUtc));
+    var documentBytes = File.ReadAllBytes(portfolioPath);
+    reopened.Save();
+    Check("portfolio document stays byte-stable when saved again",
+        File.ReadAllBytes(portfolioPath).SequenceEqual(documentBytes));
+    Check("portfolio keeps the previous good document as a backup",
+        File.Exists(portfolioPath + ".bak"));
+    Check("portfolio actions never wrote a project file",
+        File.ReadAllBytes(firstProject).SequenceEqual(firstBytes)
+        && File.ReadAllBytes(thirdProject).SequenceEqual(thirdBytes)
+        && File.ReadAllText(movedProject) == "halle geändert");
+    Check("portfolio and settings stay separate documents",
+        File.ReadAllBytes(settingsFile).SequenceEqual(settingsBytes));
 
     // Demo parameters keep the importer's vocabulary, encoding and numeric range in one place.
     var demoProject = Knx.Workbench.WorkbenchJson.CreateDemo();

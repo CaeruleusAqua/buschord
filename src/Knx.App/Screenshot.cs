@@ -22,6 +22,7 @@ internal static class Screenshot
 
     internal static readonly string[] Screens =
         ["main", "catalog", "parameters", "links", "settings", "new-project", "splash", "monitor", "inspector",
+         "portfolio", "portfolio-small", "portfolio-tiny",
          "demo", "demoparams", "demolinks", "demomonitor", "demoprogramming", "demoinspector", "democatalog",
          "demo-small", "demoparams-small", "demomonitor-small", "demoinspector-small", "democatalog-small",
          "demo-tiny", "demomonitor-tiny", "demoinspector-tiny"];

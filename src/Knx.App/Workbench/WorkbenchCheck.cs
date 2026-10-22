@@ -87,6 +87,22 @@ internal static class WorkbenchCheck
         window.RefreshWorkspace();
     }
 
+    /// <summary>Synthetic portfolio rows for the screenshot: unchanged, changed and missing.</summary>
+    private static void SeedPortfolio(WorkbenchWindow window)
+    {
+        var directory = TestDirectory!;
+        var fixture = Path.Combine(directory, "synthetic.knxproj");
+        window.Portfolio.Add(fixture, "Villa Linden");
+        var changed = Path.Combine(directory, "halle-nord.knxproj");
+        File.Copy(fixture, changed, overwrite: true);
+        window.Portfolio.Add(changed, "Halle Nord");
+        File.AppendAllText(changed, " extern geändert");
+        var missing = Path.Combine(directory, "werkstatt.knxproj");
+        File.Copy(fixture, missing, overwrite: true);
+        window.Portfolio.Add(missing, "Werkstatt");
+        File.Move(missing, missing + ".moved", overwrite: true);
+    }
+
     public static void Capture(IClassicDesktopStyleApplicationLifetime desktop, WorkbenchWindow main, string path, string screen)
     {
         if (screen.StartsWith("demo", StringComparison.OrdinalIgnoreCase)) LoadDemo(main);
@@ -111,6 +127,10 @@ internal static class WorkbenchCheck
             case "settings": window = new SettingsWindow(main.ViewModel.Settings); break;
             case "new-project": window = new NewProjectWindow(); break;
             case "splash": window = new SplashWindow(); break;
+            case "portfolio":
+                SeedPortfolio(main);
+                window = main.CreatePortfolioWindow();
+                break;
         }
         var capture = window;
         if (screen is not ("settings" or "new-project"))
@@ -136,7 +156,8 @@ internal static class WorkbenchCheck
             {
                 WriteDcaCatalog();
                 Check("empty workbench offers project start actions", window.FindControl<ContentControl>("ToolPageHost")?.Content is StackPanel start
-                    && start.Children.OfType<Button>().Any(b => Equals(b.Content, WorkbenchStrings.Get("OpenProjectEllipsis"))));
+                    && start.Children.OfType<Button>().Any(b => Equals(b.Content, WorkbenchStrings.Get("OpenProjectEllipsis")))
+                    && start.Children.OfType<Button>().Any(b => Equals(b.Content, WorkbenchStrings.Get("PortfolioStart"))));
                 await Task.Delay(100);
                 var themedTip = window.GetVisualDescendants().OfType<Control>()
                     .Select(ToolTip.GetTip).OfType<TextBlock>()
@@ -228,6 +249,91 @@ internal static class WorkbenchCheck
                     && quickButtons[0].Classes.Contains("wb-quiet")
                     && quickButtons[^1].Classes.Contains("wb-primary"));
                 quickDialog?.Close();
+                await Task.Delay(40);
+                // Project portfolio: one list, one edited project at a time, outside AppSettings.
+                var portfolioItem = MenuItems(window.FindControl<Menu>("MainMenu")!.ItemsSource)
+                    .FirstOrDefault(item => Equals(item.Header, WorkbenchStrings.Get("Portfolio")));
+                async Task<Window?> OpenPortfolioAsync()
+                {
+                    portfolioItem?.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                    for (var attempt = 0; attempt < 100; attempt++)
+                    {
+                        var found = desktop.Windows.FirstOrDefault(candidate =>
+                            candidate.Title == WorkbenchStrings.Get("PortfolioTitle") && candidate.IsVisible);
+                        if (found is not null) return found;
+                        await Task.Delay(20);
+                    }
+                    return null;
+                }
+                var portfolioWindow = await OpenPortfolioAsync();
+                Check("portfolio surface is reachable from the Project menu and states the single-project rule",
+                    portfolioWindow is not null
+                    && portfolioWindow.GetVisualDescendants().OfType<TextBlock>()
+                        .Any(text => text.Text == WorkbenchStrings.Get("PortfolioIntro")));
+                Check("portfolio lives beside the isolated test settings",
+                    window.Portfolio.FilePath.StartsWith(WorkbenchCheck.TestDirectory!, StringComparison.OrdinalIgnoreCase));
+                var fixturePath = window.ViewModel.ProjectPath;
+                var fixtureBytes = File.ReadAllBytes(fixturePath);
+                portfolioWindow?.GetVisualDescendants().OfType<Button>()
+                    .FirstOrDefault(button => Equals(button.Content, WorkbenchStrings.Get("PortfolioAddCurrent")))
+                    ?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(120);
+                Check("portfolio adds the current project without writing its file",
+                    window.Portfolio.FindByPath(fixturePath) is not null
+                    && File.ReadAllBytes(fixturePath).SequenceEqual(fixtureBytes)
+                    && portfolioWindow!.GetVisualDescendants().OfType<TextBlock>()
+                        .Any(text => text.Text == WorkbenchStrings.Get("PortfolioStateOk")));
+                portfolioWindow!.GetVisualDescendants().OfType<Button>()
+                    .FirstOrDefault(button => Equals(button.Content, WorkbenchStrings.Get("Rename")))
+                    ?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Window? renameDialog = null;
+                for (var attempt = 0; attempt < 100 && renameDialog is null; attempt++)
+                {
+                    renameDialog = desktop.Windows.FirstOrDefault(candidate =>
+                        candidate.Title == WorkbenchStrings.Get("PortfolioRenameTitle") && candidate.IsVisible);
+                    if (renameDialog is null) await Task.Delay(20);
+                }
+                var renameBox = renameDialog?.GetVisualDescendants().OfType<TextBox>().FirstOrDefault();
+                if (renameBox is not null) renameBox.Text = "Villa Linden Nord";
+                renameDialog?.GetVisualDescendants().OfType<Button>()
+                    .FirstOrDefault(button => Equals(button.Content, WorkbenchStrings.Get("Rename")))
+                    ?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await WaitUntil(() => window.Portfolio.FindByPath(fixturePath) is { Name: "Villa Linden Nord" }, "portfolio rename");
+                Check("portfolio renames the display name through its prompt without writing the file",
+                    window.Portfolio.FindByPath(fixturePath) is { Name: "Villa Linden Nord" }
+                    && File.ReadAllBytes(fixturePath).SequenceEqual(fixtureBytes));
+                portfolioWindow.GetVisualDescendants().OfType<Button>()
+                    .FirstOrDefault(button => Equals(button.Content, WorkbenchStrings.Get("PortfolioRemoveEntry")))
+                    ?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Window? removeDialog = null;
+                for (var attempt = 0; attempt < 100 && removeDialog is null; attempt++)
+                {
+                    removeDialog = desktop.Windows.FirstOrDefault(candidate =>
+                        candidate.Title == WorkbenchStrings.Get("PortfolioRemoveTitle") && candidate.IsVisible);
+                    if (removeDialog is null) await Task.Delay(20);
+                }
+                removeDialog?.GetVisualDescendants().OfType<Button>()
+                    .FirstOrDefault(button => Equals(button.Content, WorkbenchStrings.Get("PortfolioRemoveEntry")))
+                    ?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await WaitUntil(() => window.Portfolio.FindByPath(fixturePath) is null, "portfolio removal");
+                Check("portfolio removes only the confirmed entry and keeps the project file",
+                    window.Portfolio.FindByPath(fixturePath) is null && File.Exists(fixturePath)
+                    && File.ReadAllBytes(fixturePath).SequenceEqual(fixtureBytes));
+                var vanished = Path.Combine(WorkbenchCheck.TestDirectory!, "vanished.knxproj");
+                File.Copy(fixturePath, vanished);
+                WorkbenchPortfolio.AddCurrent(window.Portfolio, vanished, "Verschobene Anlage");
+                File.Move(vanished, vanished + ".moved");
+                portfolioWindow!.Close();
+                await Task.Delay(60);
+                portfolioWindow = await OpenPortfolioAsync();
+                Check("portfolio marks a missing file and offers locating it instead of opening it",
+                    portfolioWindow is not null
+                    && portfolioWindow.GetVisualDescendants().OfType<TextBlock>()
+                        .Any(text => text.Text == WorkbenchStrings.Get("PortfolioStateMissing"))
+                    && portfolioWindow.GetVisualDescendants().OfType<Button>()
+                        .Any(button => Equals(button.Content, WorkbenchStrings.Get("PortfolioLocate")))
+                    && window.Portfolio.FindByPath(vanished) is not null);
+                portfolioWindow?.Close();
                 await Task.Delay(40);
                 var docStrip = window.FindControl<StackPanel>("ObjectTabs")!;
                 var viewStrip = window.FindControl<WrapPanel>("Representations")!;

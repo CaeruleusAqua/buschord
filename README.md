@@ -63,7 +63,7 @@ dotnet run --project src/Knx.App -- --screenshot=out\demo.png --screen=demoinspe
 ```
 
 `--screen` accepts `main`, `catalog`, `parameters`, `links`, `settings`,
-`new-project`, `splash`, `monitor`, `inspector`, the `demo*` variants and the
+`new-project`, `splash`, `monitor`, `inspector`, `portfolio`, the `demo*` variants and the
 `-small`/`-tiny` layouts listed in `src/Knx.App/Screenshot.cs`. The screenshot path
 uses a synthetic fixture with isolated settings, never the user's project.
 
