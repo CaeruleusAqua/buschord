@@ -429,6 +429,18 @@ Check("Index: Cache wird geschrieben", File.Exists(coldStore.Index.IndexPathFor(
 
 var warmStore = new CatalogStore(indexLibrary, indexCache);
 var warm = warmStore.LoadAll();
+// Memory bound: a warm load must not build the communication objects of programs nobody opened.
+var packedField = typeof(CatalogApplicationProgram).GetField("_packedComObjects",
+    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+var objectsField = typeof(CatalogApplicationProgram).GetField("_comObjects",
+    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+Check("Index: COM-Objekte bleiben bis zum Zugriff gepackt",
+    warm.Count == 1 && warm[0].Programs.Count == 2
+    && warm[0].Programs.All(program => packedField?.GetValue(program) is string { Length: > 0 })
+    && warm[0].Programs.All(program => objectsField?.GetValue(program) is null)
+    && warm[0].Programs.All(program => program.SearchText.Length > 0),
+    $"packed={warm[0].Programs.Count(p => packedField?.GetValue(p) is string)} "
+    + $"materialised={warm[0].Programs.Count(p => objectsField?.GetValue(p) is not null)}");
 Check("Index: warmer Lauf parst kein XML",
     warmStore.LastIndexStatistics is { IndexHits: 1, IndexMisses: 0, XmlCatalogFiles: 0, XmlProgramParts: 0 }
     && warm.Count == 1,

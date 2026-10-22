@@ -118,6 +118,14 @@ internal static class CatalogBench
             ? Directory.GetFiles(cache, "*.json.gz")
             : [];
         var indexBytes = indexFiles.Sum(file => new FileInfo(file).Length);
+        // What a warm start pays to accept the remembered hash: one short sidecar read per file.
+        var identityFiles = Directory.Exists(cache)
+            ? Directory.GetFiles(cache, "*.identity")
+            : [];
+        var identityMs = identityFiles.Length == 0 ? 0 : Time(() =>
+        {
+            foreach (var file in identityFiles) _ = File.ReadAllText(file);
+        });
         // Cost of just reading the index documents back (gzip + JSON text), without object construction.
         long indexJsonBytes = 0;
         var indexReadMs = indexFiles.Length == 0 ? 0 : Time(() =>
@@ -152,6 +160,7 @@ internal static class CatalogBench
             IndexJsonMiB = indexJsonBytes / (1024 * 1024),
             FullHashMs = Math.Round(hashMs, 1),
             SampleHashMs = Math.Round(sampleMs, 1),
+            IdentityReadMs = Math.Round(identityMs, 1),
             IndexReadMs = Math.Round(indexReadMs, 1),
             ColdMs = coldMs is null ? (double?)null : Math.Round(coldMs.Value, 1),
             ColdCpuMs = coldCpuMs is null ? (double?)null : Math.Round(coldCpuMs.Value, 1),

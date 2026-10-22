@@ -167,7 +167,47 @@ public sealed class CatalogApplicationProgram
     /// <summary>Mask version / management model declared by the application.</summary>
     public string? MaskVersion { get; set; }
     public bool DownloadInfoIncomplete { get; set; }
-    public List<ComObject> ComObjects { get; } = [];
+    private List<ComObject>? _comObjects;
+    private Dictionary<string, (string? Text, string? FunctionText)>? _comObjectDisplay;
+    private string? _packedComObjects;
+    private readonly object _comObjectGate = new();
+
+    /// <summary>
+    /// Communication objects of the application. A warm index keeps them packed and this
+    /// materialises them on first use, so loading a library does not build objects that no
+    /// pane shows yet; the objects are identical to the ones the XML reader creates.
+    /// </summary>
+    public List<ComObject> ComObjects
+    {
+        get
+        {
+            lock (_comObjectGate) return Materialise().Objects;
+        }
+    }
+
+    /// <summary>Remembers the packed index payload; the objects are built on first access.</summary>
+    internal void SetPackedComObjects(string packed)
+    {
+        lock (_comObjectGate) _packedComObjects = packed;
+    }
+
+    private (List<ComObject> Objects, Dictionary<string, (string? Text, string? FunctionText)> Display) Materialise()
+    {
+        if (_comObjects is { } materialised && _comObjectDisplay is { } display) return (materialised, display);
+        // Build into fresh collections and publish them, so a reader that got the previous
+        // (empty) list never observes it growing underneath an enumeration.
+        var objects = new List<ComObject>();
+        var texts = new Dictionary<string, (string? Text, string? FunctionText)>();
+        if (_packedComObjects is { } packed)
+        {
+            _packedComObjects = null;
+            CatalogComObjectPacking.TryUnpack(packed, objects, texts);
+        }
+        _comObjects = objects;
+        _comObjectDisplay = texts;
+        return (objects, texts);
+    }
+
     public List<ParameterType> ParameterTypes { get; } = [];
     public List<ParameterBlock> ParameterBlocks { get; } = [];
     public List<ParameterInstance> ParameterInstances { get; } = [];
@@ -202,7 +242,13 @@ public sealed class CatalogApplicationProgram
 
     internal void SetParameterPlugin(string parameterId, string pluginId) => _parameterPlugins[parameterId] = pluginId;
     /// <summary>ComObject display texts (Id -> Text, FunctionText); ComObject itself has no Text member.</summary>
-    internal Dictionary<string, (string? Text, string? FunctionText)> ComObjectDisplay { get; } = [];
+    internal Dictionary<string, (string? Text, string? FunctionText)> ComObjectDisplay
+    {
+        get
+        {
+            lock (_comObjectGate) return Materialise().Display;
+        }
+    }
 
     /// <summary>Plug-in that provides the editor of a parameter, or null for a static editor.</summary>
     public string? PluginIdFor(string? parameterId) =>

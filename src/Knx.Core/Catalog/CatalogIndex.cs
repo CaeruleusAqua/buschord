@@ -22,11 +22,15 @@ namespace Knx.Catalog;
 /// remaining ceiling is a file whose content changed while its size, timestamp and sampled head
 /// and tail stayed identical; that is deliberate local tampering, and whoever can write the cache
 /// directory can replace the catalogue instead.
+///
+/// The document carries the derived search text and datapoint index so a warm start assigns
+/// strings instead of recomputing them. Communication objects travel gzip-compressed and base64
+/// encoded, and the model materialises only the programs a pane actually opens.
 /// </summary>
 public sealed class CatalogIndexStore
 {
     /// <summary>Bump when the document shape changes; every entry is rebuilt once.</summary>
-    public const int SchemaVersion = 6;
+    public const int SchemaVersion = 8;
 
     /// <summary>Maximum compressed cache document; anything larger is not trusted.</summary>
     public const long MaximumIndexBytes = 64L * 1024 * 1024;
@@ -109,7 +113,7 @@ public sealed class CatalogIndexStore
                 if (!IsBackingName(backing)) return false;
                 if (!File.Exists(IOPath.Combine(ArchiveDirectory, backing))) return false;
             }
-            if (!LocationsAreSafe(catalogPath, document, ArchiveDirectory)) return false;
+            if (!LocationsAreSafe(catalogPath, document)) return false;
 
             catalog = KnxProductCatalog.FromIndex(catalogPath, document, ArchiveDirectory);
             if (!reusable) WriteIdentity(index, file, contentHash);
@@ -300,10 +304,12 @@ public sealed class CatalogIndexStore
     }
 
     /// <summary>
-    /// The cache is untrusted: every source entry/path it names must still resolve inside the
-    /// catalogue archive (or below the XML catalogue directory) before it is handed to the parser.
+    /// The cache is untrusted: an XML catalogue's source paths must resolve below its directory,
+    /// and an archive's entry names must be relative without a ".." segment. The content hash
+    /// already binds the document to the exact archive, so entry existence is left to the lazy
+    /// reader instead of a central-directory scan on every warm start.
     /// </summary>
-    private static bool LocationsAreSafe(string catalogPath, CatalogIndexDocument document, string archiveDirectory)
+    private static bool LocationsAreSafe(string catalogPath, CatalogIndexDocument document)
     {
         var isXml = document.IsXml || catalogPath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
         if (isXml)
@@ -321,16 +327,15 @@ public sealed class CatalogIndexStore
                    document.Parts.All(p => SafeFile(p.Location));
         }
 
-        var archive = document.BackingArchiveName is { Length: > 0 } backing
-            ? IOPath.Combine(archiveDirectory, backing)
-            : catalogPath;
-        using var zip = ZipFile.OpenRead(archive);
-        var entries = zip.Entries.Select(e => e.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // The content hash above already binds the document to this exact archive, so a name can
+        // only be wrong, not point somewhere else. Structural safety is what matters here: no
+        // rooted path and no ".." segment. Listing the archive's entries would cost a central-
+        // directory scan per catalogue on every warm start; a missing entry surfaces when the
+        // lazy reader opens it.
         bool SafeEntry(string? value) =>
             !string.IsNullOrWhiteSpace(value) &&
             !IOPath.IsPathRooted(value) &&
-            !value.Split('/', '\\').Any(part => part == "..") &&
-            entries.Contains(value.Replace('\\', '/'));
+            !value.Split('/', '\\').Any(part => part == "..");
         return document.Programs.All(p => SafeEntry(p.SourceEntry) &&
                                             (p.SourceFilePath is null || SafeEntry(p.SourceFilePath))) &&
                document.Parts.All(p => SafeEntry(p.Location));
@@ -427,6 +432,8 @@ internal sealed class CatalogProductIndex
     public List<string> CatalogPaths { get; set; } = [];
     public List<string> EntryRefIds { get; set; } = [];
     public List<string> Hardware2ProgramIds { get; set; } = [];
+    /// <summary>Lowercased product search text; computed once at index build, never rebuilt on warm start.</summary>
+    public string SearchText { get; set; } = "";
 }
 
 internal sealed class CatalogProgramIndex
@@ -445,8 +452,12 @@ internal sealed class CatalogProgramIndex
     public List<string> Extensions { get; set; } = [];
     public string? SourceEntry { get; set; }
     public string? SourceFilePath { get; set; }
-    /// <summary>Packed communication objects; see <see cref="CatalogComObjectPacking"/>.</summary>
-    public string ComObjects { get; set; } = "";
+    /// <summary>Base64(gzip(packed communication objects)); see <see cref="CatalogComObjectPacking"/>.</summary>
+    public string PackedComObjects { get; set; } = "";
+    /// <summary>Lowercased program search text; computed once at index build.</summary>
+    public string SearchText { get; set; } = "";
+    /// <summary>Normalised datapoint ids (";dpst-1-1;..."); computed once at index build.</summary>
+    public string DatapointTypes { get; set; } = "";
 }
 
 /// <summary>
@@ -458,8 +469,8 @@ internal sealed class CatalogProgramIndex
 /// </summary>
 internal static class CatalogComObjectPacking
 {
-    private const char Field = '\u001f';
-    private const char Record = '\u001e';
+    private const char FieldSeparator = '\u001f';
+    private const char RecordSeparator = '\u001e';
 
     public static string Pack(IEnumerable<ComObject> comObjects,
         Dictionary<string, (string? Text, string? FunctionText)> display)
@@ -470,46 +481,129 @@ internal static class CatalogComObjectPacking
             var (text, functionText) = display.GetValueOrDefault(comObject.Id);
             Append(builder, comObject.Id);
             Append(builder, comObject.Name);
-            builder.Append(comObject.Number).Append(Field);
-            builder.Append(comObject.SizeInBit).Append(Field);
+            builder.Append(comObject.Number).Append(FieldSeparator);
+            builder.Append(comObject.SizeInBit).Append(FieldSeparator);
             Append(builder, comObject.DatapointType);
             Append(builder, text);
             Append(builder, functionText);
             builder.Length--; // no field separator after the last field
-            builder.Append(Record);
+            builder.Append(RecordSeparator);
         }
         return builder.ToString();
 
         static void Append(StringBuilder builder, string? value) =>
-            builder.Append(value?.Replace(Field, ' ').Replace(Record, ' ')).Append(Field);
+            builder.Append(value?.Replace(FieldSeparator, ' ').Replace(RecordSeparator, ' ')).Append(FieldSeparator);
     }
 
-    /// <summary>Reads the packed records back without materialising them twice.</summary>
-    public static IEnumerable<(string Id, string Name, int Number, int SizeInBit, string? DatapointType,
-        string? Text, string? FunctionText)> Unpack(string packed)
+    /// <summary>
+    /// Gzip-compresses and base64-encodes one packed payload. The index document then carries
+    /// about a quarter of the characters, and a warm start never pays for the encoding cost of
+    /// programs it does not open.
+    /// </summary>
+    public static string Encode(string packed)
     {
-        var start = 0;
-        while (start < packed.Length)
+        if (packed.Length == 0) return "";
+        using var buffer = new MemoryStream();
+        using (var gzip = new GZipStream(buffer, CompressionLevel.Fastest, leaveOpen: true))
         {
-            var end = packed.IndexOf(Record, start);
-            if (end < 0) end = packed.Length;
-            var fields = new string?[7];
+            var bytes = Encoding.UTF8.GetBytes(packed);
+            gzip.Write(bytes, 0, bytes.Length);
+        }
+        return Convert.ToBase64String(buffer.GetBuffer(), 0, (int)buffer.Length);
+    }
+
+    /// <summary>Decodes and unpacks one program's payload; a corrupt payload leaves it empty.</summary>
+    public static bool TryUnpack(string encoded, List<ComObject> objects,
+        Dictionary<string, (string? Text, string? FunctionText)> display)
+    {
+        if (encoded.Length == 0) return true;
+        try
+        {
+            var bytes = Convert.FromBase64String(encoded);
+            using var input = new MemoryStream(bytes);
+            using var gzip = new GZipStream(input, CompressionMode.Decompress);
+            using var output = new MemoryStream();
+            gzip.CopyTo(output);
+            UnpackInto(Encoding.UTF8.GetString(output.GetBuffer(), 0, (int)output.Length), objects, display);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Reads the packed records straight into the program's object list and display map. Spans
+    /// keep the per-record overhead to the strings that are actually retained.
+    /// </summary>
+    public static void UnpackInto(string packed, List<ComObject> objects,
+        Dictionary<string, (string? Text, string? FunctionText)> display)
+    {
+        var text = packed.AsSpan();
+        var start = 0;
+        while (start < text.Length)
+        {
+            var separator = text[start..].IndexOf(RecordSeparator);
+            var end = separator < 0 ? text.Length : start + separator;
             var position = start;
-            for (var index = 0; index < fields.Length && position <= end; index++)
+            var id = Next(text, ref position, end);
+            var name = Next(text, ref position, end);
+            var number = Integer(text, ref position, end);
+            var size = Integer(text, ref position, end);
+            var datapointType = Next(text, ref position, end);
+            var displayText = Next(text, ref position, end);
+            var functionText = Next(text, ref position, end);
+            objects.Add(new ComObject
             {
-                var next = packed.IndexOf(Field, position);
-                if (next < 0 || next > end) next = end;
-                fields[index] = packed[position..next];
-                position = next + 1;
-            }
-            yield return (fields[0] ?? "", fields[1] ?? "",
-                int.TryParse(fields[2], out var number) ? number : 0,
-                int.TryParse(fields[3], out var size) ? size : 0,
-                Optional(fields[4]), Optional(fields[5]), Optional(fields[6]));
+                Id = id,
+                Name = name,
+                Number = number,
+                SizeInBit = size,
+                DatapointType = datapointType.Length == 0 ? null : datapointType,
+            });
+            // Keep the entry even when both texts are empty: CreateDevice treats a missing entry
+            // as "use the COM name", a present empty one as "no display text".
+            display[id] = (displayText.Length == 0 ? null : displayText,
+                functionText.Length == 0 ? null : functionText);
             start = end + 1;
         }
 
-        static string? Optional(string? value) => string.IsNullOrEmpty(value) ? null : value;
+        static string Next(ReadOnlySpan<char> text, ref int position, int end)
+        {
+            if (position >= end)
+            {
+                position = end + 1;
+                return "";
+            }
+            var length = text[position..end].IndexOf(FieldSeparator);
+            var stop = length < 0 ? end : position + length;
+            var value = text[position..stop].ToString();
+            position = stop + 1;
+            return value;
+        }
+
+        static int Integer(ReadOnlySpan<char> text, ref int position, int end)
+        {
+            if (position >= end)
+            {
+                position = end + 1;
+                return 0;
+            }
+            var length = text[position..end].IndexOf(FieldSeparator);
+            var stop = length < 0 ? end : position + length;
+            int.TryParse(text[position..stop], out var value);
+            position = stop + 1;
+            return value;
+        }
     }
 }
 
@@ -553,7 +647,9 @@ public sealed partial class KnxProductCatalog
         foreach (var section in CatalogSections) document.Sections.Add(ToIndex(section));
         foreach (var product in Products)
         {
-            if (product.SearchText.Length == 0) product.SearchText = CatalogSearchText.Product(product, this);
+            // Recompute with this catalogue's final name and manufacturer: an import relocates
+            // the file after parsing, so a text captured during the parse could name the source.
+            product.SearchText = CatalogSearchText.Product(product, this);
             document.Products.Add(new CatalogProductIndex
             {
                 Id = product.Id,
@@ -565,11 +661,14 @@ public sealed partial class KnxProductCatalog
                 CatalogPaths = [.. product.CatalogPaths],
                 EntryRefIds = [.. product.EntryRefIds],
                 Hardware2ProgramIds = [.. product.Hardware2ProgramIds],
+                SearchText = product.SearchText,
             });
         }
         foreach (var program in Programs)
         {
             if (program.SearchText.Length == 0) program.SearchText = CatalogSearchText.Program(program);
+            if (program.NormalizedDatapointTypes.Length == 0)
+                program.NormalizedDatapointTypes = CatalogSearchText.DatapointTypes(program.ComObjects);
             document.Programs.Add(new CatalogProgramIndex
             {
                 Id = program.Id,
@@ -586,7 +685,10 @@ public sealed partial class KnxProductCatalog
                 Extensions = [.. program.Extensions],
                 SourceEntry = program.Source?.Entry,
                 SourceFilePath = program.Source?.FilePath,
-                ComObjects = CatalogComObjectPacking.Pack(program.ComObjects, program.ComObjectDisplay),
+                PackedComObjects = CatalogComObjectPacking.Encode(
+                    CatalogComObjectPacking.Pack(program.ComObjects, program.ComObjectDisplay)),
+                SearchText = program.SearchText,
+                DatapointTypes = program.NormalizedDatapointTypes,
             });
         }
         foreach (var (id, programs) in _hardware2Programs)
@@ -633,6 +735,7 @@ public sealed partial class KnxProductCatalog
                 OrderNumber = productIndex.OrderNumber,
                 HardwareRefId = productIndex.HardwareRefId,
                 Description = productIndex.Description,
+                SearchText = productIndex.SearchText,
             };
             product.ProgramRefIds.AddRange(productIndex.ProgramRefIds);
             product.CatalogPaths.AddRange(productIndex.CatalogPaths);
@@ -667,20 +770,14 @@ public sealed partial class KnxProductCatalog
                 DownloadInfoIncomplete = programIndex.DownloadInfoIncomplete,
                 RequiresExternalSoftware = programIndex.RequiresExternalSoftware,
                 Source = new ProgramSource(sourceEntry, sourceFilePath ?? (isXml ? path : null)),
+                // Search text and datapoint index travel with the document: a warm start assigns
+                // the strings JSON already produced instead of lowercasing and joining every field.
+                SearchText = programIndex.SearchText,
+                NormalizedDatapointTypes = programIndex.DatapointTypes,
             };
             foreach (var extension in programIndex.Extensions) program.AddExtension(extension);
-            foreach (var comObject in CatalogComObjectPacking.Unpack(programIndex.ComObjects))
-            {
-                program.ComObjects.Add(new ComObject
-                {
-                    Id = comObject.Id,
-                    Name = comObject.Name,
-                    Number = comObject.Number,
-                    SizeInBit = comObject.SizeInBit,
-                    DatapointType = comObject.DatapointType,
-                });
-                program.ComObjectDisplay[comObject.Id] = (comObject.Text, comObject.FunctionText);
-            }
+            // Keep the payload encoded: a library load must not build 200k objects nobody displays.
+            program.SetPackedComObjects(programIndex.PackedComObjects);
             catalog.Programs.Add(program);
             catalog._programsById[program.Id] = program;
         }
@@ -688,14 +785,6 @@ public sealed partial class KnxProductCatalog
             catalog._hardware2Programs[hardware2Program.Id] = [.. hardware2Program.Programs];
         foreach (var part in document.Parts) catalog._partByName[part.Id] = part.Location;
         catalog.MetadataComplete = document.Complete;
-        // Search text is derived, not persisted: this keeps the cache small and the format simple.
-        foreach (var product in catalog.Products)
-            product.SearchText = CatalogSearchText.Product(product, catalog);
-        foreach (var program in catalog.Programs)
-        {
-            program.SearchText = CatalogSearchText.Program(program);
-            program.NormalizedDatapointTypes = CatalogSearchText.DatapointTypes(program.ComObjects);
-        }
         return catalog;
     }
 
