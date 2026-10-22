@@ -402,8 +402,9 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   Schreibfreigabe bleibt separat und ausdrücklich.
   (`2992c9c` + Live-Nachlauf 2026-10-22: Tunnel/Routing, 12 Gruppenframes,
   Descriptor 1.0.0/1.1.29/1.3.3, echte GroupValueResponse 3/1/15 von 1.1.18,
-  Timeouts, Reconnect belegt; zweiter Tunnel/Schnittstellenkonflikt und
-  Linien-Scan bewusst offen, daher Abnahme noch nicht geschlossen)
+  Timeouts, Reconnect und zwei parallele Tunnel auf Kanal 16/17 belegt;
+  Linien-/Bus-Scan read-only ausgeführt, aber 0 Responder und damit kein
+  positiver Gerätenachweis; Abnahme bleibt offen)
   Stand 2026-10-22: erneuter Live-Lauf **blockiert** - dieser Host hat kein
   Interface im Gateway-Subnetz, CONNECT läuft in den Timeout, passive
   Routing-Listener empfangen 0 Frames. Kein cEMI gesendet; Descriptor-,
@@ -535,9 +536,9 @@ werden:
   Windows-High-Contrast und Narrator-Sprachausgabe; UIA-Namen und simulierte
   Layouts sind belegt, echte Systemkonfiguration nicht.
 - **H12.2 Reale Busabnahme:** Read-only-Tunnel/Routing, Descriptor-Livescan,
-  echte Gruppenantwort, Timeout und Reconnect sind live belegt; nur zweiter
-  Tunnel/Schnittstellenkonflikt und Linien-Scan wurden bewusst nicht
-  ausgeführt. Reale Schreibzugriffe bleiben gesperrt.
+  echte Gruppenantwort, Timeout, Reconnect und zwei parallele Tunnel sind live
+  belegt; ein Linien-/Bus-Scan lief read-only, lieferte aber 0 Responder und
+  damit keinen positiven Gerätenachweis. Reale Schreibzugriffe bleiben gesperrt.
 - **H12.3 Dritte Sprache:** Sprachwahl und menschliche Übersetzung/Review
   fehlen; Architektur, Workflow und CI-Gates sind fertig.
 - **H12.4 GitHub-Purge:** `refs/pull/1/head` und gecachte Blobs lassen sich

@@ -131,11 +131,15 @@ secure operation was sent.
 | GroupValueRead 3/1/15 | **real GroupValueResponse**, value `01`, source 1.1.18, hop 5, 3 s timeout |
 | GroupValueRead 3/0/1, 3/0/21, 3/3/3 | no GroupValueResponse within 3 s (read-only request acknowledged, no responder) |
 | Reconnect after clean disconnect | second tunnel connected as 1.1.250, status connected, clean disconnect |
-| Second tunnel / interface conflict | deliberately skipped: would occupy another tunnel and could disturb an ETS session; not needed for a read-only verdict |
+| Second tunnel / interface conflict | **two concurrent probes**: channels 16 and 17, assigned 1.0.1 and 1.0.2, both received 12 frames and disconnected cleanly; no channel-exhaustion test |
+| Line scan | read-only `bus_scan` on `1.1` (2 s) and whole bus (3 s): 0 `IndividualAddressResponse`, no descriptor probes; positive scan not proven |
 
-Remaining H8.4 gaps are now limited to a second-tunnel/interface-conflict run
-and a full line scan (broadcast management, explicitly not run). The read-only
-acceptance is otherwise reproducible.
+Remaining H8.4 gap is now a **positive line scan**: both read-only scans returned
+0 responders, consistent with no device being in programming mode (or the
+gateway not forwarding the broadcast), so no device inventory was proven.
+Second-tunnel behaviour is verified for two simultaneous channels; channel
+exhaustion and ETS coexistence are not tested. The read-only acceptance is
+otherwise reproducible.
 
 ## 6. What was not run, and why
 

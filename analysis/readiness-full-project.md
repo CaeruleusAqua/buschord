@@ -30,11 +30,13 @@ code, `file:line` is cited.
 
 **Post-report live note (2026-10-22).** A later read-only run against the real
 gateway is documented in `analysis/knx-live-read-acceptance.md`: tunnel connect,
-12 group frames, descriptor reads for 1.0.0/1.1.29/1.3.3 and one real
-GroupValueResponse on 3/1/15 passed; no write/download/secure frame was sent.
-The P12 evidence is therefore no longer descriptor-unverified, while P10/P11
-(physical addressing, download, commissioning) remain blocked by policy and
-implementation and the overall NO-GO for real commissioning is unchanged.
+12 group frames, descriptor reads for 1.0.0/1.1.29/1.3.3, one real
+GroupValueResponse on 3/1/15 and two concurrent tunnels passed; no
+write/download/secure frame was sent. A read-only line/bus scan returned 0
+responders, so no device inventory is proven. The P12 evidence is therefore no
+longer descriptor-unverified, while P10/P11 (physical addressing, download,
+commissioning) remain blocked by policy and implementation and the overall
+NO-GO for real commissioning is unchanged.
 
 Status vocabulary: **done** = present and evidenced; **partial** = present with a
 missing step, affordance or unverified wire path; **missing** = not reachable.
@@ -267,9 +269,9 @@ cEMI codec defects B1–B4 that blocked real read testing at base `95f842b`
 (`analysis/release-notes-v4.md:123-128`; the group flag now uses `0x80`,
 `src/Knx.Bus/Cemi.cs:80,115,216`). The later read-only run
 (`analysis/knx-live-read-acceptance.md`) closed the descriptor and group-value
-gap: three descriptor reads and one real GroupValueResponse succeeded. A
-second-tunnel conflict test and a full line scan were deliberately not run; the
-diagnostic frame layout still lacks a broader live matrix (`mcp.md:126-129`).
+gap: three descriptor reads, one real GroupValueResponse and two concurrent
+tunnels succeeded. A read-only line/bus scan returned 0 responders, so a
+positive device inventory and the second-tunnel exhaustion case remain open.
 
 **Cannot:** yet prove a full working line or hand a customer a scan report; the
 read-only descriptor path itself is proven (see the post-report live note).
