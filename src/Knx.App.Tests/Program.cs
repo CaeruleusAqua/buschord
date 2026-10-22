@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Knx;
@@ -708,6 +710,276 @@ Check("Protokoll: CSV-Datei UTF-8 mit BOM",
     apCsvWritten.Bytes == apCsvBytes.Length && apCsvBytes[0] == 0xEF && apCsvBytes[1] == 0xBB && apCsvBytes[2] == 0xBF);
 File.Delete(apHtmlPath);
 File.Delete(apCsvPath);
+
+// ---------------------------------------------------------------- Übergabepaket (H11.7)
+
+static string HpText(HandoverArtifact artifact) => Encoding.UTF8.GetString(artifact.Content).TrimStart('\uFEFF');
+static string HpArtifact(IReadOnlyList<HandoverArtifact> artifacts, string name)
+    => HpText(artifacts.Single(a => a.Name == name));
+static string ZipEntryText(ZipArchive zip, string name)
+{
+    var entry = zip.Entries.Single(e => e.FullName.EndsWith("/" + name, StringComparison.Ordinal));
+    using var reader = new StreamReader(entry.Open(), Encoding.UTF8);
+    return reader.ReadToEnd();
+}
+
+var hpTime = new DateTimeOffset(2026, 10, 22, 12, 0, 0, TimeSpan.FromHours(2));
+var hpProject = new Project
+{
+    Id = "P-HP",
+    Name = "Haus & <Objekt>",
+    Comment = "<script>alert('x')</script>",
+    Guid = "6f1e8c2a-0000-0000-0000-000000000001",
+};
+hpProject.MasterData.Signature = "SIG-HP";
+var hpInst = new Installation { Id = "I-HP", Name = "Haus" };
+var hpArea = new Area { Id = "A-HP", Address = 1, Name = "Erdgeschoss" };
+var hpLine = new Line { Id = "L-HP", Address = 1, Name = "Licht" };
+var hpDevice = new DeviceInstance
+{
+    Id = "D-HP-1",
+    Address = new IndividualAddress(1, 1, 1),
+    Name = "Aktor <1> & \"x\" äöü",
+    ProductRefId = "M-00FA_H-1_P-1",
+    Hardware2ProgramRefId = "M-00FA_H-1_HP-1",
+    Description = "äöü",
+    Comment = "=HYPERLINK(\"x\")",
+};
+var hpObject = new ComObjectInstanceRef
+{
+    Id = "CO-HP-1", ComObjectId = "O-1", Number = 1, Text = "Schalten <aus>", FunctionText = "Schalten",
+};
+hpObject.Links.Add("GA-HP-1");
+hpDevice.ComObjectRefs.Add(hpObject);
+hpLine.Devices.Add(hpDevice);
+hpLine.Devices.Add(new DeviceInstance
+{
+    Id = "D-HP-2", Address = new IndividualAddress(1, 1, 2), Name = "Dimmer ohne Raum",
+    ProductRefId = "M-00FA_H-1_P-2",
+});
+hpArea.Lines.Add(hpLine);
+hpInst.Areas.Add(hpArea);
+var hpRange = new GroupRange { Id = "GR-HP", Name = "Licht", RangeStart = 1, RangeEnd = 15 };
+hpRange.Addresses.Add(new GroupAddressEntry
+{
+    Id = "GA-HP-1", Name = "Decke <Licht>", Address = GroupAddress.ThreeLevel(1, 1, 1),
+    DatapointType = "DPST-1-1", Description = "=1+1", Comment = "@cmd",
+});
+hpInst.MainRanges.Add(hpRange);
+var hpBuilding = hpInst.Locations.Add(null, "Gebäude <Süd>", SpaceKind.Building);
+var hpFloor = hpInst.Locations.Add(hpBuilding, "Erdgeschoss", SpaceKind.Floor);
+var hpRoom = hpInst.Locations.Add(hpFloor, "Wohnen & <Küche>", SpaceKind.Room);
+hpRoom.AssignDevice(hpDevice);
+hpProject.Installations.Add(hpInst);
+var hpRevision = ProjectRevisions.Capture(hpProject, @"C:\Kunde Geheim\haus.knxproj", "Abnahme <1>", hpTime);
+
+var hpExpectedNames = new[]
+{
+    HandoverPackage.ManifestName, HandoverPackage.ReadmeName,
+    "01_projektbericht.html", "02_gruppenadressen.csv", "03_geraete.csv", "04_topologie.csv",
+    "05_zuordnungen.csv", "06_raum_buch.csv", "07_verknuepfungen.csv", "08_etiketten.html",
+    "09_semantik.ttl", "10_pruefprotokoll.html", "11_parameternachweis.csv",
+    "12_betriebsanleitung.html", "13_wartung_kontakte.html", "14_datenschutz_hinweise.html",
+    "15_projektverlauf.csv",
+};
+var hpOptions = new HandoverPackageOptions
+{
+    GeneratedAt = hpTime, Language = "de", Technician = "T. <Test>", BuildingOwner = "B. & Co",
+};
+var hpArtifacts = HandoverPackage.Build(hpProject, hpOptions);
+
+Check("Paket: fester Dateisatz in fester Reihenfolge",
+    hpArtifacts.Select(a => a.Name).SequenceEqual(hpExpectedNames),
+    string.Join(",", hpArtifacts.Select(a => a.Name)));
+
+var hpManifest = HpArtifact(hpArtifacts, HandoverPackage.ManifestName);
+var hpManifestRows = hpManifest.Split('\n')
+    .Where(line => line.Length > 2 && !line.StartsWith('#'))
+    .Select(line => line.Split("  ", 2))
+    .ToList();
+Check("Paket: Manifest listet jede Datei außer sich selbst",
+    hpManifestRows.Count == hpArtifacts.Count - 1 &&
+    hpManifestRows.Select(row => row[1]).SequenceEqual(hpExpectedNames.Skip(1)));
+Check("Paket: Manifest-Hashes stimmen mit den Dateien",
+    hpManifestRows.All(row => row[0] == Convert.ToHexString(
+        SHA256.HashData(hpArtifacts.Single(a => a.Name == row[1]).Content)).ToLowerInvariant()));
+Check("Paket: Manifest nennt Zeitpunkt, Revision, Signatur und Protokoll",
+    hpManifest.Contains("# generated: 2026-10-22T12:00:00") &&
+    hpManifest.Contains("# revision: 1 (REV-0001)") &&
+    hpManifest.Contains("# signature: unverified") &&
+    hpManifest.Contains("# signature-sha256:") &&
+    hpManifest.Contains("# content-sha256: " + ProjectRevisions.ContentHash(hpProject)) &&
+    hpManifest.Contains("# acceptance-protocol: 10_pruefprotokoll.html") &&
+    hpManifest.Contains("# locations: present (rooms=1 assigned=1 unassigned=1)"));
+Check("Paket: Manifest zählt die Dateien", hpManifest.Contains("# files: " + (hpExpectedNames.Length - 1)));
+
+var hpReadme = HpArtifact(hpArtifacts, HandoverPackage.ReadmeName);
+Check("Paket: README nennt Revision und Signaturstatus",
+    hpReadme.Contains("Revision: 1 (REV-0001)") &&
+    hpReadme.Contains("Signatur: vorhanden, unverändert übernommen, nicht neu berechnet"));
+Check("Paket: README nennt Grenzen, Ausschlüsse und Datenschutz",
+    hpReadme.Contains("Bekannte Grenzen") && hpReadme.Contains(".knxkeys") &&
+    hpReadme.Contains(".knxprod") && hpReadme.Contains("Demo-JSON") &&
+    hpReadme.Contains("12_betriebsanleitung.html") && hpReadme.Contains("14_datenschutz_hinweise.html"));
+
+var hpRoomBook = HpArtifact(hpArtifacts, "06_raum_buch.csv");
+var hpRoomRows = hpRoomBook.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+Check("Raumbuch: Raum, Geschoss und Gerät aus der Locations-Struktur",
+    hpRoomRows.Any(row => row.Contains("Haus / Gebäude <Süd> / Erdgeschoss / Wohnen & <Küche>") &&
+                          row.Contains("Erdgeschoss") && row.Contains("Aktor <1>")));
+Check("Raumbuch: Gerät ohne Raum steht am Ende", hpRoomRows[^1].Contains("Dimmer ohne Raum") &&
+    hpRoomRows[^1].Contains("ohne Raum"));
+Check("Raumbuch: Kopfzeile in Deutsch", hpRoomBook.StartsWith("Raum / Pfad;Art;Geschoss;Gerät;Adresse;Produkt-Ref;"));
+
+Check("Funktionsmatrix: Objekt und Gruppenadresse",
+    HpArtifact(hpArtifacts, "05_zuordnungen.csv").Contains("Schalten <aus>") &&
+    HpArtifact(hpArtifacts, "05_zuordnungen.csv").Contains("1/1/1"));
+Check("Verknüpfungsübersicht: Bereich und Summe",
+    HpArtifact(hpArtifacts, "07_verknuepfungen.csv").Contains("Licht") &&
+    HpArtifact(hpArtifacts, "07_verknuepfungen.csv").Contains("Gesamt"));
+Check("Parameternachweis: Signatur ohne Zustand ist offen",
+    HpArtifact(hpArtifacts, "11_parameternachweis.csv").Contains("nicht aufgezeichnet") &&
+    HpArtifact(hpArtifacts, "11_parameternachweis.csv").Contains("ja"));
+Check("Projektverlauf: Revision ohne Quellpfad",
+    HpArtifact(hpArtifacts, "15_projektverlauf.csv").Contains("Abnahme <1>") &&
+    HpArtifact(hpArtifacts, "15_projektverlauf.csv").Contains(hpRevision.ContentHash) &&
+    !HpArtifact(hpArtifacts, "15_projektverlauf.csv").Contains("Kunde Geheim"));
+
+var hpHtml = hpArtifacts.Where(a => a.Name.EndsWith(".html", StringComparison.Ordinal)).ToList();
+Check("Paket: HTML maskiert Projekt-, Raum-, Geräte- und Kontaktnamen",
+    HpArtifact(hpArtifacts, "01_projektbericht.html").Contains("Haus &amp; &lt;Objekt&gt;") &&
+    HpArtifact(hpArtifacts, "12_betriebsanleitung.html").Contains("Wohnen &amp; &lt;Küche&gt;") &&
+    HpArtifact(hpArtifacts, "13_wartung_kontakte.html").Contains("T. &lt;Test&gt;") &&
+    HpArtifact(hpArtifacts, "13_wartung_kontakte.html").Contains("B. &amp; Co"));
+Check("Paket: kein Skript und keine externen URLs in HTML",
+    hpHtml.All(a =>
+    {
+        var text = HpText(a);
+        return !text.Contains("<script", StringComparison.OrdinalIgnoreCase) &&
+               !text.Contains("http://", StringComparison.OrdinalIgnoreCase) &&
+               !text.Contains("https://", StringComparison.OrdinalIgnoreCase);
+    }));
+Check("Paket: keine absoluten Quellpfade",
+    hpArtifacts.All(a =>
+    {
+        var text = HpText(a);
+        return !text.Contains("Kunde Geheim") && !text.Contains(@"C:\");
+    }));
+foreach (var name in new[]
+         {
+             "02_gruppenadressen.csv", "03_geraete.csv", "04_topologie.csv", "05_zuordnungen.csv",
+             "06_raum_buch.csv", "07_verknuepfungen.csv", "11_parameternachweis.csv", "15_projektverlauf.csv",
+         })
+    CheckNeutralized("Paket-CSV ohne Formelzelle: " + name, HpArtifact(hpArtifacts, name));
+
+Check("Paket: CSV mit BOM, HTML ohne BOM",
+    hpArtifacts.Single(a => a.Name == "02_gruppenadressen.csv").Content[0] == 0xEF &&
+    hpArtifacts.Single(a => a.Name == "01_projektbericht.html").Content[0] == (byte)'<');
+
+// Deterministische ZIP-Ausgabe.
+var hpZipA = Path.Combine(Path.GetTempPath(), "knx_handover_" + Guid.NewGuid().ToString("N") + ".zip");
+var hpZipB = Path.Combine(Path.GetTempPath(), "knx_handover_" + Guid.NewGuid().ToString("N") + ".zip");
+var hpZipC = Path.Combine(Path.GetTempPath(), "knx_handover_" + Guid.NewGuid().ToString("N") + ".zip");
+var hpWrittenA = HandoverPackage.Write(hpProject, hpZipA, hpOptions);
+var hpWrittenB = HandoverPackage.Write(hpProject, hpZipB, hpOptions);
+Check("Paket: ZIP byte-identisch bei gleichem Zeitpunkt",
+    File.ReadAllBytes(hpZipA).SequenceEqual(File.ReadAllBytes(hpZipB)));
+var hpWrittenC = HandoverPackage.Write(hpProject, hpZipC,
+    new HandoverPackageOptions { GeneratedAt = hpTime.AddMinutes(1), Language = "de" });
+Check("Paket: anderer Zeitpunkt ergibt ein anderes Paket",
+    !File.ReadAllBytes(hpZipA).SequenceEqual(File.ReadAllBytes(hpZipC)) && hpWrittenC.Bytes > 0);
+Check("Paket: Ergebnis nennt Manifest-Hash, Revision und Signatur",
+    hpWrittenA.ManifestSha256.Length == 64 && hpWrittenA.Revision == 1 &&
+    hpWrittenA.Signature == "vorhanden, unverändert übernommen, nicht neu berechnet" &&
+    hpWrittenA.Commissioning == "not_recorded" &&
+    hpWrittenA.Files.Select(f => f.Name).SequenceEqual(hpExpectedNames));
+using (var hpZip = ZipFile.OpenRead(hpZipA))
+{
+    Check("Paket: ZIP-Wurzel und feste Eintragsreihenfolge",
+        hpZip.Entries.Select(e => e.FullName)
+            .SequenceEqual(hpExpectedNames.Select(name => hpWrittenA.RootFolder + "/" + name)),
+        string.Join(",", hpZip.Entries.Select(e => e.FullName)));
+    Check("Paket: ZIP-Zeitstempel stabil", hpZip.Entries.All(e => e.LastWriteTime.Year == 2026));
+    Check("Paket: README im ZIP nennt die Grenzen",
+        ZipEntryText(hpZip, HandoverPackage.ReadmeName).Contains("Bekannte Grenzen"));
+}
+foreach (var path in new[] { hpZipA, hpZipB, hpZipC })
+    if (File.Exists(path)) File.Delete(path);
+
+// Sprache folgt der Option, nicht der UI-Sprache; die UI-Sprache wird wiederhergestellt.
+Strings.Language = "en";
+var hpGerman = HandoverPackage.Build(hpProject, new HandoverPackageOptions { GeneratedAt = hpTime, Language = "de" });
+Check("Paket: deutsche Sprache bei englischer UI",
+    HpArtifact(hpGerman, "01_projektbericht.html").Contains("<html lang=\"de\">") &&
+    HpArtifact(hpGerman, "02_gruppenadressen.csv").StartsWith("Adresse;Name;"));
+Check("Paket: UI-Sprache nach dem Export wiederhergestellt", Strings.Language == "en");
+Strings.Language = "de";
+var hpEnglish = HandoverPackage.Build(hpProject, new HandoverPackageOptions { GeneratedAt = hpTime, Language = "en" });
+Check("Paket: englische Sprache in Bericht, CSV, Manifest und README",
+    HpArtifact(hpEnglish, "01_projektbericht.html").Contains("<html lang=\"en\">") &&
+    HpArtifact(hpEnglish, "01_projektbericht.html").Contains("Project documentation") &&
+    HpArtifact(hpEnglish, "02_gruppenadressen.csv").StartsWith("Address;Name;") &&
+    HpArtifact(hpEnglish, HandoverPackage.ManifestName).Contains("# language: en") &&
+    HpArtifact(hpEnglish, HandoverPackage.ReadmeName).Contains("Handover package"));
+
+// Leeres Projekt und fehlende Gebäudestruktur.
+var hpEmpty = new Project { Id = "P-LEER", Name = "Leeres Projekt" };
+var hpEmptyArtifacts = HandoverPackage.Build(hpEmpty, new HandoverPackageOptions { GeneratedAt = hpTime, Language = "de" });
+var hpEmptyManifest = HpArtifact(hpEmptyArtifacts, HandoverPackage.ManifestName);
+Check("Paket: leeres Projekt enthält alle Dateien",
+    hpEmptyArtifacts.Select(a => a.Name).SequenceEqual(hpExpectedNames));
+Check("Paket: leeres Projekt benennt fehlende Daten",
+    hpEmptyManifest.Contains("# project: Leeres Projekt") &&
+    hpEmptyManifest.Contains("# revision: none") &&
+    hpEmptyManifest.Contains("# signature: absent") &&
+    hpEmptyManifest.Contains("# locations: absent") &&
+    hpEmptyManifest.Contains("# commissioning: not_recorded"));
+Check("Paket: leeres Raumbuch, Parameternachweis und Verlauf haben nur den Kopf",
+    HpArtifact(hpEmptyArtifacts, "06_raum_buch.csv").Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Length == 1 &&
+    HpArtifact(hpEmptyArtifacts, "11_parameternachweis.csv").Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Length == 1 &&
+    HpArtifact(hpEmptyArtifacts, "15_projektverlauf.csv").Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Length == 1);
+Check("Paket: leeres Projekt rendert Report und Protokoll",
+    HpArtifact(hpEmptyArtifacts, "01_projektbericht.html").StartsWith("<!DOCTYPE html>") &&
+    HpArtifact(hpEmptyArtifacts, "10_pruefprotokoll.html").Contains("Keine Geräte im Projekt"));
+
+var hpNoLocations = new Project { Id = "P-NOLOC", Name = "Ohne Räume" };
+var hpNoLocationsInst = new Installation { Id = "I-NOLOC", Name = "Haus" };
+var hpNoLocationsArea = new Area { Id = "A-NOLOC", Address = 1, Name = "Erdgeschoss" };
+var hpNoLocationsLine = new Line { Id = "L-NOLOC", Address = 1, Name = "Licht" };
+hpNoLocationsLine.Devices.Add(new DeviceInstance
+{
+    Id = "D-NOLOC", Address = new IndividualAddress(1, 1, 1), Name = "Aktor ohne Raum", ProductRefId = "M-1",
+});
+hpNoLocationsArea.Lines.Add(hpNoLocationsLine);
+hpNoLocationsInst.Areas.Add(hpNoLocationsArea);
+hpNoLocations.Installations.Add(hpNoLocationsInst);
+var hpNoLocationsArtifacts = HandoverPackage.Build(hpNoLocations,
+    new HandoverPackageOptions { GeneratedAt = hpTime, Language = "de" });
+Check("Paket: fehlende Locations listen Geräte als ohne Raum",
+    HpArtifact(hpNoLocationsArtifacts, HandoverPackage.ManifestName).Contains("# locations: absent") &&
+    HpArtifact(hpNoLocationsArtifacts, "06_raum_buch.csv").Contains("Aktor ohne Raum") &&
+    HpArtifact(hpNoLocationsArtifacts, "06_raum_buch.csv").Contains("ohne Raum"));
+
+// Demo-Ladung bleibt Simulation, nicht echter Download.
+var hpSignature = WorkbenchProject.ConfigurationSignature(hpProject, "D-HP-1");
+var hpState = DeviceProgrammingState.Empty("D-HP-1")
+    .ApplySuccess(DeviceLoadFlags.All, hpSignature, hpTime, "iface-1", ProgrammingOrigin.Demo);
+var hpStateOptions = new HandoverPackageOptions
+{
+    GeneratedAt = hpTime,
+    Language = "de",
+    ProgrammingStates = new Dictionary<string, DeviceProgrammingState> { ["D-HP-1"] = hpState },
+};
+var hpStateArtifacts = HandoverPackage.Build(hpProject, hpStateOptions);
+Check("Paket: Demo-Ladung ist Simulation",
+    HpArtifact(hpStateArtifacts, HandoverPackage.ManifestName).Contains("# commissioning: simulation") &&
+    HpArtifact(hpStateArtifacts, "11_parameternachweis.csv").Contains("Demo (Simulation)") &&
+    HpArtifact(hpStateArtifacts, "10_pruefprotokoll.html").Contains("Simulation (Demo)") &&
+    HpArtifact(hpStateArtifacts, HandoverPackage.ReadmeName).Contains("Simulation"));
+var hpStateZip = Path.Combine(Path.GetTempPath(), "knx_handover_" + Guid.NewGuid().ToString("N") + ".zip");
+var hpStateResult = HandoverPackage.Write(hpProject, hpStateZip, hpStateOptions);
+Check("Paket: Ergebnis meldet Simulation", hpStateResult.Commissioning == "simulation");
+if (File.Exists(hpStateZip)) File.Delete(hpStateZip);
 
 Console.WriteLine(failures.Count == 0 ? "REPORTS OK" : $"{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);

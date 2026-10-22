@@ -47,7 +47,7 @@ Check("ping answers with an object", ping["result"] is JsonObject, ping.ToJsonSt
 
 var listed = await Call(3, "tools/list");
 var tools = listed["result"]?["tools"]?.AsArray() ?? new JsonArray();
-Check("tools/list returns 50 tools", tools.Count == 50, tools.Count.ToString());
+Check("tools/list returns 51 tools", tools.Count == 51, tools.Count.ToString());
 Check("every tool has a snake_case name",
     tools.All(t => (string?)t?["name"] is { Length: > 0 } name &&
                    name.All(c => char.IsLower(c) || char.IsDigit(c) || c == '_')));
@@ -509,6 +509,135 @@ Check("acceptance_protocol_export rejects a foreign state file",
 foreach (var path in new[] { acceptancePath, simulatedPath, acceptanceCsvPath, statesPath, wrongStatesPath })
     if (File.Exists(path)) File.Delete(path);
 
+// ---------------------------------------------------------------- handover package export
+
+var handoverProjectPath = Path.Combine(Path.GetTempPath(),
+    "knx_mcp_handover_project_" + Guid.NewGuid().ToString("N") + ".knxproj");
+var handoverSaved = await Tool(96, "project_save", new { path = handoverProjectPath });
+Check("handover test project saved", handoverSaved["result"]?["isError"] is null, handoverSaved.ToJsonString());
+var handoverProjectId = server.Project!.Id;
+var handoverProjectBytes = File.ReadAllBytes(handoverProjectPath);
+var handoverXmlBefore = Knx.Knxproj.ToXml(server.Project!).ToString();
+var handoverUndoBefore = (await Tool(97, "project_info"))["result"]?["structuredContent"]?["undo"]?["steps"]?.GetValue<int>();
+
+var handoverPath = Path.Combine(Path.GetTempPath(), "knx_mcp_handover_" + Guid.NewGuid().ToString("N") + ".zip");
+var handover = await Tool(98, "handover_package_export", new
+{
+    output = handoverPath,
+    language = "de",
+    generated_at = "2026-10-22T12:00:00+02:00",
+    technician = "T. Prüfer",
+    building_owner = "B. Eigentümer",
+});
+Check("handover_package_export writes a ZIP",
+    handover["result"]?["isError"] is null && File.Exists(handoverPath), handover.ToJsonString());
+var handoverContent = handover["result"]?["structuredContent"];
+Check("handover_package_export reports manifest, files and status",
+    handoverContent?["files"]?.GetValue<int>() == 17 &&
+    (string?)handoverContent?["manifestHash"] is { Length: 64 } &&
+    handoverContent?["commissioning"]?.GetValue<string>() == "not_recorded" &&
+    handoverContent?["signature"]?.GetValue<string>() is { Length: > 0 } &&
+    (string?)handoverContent?["root"] is { Length: > 0 }, handover.ToJsonString());
+using (var handoverZip = ZipFile.OpenRead(handoverPath))
+{
+    var entries = handoverZip.Entries.Select(entry => entry.FullName).ToList();
+    Check("handover package ZIP has the manifest first",
+        entries.Count == 17 && entries[0].EndsWith("/00_MANIFEST.sha256", StringComparison.Ordinal));
+    Check("handover package ZIP includes room book, README and protocol",
+        entries.Any(entry => entry.EndsWith("/06_raum_buch.csv", StringComparison.Ordinal)) &&
+        entries.Any(entry => entry.EndsWith("/00_README.txt", StringComparison.Ordinal)) &&
+        entries.Any(entry => entry.EndsWith("/10_pruefprotokoll.html", StringComparison.Ordinal)));
+    var manifest = ReadZipEntry(handoverZip, "00_MANIFEST.sha256");
+    Check("handover manifest carries hashes and the project identity",
+        manifest.Contains("# project: MCP Testprojekt") && manifest.Contains("# files: 16") &&
+        manifest.Contains("# acceptance-protocol: 10_pruefprotokoll.html") &&
+        manifest.Contains("# generated: 2026-10-22T12:00:00"));
+}
+Check("handover_package_export does not change the project",
+    Knx.Knxproj.ToXml(server.Project!).ToString() == handoverXmlBefore);
+Check("handover_package_export leaves the project file byte-identical",
+    File.ReadAllBytes(handoverProjectPath).SequenceEqual(handoverProjectBytes));
+Check("handover_package_export adds no undo step",
+    (await Tool(99, "project_info"))["result"]?["structuredContent"]?["undo"]?["steps"]?.GetValue<int>() ==
+    handoverUndoBefore);
+Check("handover_package_export leaves the bus disconnected",
+    (await Tool(100, "bus_status"))["result"]?["structuredContent"]?["connected"]?.GetValue<bool>() == false);
+Check("handover package contains no local source paths",
+    ZipEntryTexts(handoverPath).All(text => !text.Contains(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase)));
+
+// Guard rails: never overwrite an input, reject foreign states and non-ZIP targets.
+var handoverOverwrite = await Tool(101, "handover_package_export", new { output = handoverProjectPath });
+Check("handover_package_export refuses to overwrite the project file",
+    handoverOverwrite["result"]?["isError"]?.GetValue<bool>() == true &&
+    Knx.Knxproj.ToXml(server.Project!).ToString() == handoverXmlBefore, handoverOverwrite.ToJsonString());
+var handoverGuardPath = Path.Combine(Path.GetTempPath(), "knx_mcp_handover_guard_" + Guid.NewGuid().ToString("N") + ".zip");
+var handoverForeignStatePath = Path.Combine(Path.GetTempPath(),
+    "knx_mcp_handover_states_wrong_" + Guid.NewGuid().ToString("N") + ".json");
+var handoverDemo = Knx.Workbench.DeviceProgrammingState.Empty(acceptanceDeviceId)
+    .ApplySuccess(Knx.Workbench.DeviceLoadFlags.All, acceptanceSignature, DateTimeOffset.UnixEpoch, "iface-1",
+        Knx.Workbench.ProgrammingOrigin.Demo);
+File.WriteAllText(handoverForeignStatePath,
+    Knx.Workbench.DeviceProgrammingStates.Serialize("P-OTHER", new[] { handoverDemo }));
+var handoverForeign = await Tool(102, "handover_package_export", new
+{
+    output = handoverGuardPath,
+    states_path = handoverForeignStatePath,
+});
+Check("handover_package_export rejects a foreign state file",
+    handoverForeign["result"]?["isError"]?.GetValue<bool>() == true &&
+    !File.Exists(handoverGuardPath) &&
+    (handoverForeign["result"]?["content"]?[0]?["text"]?.GetValue<string>() ?? "")
+    .Contains("another project", StringComparison.Ordinal), handoverForeign.ToJsonString());
+var handoverNotZip = await Tool(103, "handover_package_export", new
+{
+    output = Path.ChangeExtension(handoverGuardPath, ".txt"),
+});
+Check("handover_package_export requires a .zip output",
+    handoverNotZip["result"]?["isError"]?.GetValue<bool>() == true &&
+    (handoverNotZip["result"]?["content"]?[0]?["text"]?.GetValue<string>() ?? "")
+    .Contains("zip", StringComparison.Ordinal), handoverNotZip.ToJsonString());
+
+var handoverStatesPath = Path.Combine(Path.GetTempPath(),
+    "knx_mcp_handover_states_" + Guid.NewGuid().ToString("N") + ".json");
+File.WriteAllText(handoverStatesPath,
+    Knx.Workbench.DeviceProgrammingStates.Serialize(handoverProjectId, new[] { handoverDemo }));
+var handoverSimulatedPath = Path.Combine(Path.GetTempPath(),
+    "knx_mcp_handover_sim_" + Guid.NewGuid().ToString("N") + ".zip");
+var handoverSimulated = await Tool(104, "handover_package_export", new
+{
+    output = handoverSimulatedPath,
+    states_path = handoverStatesPath,
+    language = "en",
+});
+Check("handover package labels a recorded demo load as simulation",
+    handoverSimulated["result"]?["isError"] is null &&
+    handoverSimulated["result"]?["structuredContent"]?["commissioning"]?.GetValue<string>() == "simulation" &&
+    ZipEntryTexts(handoverSimulatedPath).Any(text => text.Contains("# commissioning: simulation")) &&
+    ZipEntryTexts(handoverSimulatedPath).Any(text => text.Contains("simulation – demo loads only")),
+    handoverSimulated.ToJsonString());
+
+var handoverFromPath = Path.Combine(Path.GetTempPath(),
+    "knx_mcp_handover_path_" + Guid.NewGuid().ToString("N") + ".zip");
+var handoverReadPath = await Tool(105, "handover_package_export", new
+{
+    path = handoverProjectPath,
+    output = handoverFromPath,
+});
+Check("handover_package_export reads a project path without replacing the open project",
+    handoverReadPath["result"]?["isError"] is null && File.Exists(handoverFromPath) &&
+    server.Project!.Id == handoverProjectId &&
+    Knx.Knxproj.ToXml(server.Project!).ToString() == handoverXmlBefore);
+Check("handover_package_export still adds no undo step after a path export",
+    (await Tool(106, "project_info"))["result"]?["structuredContent"]?["undo"]?["steps"]?.GetValue<int>() ==
+    handoverUndoBefore);
+
+foreach (var path in new[]
+         {
+             handoverProjectPath, handoverPath, handoverGuardPath, handoverForeignStatePath,
+             handoverStatesPath, handoverSimulatedPath, handoverFromPath,
+         })
+    if (File.Exists(path)) File.Delete(path);
+
 // ---------------------------------------------------------------- project search / replace
 
 var searchedDevice = await Tool(70, "project_search", new { query = "Katalogaktor", scope = "devices" });
@@ -626,4 +755,21 @@ async Task<JsonNode> Tool(int id, string name, object? arguments = null)
     var parameters = new JsonObject { ["name"] = name };
     if (arguments is not null) parameters["arguments"] = JsonSerializer.SerializeToNode(arguments);
     return await Call(id, "tools/call", parameters);
+}
+
+static string ReadZipEntry(ZipArchive zip, string name)
+{
+    var entry = zip.Entries.Single(e => e.FullName.EndsWith("/" + name, StringComparison.Ordinal));
+    using var reader = new StreamReader(entry.Open(), Encoding.UTF8);
+    return reader.ReadToEnd();
+}
+
+static IEnumerable<string> ZipEntryTexts(string path)
+{
+    using var zip = ZipFile.OpenRead(path);
+    foreach (var entry in zip.Entries)
+    {
+        using var reader = new StreamReader(entry.Open(), Encoding.UTF8);
+        yield return reader.ReadToEnd();
+    }
 }

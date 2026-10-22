@@ -23,9 +23,9 @@ derived from the KNX Association or any tool vendor.
 | KNXnet/IP | discovery and tunnel handshake live-verified read-only (connect, one group read, clean disconnect); group writes, download and secure tunnelling unverified |
 | KNX Data Security (keyring, secure telegrams, secure wrapper) | foundation, not yet wired into the tunnel |
 | Semantic export (Turtle/JSON-LD) + OWL/KIM checks | working in Core and tests; the checks are not surfaced in the workbench |
-| Reports: CSV, labels (HTML in the workbench; CSV or combined HTML through MCP), project compare | working |
+| Reports: CSV, labels (HTML in the workbench; CSV or combined HTML through MCP), project compare | working; MCP also writes one deterministic handover package (ZIP with room book, acceptance protocol and SHA-256 manifest) |
 | UI: Avalonia 12.1.4, native Workbench (no docking package), object-centred tabs, inspector, monitor/programming/scan tools, light/dark theme, German/English | working V4 shell; monitor, scan and programming are labelled simulations; advanced ETS parity still limited |
-| MCP server for AI agents (stdio, 50 tools) | working; includes manual communication-object links, the read-only download preflight (`download_plan`) and the acceptance-protocol export |
+| MCP server for AI agents (stdio, 51 tools) | working; includes manual communication-object links, the read-only download preflight (`download_plan`), the acceptance-protocol export and the read-only handover package |
 | Hawk/IoT device images | open |
 
 Latest bounded reference-tool analysis and implemented gap fixes:

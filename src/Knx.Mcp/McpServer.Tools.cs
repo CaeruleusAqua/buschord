@@ -245,6 +245,22 @@ public sealed partial class McpServer
                 StrProp("building_owner", "Building owner name printed in the sign-off block."),
                 IntProp("defect_lines", "Blank defect-list rows (0..50, default 5).")),
             Sync(AcceptanceProtocolExport)),
+        new("handover_package_export",
+            "Write one deterministic handover package (ZIP) for the open project or a given .knxproj: " +
+            "printable project report, group address/device/topology CSV, function matrix, room book from " +
+            "the native Locations tree, link summary, labels, semantic Turtle, acceptance protocol, " +
+            "parameter/signature evidence, operating/maintenance/contact/data-protection template pages, " +
+            "revision list, README and a SHA-256 manifest. Read-only: writes only the .zip, never the project.",
+            Schema(
+                StrProp("path", "Optional .knxproj to package; defaults to the open project. The file is only read."),
+                StrProp("output", "Output .zip path; must not be the project file.", true),
+                EnumProp("language", "Package language.", ["de", "en"]),
+                StrProp("title", "Package/report title; defaults to the project name."),
+                StrProp("technician", "Technician name for the protocol and contact page."),
+                StrProp("building_owner", "Building owner name for the protocol and contact page."),
+                StrProp("generated_at", "Fixed ISO-8601 timestamp for byte-identical regeneration."),
+                StrProp("states_path", "Optional device programming state JSON (workbench export); foreign project ids are rejected.")),
+            Sync(HandoverPackageExport)),
         new("project_compare",
             "Compare two .knxproj files and report added, removed and changed installations, devices and " +
             "group addresses.",
@@ -881,6 +897,92 @@ public sealed partial class McpServer
                 _ => "not_recorded",
             },
             documentHash = summary.DocumentHash,
+        };
+    }
+
+    private object HandoverPackageExport(JsonElement args)
+    {
+        var output = Path.GetFullPath(Required(args, "output"));
+        if (Directory.Exists(output))
+            throw new ToolException("output must be a file path, not a directory");
+        RequireExtension(output, ".zip", "output");
+
+        var language = Str(args, "language")?.ToLowerInvariant();
+        if (language is not null && language is not ("de" or "en"))
+            throw new ToolException($"unknown language '{language}' (expected de or en)");
+
+        DateTimeOffset? generatedAt = null;
+        if (Str(args, "generated_at") is { Length: > 0 } generatedText)
+        {
+            if (!DateTimeOffset.TryParse(generatedText, CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var parsed))
+                throw new ToolException($"'generated_at' is not an ISO-8601 timestamp: {generatedText}");
+            generatedAt = parsed;
+        }
+
+        Project project;
+        string? source = null;
+        if (Str(args, "path") is { Length: > 0 } projectPath)
+        {
+            source = Path.GetFullPath(projectPath);
+            RequireExtension(source, ".knxproj", "path");
+            if (!File.Exists(source)) throw new ToolException($"project file not found: {source}");
+            project = Knxproj.Load(source);
+        }
+        else
+        {
+            project = Current;
+            source = _projectPath;
+        }
+
+        if (source is not null && SamePath(output, source))
+            throw new ToolException("output must not overwrite the project file");
+
+        IReadOnlyDictionary<string, DeviceProgrammingState>? states = null;
+        if (Str(args, "states_path") is { Length: > 0 } statesPath)
+        {
+            var full = Path.GetFullPath(statesPath);
+            RequireExtension(full, ".json", "states_path");
+            if (!File.Exists(full)) throw new ToolException($"device programming state file not found: {full}");
+            if (SamePath(output, full))
+                throw new ToolException("output must not overwrite the programming state file");
+            try
+            {
+                states = DeviceProgrammingStates.Parse(File.ReadAllText(full), project.Id);
+            }
+            catch (Exception ex) when (ex is FormatException or IOException or UnauthorizedAccessException)
+            {
+                throw new ToolException($"device programming state file rejected: {ex.Message}");
+            }
+        }
+
+        var result = HandoverPackage.Write(project, output, new HandoverPackageOptions
+        {
+            Title = Str(args, "title"),
+            Language = language ?? Strings.Language,
+            GeneratedAt = generatedAt,
+            Technician = Str(args, "technician"),
+            BuildingOwner = Str(args, "building_owner"),
+            ProgrammingStates = states,
+        });
+
+        return new
+        {
+            path = result.Path,
+            bytes = result.Bytes,
+            root = result.RootFolder,
+            project = project.Name,
+            files = result.Files.Count,
+            manifestHash = result.ManifestSha256,
+            revision = result.Revision,
+            signature = result.Signature,
+            commissioning = result.Commissioning,
+            contents = result.Files.Select(file => new
+            {
+                name = file.Name,
+                bytes = file.Bytes,
+                sha256 = file.Sha256,
+            }).ToList(),
         };
     }
 
@@ -1678,6 +1780,18 @@ public sealed partial class McpServer
         EnsureDirectory(full);
         return full;
     }
+
+    /// <summary>Handover tool guard: an input/output path must name the expected file type.</summary>
+    private static void RequireExtension(string path, string extension, string argument)
+    {
+        if (!path.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            throw new ToolException($"{argument} must point to a {extension} file");
+    }
+
+    /// <summary>Handover tool guard: never let an output overwrite an input file.</summary>
+    private static bool SamePath(string left, string right)
+        => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     private static void EnsureDirectory(string path)
     {

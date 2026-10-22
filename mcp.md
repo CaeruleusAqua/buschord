@@ -90,6 +90,7 @@ No DPT compatibility is inferred when reference metadata is unavailable.
 **Export** — `export_csv(kind, path)`, `export_semantic(format, path)`,
 `export_labels(kind, format, path)`, `report_export(path, title?, include_*)`,
 `acceptance_protocol_export(path, format?, language?, title?, states_path?, technician?, building_owner?, defect_lines?)`,
+`handover_package_export(path?, output, language?, title?, technician?, building_owner?, generated_at?, states_path?)`,
 `project_compare(left_path, right_path)`
 
 `report_export` writes one self-contained printable HTML project report (title page with counts,
@@ -113,6 +114,21 @@ file): without a state every device reads `no download recorded`, demo states re
 carries `documentHash`, `devices`, `openItems` and `commissioning` (`real`, `simulation` or
 `not_recorded`; failed attempts never count as a load). Identical inputs, including `title`,
 `language`, names and states, produce an identical document and hash.
+
+`handover_package_export` writes one deterministic handover ZIP for the open project or for an
+optional `path` (`.knxproj`, read only). It bundles the printable report, group address, device
+and topology CSV, the function matrix (`05_zuordnungen.csv`) and link summary, the room book from
+the native Locations tree (including devices without a room), group address and device labels,
+the semantic Turtle export, the acceptance protocol (`10_pruefprotokoll.html`), per-device
+configuration signatures and recorded load states, template pages for operating instructions,
+maintenance contacts and data protection, the revision list, a README and `00_MANIFEST.sha256`
+with a SHA-256 entry for every other file. `language` (`de`/`en`) and `generated_at` (ISO 8601) make
+regeneration byte-identical; without `generated_at` the current time is used. `states_path`
+follows the protocol rules and a state file from another project is rejected. The tool is
+read-only: it loads `path` without replacing the open project, never writes to the `.knxproj`,
+adds no undo history and only writes the ZIP (`output`; it must not be the project file). The
+package contains no keyring, catalogue or manufacturer files and no absolute source paths;
+missing revisions, locations or states and demo loads are named explicitly.
 
 **Editing** – `undo`, `redo`
 
