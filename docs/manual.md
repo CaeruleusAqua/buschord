@@ -699,9 +699,10 @@ Projekt. `Strg+G`, `F2` und `F5` sind in der Workbench **nicht** belegt.
 BusChord enthält einen headless MCP-Server (`src/Knx.Mcp`, stdio, JSON-RPC 2.0)
 für Agenten und Skripte. Er nutzt dieselben Core-Funktionen, arbeitet ohne
 Oberfläche und ändert die `.knxproj` erst bei `project_save`. Der Server bietet
-50 Werkzeuge: Projekt, Suche/Ersetzen, Gruppenadressen, Geräte, manuelle
+51 Werkzeuge: Projekt, Suche/Ersetzen, Gruppenadressen, Geräte, manuelle
 Verknüpfungen, Analyse (Prüfung, Smart Linking, Produkttausch), Exporte, Katalog,
-Bus, Undo/Redo, das Abnahmeprotokoll und die read-only Download-Vorprüfung.
+Bus, Undo/Redo, das Abnahmeprotokoll, das Übergabepaket und die read-only
+Download-Vorprüfung.
 
 Einzelheiten, Startbefehle, Verbindungsbeispiel und Werkzeugliste stehen in
 [mcp.md](../mcp.md). Für Agenten gilt dasselbe Sicherheitsmodell: Bearbeitung ist
