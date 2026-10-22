@@ -96,6 +96,7 @@ internal static class Program
         {
             main.ViewModel.CreateProject(WorkbenchJson.CreateDemo(), null);
             main.RefreshWorkspace();
+            await V4ToolChecks.Run(main);
             main.ShowTool("monitor");
             await Settle();
 

@@ -792,7 +792,7 @@ public partial class WorkbenchWindow : Window
                     if (ToolPageHost.Content is CatalogPane open) { if (line is not null) open.PreferredLine = line; open.PreferredRoomId = roomId; }
                     else ToolPageHost.Content = new CatalogPane(ViewModel, _catalogLibrary) { DataContext = ViewModel, PreferredLine = line, PreferredRoomId = roomId };
                 }
-                else if (tab.View == "overview") ToolPageHost.Content = CreateProblemsView();
+                else if (tab.View == "overview") ToolPageHost.Content = CreateProblemsView(tab.Target);
                 for (var i = 0; i < Representations.Children.Count; i++)
                 {
                     var activeView = new[] { "objects", "params", "relations", "overview" }[i] == tab.View;
@@ -1918,6 +1918,7 @@ public partial class WorkbenchWindow : Window
         "programming" => W("ProgrammingWindowTitle"),
         "scan" => W("Scan"),
         "changes" => W("ChangesWindowTitle"),
+        "search" => W("SidebarSearch"),
         _ => W("MonitorWindowTitle")
     };
     private Control CreateRelationsView()
@@ -1925,11 +1926,23 @@ public partial class WorkbenchWindow : Window
         if (ViewModel.Project is not { } project || Workspace.ActiveTab is not { } tab)
             return Note(W("RelationsNeedTarget"));
         var panel = new StackPanel { Spacing = 8, Margin = new(24, 12) };
-        var rows = WorkbenchProjection.Rows(project, tab).Where(r => r.Object is not null).ToList();
+        var scope = tab.Target.Kind switch
+        {
+            "room" => new WorkbenchScope(WorkbenchScopeKind.Room, tab.Target.Id, tab.IncludeRelated),
+            "line" => new WorkbenchScope(WorkbenchScopeKind.Line, tab.Target.Id),
+            "device" => new WorkbenchScope(WorkbenchScopeKind.Device, tab.Target.Id),
+            "ga" => new WorkbenchScope(WorkbenchScopeKind.GroupAddress, tab.Target.Id),
+            _ => new WorkbenchScope()
+        };
+        var rows = WorkbenchProject.ScopeObjects(project, scope with { IncludeInactive = true });
         if (rows.Count == 0) { panel.Children.Add(EmptyState("topology", W("Relations"), W("RelationsEmpty"))); return panel; }
         panel.Children.Add(Label(W("RelationsTitle")));
         panel.Children.Add(Note(W("RelationsNote")));
-        foreach (var row in rows)
+        panel.Children.Add(Note($"KO → GA [C,T] · KO ← GA [C,W/U] · {W("ObjectFlags")}"));
+        var groupIds = tab.Target.Kind == "ga" ? new[] { tab.Target.Id }
+            : rows.SelectMany(r => r.Object.Links).Distinct().ToArray();
+        var all = WorkbenchProject.ScopeObjects(project, new(IncludeInactive: true));
+        foreach (var id in groupIds)
         {
             var card = new Border
             {
@@ -1937,16 +1950,20 @@ public partial class WorkbenchWindow : Window
                 BorderBrush = Avalonia.Media.Brushes.Transparent
             };
             var stack = new StackPanel { Spacing = 4 };
-            stack.Children.Add(Label(W("RelationsRow", row.Object!.Number, row.Name, row.Dpt ?? W("Unknown"))));
-            var links = row.Object.Links.ToList();
-            if (links.Count == 0) stack.Children.Add(Note(W("NoLinksDot")));
-            foreach (var id in links)
+            var ga = ProjectQuery.GroupAddresses(project).FirstOrDefault(g => g.Id == id);
+            stack.Children.Add(ga is null ? Note(id) : ActionButton($"{ga.Address} · {ga.Name}", () => OpenTarget(new("ga", id)), "quiet"));
+            foreach (var row in all.Where(r => r.Object.Links.Contains(id)))
             {
-                var ga = ProjectQuery.GroupAddresses(project).FirstOrDefault(g => g.Id == id);
-                var sending = WorkbenchProject.Metadata(project, new(row.Device.Id, row.Object.Id))?.SendingGroupId == id;
+                var flags = row.Metadata?.Flags;
+                var communicating = row.Metadata?.Active != false && flags?.Contains('C') == true;
+                var sending = row.Metadata?.Connector(id).Send == true;
+                var sends = communicating && flags!.Contains('T') && sending;
+                var receives = communicating && (flags!.Contains('W') || flags.Contains('U'));
+                var direction = sends && receives ? "↔" : sends ? "→" : receives ? "←" : "·";
                 var line = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
-                line.Children.Add(ga is null ? Note(id) : ActionButton($"{ga.Address} · {ga.Name}" + (sending ? W("SendingSuffix") : ""),
-                    () => OpenTarget(new("ga", id)), "quiet"));
+                line.Children.Add(ActionButton($"{row.Device.Address} · {row.Device.Name} · #{row.Object.Number} · {row.Object.Text}",
+                    () => RevealComObject(row.Device, row.Object.Id), "quiet"));
+                line.Children.Add(Note($"{direction} [{flags ?? "—"}]" + (sending ? W("SendingSuffix") : "")));
                 line.Children.Add(ActionButton(W("Remove"), () =>
                 {
                     string? warning = null;
@@ -1956,40 +1973,101 @@ public partial class WorkbenchWindow : Window
                     RefreshWorkspace();
                 }, "quiet"));
                 stack.Children.Add(line);
-            }
-            stack.Children.Add(ActionButton(W("EditLinksEllipsis"), () =>
-            {
-                if (Workspace.ActiveTab is { } active)
+                stack.Children.Add(ActionButton(W("EditLinksEllipsis"), () =>
                 {
+                    // A remote counterpart must become the editing target before opening its associations.
+                    var active = OpenTarget(new("device", row.Device.Id));
                     active.SelectedObjectIds.Clear();
                     active.SelectedObjectIds.Add(WorkbenchProjection.ObjectKey(row.Device, row.Object));
-                }
-                ShowBatchLinkDialog();
-            }, "quiet"));
+                    ShowBatchLinkDialog();
+                }, "quiet"));
+            }
             card.Child = stack;
             panel.Children.Add(card);
+        }
+        foreach (var row in rows.Where(r => r.Object.Links.Count == 0))
+        {
+            panel.Children.Add(Label(W("RelationsRow", row.Object.Number, row.Object.Text ?? row.Object.Id, row.Metadata?.Dpt ?? W("Unknown"))));
+            panel.Children.Add(Note(W("NoLinksDot")));
+            panel.Children.Add(ActionButton(W("EditLinksEllipsis"), () =>
+            {
+                var active = OpenTarget(new("device", row.Device.Id));
+                active.SelectedObjectIds.Clear(); active.SelectedObjectIds.Add(WorkbenchProjection.ObjectKey(row.Device, row.Object));
+                ShowBatchLinkDialog();
+            }, "quiet"));
         }
         return new ScrollViewer { Content = panel };
     }
 
-    private Control CreateProblemsView()
+    private Control CreateProblemsView(WorkbenchTarget? target = null)
     {
         ViewModel.RunCheck();
+        IReadOnlyCollection<CheckFinding> findings = ViewModel.Project is { } project && target is not null && target.Kind != "project"
+            ? ScopedFindings(project, target, ViewModel.Findings).ToList() : ViewModel.Findings;
         var panel = new DockPanel();
-        if (ViewModel.Findings.Count > 0)
+        if (findings.Count > 0)
         {
-            var summary = Note(W("CheckFindings", ViewModel.Findings.Count));
+            var summary = Note(W("CheckFindings", findings.Count));
             summary.Margin = new(12, 6);
             DockPanel.SetDock(summary, Avalonia.Controls.Dock.Top);
             panel.Children.Add(summary);
         }
-        var list = new ListBox { ItemsSource = ViewModel.Findings, Background = Brushes.Transparent };
+        var list = new ListBox { ItemsSource = findings, Background = Brushes.Transparent };
         list.ItemTemplate = new FuncDataTemplate<CheckFinding>((f, _) => Note(f is null ? "" : $"{f.Severity} · {f.Code} · {f.Path}\n{f.Message}"));
-        if (ViewModel.Findings.Count == 0)
+        if (findings.Count == 0)
             panel.Children.Add(EmptyState("warning", W("EmptyCheckClean"), W("CheckClean")));
         else
             panel.Children.Add(list);
         return panel;
+    }
+
+    private static IEnumerable<CheckFinding> ScopedFindings(Project project, WorkbenchTarget target, IEnumerable<CheckFinding> findings)
+    {
+        var devices = WorkbenchProjection.Devices(project, target);
+        var paths = devices.Select(d => d.Address.ToString()).ToHashSet(StringComparer.Ordinal);
+        var ids = devices.Select(d => d.Id).ToHashSet(StringComparer.Ordinal);
+        var objects = WorkbenchProject.ScopeObjects(project, new(IncludeInactive: true))
+            .Where(r => ids.Contains(r.Device.Id) && (target.Kind != "ga" || r.Object.Links.Contains(target.Id))).ToList();
+        foreach (var row in objects) paths.Add(row.Key.ToString());
+        var groupIds = target.Kind == "ga" ? new HashSet<string> { target.Id }
+            : objects.SelectMany(r => r.Object.Links).ToHashSet();
+        foreach (var group in ProjectQuery.GroupAddresses(project).Where(g => groupIds.Contains(g.Id)))
+        {
+            paths.Add(group.Address.ToString()); paths.Add(group.Id); paths.Add("Gruppenadresse " + group.Id);
+        }
+        foreach (var id in ids) { paths.Add(id); paths.Add("Gerät " + id); }
+        if (WorkbenchProjection.Resolve(project, target) is SpaceNode room)
+            foreach (var node in room.Descendants.Append(room))
+            {
+                paths.Add("Gebäudeknoten " + node.Id);
+                foreach (var id in node.DeviceRefs) paths.Add($"{node.Path} [{id}]");
+            }
+        if (target.Kind == "line")
+            foreach (var area in project.Installations.SelectMany(i => i.Areas))
+                foreach (var line in area.Lines.Where(l => l.Id == target.Id))
+                {
+                    paths.Add($"Linie {area.Address}.{line.Address}"); paths.Add("Linie " + line.Id);
+                    foreach (var segment in line.Segments) paths.Add($"Segment {area.Address}.{line.Address}.{segment.Address}");
+                }
+        // ProjectCheck exposes paths, not object references; compare complete paths, never name substrings.
+        return findings.Where(f => paths.Contains(f.Path) || objects.Any(r => groupIds.Any(g => f.Path == $"{r.Key} → {g}")));
+    }
+
+    private static void ObserveToolState(Control view, INotifyPropertyChanged source, Action refresh)
+    {
+        var attached = false;
+        void Changed(object? sender, PropertyChangedEventArgs e)
+        {
+            if (Dispatcher.UIThread.CheckAccess()) { if (attached) refresh(); }
+            else Dispatcher.UIThread.Post(() => { if (attached) refresh(); });
+        }
+        view.AttachedToVisualTree += (_, _) =>
+        {
+            if (attached) return;
+            attached = true; source.PropertyChanged += Changed;
+            Dispatcher.UIThread.Post(() => { if (attached) refresh(); });
+        };
+        view.DetachedFromVisualTree += (_, _) => { attached = false; source.PropertyChanged -= Changed; };
     }
     private SearchPane CreateSearchView()
     {
@@ -2037,6 +2115,10 @@ public partial class WorkbenchWindow : Window
             return Note(W("MonitorNeedsProject"));
         var toolbar = new WrapPanel { Margin = new(12, 6) };
         var live = new TextBlock { FontSize = 11, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new(12, 0) };
+        var filter = new ComboBox { MinWidth = 190, SelectedIndex = 0 };
+        filter.ItemsSource = new[] { W("AllTelegrams"), W("WholeProject"), W("CurrentWorkItem"), W("FollowSelection") };
+        var pinned = Note("");
+        var syncingFilter = false;
         void RefreshState()
         {
             var running = sessions.Monitor.IsRunning;
@@ -2045,6 +2127,28 @@ public partial class WorkbenchWindow : Window
                 : W("MonitorStopped", sessions.Monitor.RecordedCount);
             live.Classes.Set("wb-success", running);
             live.Classes.Set("wb-subtle", !running);
+            syncingFilter = true;
+            filter.SelectedIndex = sessions.Monitor.FollowSelection ? 3 : sessions.Monitor.Filter.Scope switch
+            {
+                MonitorScope.All => 0, MonitorScope.Project => 1, _ => 2
+            };
+            syncingFilter = false;
+            var current = sessions.Monitor.Filter;
+            var target = current.Scope switch
+            {
+                MonitorScope.GroupAddress => new WorkbenchTarget("ga", current.Id ?? ""),
+                MonitorScope.Room => new WorkbenchTarget("room", current.Id ?? ""),
+                MonitorScope.Device => new WorkbenchTarget("device", current.Id ?? ""),
+                _ => null
+            };
+            var model = target is null ? null : WorkbenchProjection.Resolve(ViewModel.Project, target);
+            pinned.Text = model switch
+            {
+                GroupAddressEntry ga => $"{ga.Address} · {ga.Name}",
+                DeviceInstance d => $"{d.Address} · {d.Name}",
+                SpaceNode room => room.Path,
+                _ => current.Scope is MonitorScope.All or MonitorScope.Project ? "" : $"{current.Scope} · {current.Id ?? "—"}"
+            };
         }
         toolbar.Children.Add(ActionButton(W("Stop"), () => { sessions.Monitor.Stop(); RefreshState(); }));
         toolbar.Children.Add(ActionButton(W("Pause"), () => { sessions.Monitor.Pause(); RefreshState(); }, "quiet"));
@@ -2075,15 +2179,11 @@ public partial class WorkbenchWindow : Window
             catch (Exception ex) { ViewModel.Status = ex.Message; }
         }, "primary");
         toolbar.Children.Insert(0, start);
-        var filter = new ComboBox { MinWidth = 190, SelectedIndex = 0 };
         AutomationProperties.SetName(filter, W("MonitorFilter"));
-        filter.ItemsSource = new[] { W("AllTelegrams"), W("WholeProject"), W("CurrentWorkItem"), W("FollowSelection") };
-        filter.SelectedIndex = _monitorScope switch
-        {
-            MonitorScope.Project => 1, MonitorScope.Room or MonitorScope.GroupAddress or MonitorScope.Device => 2, MonitorScope.ComObject => 3, _ => 0
-        };
+        RefreshState();
         filter.SelectionChanged += (_, _) =>
         {
+            if (syncingFilter) return;
             try
             {
                 switch (filter.SelectedIndex)
@@ -2106,6 +2206,7 @@ public partial class WorkbenchWindow : Window
             catch (Exception ex) { ViewModel.Status = ex.Message; }
         };
         toolbar.Children.Add(filter);
+        toolbar.Children.Add(pinned);
         var autoScroll = new CheckBox { Content = W("AutoScroll"), IsChecked = sessions.Monitor.AutoScroll, FontSize = 11 };
         autoScroll.IsCheckedChanged += (_, _) => sessions.Monitor.AutoScroll = autoScroll.IsChecked == true;
         toolbar.Children.Add(autoScroll);
@@ -2135,7 +2236,20 @@ public partial class WorkbenchWindow : Window
             var cells = new[] { row.Timestamp.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture), row.Source, row.Destination, row.Service, row.DatapointType ?? "—", row.Value, row.Origin.ToString() };
             for (var i = 0; i < cells.Length; i++)
             {
-                var cell = Label(cells[i]); cell.FontSize = 10; cell.Margin = new(6, 0, 0, 0);
+                Control cell = Label(cells[i]);
+                if (ViewModel.Project is { } p)
+                {
+                    if (i == 1 && ProjectQuery.DeviceList(p).FirstOrDefault(d => d.Address.ToString() == row.Source) is { } source)
+                        cell = ActionButton(row.Source, () => OpenTarget(new("device", source.Id)), "quiet");
+                    if (i == 2 && row.IsGroup && ProjectQuery.GroupAddresses(p).FirstOrDefault(g =>
+                            g.Id == row.GroupAddressId || g.Address.ToString() == row.Destination) is { } destination)
+                        cell = ActionButton(row.Destination, () => OpenTarget(new("ga", destination.Id)), "quiet");
+                    if (i == 2 && !row.IsGroup && ProjectQuery.DeviceList(p).FirstOrDefault(d => d.Address.ToString() == row.Destination) is { } targetDevice)
+                        cell = ActionButton(row.Destination, () => OpenTarget(new("device", targetDevice.Id)), "quiet");
+                }
+                if (cell is TextBlock text) text.FontSize = 10;
+                else if (cell is Button button) button.FontSize = 10;
+                cell.Margin = new(6, 0, 0, 0);
                 if (i is 0 or 4 or 5 or 6) cell.Classes.Add("wb-muted");
                 Grid.SetColumn(cell, i); grid.Children.Add(cell);
             }
@@ -2156,11 +2270,12 @@ public partial class WorkbenchWindow : Window
                 if (sessions.Monitor.AutoScroll && sessions.Monitor.FilteredRows.Count > 0)
                     list.ScrollIntoView(sessions.Monitor.FilteredRows[^1]);
             }
-            changed.CollectionChanged += OnChanged;
+            list.AttachedToVisualTree += (_, _) => changed.CollectionChanged += OnChanged;
             list.DetachedFromVisualTree += (_, _) => changed.CollectionChanged -= OnChanged;
         }
         panel.Children.Add(tablePanel);
         RefreshState();
+        ObserveToolState(panel, sessions.Monitor, RefreshState);
         return panel;
     }
 
@@ -2180,9 +2295,8 @@ public partial class WorkbenchWindow : Window
             if (device.SelectedItem is not DeviceRow row) { ViewModel.Status = W("SelectDevice"); return; }
             try
             {
-                var job = sessions.Programming.Enqueue(row.Device.Id, "full", "demo-ip");
+                sessions.Programming.Enqueue(row.Device.Id, "full", "demo-ip");
                 ViewModel.Status = W("JobQueued", row.Name);
-                job.PropertyChanged += (_, _) => { };
             }
             catch (Exception ex) { ViewModel.Status = ex.Message; }
         }, "primary"));
@@ -2222,8 +2336,14 @@ public partial class WorkbenchWindow : Window
         toolbar.Children.Add(fail);
         toolbar.Children.Add(Note(W("ProgrammingDemoNote")));
         CommitToolbar(panel, toolbar);
-        var needing = devices.Count(d => sessions.Programming.NeedsProgramming(d.Device.Id));
-        var needNote = Note(W("ProgrammingNeed", needing));
+        var needNote = Note("");
+        void RefreshNeed() => needNote.Text = W("ProgrammingNeed", ViewModel.Devices.Count(d => sessions.Programming.NeedsProgramming(d.Device.Id)));
+        RefreshNeed();
+        ObserveToolState(panel, sessions.Programming, RefreshNeed);
+        ObserveToolState(panel, ViewModel, RefreshNeed);
+        void DownloadedChanged(object? sender, EventArgs e) => RefreshNeed();
+        panel.AttachedToVisualTree += (_, _) => sessions.Programming.DownloadedChanged += DownloadedChanged;
+        panel.DetachedFromVisualTree += (_, _) => sessions.Programming.DownloadedChanged -= DownloadedChanged;
         DockPanel.SetDock(needNote, Avalonia.Controls.Dock.Top); panel.Children.Add(needNote);
         var header = new Grid { ColumnDefinitions = new("110,220,90,90,60,*"), Height = 28 };
         header.Classes.Add("wb-table-header");
@@ -2244,6 +2364,12 @@ public partial class WorkbenchWindow : Window
             for (var i = 0; i < cells.Length; i++)
             {
                 var cell = Label(cells[i]); cell.FontSize = 10; cell.Margin = new(6, 0, 0, 0); Grid.SetColumn(cell, i); grid.Children.Add(cell);
+                if (i is 2 or 4 or 5)
+                    cell.Bind(TextBlock.TextProperty, new Avalonia.Data.Binding(i == 2 ? nameof(job.Status) : i == 4 ? nameof(job.Progress) : nameof(job.Error))
+                    {
+                        Source = job, StringFormat = i == 4 ? "{0} %" : null,
+                        Converter = i == 2 ? new Avalonia.Data.Converters.FuncValueConverter<ProgrammingJobStatus, string>(s => s.ToString().ToUpperInvariant()) : null
+                    });
             }
             return grid;
         });
@@ -2259,7 +2385,7 @@ public partial class WorkbenchWindow : Window
         {
             void OnJobsChanged(object? _, System.Collections.Specialized.NotifyCollectionChangedEventArgs __)
                 => empty.IsVisible = sessions.Programming.Jobs.Count == 0;
-            jobsChanged.CollectionChanged += OnJobsChanged;
+            host.AttachedToVisualTree += (_, _) => jobsChanged.CollectionChanged += OnJobsChanged;
             host.DetachedFromVisualTree += (_, _) => jobsChanged.CollectionChanged -= OnJobsChanged;
         }
         return panel;
