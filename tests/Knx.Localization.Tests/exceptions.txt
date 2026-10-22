@@ -1,0 +1,78 @@
+# Knx.Localization.Tests exception list
+#
+# One entry per line, first word is the kind:
+#   allow   path|literal   German literal allowed by design (data, technical token, stable
+#                          identifier that must not change with the language)
+#   ratchet path|literal   known German leak in product source; the list may only shrink
+#   missing path|key       key referenced in that file but absent from the map the call site
+#                          resolves against; may only shrink
+#
+# Paths are repository-relative with forward slashes; the literal/key text must match the
+# scanned source exactly (interpolation holes are normalized to "{}"). Stale entries are
+# reported, not failed. See README.md. Run with I18N_GATE_VERBOSE=1 to print every finding.
+
+# --- allowed: smart-linking stop word list (data, not UI text) ---
+allow src/Knx.Core/SmartLinking.cs|der
+allow src/Knx.Core/SmartLinking.cs|die
+allow src/Knx.Core/SmartLinking.cs|das
+allow src/Knx.Core/SmartLinking.cs|und
+allow src/Knx.Core/SmartLinking.cs|oder
+allow src/Knx.Core/SmartLinking.cs|mit
+allow src/Knx.Core/SmartLinking.cs|von
+allow src/Knx.Core/SmartLinking.cs|für
+
+# --- allowed: project-check finding paths and kind labels stay language-independent
+# (tests/Knx.Core.Tests asserts that de and en produce the same Path; only Message is localized) ---
+allow src/Knx.Core/ProjectCheck.cs|Gebäudeknoten
+allow src/Knx.Core/ProjectCheck.cs|Gruppenbereich
+allow src/Knx.Core/ProjectCheck.cs|Gruppenadresse
+allow src/Knx.Core/ProjectCheck.cs|Bereich
+allow src/Knx.Core/ProjectCheck.cs|Gerät
+allow src/Knx.Core/ProjectCheck.cs|Linie
+allow src/Knx.Core/ProjectCheck.cs|Bereich {}
+allow src/Knx.Core/ProjectCheck.cs|Linie {}.{}
+
+# --- ratchet: known German leaks in product source (fix by moving the text to the
+# dictionaries; remove the entry in the same commit). Do not add new entries. ---
+ratchet src/Knx.App/MainWindowViewModel.cs|Neue Gruppenadresse
+ratchet src/Knx.App/MainWindowViewModel.cs|Neues Gerät
+ratchet src/Knx.App/Services/ParameterEditingSession.cs|Nicht übernommene Parameterentwürfe
+ratchet src/Knx.App/Services/ParameterEditingSession.cs|1 nicht übernommene Änderung
+ratchet src/Knx.App/Services/ParameterEditingSession.cs|{} nicht übernommene Änderungen
+ratchet src/Knx.App/Services/ParameterEditingSession.cs|1 ungültiger Wert: {}
+ratchet src/Knx.App/Services/ParameterEditingSession.cs|{} ungültige Werte: {}{}
+ratchet src/Knx.App/Services/ParameterEditingSession.cs|dem vorherigen Projekt
+ratchet src/Knx.App/Services/ParameterEditingSession.cs|Projekt gewechselt: Entwürfe aus {} wurden verworfen und nicht übernommen.
+ratchet src/Knx.App/Services/ParameterEditingSession.cs|Projektstand geändert: Entwürfe passten nicht mehr zu den gespeicherten Parametern und wurden verworfen. Es wurde nichts übernommen.
+ratchet src/Knx.App/Services/ParameterEditingSession.cs|KO-Aktivierung und Zuordnungswirkungen werden nicht ausgewertet. Bestehende Verknüpfungen bleiben erhalten. Nicht unterstützte Herstellerdynamik und DCA werden nicht ausgeführt.
+ratchet src/Knx.App/Services/ParameterEditingSession.cs|Opaque Applikationsdaten: {} Die Werte werden nur lesend angezeigt und nicht ausgeführt oder umgeschrieben.
+ratchet src/Knx.App/Services/ParameterItemViewModel.cs|Für dieses Gerät liegen keine Parameter vor.
+ratchet src/Knx.App/Services/ParameterItemViewModel.cs|Ungespeicherte Änderungen verworfen.
+ratchet src/Knx.App/Views/ParameterPane.axaml.cs|Schreibgeschützt
+ratchet src/Knx.App/Views/ParameterPane.axaml.cs|Hinweis schließen
+ratchet src/Knx.App/Views/ParameterPane.axaml.cs|Keine nicht übernommenen Parameteränderungen
+ratchet src/Knx.App/Views/ParameterPane.axaml.cs|Standardwerte
+ratchet src/Knx.App/Views/ParameterPane.axaml.cs|Verwerfen
+ratchet src/Knx.App/Views/ParameterPane.axaml.cs|Änderungen prüfen
+ratchet src/Knx.App/Views/ParameterPane.axaml.cs|Vorschau schließen
+ratchet src/Knx.App/Views/ParameterPane.axaml.cs|Parameteränderungen: {}
+ratchet src/Knx.App/WorkbenchWindow.Commands.cs|Etiketten
+ratchet src/Knx.Core/Dashboard.cs|Bereich {} (direkt)
+ratchet src/Knx.Core/ProjectQuery.cs|Linie {}.{} ist voll (255 Geräte).
+ratchet src/Knx.Core/ProjectQuery.cs|Gruppenbereich {}/{} ist voll.
+ratchet src/Knx.Core/Values.cs|'{}' ist keine gültige Physikalische Adresse (x.y.z).
+ratchet src/Knx.Core/Values.cs|'{}' ist keine gültige Gruppenadresse.
+ratchet src/Knx.Core/Wizards.cs|Neues Projekt
+ratchet src/Knx.Core/Wizards.cs|Bereich {}
+ratchet src/Knx.Core/Wizards.cs|Linie {}.{}
+ratchet src/Knx.Core/Wizards.cs|Zeile {}: '{}' ist keine Gruppenadresse.
+ratchet src/Knx.Reports/LabelCreator.cs|Etiketten
+ratchet src/Knx.Reports/LabelCreator.cs|<html lang="de"><head><meta charset="utf-8">
+
+# --- known unresolved key references (fix by adding the key to the right map or correcting
+# the call site) ---
+# W(...) resolves in WorkbenchStrings only; LinkProjectChanged lives in the core Strings map,
+# so the workbench dialog currently shows the raw key.
+missing src/Knx.App/WorkbenchWindow.Commands.cs|LinkProjectChanged
+# Deliberate unknown key: tests/Knx.Core.Tests exercises the "unknown key returns the key" fallback.
+missing tests/Knx.Core.Tests/Program.cs|GibtEsNicht
