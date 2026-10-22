@@ -526,3 +526,24 @@ row checkbox (a `ToggleButton`); the actual expand chevron is **16×30**, the ch
 fixed.** The CompareWindow focus fix is present but ineffective because a `ListBox` is not
 focusable; shell polish did not change the narrow overlay reflow or the chevron geometry.
 
+### Second recheck — `c333937` (2026-10-22, later)
+
+Re-ran the same three areas against `c333937fcb045ad07b618fb8bb107517f558a4eb` ("Keep the
+narrow inspector above the dock and enlarge row chevrons", plus `0226a33` "Focus the compare
+report's first row"). Built at that commit; artifacts:
+`%TEMP%\opencode\wb-v4-a11y\recheck-c333937`.
+
+| Item | bb68664 | c333937 | Measurement at c333937 |
+|---|---|---|---|
+| (a) overlay coverage, 900×600 + inspector + tools | 11 covered | **fixed** | clip-aware 0 visible focusables under the overlay (naive geometry 3); the inspector now stops 5 px above the dock (`WorkbenchWindow.axaml.cs:2537-2543`). |
+| (a) clipping, same state | 1 clip | **still open (3)** | inspector ends at y=428, dock 433…573 (140 DIP); the monitor empty-state icon + heading + hint overflow the dock/window: bottoms 603 / 625 / 646 vs 600. The dock body still needs a scroller or a content minimum. |
+| (b) target sizes | nav 16×30 (leaf 4×30), table 16×30, checkbox 20×32 | **fixed** | nav chevrons 24×24 (including the leaf `Ohne Einbauort`), table row chevron 24×24, row checkbox 24×32; doc-tab close 24×24, rail/help 35×35, inspector close 37×30. |
+| (c) compare initial focus | FAIL (`<null>`) | **fixed** | `DiffGrid.Focusable=True`; the first `DiffRow` `ListBoxItem` is focused on open (`FocusManager` in window); Escape closes. |
+
+**Verdict at c333937:** the overlay coverage, all target sizes and the compare focus are
+fixed. The 900×600 inspector+tools **clipping is still open**, now with three dock
+empty-state controls below the window bottom (the harness counter shows `FAILURES 0` because
+the layout path does not increment it; the layout line is the one `FAIL`). Remaining P2 from
+this addendum: dock body overflow at 900×600 with the inspector open.
+
+
