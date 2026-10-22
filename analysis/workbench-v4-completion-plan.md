@@ -434,9 +434,10 @@ automatische Hardcoded-Text-Prüfung.
 - [ ] **H9.5 Pilot:** dritte Sprache (z. B. Französisch oder Niederländisch)
   end-to-end mit echten Ressourcen, Tests und Abnahme; keine Maschinen-
   übersetzung ohne Review.
-- [ ] **H9.6 Grenzen:** Projekt-/Gerätenamen, Herstellertexte und technische
+- [x] **H9.6 Grenzen:** Projekt-/Gerätenamen, Herstellertexte und technische
   CSV-Werte bleiben Daten, nicht UI-Sprache; DPT-/KNX-Codes werden nicht
-  übersetzt.
+  übersetzt. (in `analysis/i18n-text-inventory.md` und den Übersetzungs-
+  berichten festgehalten)
 - [x] **H9.7 Live-Sprachwechsel:** `{loc:Tr}`/`{loc:Wb}` sind bindende
   Markup-Extensions; Menüs, Rail, View-/Tool-Tabs, Tooltips und
   Automationsnamen werden beim Sprachwechsel neu aufgebaut. (`a8aba25`;
