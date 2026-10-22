@@ -1,5 +1,10 @@
 # Multilingual architecture plan
 
+Current policy (2026-10-22): `analysis/language-roadmap.md` supersedes this
+design's language status proposals. Languages have no preview suffix and no
+separate native-speaker approval gate; normal engineering review and automated
+catalog/UI checks still apply.
+
 Status: investigation and design only. Base `2846c16`; no product, test, CI or
 package file is changed by this branch. Coordinates with work packages H9.1-H9.6
 (multilingual architecture, inventory, workflow, CI gates, pilot language,
@@ -718,11 +723,9 @@ Add to `.github/workflows/ci.yml`:
   `--lang=fr`; keep the existing de/en runs.
 - A strict catalog check that fails on missing/extra keys, placeholder
   mismatch, forbidden content, orphan keys and new hardcoded literals.
-- A completeness threshold: non-preview languages 100%; preview languages
-  reported, not failed.
-- PR template/label: `i18n` changes require de/en parity, a screenshot for UI
-  changes, and a native-speaker review for a new language. No machine
-  translation without review.
+- A completeness threshold: supported languages 100%.
+- PR template/label: `i18n` changes require catalog parity, screenshots for UI
+  changes and normal engineering review. No separate native-speaker gate.
 - Optional: upload pseudo-loc screenshots as CI artifacts for visual review.
 
 Do not make CI depend on a translation service or network. All checks run from
@@ -786,16 +789,16 @@ changes; live switch covers the Workbench.
 **Goal:** prove the architecture with a third language and real plural/format
 differences.
 
-1. Add `core.fr.json`, `app.fr.json` and `reports.fr.json` (complete, reviewed);
+1. Add `core.fr.json`, `app.fr.json` and `reports.fr.json` (complete);
    add the `fr-FR` culture and `one`/`many`/`other` rules.
-2. Add `fr` to `Available` and the settings list; mark preview until review is
-   complete; report completeness.
+2. Add `fr` to `Available` and the settings list without a status suffix;
+   verify completeness.
 3. Add CI `--lang=fr` Workbench selftest/screenshot; CSV/report French tests;
    plural 0/1/1,000,000; date `dd/MM/yyyy`; number formatting.
 4. Add translation export/import (CSV or XLIFF) only if external translators are
    involved; otherwise the JSON PR workflow is enough.
 
-**Exit criteria:** French UI complete and reviewed; fallback to English/German
+**Exit criteria:** French UI complete and tested; fallback to English/German
 works for a deliberately missing key; no layout overflow in screenshots; all
 gates green.
 

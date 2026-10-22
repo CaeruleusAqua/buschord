@@ -2,10 +2,10 @@
 
 Source of truth for the language roadmap: `analysis/language-roadmap.md`.
 
-- `core/fr.json` - `Knx.Strings` keys (German/English reference stays in C#).
-- `workbench/fr.json` - Workbench shell keys.
-- `catalog/fr.json` - catalogue UI keys.
-- `languages.json` - language codes, endonyms, status and reviewers.
+- `core/<lang>.json` - `Knx.Strings` keys (German/English reference stays in C#).
+- `workbench/<lang>.json` - Workbench shell keys.
+- `catalog/<lang>.json` - catalogue UI keys.
+- `languages.json` - language codes, endonyms and status.
 
 Each catalog is a flat JSON object. The German value in the C# map is the source;
 English is the fallback reference. A missing overlay key falls back to English,
@@ -14,11 +14,10 @@ source exactly.
 
 ## Status
 
-`reference` -> `reviewed` -> `preview` -> `draft` -> `planned`.
+`reference` (German source) -> `supported`; `planned` means no catalog yet.
 
-`fr` is **preview**: complete enough for screenshots and feedback, visibly
-marked in Settings, not native-reviewed. Do not promote it to `reviewed` without
-a named reviewer and the acceptance checks in the roadmap.
+`de`, `en`, `fr`, `it`, `es` and `nl` are supported. `fr` was the pilot; all
+supported catalogs are normal product content. `zh-CN` and `pl` are planned.
 
 ## Adding a language
 

@@ -76,7 +76,8 @@ foreach (var (module, file, map) in maps)
         sourceKeys.Count == map.Count && sourceKeys.ToHashSet(StringComparer.Ordinal).SetEquals(map.Keys),
         $"{sourceKeys.Count} source entries vs {map.Count} runtime keys");
 }
-Check("i18n: P0 languages are registered", Strings.Available.Contains("de") && Strings.Available.Contains("en"),
+Check("i18n: P0/P1 languages are registered",
+    new[] { "de", "en", "fr", "it", "es", "nl" }.All(Strings.Available.Contains),
     string.Join(",", Strings.Available));
 var originalLanguage = Strings.Language;
 Strings.Language = "en-US";
@@ -85,51 +86,74 @@ Check("i18n: en-US resolves to the English base catalog", Strings.Language == "e
 Strings.Language = "de-AT";
 Check("i18n: de-AT resolves to the German base catalog", Strings.Language == "de",
     Strings.Get("MenuFile"));
-Strings.Language = "fr-FR";
-Check("i18n: fr-FR resolves to the French preview catalog", Strings.Language == "fr",
-    Strings.Get("MenuFile"));
+foreach (var (tag, expected) in new[]
+         {
+             ("fr-FR", "fr"), ("it-IT", "it"), ("es-ES", "es"), ("nl-NL", "nl"),
+         })
+{
+    Strings.Language = tag;
+    Check($"i18n: {tag} resolves to {expected}", Strings.Language == expected, Strings.Get("MenuFile"));
+}
 Strings.Language = "xx";
 Check("i18n: unsupported language falls back to German", Strings.Language == "de",
     Strings.Get("MenuFile"));
 Strings.Language = originalLanguage;
 
-// --- G1fr: the French preview overlay has the same shape as the German/English maps ---
-var frenchMaps = new (string Module, IReadOnlyDictionary<string, (string De, string En)> Source,
-    IReadOnlyDictionary<string, string> French)[]
+// --- G1x: every supported overlay has the same shape as the German/English maps ---
+var supportedLanguages = new[] { "fr", "it", "es", "nl" };
+var catalogModules = new (string Module, Assembly Assembly,
+    IReadOnlyDictionary<string, (string De, string En)> Source)[]
 {
-    ("core", Strings.Catalogue, Strings.FrenchCatalogue),
-    ("workbench", MapOf(typeof(WorkbenchStrings)), WorkbenchStrings.FrenchCatalogue),
-    ("catalog", MapOf(typeof(CatalogUiText)), CatalogUiText.FrenchCatalogue),
+    ("core", typeof(Strings).Assembly, Strings.Catalogue),
+    ("workbench", typeof(WorkbenchStrings).Assembly, MapOf(typeof(WorkbenchStrings))),
+    ("catalog", typeof(CatalogUiText).Assembly, MapOf(typeof(CatalogUiText))),
 };
-foreach (var (module, source, french) in frenchMaps)
+var placeholderShape = new Regex(@"\{(\d+)(?:[^}]*)\}", RegexOptions.CultureInvariant);
+foreach (var language in supportedLanguages)
 {
-    var missingFr = source.Keys.Where(k => !french.ContainsKey(k)).OrderBy(k => k, StringComparer.Ordinal).ToList();
-    var emptyFr = french.Where(p => string.IsNullOrWhiteSpace(p.Value))
-        .Select(p => p.Key).OrderBy(k => k, StringComparer.Ordinal).ToList();
-    Check($"i18n[fr:{module}]: every source key is translated", missingFr.Count == 0, Join(missingFr));
-    Check($"i18n[fr:{module}]: no empty values", emptyFr.Count == 0, Join(emptyFr));
-
-    var placeholderShape = new Regex(@"\{(\d+)(?:[^}]*)\}", RegexOptions.CultureInvariant);
-    var mismatch = new List<string>();
-    foreach (var (key, value) in source.OrderBy(p => p.Key, StringComparer.Ordinal))
+    foreach (var (module, assembly, source) in catalogModules)
     {
-        if (!french.TryGetValue(key, out var translated)) continue;
-        string Shape(string text) => string.Join(",",
-            placeholderShape.Matches(text).Select(m => m.Groups[1].Value).OrderBy(i => i, StringComparer.Ordinal));
-        var expected = Shape(value.De);
-        var actual = Shape(translated);
-        if (expected != actual) mismatch.Add($"{key}: de {{{expected}}} fr {{{actual}}}");
+        var overlay = LanguageCatalog.Load(assembly, module, language);
+        var missingKeys = source.Keys.Where(k => !overlay.ContainsKey(k))
+            .OrderBy(k => k, StringComparer.Ordinal).ToList();
+        var emptyValues = overlay.Where(p => string.IsNullOrWhiteSpace(p.Value))
+            .Select(p => p.Key).OrderBy(k => k, StringComparer.Ordinal).ToList();
+        Check($"i18n[{language}:{module}]: every source key is translated",
+            missingKeys.Count == 0, Join(missingKeys));
+        Check($"i18n[{language}:{module}]: no empty values", emptyValues.Count == 0, Join(emptyValues));
+        Check($"i18n[{language}:{module}]: exact source key set",
+            source.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(overlay.Keys));
+
+        var mismatch = new List<string>();
+        foreach (var (key, value) in source.OrderBy(p => p.Key, StringComparer.Ordinal))
+        {
+            if (!overlay.TryGetValue(key, out var translated)) continue;
+            string Shape(string text) => string.Join(",",
+                placeholderShape.Matches(text).Select(m => m.Groups[1].Value)
+                    .OrderBy(i => i, StringComparer.Ordinal));
+            var expected = Shape(value.De);
+            var actual = Shape(translated);
+            if (expected != actual) mismatch.Add($"{key}: de {{{expected}}} {language} {{{actual}}}");
+            var maxIndex = placeholderShape.Matches(value.De)
+                .Select(m => int.Parse(m.Groups[1].Value)).DefaultIfEmpty(-1).Max();
+            var arguments = Enumerable.Range(0, maxIndex + 1).Select(i => (object)$"v{i}").ToArray();
+            try { _ = string.Format(CultureInfo.InvariantCulture, translated, arguments); }
+            catch (FormatException) { mismatch.Add($"{key}: invalid composite format"); }
+        }
+        Check($"i18n[{language}:{module}]: placeholders match German", mismatch.Count == 0, Join(mismatch));
     }
-    Check($"i18n[fr:{module}]: placeholders match German", mismatch.Count == 0, Join(mismatch));
 }
 
-var frenchLanguage = Strings.Language;
-Strings.Language = "fr";
-Check("i18n: French UI resolves (core)", Strings.Get("MenuFile") != "Datei" && Strings.Get("MenuFile").Length > 0,
-    Strings.Get("MenuFile"));
-Check("i18n: French UI resolves (workbench)", WorkbenchStrings.Get("Project") != "Projekt",
-    WorkbenchStrings.Get("Project"));
-Strings.Language = frenchLanguage;
+var originalCatalogLanguage = Strings.Language;
+foreach (var language in supportedLanguages)
+{
+    Strings.Language = language;
+    var core = Strings.Get("MenuFile");
+    var workbench = WorkbenchStrings.Get("Project");
+    Check($"i18n: {language} UI resolves", core != "Datei" && core.Length > 0 && workbench != "Projekt",
+        $"{core} / {workbench}");
+}
+Strings.Language = originalCatalogLanguage;
 
 var fallbackReference = new Dictionary<string, (string De, string En)>
 {

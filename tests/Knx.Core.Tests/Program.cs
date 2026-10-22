@@ -691,9 +691,8 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         Strings.Get("BtnSave"));
 
     Strings.Language = "de";
-    Check("i18n: drei Sprachen registriert",
-        Strings.Available.Count == 3
-        && Strings.Available.Contains("de") && Strings.Available.Contains("en") && Strings.Available.Contains("fr"),
+    Check("i18n: P0/P1 languages registered",
+        new[] { "de", "en", "fr", "it", "es", "nl" }.All(Strings.Available.Contains),
         string.Join(",", Strings.Available));
 }
 

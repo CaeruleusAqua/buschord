@@ -42,10 +42,6 @@ public sealed class WorkbenchStrings : INotifyPropertyChanged
     public static string Get(string key, params object[] args) =>
         Knx.LanguageCatalog.Resolve(Map, Overlays.Value, key, Knx.Strings.Language, args);
 
-    /// <summary>French preview overlay; missing keys fall back to English, then German.</summary>
-    public static IReadOnlyDictionary<string, string> FrenchCatalogue =>
-        Overlays.Value.TryGetValue("fr", out var french) ? french : Knx.LanguageCatalog.EmptyCatalog;
-
     /// <summary>Every shell key; the UI checks assert both languages stay complete.</summary>
     public static IReadOnlyCollection<string> Keys => Map.Keys;
 

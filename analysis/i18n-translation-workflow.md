@@ -1,5 +1,9 @@
 # BusChord localization: translator workflow, CI validation and release process
 
+Current policy (2026-10-22): `analysis/language-roadmap.md` supersedes this
+design's status proposals. Supported languages have no preview label and no
+separate native-speaker approval requirement.
+
 Status: design only. Base `2846c16` (`agents/i18n/workflow`). Nothing in this branch
 changes product code, tests, CI, docs or existing reports.
 
@@ -188,11 +192,8 @@ tools/i18n/                 net9.0 console: --check --export-csv --export-xliff 
 
 ### 4.2 Ownership and approval
 
-`CODEOWNERS` keeps its catch-all and gains `/i18n/ @CaeruleusAqua`, plus optional
-per-language lines (`/i18n/fr/ @native-reviewer`) once such maintainers exist — do not
-invent handles now. A language becomes `reviewed` only in a PR carrying a native-speaker
-approval; the reviewer handle is recorded in `languages.json` in the same PR. Approval is
-a PR review, not a file — nothing else to synchronise.
+Translations follow the normal code ownership and engineering review process.
+There is no separate native-speaker approval gate or reviewer registry.
 
 ### 4.3 Licence and CLA
 
@@ -220,13 +221,13 @@ the CLA document, not for this workflow.
 3. `tools/i18n --check --lang=fr` (parity, placeholders, glossary, duplicates).
 4. PR with the `translation` label; partial files are allowed while `draft`, CI reports
    coverage.
-5. Native review → `preview` (selectable, marked) → after one release cycle → `reviewed`.
+5. Passing catalog and UI checks → `supported` (selectable, no status suffix).
 
 ### 4.6 Incomplete-language behaviour
 
-Missing key falls back `en` → `de` → key. `preview` languages are selectable in Settings
-with a "(preview)" suffix and fall back silently; `draft` is only reachable with
-`--lang=`. No warning dialog and no in-app banner: one fallback path, stated in the manual
+Missing key falls back `en` → `de` → key. Supported languages are selectable in
+Settings without a status suffix. No warning dialog and no in-app banner:
+one fallback path, stated in the manual
 later. A partially translated language must never produce key names or empty labels in the
 UI — that is what the fallback chain is for.
 

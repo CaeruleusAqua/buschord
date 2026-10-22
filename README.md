@@ -24,7 +24,7 @@ derived from the KNX Association or any tool vendor.
 | KNX Data Security (keyring, secure telegrams, secure wrapper) | foundation, not yet wired into the tunnel |
 | Semantic export (Turtle/JSON-LD) + OWL/KIM checks | working in Core and tests; the checks are not surfaced in the workbench |
 | Reports: CSV, labels (HTML in the workbench; CSV or combined HTML through MCP), project report and compare | working; the report carries the latest revision and revision table when present; MCP also writes the KNX acceptance protocol and one deterministic handover package (ZIP with room book, acceptance protocol and SHA-256 manifest) |
-| UI: Avalonia 12.1.4, native Workbench (no third-party docking package), object-centred tabs, project portfolio dialog, inspector, monitor/programming/scan tools, light/dark theme, German/English/French preview | working V4 shell; monitor, scan and programming are labelled simulations; French is an unreviewed preview, reports remain German/English |
+| UI: Avalonia 12.1.4, native Workbench (no third-party docking package), object-centred tabs, project portfolio dialog, inspector, monitor/programming/scan tools, light/dark theme, German/English/French/Italian/Spanish/Dutch | working V4 shell; monitor, scan and programming are labelled simulations; report-specific tables remain German/English |
 | MCP server for AI agents (stdio, 51 tools) | working; includes manual communication-object links, the read-only download preflight (`download_plan`), the acceptance-protocol export and the read-only handover package |
 | Hawk/IoT device images | open |
 
@@ -75,9 +75,9 @@ uses a synthetic fixture with isolated settings, never the user's project.
 - [Concept icons](docs/ICONS.md)
 - [MCP server](mcp.md)
 
-The user interface and the manuals exist in German and English. French is
-available as an unreviewed **preview** (UI and CSV only; report-specific tables
-remain German/English). There is no RTL support yet.
+The user interface and the manuals exist in German and English. The UI also
+supports French, Italian, Spanish and Dutch; report-specific tables remain
+German/English. There is no RTL support yet.
 
 ## Tests
 
@@ -130,7 +130,7 @@ dotnet run --project tests/Knx.Shell.Tests
 `Knx.Docking.Tests` covers floating/redocking tool windows, `Knx.Shell.Tests`
 covers project lifecycle and shutdown, the `Knx.Workbench*` suites cover the
 domain, sessions, theme, UI state and performance, and `Knx.Localization.Tests`
-checks key parity, placeholders and English/German/French-preview boundaries. CI skips Docking,
+checks key parity, placeholders and German/English/French/Italian/Spanish/Dutch boundaries. CI skips Docking,
 Shell, `ParameterUi --native` and the app self-checks outside Windows.
 
 ## Layout

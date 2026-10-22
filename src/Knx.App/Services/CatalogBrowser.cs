@@ -47,10 +47,6 @@ public static class CatalogUiText
     public static string Get(string key, params object[] args) =>
         Knx.LanguageCatalog.Resolve(Map, Overlays.Value, key, Strings.Language, args);
 
-    /// <summary>French preview overlay; missing keys fall back to English, then German.</summary>
-    public static IReadOnlyDictionary<string, string> FrenchCatalogue =>
-        Overlays.Value.TryGetValue("fr", out var french) ? french : Knx.LanguageCatalog.EmptyCatalog;
-
     /// <summary>Readable reason for a blocked use; empty when the use is allowed.</summary>
     public static string Reason(CatalogBlockReason reason) => reason switch
     {

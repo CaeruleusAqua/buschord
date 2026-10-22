@@ -3,10 +3,9 @@ using System.ComponentModel;
 namespace Knx;
 
 /// <summary>
-/// Central UI strings. The clone ships the dictionaries in code instead of satellite
-/// assemblies: no build-time resources, no dependency, still one place per key.
-/// Add a language by adding a column to <see cref="Map"/> and registering the code in
-/// <see cref="Languages"/>; XAML binds through {loc:Tr Key} and switches live.
+/// Central UI strings with German/English reference text and embedded JSON overlays.
+/// Add a catalog and register its code in <see cref="Options"/>; XAML binds through
+/// {loc:Tr Key} and switches live without language-specific lookup code.
 /// </summary>
 public sealed class Strings : INotifyPropertyChanged
 {
@@ -14,7 +13,7 @@ public sealed class Strings : INotifyPropertyChanged
 
     private static string _language = "de";
 
-    /// <summary>Active language code ("de", "en"); every bound {loc:Tr} updates immediately.</summary>
+    /// <summary>Active supported language code; every bound {loc:Tr} updates immediately.</summary>
     public static string Language
     {
         get => _language;
@@ -34,11 +33,23 @@ public sealed class Strings : INotifyPropertyChanged
     /// </summary>
     public static string Normalize(string? code) => LanguageCatalog.Normalize(code, Available);
 
-    public static IReadOnlyList<string> Available { get; } = ["de", "en", "fr"];
+    /// <summary>One selectable UI language; <see cref="ToString"/> is the endonym shown in Settings.</summary>
+    public sealed record LanguageOption(string Code, string Name)
+    {
+        public override string ToString() => Name;
+    }
 
-    /// <summary>French preview overlay; missing keys fall back to English, then German.</summary>
-    public static IReadOnlyDictionary<string, string> FrenchCatalogue =>
-        Overlays.Value.TryGetValue("fr", out var french) ? french : LanguageCatalog.EmptyCatalog;
+    public static IReadOnlyList<LanguageOption> Options { get; } =
+    [
+        new("de", "Deutsch"),
+        new("en", "English"),
+        new("fr", "Français"),
+        new("it", "Italiano"),
+        new("es", "Español"),
+        new("nl", "Nederlands"),
+    ];
+
+    public static IReadOnlyList<string> Available { get; } = Options.Select(option => option.Code).ToArray();
 
     /// <summary>Every key with its German and English text; used to verify completeness.</summary>
     public static IReadOnlyDictionary<string, (string De, string En)> Catalogue => Map;

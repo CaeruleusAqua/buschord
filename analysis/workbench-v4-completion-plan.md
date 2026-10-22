@@ -437,11 +437,11 @@ automatische Hardcoded-Text-Prüfung.
   Sprachtests und Screenshots. (`f53aa74`, `tests/Knx.Localization.Tests`;
   Ausnahmen-Liste und README dokumentiert)
 - [ ] **H9.5 Pilot:** dritte Sprache end-to-end mit echten Ressourcen, Tests
-  und Abnahme; keine Maschinenübersetzung ohne Review. Priorisierung und
-  Statusmodell: `analysis/language-roadmap.md` (P0 de/en, P1 it/fr/es/nl,
-  P2 zh-CN/pl; Pilot **fr**). Französisch ist als vollständige **Preview** in
-  UI/CSV implementiert (`i18n/*/fr.json`, Resolver, Sprachwahl, Tests);
-  muttersprachlicher Review, Berichtstabellen und MCP-Exporte bleiben offen.
+  und Abnahme. Priorisierung: `analysis/language-roadmap.md` (P0 de/en,
+  P1 it/fr/es/nl, P2 zh-CN/pl; Pilot **fr**). Französisch, Italienisch,
+  Spanisch und Niederländisch sind als vollständige Kataloge in UI/CSV
+  implementiert (`i18n/*/`, Resolver, Sprachwahl, Tests); Berichtstabellen und
+  MCP-Exporte bleiben de/en.
 - [x] **H9.6 Grenzen:** Projekt-/Gerätenamen, Herstellertexte und technische
   CSV-Werte bleiben Daten, nicht UI-Sprache; DPT-/KNX-Codes werden nicht
   übersetzt. (in `analysis/i18n-text-inventory.md` und den Übersetzungs-
@@ -544,10 +544,8 @@ werden:
   belegt; ein Linien-/Bus-Scan lief read-only, lieferte aber 0 Responder und
   damit keinen positiven Gerätenachweis (dafür wäre ein Gerät im
   Programmiermodus nötig). Reale Schreibzugriffe bleiben gesperrt.
-- **H12.3 Dritte Sprache:** Sprachwahl und Priorisierung liegen vor
-  (`analysis/language-roadmap.md`: P0 de/en, P1 it/fr/es/nl, P2 zh-CN/pl);
-  Französisch ist als Preview implementiert, aber noch nicht muttersprachlich
-  reviewt; Berichtstabellen/MCP-Exporte bleiben de/en.
+- **H12.3 Weitere Sprachen:** P1 (fr/it/es/nl) ist in UI/CSV umgesetzt;
+  P2 (zh-CN/pl) ist geplant. Berichtstabellen/MCP-Exporte bleiben de/en.
 - **H12.4 GitHub-Purge:** `refs/pull/1/head` und gecachte Blobs lassen sich
   nicht per Git/API löschen; GitHub-Support-Ticket nötig. Token und
   Test-Zugangsdaten rotieren.
