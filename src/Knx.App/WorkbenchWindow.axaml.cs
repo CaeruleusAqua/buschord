@@ -2141,11 +2141,15 @@ public partial class WorkbenchWindow : Window
         tablePanel.Children.Add(list);
         tablePanel.Children.Add(empty);
         empty.IsVisible = sessions.Monitor.FilteredRows.Count == 0;
+        // A short dock spends its body on the empty state; the column headings are useless
+        // until the first row exists, so reclaim their 28 DIP.
+        header.IsVisible = sessions.Monitor.FilteredRows.Count > 0;
         if (sessions.Monitor.FilteredRows is System.Collections.Specialized.INotifyCollectionChanged changed)
         {
             void OnChanged(object? _, System.Collections.Specialized.NotifyCollectionChangedEventArgs __)
             {
                 empty.IsVisible = sessions.Monitor.FilteredRows.Count == 0;
+                header.IsVisible = sessions.Monitor.FilteredRows.Count > 0;
                 if (sessions.Monitor.AutoScroll && sessions.Monitor.FilteredRows.Count > 0)
                     list.ScrollIntoView(sessions.Monitor.FilteredRows[^1]);
             }
