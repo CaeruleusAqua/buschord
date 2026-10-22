@@ -1,5 +1,10 @@
 # Final integration review - base `0226a33`
 
+> **Post-fix status at `c333937`:** **approve with fixes**. The acceptance protocol,
+> project revisions and portfolio UI are now merged, and the download/cache/localization
+> fixes are present. See the addendum at the end; the block verdict immediately below is
+> the historical `0226a33` review and is kept for traceability.
+
 Read-only review. The only change in this branch is this document; no product,
 test, CI or existing report was edited.
 
@@ -247,3 +252,134 @@ uses it as the total for progress. Rename to `ProgramPartsTotal` or fix the sent
   added reports (`analysis/a11y-dpi-final.md:8,56`,
   `analysis/git-history-rewrite-plan.md:164`), consistent with the pre-existing residual
   noted in that plan.
+
+## Addendum - post-fix re-review at `c333937`
+
+- **Base:** `c333937fcb045ad07b618fb8bb107517f558a4eb` ("Keep the narrow inspector above
+  the dock and enlarge row chevrons"), reviewed in a detached worktree at that exact SHA.
+  The main checkout advanced past it during the recheck (`852fba7` at the last check);
+  see "Post-base note" below.
+- **Build:** `dotnet build ets6.sln -c Release` -> 0 errors, 30 warnings.
+- **Tests (all green at `c333937`):** Core, Bus, Catalog, ProjectCompare, App.Tests, Mcp,
+  Localization, Parameter, ParameterUi (both modes), Workbench, WorkbenchUiState,
+  WorkbenchSessions, WorkbenchTheme, WorkbenchPerformance, Archive, Address, Linking,
+  SmartLink, CatalogUi, Icon, Monitor, Diagnostics, Search, Buildings, Encryption, Owl,
+  Docking, Shell; MCP selftest; screenshot selftest; workbench selftest de/light and en/dark.
+- **Fix confirmation:**
+  - `000e01e` now checks `plan.ImageLength`, walks `plan.Chunks`, rejects non-contiguous or
+    out-of-range chunks and writes `planned.Address`, so the reviewed addresses are the
+    written addresses (`src/Knx.Bus/DownloadSession.cs:127-158`).
+  - `ac1ee53` validates XML file locations below the catalogue directory and archive entries
+    against the ZIP entry list (`src/Knx.Core/Catalog/CatalogIndex.cs:112,306-337`).
+  - `e970903` uses `Strings.Get("LinkProjectChanged")` and removes the localization exception.
+  - `81196a3`, `72cb8b0`, `3afa0cd`, `56d5007` and `c333937` are ancestors of `c333937`;
+    the acceptance protocol, portfolio UI, revisions/compare and B6 planning are present.
+
+## New verdict
+
+**Approve with fixes.** The previously blocking scope gaps and the three targeted P2 defects
+are resolved; no P1 remains at `c333937`. The remaining P2s concern reachability and
+completeness of the new versioning path, plus one release-hygiene item.
+
+## Remaining P2
+
+### P2-1 Durable revisions and revision-aware comparison are not reachable from the product
+
+`ProjectRevisions.Capture` has no caller in product code; the only callers are
+`src/Knx.App.Tests` and `tests/*`. The Workbench compare path still calls the non-revision
+overload (`src/Knx.App/WorkbenchWindow.Commands.cs:670`), the MCP `project_compare` path does
+the same (`src/Knx.Mcp/McpServer.Tools.cs:894`), and `DifferenceReportRenderer` has no product
+caller. A real project therefore never accumulates the "durable" revision log, and the
+revision-aware compare/renderer introduced by `81196a3` is library-only. The revisions/compare
+part of H11.8 is therefore not reachable by users.
+
+**Action:** capture a revision on save (or through an explicit command), call
+`ProjectComparer.Compare(..., ProjectRevisions.Latest(...), ...)` from the Workbench/MCP
+compare paths, and surface `DifferenceReportRenderer` in the compare window; add an
+end-to-end check that a saved project gains a revision and the compare shows it.
+
+### P2-2 Revision content hash and comparison omit the new B6 topology fields
+
+`ProjectRevisions.Snapshot` includes the line medium but not `Line.DomainAddress`, and its
+segment projection includes only id, number, name and devices; `Segment.MediumTypeRefId` and
+`Segment.DomainAddress` are absent (`src/Knx.Core/ProjectRevisions.cs:185-198`). The comparer
+compares installation facts and the building tree but has no line/segment projection
+(`src/Knx.ProjectCompare/ProjectComparer.cs:137-167,436-475`). A project changed only in
+segment medium/domain therefore gets the same content hash and reports as unchanged, even
+though `P080`/`P081`/`P082` and the exported project XML use those fields.
+
+**Action:** add `line.DomainAddress`, `segment.MediumTypeRefId` and `segment.DomainAddress`
+to the canonical snapshot and to an explicit topology comparison; add a regression test that
+changes only the segment medium and expects a changed revision/compare item.
+
+### P2-3 Commit identity metadata still does not match the rewrite record
+
+At `c333937`, `git log --format='%an <%ae>'` still yields 13 author identities; `52bdb52` is
+authored by `scholle <scholle@aurora-robotics.de>` and `b08f42b` by
+`assessment-agent <assessment@localhost>`. `analysis/git-history-rewrite-plan.md:179` still
+claims all identities are `CaeruleusAqua`. This is the prior P2-3, unchanged by the fixes.
+
+**Action:** rewrite/mailmap those post-rewrite identities before the next push, or update the
+verification record and explicitly accept the company address.
+
+## Remaining P3
+
+- **Cache validation has no regression test and a platform edge.** `ac1ee53` changed only
+  `CatalogIndex.cs`; no test constructs a cache document with an outside path or a foreign
+  archive entry. `SafeFile` compares paths with `OrdinalIgnoreCase` on every OS and does not
+  resolve symlinks (`CatalogIndex.cs:315-318`); on Linux a differently-cased or symlinked
+  directory can pass the containment check. Add a poisoned-cache test and resolve links or
+  use platform-correct comparison.
+- **The new `Knx.ProjectCompare.Tests` is not in CI.** It is in `ets6.sln` but absent from
+  `TEST_PROJECTS` (`.github/workflows/ci.yml:17-42`), so the revision/compare suite never
+  runs there. Add it to the list.
+- **Revision source paths are exported.** `ProjectRevision.SourcePath` is persisted
+  (`ProjectRevisions.cs:37,86`) and included in the V4 JSON export via
+  `WorkbenchJson.cs:259`. Reports deliberately hide it, but a shared JSON export still
+  carries the user's absolute path. Store a basename or omit the field from export.
+- **Portfolio actions run synchronously on the UI thread.** `CheckAll` hashes every existing
+  entry in a loop (`WorkbenchWindow.Commands.cs:420-431`); `PortfolioRegistry.Refresh` reads
+  and SHA-256s the whole project file. Large projects can freeze the modal. Also, the
+  destructive remove confirmation uses the normal primary class, not `wb-danger`
+  (`Commands.cs:613`), and the registry still mutates memory before `Persist` succeeds
+  (`PortfolioRegistry.cs:160-171,599-621`).
+- **Acceptance protocol keeps a private de/en table.** `AcceptanceProtocol.T` and its
+  `Text` dictionary (`src/Knx.Reports/AcceptanceProtocol.cs:841-842`) bypass the core
+  dictionary; the localization gate passes only through explicit `allow` entries. It supports
+  no third language and is outside the shared key inventory. Move the keys into the core
+  dictionary or document the report-specific exception.
+- **Every project load now parses all `*/Hardware.xml` parts.** `ArchiveState.ReadProject`
+  calls `ReadHardwareParts` before the project XML (`ArchiveState.cs:21-35,61`). This is
+  optional planning input; for archives with many manufacturers it adds unbounded parse work
+  to every open. Measure a large archive and cache or lazily load the facts if needed.
+- **The `c333937` a11y fix is not verified.** The commit changes the inspector margin and
+  chevron geometry (`WorkbenchWindow.axaml.cs:824-843,2519-2544`) but adds no test, and the
+  a11y report still records the four failures at `bb68664`
+  (`analysis/a11y-dpi-final.md:502-525`). Re-run the external overlay/chevron checks at
+  `c333937`; the code reasoning is plausible but not evidence.
+- **Plan and measurement drift remains.** H11.4/H11.8 cite orphaned agent SHAs
+  `facef973`/`3fb21de`/`9e5c41e` (`analysis/workbench-v4-completion-plan.md:504,518-519`);
+  the integrated commits are `56d5007`/`3afa0cd`/`81196a3`. The plan still says 398 ms warm
+  start (`:330`) while `b224834` records 643 ms. Release notes still say 218 commits to
+  `7962a1a` (`analysis/release-notes-v4.md:9,11,355`; actual 217). `ProgramPartCount` still
+  documents itself as remaining parts (`src/Knx.Core/Catalog/KnxProductCatalog.cs:74-77`).
+- **Download policy is not enforced inside the public write session.** `DownloadSession`
+  now uses only plan addresses, but `RunAsync` still has no `KnxBus.WritesEnabled` check
+  (`src/Knx.Bus/DownloadSession.cs:102-170`); a caller that constructs a tunnel and a ready
+  plan can write while the wrapper gate says writes are disabled. This is a future-API
+  hazard, not an app path today.
+
+## Post-base note (outside the `c333937` verdict)
+
+The checkout advanced past `c333937` while this addendum was being written (`852fba7` at the
+last check). The post-base `HandoverPackage` work (`1df3f68` onward) still fails
+`tests/Knx.Localization.Tests` with German literals in `HandoverPackage.Sheets.cs:166-174`
+and `HandoverPackage.cs:210-463`. The failure is not present at `c333937` and is not part of
+this verdict; it must be fixed before `development` can be called green again.
+
+## Addendum verification limits
+
+- Remote tip/CI/CodeQL were not queried; the local remote-tracking ref is not the live tip.
+- Real KNX hardware, real writes/downloads, real Windows UIA/Narrator and 150/200 % DPI were
+  not exercised; the a11y report and headless selftests remain the only evidence.
+- Post-base commits (`1df3f68` through `852fba7`) are outside this review.
