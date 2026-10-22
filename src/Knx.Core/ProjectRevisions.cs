@@ -23,18 +23,29 @@ public enum RevisionSignatureStatus
 
 /// <summary>
 /// One durable document revision. Stored in the BusChord project extension, so it survives
-/// save/load and never touches native ETS elements. The source path is recorded for the
-/// installer but deliberately not rendered into comparison reports.
+/// save/load and never touches native ETS elements. Only the source file name is kept, never
+/// its directory, so shared JSON and the project archive carry no customer path.
 /// </summary>
 public sealed class ProjectRevision
 {
+    private string? _sourcePath;
+
     /// <summary>Stable revision id, derived from <see cref="Number"/> ("REV-0001").</summary>
     public required string Id { get; init; }
     /// <summary>Monotonic revision number within the project, starting at 1.</summary>
     public long Number { get; set; }
     public DateTimeOffset Timestamp { get; set; }
-    /// <summary>Path the revision was captured from; null for an unsaved project.</summary>
-    public string? SourcePath { get; set; }
+    /// <summary>
+    /// Base name of the file the revision was captured from; null for an unsaved project.
+    /// The setter discards every directory component, so deserialized legacy logs and direct
+    /// assignments cannot put an absolute customer path into shared JSON. <see cref="SourceHash"/>
+    /// still verifies the captured file bytes.
+    /// </summary>
+    public string? SourcePath
+    {
+        get => _sourcePath;
+        set => _sourcePath = ProjectRevisions.SourceName(value);
+    }
     /// <summary>SHA-256 of the source file at capture time; null when no readable file existed.</summary>
     public string? SourceHash { get; set; }
     /// <summary>SHA-256 of the canonical project content (independent of ZIP packaging and file order).</summary>
@@ -68,6 +79,18 @@ public static class ProjectRevisions
         .FirstOrDefault();
 
     /// <summary>
+    /// File name of a host path, without any directory. Used wherever a revision source is
+    /// stored or serialized: reports, V4 JSON and the project archive must not leak the
+    /// customer's local layout, while the name still tells the installer which file it was.
+    /// </summary>
+    public static string? SourceName(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        var name = Path.GetFileName(path);
+        return string.IsNullOrWhiteSpace(name) ? null : name;
+    }
+
+    /// <summary>
     /// Appends one revision capturing the current modelled project state. Nothing is written to
     /// disk; call <see cref="Knxproj.Save"/> afterwards to persist the record.
     /// </summary>
@@ -83,7 +106,7 @@ public static class ProjectRevisions
             Id = IdPrefix + number.ToString("D4", CultureInfo.InvariantCulture),
             Number = number,
             Timestamp = timestamp ?? DateTimeOffset.Now,
-            SourcePath = string.IsNullOrWhiteSpace(sourcePath) ? null : sourcePath,
+            SourcePath = sourcePath,
             SourceHash = SourceHash(sourcePath),
             ContentHash = ContentHash(project),
             Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
@@ -188,12 +211,15 @@ public static class ProjectRevisions
                     line.Address,
                     line.Name,
                     line.MediumTypeRefId,
+                    line.DomainAddress,
                     Devices = line.Devices.OrderBy(d => d.Id, StringComparer.Ordinal).Select(DeviceSnapshot).ToArray(),
                     Segments = line.Segments.OrderBy(s => s.Id, StringComparer.Ordinal).Select(segment => new
                     {
                         segment.Id,
                         segment.Address,
                         segment.Name,
+                        segment.MediumTypeRefId,
+                        segment.DomainAddress,
                         Devices = segment.Devices.OrderBy(d => d.Id, StringComparer.Ordinal).Select(DeviceSnapshot).ToArray(),
                     }).ToArray(),
                 }).ToArray(),

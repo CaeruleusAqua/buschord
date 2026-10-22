@@ -262,11 +262,14 @@ public sealed partial class McpServer
                 StrProp("states_path", "Optional device programming state JSON (workbench export); foreign project ids are rejected.")),
             Sync(HandoverPackageExport)),
         new("project_compare",
-            "Compare two .knxproj files and report added, removed and changed installations, devices and " +
-            "group addresses.",
+            "Compare two .knxproj files and report added, removed and changed installations, lines, " +
+            "segments, devices and group addresses. When either file carries durable revisions, the " +
+            "comparison also reports the latest revisions and their content/signature state; pass " +
+            "generated_at for a byte-identical rendered report.",
             Schema(
                 StrProp("left_path", "Left/baseline .knxproj path.", true),
-                StrProp("right_path", "Right/updated .knxproj path.", true)),
+                StrProp("right_path", "Right/updated .knxproj path.", true),
+                StrProp("generated_at", "Fixed ISO-8601 timestamp for reproducible revision renders.")),
             Sync(ProjectCompareTool)),
 
         new("undo",
@@ -993,20 +996,38 @@ public sealed partial class McpServer
         if (!File.Exists(leftPath)) throw new ToolException($"project file not found: {leftPath}");
         if (!File.Exists(rightPath)) throw new ToolException($"project file not found: {rightPath}");
 
-        var report = ProjectComparer.Compare(Knxproj.Load(leftPath), Knxproj.Load(rightPath));
+        DateTimeOffset? generatedAt = null;
+        if (Str(args, "generated_at") is { Length: > 0 } generatedText)
+        {
+            if (!DateTimeOffset.TryParse(generatedText, CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var parsed))
+                throw new ToolException($"'generated_at' is not an ISO-8601 timestamp: {generatedText}");
+            generatedAt = parsed;
+        }
+
+        var report = ProjectComparer.CompareRevisions(Knxproj.Load(leftPath), Knxproj.Load(rightPath), generatedAt);
+        var renderedReport = report.HasRevisions ? DifferenceReportRenderer.RenderText(report) : null;
         const int limit = 500;
         return new
         {
             leftProject = report.LeftProjectName,
             rightProject = report.RightProjectName,
             generatedAt = report.GeneratedAt,
+            revisionAware = report.HasRevisions,
+            leftRevision = RevisionSummary(report.LeftRevision),
+            rightRevision = RevisionSummary(report.RightRevision),
+            revisionContent = report.HasRevisions
+                ? report.ContentUnchanged ? "unchanged" : "changed" : null,
+            revisionSignature = report.HasRevisions
+                ? report.SignatureUnchanged ? "unchanged" : "changed" : null,
+            reportText = renderedReport,
             added = report.AddedCount,
             removed = report.RemovedCount,
             changed = report.ChangedCount,
             unchanged = report.UnchangedCount,
             total = report.Items.Count,
             truncated = report.Items.Count > limit,
-            items = report.Items.Take(limit).Select(item => new
+            items = report.OrderedItems().Take(limit).Select(item => new
             {
                 path = item.Path,
                 objectType = item.ObjectType,
@@ -1018,6 +1039,23 @@ public sealed partial class McpServer
             }).ToList(),
         };
     }
+
+    /// <summary>
+    /// Revision metadata for the compare payload. The source path stays out on purpose: it is
+    /// only a base name in the model, but shared compare output should not name customer files.
+    /// </summary>
+    private static object? RevisionSummary(ProjectRevision? revision) => revision is null ? null : new
+    {
+        revision.Id,
+        revision.Number,
+        revision.Timestamp,
+        revision.ContentHash,
+        algorithm = revision.HashAlgorithm,
+        sourceHash = revision.SourceHash,
+        revision.Description,
+        signature = revision.SignatureStatus.ToString(),
+        signatureHash = revision.SignatureHash,
+    };
 
     // ---------------------------------------------------------------- undo / redo
 

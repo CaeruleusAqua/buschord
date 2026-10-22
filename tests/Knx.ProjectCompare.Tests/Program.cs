@@ -203,6 +203,85 @@ static void SetObjectMetadata(Project project, string deviceId, string objectRef
     Check("location: floor parent is visible", floor.Parent is null && floor.Children.Count == 0);
 }
 
+// --- Line and segment topology facts (medium, domain) ------------------------------------
+{
+    static (Project Left, Project Right, Line LeftLine, Line RightLine, Segment LeftSegment,
+        Segment RightSegment) TopologyPair()
+    {
+        var left = BuildProject();
+        var right = BuildProject();
+        var leftLine = left.Installations.Single().Areas.Single().Lines.Single();
+        var rightLine = right.Installations.Single().Areas.Single().Lines.Single();
+        var leftSegment = new Segment { Id = "S-1", Address = 0, MediumTypeRefId = "MT-0", DomainAddress = "0x0001" };
+        var rightSegment = new Segment { Id = "S-1", Address = 0, MediumTypeRefId = "MT-0", DomainAddress = "0x0001" };
+        leftLine.Segments.Add(leftSegment);
+        rightLine.Segments.Add(rightSegment);
+        return (left, right, leftLine, rightLine, leftSegment, rightSegment);
+    }
+
+    var mediumPair = TopologyPair();
+    var mediumBefore = ProjectRevisions.ContentHash(mediumPair.Left);
+    mediumPair.RightLine.MediumTypeRefId = "MT-1";
+    var mediumReport = ProjectComparer.Compare(mediumPair.Left, mediumPair.Right, DateTimeOffset.UnixEpoch);
+    Check("topology: line medium-only change changes the content hash",
+        ProjectRevisions.ContentHash(mediumPair.Right) != mediumBefore);
+    Check("topology: line medium-only change is reported",
+        Item(mediumReport, "Line/I-1/A-1/L-1/MediumTypeRefId") is
+        {
+            ObjectType: "Line",
+            Modification: ModificationType.Changed,
+            OldValue: "MT-0",
+            NewValue: "MT-1",
+        });
+
+    var domainPair = TopologyPair();
+    var domainBefore = ProjectRevisions.ContentHash(domainPair.Left);
+    domainPair.RightLine.DomainAddress = "0x0A0C";
+    var domainReport = ProjectComparer.Compare(domainPair.Left, domainPair.Right, DateTimeOffset.UnixEpoch);
+    Check("topology: line domain-only change changes the content hash",
+        ProjectRevisions.ContentHash(domainPair.Right) != domainBefore);
+    Check("topology: line domain-only change is reported",
+        Item(domainReport, "Line/I-1/A-1/L-1/DomainAddress") is
+        {
+            ObjectType: "Line",
+            Modification: ModificationType.Changed,
+            OldValue: null,
+            NewValue: "0x0A0C",
+        });
+
+    var segmentMediumPair = TopologyPair();
+    var segmentMediumBefore = ProjectRevisions.ContentHash(segmentMediumPair.Left);
+    segmentMediumPair.RightSegment.MediumTypeRefId = "MT-2";
+    var segmentMediumReport = ProjectComparer.Compare(segmentMediumPair.Left, segmentMediumPair.Right,
+        DateTimeOffset.UnixEpoch);
+    Check("topology: segment medium-only change changes the content hash",
+        ProjectRevisions.ContentHash(segmentMediumPair.Right) != segmentMediumBefore);
+    Check("topology: segment medium-only change is reported",
+        Item(segmentMediumReport, "Segment/I-1/A-1/L-1/S-1/MediumTypeRefId") is
+        {
+            ObjectType: "Segment",
+            Modification: ModificationType.Changed,
+            OldValue: "MT-0",
+            NewValue: "MT-2",
+        });
+
+    var segmentDomainPair = TopologyPair();
+    var segmentDomainBefore = ProjectRevisions.ContentHash(segmentDomainPair.Left);
+    segmentDomainPair.RightSegment.DomainAddress = "0x0002";
+    var segmentDomainReport = ProjectComparer.Compare(segmentDomainPair.Left, segmentDomainPair.Right,
+        DateTimeOffset.UnixEpoch);
+    Check("topology: segment domain-only change changes the content hash",
+        ProjectRevisions.ContentHash(segmentDomainPair.Right) != segmentDomainBefore);
+    Check("topology: segment domain-only change is reported",
+        Item(segmentDomainReport, "Segment/I-1/A-1/L-1/S-1/DomainAddress") is
+        {
+            ObjectType: "Segment",
+            Modification: ModificationType.Changed,
+            OldValue: "0x0001",
+            NewValue: "0x0002",
+        });
+}
+
 // --- Durable revision roundtrip, old projects and JSON extension -------------------------
 {
     var directory = Path.Combine(Path.GetTempPath(), "knx-project-versioning-" + Guid.NewGuid().ToString("N"));
@@ -226,6 +305,10 @@ static void SetObjectMetadata(Project project, string deviceId, string objectRef
         } && revision.ContentHash.Length == 64 && revision.SourceHash == capturedHash
             && revision.SignatureHash?.Length == 64,
             $"{revision.Id} hash={revision.ContentHash.Length} source={revision.SourceHash?.Length}");
+        Check("revision: capture stores only the source file name",
+            revision.SourcePath == Path.GetFileName(path)
+            && !revision.SourcePath!.Contains(directory, StringComparison.OrdinalIgnoreCase),
+            revision.SourcePath);
         var hashBeforeSecond = ProjectRevisions.ContentHash(project);
         var second = ProjectRevisions.Capture(project, description: "Nacharbeit", timestamp: timestamp.AddHours(1));
         Check("revision: numbering is monotonic and id is stable",
@@ -240,7 +323,7 @@ static void SetObjectMetadata(Project project, string deviceId, string objectRef
         var loadedRevision = loaded.Workbench.Revisions.Single(r => r.Id == "REV-0001");
         Check("revision: knxproj roundtrip keeps every field",
             loadedRevision.Number == 1 && loadedRevision.Timestamp == timestamp
-            && loadedRevision.SourcePath == path && loadedRevision.SourceHash == capturedHash
+            && loadedRevision.SourcePath == Path.GetFileName(path) && loadedRevision.SourceHash == capturedHash
             && loadedRevision.ContentHash == revision.ContentHash
             && loadedRevision.HashAlgorithm == ProjectRevisions.HashAlgorithm
             && loadedRevision.Description == "Erststand"

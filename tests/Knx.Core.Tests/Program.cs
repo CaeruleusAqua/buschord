@@ -1511,7 +1511,7 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         var revisionReloaded = revisionLoaded.Workbench.Revisions.Single();
         Check("Revision: knxproj-Roundtrip", revisionReloaded.Id == revision.Id
             && revisionReloaded.Number == 1 && revisionReloaded.Description == "Abnahme"
-            && revisionReloaded.SourcePath == revisionPath
+            && revisionReloaded.SourcePath == Path.GetFileName(revisionPath)
             && revisionReloaded.SourceHash == revision.SourceHash
             && revisionReloaded.ContentHash == revision.ContentHash
             && revisionReloaded.SignatureStatus == RevisionSignatureStatus.Unverified
@@ -1526,6 +1526,44 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         device.ParameterValues["mode"] = "\"dim\"";
         Check("Revision: Parameteränderung ändert den Inhalt-Hash",
             ProjectRevisions.ContentHash(revisionProject) != contentBefore);
+
+        // Line/segment medium and domain are exported ETS facts; a change confined to them
+        // must move the canonical content hash.
+        var topologyProject = BuildProject("P-TOPO", "Topologie", Dev("1.1.1", "Aktor"));
+        var topologyLine = topologyProject.Installations.Single().Areas.Single().Lines.Single();
+        var topologySegment = new Segment { Id = "S-1", Address = 0, MediumTypeRefId = "MT-0", DomainAddress = "0x0001" };
+        topologyLine.Segments.Add(topologySegment);
+        var topologyBefore = ProjectRevisions.ContentHash(topologyProject);
+        topologyLine.DomainAddress = "0x0A0B";
+        Check("Revision: Linien-Domäne ändert den Inhalt-Hash",
+            ProjectRevisions.ContentHash(topologyProject) != topologyBefore);
+        var lineDomainHash = ProjectRevisions.ContentHash(topologyProject);
+        topologySegment.MediumTypeRefId = "MT-2";
+        Check("Revision: Segmentmedium ändert den Inhalt-Hash",
+            ProjectRevisions.ContentHash(topologyProject) != lineDomainHash);
+        var segmentMediumHash = ProjectRevisions.ContentHash(topologyProject);
+        topologySegment.DomainAddress = "0x0002";
+        Check("Revision: Segmentdomäne ändert den Inhalt-Hash",
+            ProjectRevisions.ContentHash(topologyProject) != segmentMediumHash);
+
+        // Source paths never leave the machine: only the file name is stored or serialized.
+        var customerRevision = new ProjectRevision
+        {
+            Id = "REV-9001",
+            Number = 9001,
+            Timestamp = new DateTimeOffset(2026, 10, 22, 11, 0, 0, TimeSpan.FromHours(2)),
+            ContentHash = new string('A', 64),
+        };
+        customerRevision.SourcePath = @"C:\Kunde Geheim\haus.knxproj";
+        Check("Revision: Quellpfad wird auf den Dateinamen reduziert",
+            customerRevision.SourcePath == "haus.knxproj", customerRevision.SourcePath);
+        var customerJson = JsonSerializer.Serialize(new Knx.Workbench.WorkbenchMetadata
+        {
+            Revisions = { customerRevision },
+        });
+        Check("Revision: JSON enthält keinen Kundenpfad",
+            !customerJson.Contains("Kunde Geheim", StringComparison.Ordinal)
+            && customerJson.Contains("haus.knxproj", StringComparison.Ordinal), customerJson);
 
         var oldPath = Path.Combine(revisionDirectory, "old.knxproj");
         var oldProject = BuildProject("P-OLD", "Altprojekt", Dev("1.1.2", "Taster"));

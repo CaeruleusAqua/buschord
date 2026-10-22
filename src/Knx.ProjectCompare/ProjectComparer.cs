@@ -105,6 +105,7 @@ public static class ProjectComparer
 
         CompareProject(left, right, report);
         CompareInstallations(left, right, report);
+        CompareTopology(left, right, report);
         CompareDevices(left, right, report);
         CompareGroupAddresses(left, right, report);
         CompareLinks(left, right, report);
@@ -165,6 +166,87 @@ public static class ProjectComparer
                 Add(report, $"Installation/{id}", "Installation", installation.Name ?? id,
                     ModificationType.Added, newValue: installation.Name);
     }
+
+    private sealed record LineRef(Area Area, Line Line);
+    private sealed record SegmentRef(Segment Segment);
+
+    /// <summary>
+    /// Line and segment medium/domain facts. These fields are written by ETS and used by the
+    /// exported project XML and the P080/P081/P082 checks, so a change confined to them must
+    /// still produce a difference item.
+    /// </summary>
+    private static void CompareTopology(Project left, Project right, DifferenceReport report)
+    {
+        var leftLines = TopologyLines(left);
+        var rightLines = TopologyLines(right);
+        foreach (var (key, line) in leftLines)
+        {
+            var path = $"Line/{key}";
+            var name = line.Line.Name ?? line.Line.Id;
+            if (!rightLines.TryGetValue(key, out var other))
+            {
+                Add(report, path, "Line", name, ModificationType.Removed, oldValue: LineSummary(line));
+                continue;
+            }
+            CompareText(report, $"{path}/Name", "Line", name, line.Line.Name, other.Line.Name);
+            CompareText(report, $"{path}/Address", "Line", name,
+                ValueText(line.Line.Address), ValueText(other.Line.Address));
+            CompareText(report, $"{path}/MediumTypeRefId", "Line", name,
+                line.Line.MediumTypeRefId, other.Line.MediumTypeRefId);
+            CompareText(report, $"{path}/DomainAddress", "Line", name,
+                line.Line.DomainAddress, other.Line.DomainAddress);
+        }
+        foreach (var (key, line) in rightLines)
+            if (!leftLines.ContainsKey(key))
+                Add(report, $"Line/{key}", "Line", line.Line.Name ?? line.Line.Id,
+                    ModificationType.Added, newValue: LineSummary(line));
+
+        var leftSegments = TopologySegments(leftLines);
+        var rightSegments = TopologySegments(rightLines);
+        foreach (var (key, segment) in leftSegments)
+        {
+            var path = $"Segment/{key}";
+            var name = segment.Segment.Name ?? segment.Segment.Id;
+            if (!rightSegments.TryGetValue(key, out var other))
+            {
+                Add(report, path, "Segment", name, ModificationType.Removed, oldValue: SegmentSummary(segment.Segment));
+                continue;
+            }
+            CompareText(report, $"{path}/Name", "Segment", name, segment.Segment.Name, other.Segment.Name);
+            CompareText(report, $"{path}/Address", "Segment", name,
+                ValueText(segment.Segment.Address), ValueText(other.Segment.Address));
+            CompareText(report, $"{path}/MediumTypeRefId", "Segment", name,
+                segment.Segment.MediumTypeRefId, other.Segment.MediumTypeRefId);
+            CompareText(report, $"{path}/DomainAddress", "Segment", name,
+                segment.Segment.DomainAddress, other.Segment.DomainAddress);
+        }
+        foreach (var (key, segment) in rightSegments)
+            if (!leftSegments.ContainsKey(key))
+                Add(report, $"Segment/{key}", "Segment", segment.Segment.Name ?? segment.Segment.Id,
+                    ModificationType.Added, newValue: SegmentSummary(segment.Segment));
+    }
+
+    private static Dictionary<string, LineRef> TopologyLines(Project project) =>
+        project.Installations.OrderBy(i => i.Id, StringComparer.Ordinal)
+            .SelectMany(installation => installation.Areas.OrderBy(a => a.Id, StringComparer.Ordinal)
+                .SelectMany(area => area.Lines.OrderBy(l => l.Id, StringComparer.Ordinal)
+                    .Select(line => new KeyValuePair<string, LineRef>(
+                        $"{installation.Id}/{area.Id}/{line.Id}", new LineRef(area, line)))))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+    private static Dictionary<string, SegmentRef> TopologySegments(Dictionary<string, LineRef> lines) =>
+        lines.SelectMany(pair => pair.Value.Line.Segments.OrderBy(s => s.Id, StringComparer.Ordinal)
+                .Select(segment => new KeyValuePair<string, SegmentRef>(
+                    $"{pair.Key}/{segment.Id}", new SegmentRef(segment))))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+    private static string LineSummary(LineRef line) =>
+        $"address={line.Area.Address}.{line.Line.Address} medium={line.Line.MediumTypeRefId} " +
+        $"domain={OrDash(line.Line.DomainAddress ?? "")}";
+
+    private static string SegmentSummary(Segment segment) =>
+        $"address={segment.Address} medium={OrDash(segment.MediumTypeRefId ?? "")} " +
+        $"domain={OrDash(segment.DomainAddress ?? "")}";
 
     private static void CompareDevices(Project left, Project right, DifferenceReport report)
     {

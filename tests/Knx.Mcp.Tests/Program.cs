@@ -638,6 +638,109 @@ foreach (var path in new[]
          })
     if (File.Exists(path)) File.Delete(path);
 
+// ---------------------------------------------------------------- project compare (revision-aware)
+
+static Knx.Project CompareProject()
+{
+    var project = new Knx.Project { Id = "P-CMP", Name = "Vergleich" };
+    var installation = new Knx.Installation { Id = "I-CMP", Name = "Haus" };
+    var area = new Knx.Area { Id = "A-CMP", Address = 1 };
+    var line = new Knx.Line { Id = "L-CMP", Address = 1, Name = "Linie 1" };
+    line.Devices.Add(new Knx.DeviceInstance
+    {
+        Id = "D-CMP",
+        Address = new Knx.IndividualAddress(1, 1, 1),
+        Name = "Aktor",
+        ProductRefId = "M-1",
+        Hardware2ProgramRefId = "M-1_H-1",
+    });
+    line.Segments.Add(new Knx.Segment { Id = "S-CMP", Address = 0, MediumTypeRefId = "MT-0" });
+    area.Lines.Add(line);
+    installation.Areas.Add(area);
+    project.Installations.Add(installation);
+    return project;
+}
+
+var compareDir = Path.Combine(Path.GetTempPath(), "knx_mcp_compare_" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(compareDir);
+var compareLeftPath = Path.Combine(compareDir, "links.knxproj");
+var compareRightPath = Path.Combine(compareDir, "rechts.knxproj");
+var compareLeft = CompareProject();
+Knx.Knxproj.Save(compareLeft, compareLeftPath);
+var compareRight = Knx.Knxproj.Load(compareLeftPath);
+compareRight.Installations.Single().Areas.Single().Lines.Single().Segments.Single().MediumTypeRefId = "MT-2";
+Knx.Knxproj.Save(compareRight, compareRightPath);
+var compareTimestamp = new DateTimeOffset(2026, 10, 22, 12, 0, 0, TimeSpan.FromHours(2));
+Knx.ProjectRevisions.Capture(compareLeft, compareLeftPath, "links", compareTimestamp);
+Knx.ProjectRevisions.Capture(compareRight, compareRightPath, "rechts", compareTimestamp.AddMinutes(1));
+Knx.Knxproj.Save(compareLeft, compareLeftPath);
+Knx.Knxproj.Save(compareRight, compareRightPath);
+
+var compareArgs = new
+{
+    left_path = compareLeftPath,
+    right_path = compareRightPath,
+    generated_at = "2026-10-22T12:30:00+02:00",
+};
+var compared = await Tool(107, "project_compare", compareArgs);
+var comparedContent = compared["result"]?["structuredContent"];
+Check("project_compare keeps the legacy summary",
+    (string?)comparedContent?["leftProject"] == "Vergleich"
+    && (string?)comparedContent?["rightProject"] == "Vergleich"
+    && comparedContent?["added"]?.GetValue<int>() is not null
+    && comparedContent?["removed"]?.GetValue<int>() is not null
+    && comparedContent?["changed"]?.GetValue<int>() is > 0
+    && comparedContent?["unchanged"]?.GetValue<int>() is not null
+    && comparedContent?["total"]?.GetValue<int>() is > 0,
+    compared.ToJsonString());
+Check("project_compare is revision-aware",
+    comparedContent?["revisionAware"]?.GetValue<bool>() == true
+    && comparedContent?["leftRevision"]?["number"]?.GetValue<int>() == 1
+    && comparedContent?["rightRevision"]?["number"]?.GetValue<int>() == 1
+    && (string?)comparedContent?["leftRevision"]?["id"] == "REV-0001"
+    && (string?)comparedContent?["revisionContent"] == "changed"
+    && (string?)comparedContent?["revisionSignature"] == "unchanged",
+    compared.ToJsonString());
+Check("project_compare detects a segment medium-only change",
+    comparedContent?["items"] is JsonArray compareItems && compareItems.Any(item =>
+        (string?)item?["path"] == "Segment/I-CMP/A-CMP/L-CMP/S-CMP/MediumTypeRefId"),
+    compared.ToJsonString());
+Check("project_compare renders the revision report",
+    (string?)comparedContent?["reportText"] is { } rendered
+    && rendered.Contains("revision-content=changed", StringComparison.Ordinal)
+    && rendered.Contains("left-revision=number:1", StringComparison.Ordinal)
+    && rendered.Contains("right-revision=number:1", StringComparison.Ordinal),
+    (string?)comparedContent?["reportText"]);
+Check("project_compare leaves the source directory out",
+    !compared.ToJsonString().Contains(compareDir, StringComparison.OrdinalIgnoreCase));
+var comparedAgain = await Tool(108, "project_compare", compareArgs);
+Check("project_compare output is stable for a fixed timestamp",
+    comparedAgain["result"]?.ToJsonString() == compared["result"]?.ToJsonString());
+
+var plainLeftPath = Path.Combine(compareDir, "plain-links.knxproj");
+var plainRightPath = Path.Combine(compareDir, "plain-rechts.knxproj");
+Knx.Knxproj.Save(CompareProject(), plainLeftPath);
+var plainRight = Knx.Knxproj.Load(plainLeftPath);
+plainRight.Installations.Single().Areas.Single().Lines.Single().Segments.Single().MediumTypeRefId = "MT-2";
+Knx.Knxproj.Save(plainRight, plainRightPath);
+var plainCompared = await Tool(109, "project_compare", new
+{
+    left_path = plainLeftPath,
+    right_path = plainRightPath,
+    generated_at = "2026-10-22T12:30:00+02:00",
+});
+var plainContent = plainCompared["result"]?["structuredContent"];
+Check("project_compare without revisions keeps the old shape",
+    plainContent?["revisionAware"]?.GetValue<bool>() == false
+    && plainContent?["reportText"] is null
+    && plainContent?["leftRevision"] is null
+    && plainContent?["rightRevision"] is null
+    && plainContent?["items"] is JsonArray plainItems && plainItems.Count > 0,
+    plainCompared.ToJsonString());
+foreach (var path in new[] { compareLeftPath, compareRightPath, plainLeftPath, plainRightPath })
+    if (File.Exists(path)) File.Delete(path);
+Directory.Delete(compareDir, recursive: true);
+
 // ---------------------------------------------------------------- project search / replace
 
 var searchedDevice = await Tool(70, "project_search", new { query = "Katalogaktor", scope = "devices" });
