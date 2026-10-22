@@ -1,7 +1,8 @@
 # BusChord V4 — Restplan und Todo-Liste
 
-Stand: 2026-10-21. Basis: lokaler Branch `development`, aktueller Stand
-`ac0480a` (Review-Basis `55ff6e1`, Clean-Code-Fixes danach).
+Stand: 2026-10-22. Basis: lokaler Branch `development` auf sauberer
+Historie, aktueller Stand `e5be9ed` (Review-Basis `55ff6e1`, Clean-Code-Fixes
+danach; History-Rewrite `7962a1a`).
 Referenz: `C:\Users\julia\Downloads\knx-workbench-v4-bundle`.
 Dieser Plan führt die verbleibenden Arbeiten aus dem V4-Konzept, den Design-Reviews
 und der ETS-Paritätsanalyse. Er ist die maßgebliche Todo-Liste; erledigte Punkte
@@ -169,7 +170,7 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - Remote: `origin` auf SSH umgestellt, Push ohne GitHub-UI möglich. History-Rewrite veröffentlicht; `development` (`7962a1a`) und `main` (`49feddd`) sind sauber, Schutzregeln wiederhergestellt. Remote-CI/CodeQL für `development` `7962a1a` grün; `main` ist der alte Release-Zweig und scheitert noch am entfernten Encryption-Fixture (wird aus `development` aktualisiert). Ein zuvor im Chat genanntes Token wurde nicht gespeichert und sollte rotiert werden.
 - Katalog-Performance (`49f3f22`, `33612e0`): persistenter SHA-256-revalidierter Metadatenindex, Suchindex ohne UI-Programmparse, lazy KSXML-Modelle; real gemessen warm 0,8–1,6 s statt 55–66 s, erster DPT-Suchlauf <1 ms statt 9,33 s; DCA-/Katalog-/Workbench-Suite grün.
 - Bus-Hardware (`8b2b678`): CEMI-Gruppenflag/Hop-Count, APCI-/Payload-Offsets, Con-Filter und Gruppenantwort-Matching, Descriptor-Encoding und Multicast-Routing korrigiert; read-only Tunnel/Routing live geprüft, Schreibpfad bleibt gesperrt.
-- QA (`7b80741`) und Fixture-Hygiene (`171ebca`): unabhängige Vollsuite grün, Katalogspalten/Fokus-P2 behoben (`26f596f`), reale/GPL-Fixtures durch synthetische ersetzt; Git-History-Rewrite bleibt offener Freigabepunkt H10.7.
+- QA (`7b80741`) und Fixture-Hygiene (`171ebca`): unabhängige Vollsuite grün, Katalogspalten/Fokus-P2 behoben (`26f596f`), reale/GPL-Fixtures durch synthetische ersetzt; History-Rewrite ist ausgeführt und veröffentlicht (H10.7).
 
 ## F. Clean-Code-Review (Schritt 11)
 
@@ -185,7 +186,7 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - [x] Konzept-Icons statt gefüllter Material-Icons in der Workbench.
 - [x] Einstellungsfenster im V4-Design.
 
-## H. Offene Arbeitspakete (Stand `ac0480a`, 2026-10-21)
+## H. Offene Arbeitspakete (Stand `e5be9ed`, 2026-10-22)
 
 Diese Liste ist die vollständige Restliste. Ein Punkt gilt erst als erledigt,
 wenn Implementierung, fokussierter Test und Abnahmeevidenz im Abschnitt
@@ -454,8 +455,8 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
 - [x] **H10.5 Fixtures/Provenienz:** `knx_master.xml`, `.knxproj`-Fixtures
   und Testkorpora auf Hersteller-/Kundendaten und Lizenz prüfen; durch
   synthetische Minima ersetzen, wo nötig. (`171ebca`: 1-MB-KNX-Master und
-  GPL-Fixture entfernt, synthetische Fixtures + Provenienz-README; History
-  enthält die alten Blobs weiterhin → Rewrite-Entscheidung offen)
+  GPL-Fixture entfernt, synthetische Fixtures + Provenienz-README; die
+  History wurde anschließend bereinigt, siehe H10.7)
 - [x] **H10.6 Release-Entscheidung:** verbleibende P3
   (Klartext-Backups, `CatalogUse.Download`, Import-Atomarität,
   `.signature`) dokumentieren oder beheben. (`7082f81`,
