@@ -66,7 +66,14 @@ public sealed record PortfolioSummary(
 /// (temporary file, then replace) while keeping the previous good document as <c>.bak</c>.
 /// A corrupt or unsupported file therefore falls back to the backup, then to an empty registry;
 /// the corrupt file is preserved as <c>.corrupt</c> for inspection.
-/// All mutations persist immediately. Paths are compared case-insensitively on Windows only.
+/// All mutations persist immediately and are transactional: the change is applied to a copy, the
+/// copy is written, and only a successful write replaces the in-memory state, so a failed write
+/// (disk full, locked file) leaves the registry at its previous state.
+/// Writes take a bounded advisory lock (<see cref="LockPath"/>) that serializes app instances;
+/// a missing or foreign lock falls back to the atomic swap after
+/// <see cref="WriteLockTimeoutMilliseconds"/>. Two instances still resolve a lost update
+/// last-writer-wins; the registry never merges foreign entries.
+/// Paths are compared case-insensitively on Windows only.
 /// </remarks>
 public sealed class PortfolioRegistry
 {
@@ -76,12 +83,18 @@ public sealed class PortfolioRegistry
     /// <summary>File name used inside <see cref="AppSettings.Directory"/>.</summary>
     public const string FileName = "portfolio.json";
 
+    /// <summary>How long a write waits for another process' lock before it writes unlocked.</summary>
+    public const int WriteLockTimeoutMilliseconds = 2000;
+
     private const int MaxEntries = 1000;
     private const int MaxNameLength = 200;
     private const int MaxPathLength = 4096;
     private const int MaxRefsPerEntry = 64;
     private const int MaxRefLength = 128;
     private const long MaxDocumentBytes = 4 * 1024 * 1024;
+    private const int WriteLockRetryMilliseconds = 25;
+    private const int SwapAttempts = 8;
+    private const int SwapRetryMilliseconds = 25;
 
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -110,6 +123,9 @@ public sealed class PortfolioRegistry
     /// <summary>Document this instance reads and writes.</summary>
     public string FilePath { get; }
 
+    /// <summary>Advisory lock file that serializes writers of <see cref="FilePath"/> across processes.</summary>
+    public string LockPath => FilePath + ".lock";
+
     /// <summary>Why the document could not be read as written, or null after a clean load.</summary>
     public string? LoadError { get; private set; }
 
@@ -129,7 +145,7 @@ public sealed class PortfolioRegistry
     /// <summary>Writes the current state again, atomically. Loading and saving is byte-stable.</summary>
     public void Save()
     {
-        lock (_gate) Persist();
+        lock (_gate) Persist(_entries);
     }
 
     /// <summary>Finds one entry by its stable id, or null.</summary>
@@ -137,7 +153,7 @@ public sealed class PortfolioRegistry
     {
         lock (_gate)
         {
-            var index = FindIndexById(id);
+            var index = FindIndexById(_entries, id);
             return index < 0 ? null : _entries[index];
         }
     }
@@ -148,7 +164,7 @@ public sealed class PortfolioRegistry
         var full = Normalize(path);
         lock (_gate)
         {
-            var index = FindIndexByPath(full);
+            var index = FindIndexByPath(_entries, full);
             return index < 0 ? null : _entries[index];
         }
     }
@@ -163,10 +179,11 @@ public sealed class PortfolioRegistry
         var full = Normalize(projectPath);
         lock (_gate)
         {
-            var existing = FindIndexByPath(full);
+            var existing = FindIndexByPath(_entries, full);
             if (existing >= 0) return _entries[existing];
-            var entry = AddCore(full, name, projectId, projectGuid, DateTimeOffset.UtcNow);
-            Persist();
+            var next = Copy();
+            var entry = AddCore(next, full, name, projectId, projectGuid, DateTimeOffset.UtcNow);
+            Commit(next);
             return entry;
         }
     }
@@ -176,10 +193,11 @@ public sealed class PortfolioRegistry
     {
         lock (_gate)
         {
-            var index = FindIndexById(id);
+            var index = FindIndexById(_entries, id);
             if (index < 0) return false;
-            _entries.RemoveAt(index);
-            Persist();
+            var next = Copy();
+            next.RemoveAt(index);
+            Commit(next);
             return true;
         }
     }
@@ -190,12 +208,13 @@ public sealed class PortfolioRegistry
         var clean = CleanName(name, "");
         lock (_gate)
         {
-            var index = FindIndexById(id);
+            var index = FindIndexById(_entries, id);
             if (index < 0) return false;
             var entry = _entries[index];
             if (string.Equals(entry.Name, clean, StringComparison.Ordinal)) return false;
-            _entries[index] = entry with { Name = clean };
-            Persist();
+            var next = Copy();
+            next[index] = entry with { Name = clean };
+            Commit(next);
             return true;
         }
     }
@@ -210,15 +229,16 @@ public sealed class PortfolioRegistry
         var full = Normalize(newPath);
         lock (_gate)
         {
-            var index = FindIndexById(id);
+            var index = FindIndexById(_entries, id);
             if (index < 0) return false;
             var entry = _entries[index];
             if (string.Equals(entry.Path, full, PathComparison)) return false;
             if (!File.Exists(full)) throw new FileNotFoundException("Project file not found.", full);
-            if (FindIndexByPath(full) >= 0)
+            if (FindIndexByPath(_entries, full) >= 0)
                 throw new InvalidOperationException($"Path '{full}' is already registered under another id.");
-            _entries[index] = RefreshEntry(entry, full);
-            Persist();
+            var next = Copy();
+            next[index] = RefreshEntry(entry, full);
+            Commit(next);
             return true;
         }
     }
@@ -228,10 +248,11 @@ public sealed class PortfolioRegistry
     {
         lock (_gate)
         {
-            var index = FindIndexById(id);
+            var index = FindIndexById(_entries, id);
             if (index < 0) return false;
-            _entries[index] = _entries[index] with { LastOpenedUtc = DateTimeOffset.UtcNow };
-            Persist();
+            var next = Copy();
+            next[index] = _entries[index] with { LastOpenedUtc = DateTimeOffset.UtcNow };
+            Commit(next);
             return true;
         }
     }
@@ -244,7 +265,7 @@ public sealed class PortfolioRegistry
     {
         lock (_gate)
         {
-            var index = FindIndexById(id);
+            var index = FindIndexById(_entries, id);
             if (index < 0) return false;
             var entry = _entries[index];
             if (!File.Exists(entry.Path)) throw new FileNotFoundException("Project file not found.", entry.Path);
@@ -252,8 +273,9 @@ public sealed class PortfolioRegistry
             if (refreshed.Revision == entry.Revision &&
                 refreshed.SizeBytes == entry.SizeBytes &&
                 string.Equals(refreshed.Sha256, entry.Sha256, StringComparison.Ordinal)) return false;
-            _entries[index] = refreshed;
-            Persist();
+            var next = Copy();
+            next[index] = refreshed;
+            Commit(next);
             return true;
         }
     }
@@ -268,15 +290,16 @@ public sealed class PortfolioRegistry
         var reference = NormalizeRef(backupRef, nameof(backupRef));
         lock (_gate)
         {
-            var index = FindIndexById(id);
+            var index = FindIndexById(_entries, id);
             if (index < 0) return false;
             var entry = _entries[index];
             if (entry.BackupRefs.Contains(reference, StringComparer.Ordinal)) return false;
             var refs = entry.BackupRefs.ToList();
             refs.Add(reference);
             if (refs.Count > MaxRefsPerEntry) refs.RemoveRange(0, refs.Count - MaxRefsPerEntry);
-            _entries[index] = entry with { BackupRefs = refs };
-            Persist();
+            var next = Copy();
+            next[index] = entry with { BackupRefs = refs };
+            Commit(next);
             return true;
         }
     }
@@ -287,12 +310,13 @@ public sealed class PortfolioRegistry
         var reference = versionRef is null ? null : NormalizeRef(versionRef, nameof(versionRef));
         lock (_gate)
         {
-            var index = FindIndexById(id);
+            var index = FindIndexById(_entries, id);
             if (index < 0) return false;
             var entry = _entries[index];
             if (string.Equals(entry.VersionRef, reference, StringComparison.Ordinal)) return false;
-            _entries[index] = entry with { VersionRef = reference };
-            Persist();
+            var next = Copy();
+            next[index] = entry with { VersionRef = reference };
+            Commit(next);
             return true;
         }
     }
@@ -358,10 +382,11 @@ public sealed class PortfolioRegistry
         if (!string.IsNullOrWhiteSpace(settings.LastProject)) candidates.Add(settings.LastProject);
         candidates.AddRange(settings.RecentProjects.Where(p => !string.IsNullOrWhiteSpace(p)));
         var now = DateTimeOffset.UtcNow;
-        var added = 0;
-        var rank = 0;
         lock (_gate)
         {
+            var next = Copy();
+            var added = 0;
+            var rank = 0;
             foreach (var candidate in candidates)
             {
                 string full;
@@ -373,13 +398,13 @@ public sealed class PortfolioRegistry
                 {
                     continue;
                 }
-                if (!File.Exists(full) || FindIndexByPath(full) >= 0 || _entries.Count >= MaxEntries) continue;
-                AddCore(full, null, null, null, now.AddTicks(-rank++));
+                if (!File.Exists(full) || FindIndexByPath(next, full) >= 0 || next.Count >= MaxEntries) continue;
+                AddCore(next, full, null, null, null, now.AddTicks(-rank++));
                 added++;
             }
-            if (added > 0) Persist();
+            if (added > 0) Commit(next);
+            return added;
         }
-        return added;
     }
 
     private static string Normalize(string path)
@@ -408,16 +433,16 @@ public sealed class PortfolioRegistry
         return text.Length > MaxNameLength ? text[..MaxNameLength] : text;
     }
 
-    private PortfolioEntry AddCore(string fullPath, string? name, string? projectId, string? projectGuid,
-        DateTimeOffset opened)
+    private PortfolioEntry AddCore(List<PortfolioEntry> entries, string fullPath, string? name, string? projectId,
+        string? projectGuid, DateTimeOffset opened)
     {
         if (!File.Exists(fullPath)) throw new FileNotFoundException("Project file not found.", fullPath);
-        if (_entries.Count >= MaxEntries)
+        if (entries.Count >= MaxEntries)
             throw new InvalidOperationException($"The portfolio is limited to {MaxEntries} projects.");
         var entry = new PortfolioEntry(
-            NewId(), fullPath, CleanName(name ?? "", fullPath), opened, opened, opened, 1,
+            NewId(entries), fullPath, CleanName(name ?? "", fullPath), opened, opened, opened, 1,
             new FileInfo(fullPath).Length, Hash(fullPath), projectId?.Trim(), projectGuid?.Trim(), [], null);
-        _entries.Add(entry);
+        entries.Add(entry);
         return entry;
     }
 
@@ -436,22 +461,33 @@ public sealed class PortfolioRegistry
         };
     }
 
-    private int FindIndexById(string id)
+    private static int FindIndexById(List<PortfolioEntry> entries, string id)
     {
         if (string.IsNullOrWhiteSpace(id)) return -1;
-        return _entries.FindIndex(e => string.Equals(e.Id, id, StringComparison.Ordinal));
+        return entries.FindIndex(e => string.Equals(e.Id, id, StringComparison.Ordinal));
     }
 
-    private int FindIndexByPath(string fullPath)
-        => _entries.FindIndex(e => string.Equals(e.Path, fullPath, PathComparison));
+    private static int FindIndexByPath(List<PortfolioEntry> entries, string fullPath)
+        => entries.FindIndex(e => string.Equals(e.Path, fullPath, PathComparison));
 
-    private string NewId()
+    private static string NewId(List<PortfolioEntry> entries)
     {
         while (true)
         {
             var id = "pf-" + Convert.ToHexString(Guid.NewGuid().ToByteArray())[..12].ToLowerInvariant();
-            if (_entries.All(e => !string.Equals(e.Id, id, StringComparison.Ordinal))) return id;
+            if (entries.All(e => !string.Equals(e.Id, id, StringComparison.Ordinal))) return id;
         }
+    }
+
+    /// <summary>Candidate state for one mutation; never the live list.</summary>
+    private List<PortfolioEntry> Copy() => new(_entries);
+
+    /// <summary>Persists the candidate first, then makes it the in-memory state.</summary>
+    private void Commit(List<PortfolioEntry> next)
+    {
+        Persist(next);
+        _entries.Clear();
+        _entries.AddRange(next);
     }
 
     /// <summary>SHA-256 of the file, lowercase hex. Reads the file once; never opens the archive.</summary>
@@ -595,13 +631,17 @@ public sealed class PortfolioRegistry
         return true;
     }
 
-    /// <summary>Writes the document atomically and keeps the previous good state as <c>.bak</c>.</summary>
-    private void Persist()
+    /// <summary>
+    /// Writes <paramref name="entries"/> atomically and keeps the previous good state as <c>.bak</c>.
+    /// Throws on failure while the caller's live list stays untouched.
+    /// </summary>
+    private void Persist(IReadOnlyList<PortfolioEntry> entries)
     {
         var directory = System.IO.Path.GetDirectoryName(FilePath);
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-        var bytes = Serialize();
-        string? temp = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        var bytes = Serialize(entries);
+        using var writeLock = TryAcquireWriteLock();
+        var temp = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
@@ -609,46 +649,105 @@ public sealed class PortfolioRegistry
                 stream.Write(bytes);
                 stream.Flush(true);
             }
-            if (File.Exists(FilePath))
-            {
-                try
-                {
-                    File.Replace(temp, FilePath, BackupPath, ignoreMetadataErrors: true);
-                }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
-                {
-                    File.Move(temp, FilePath, overwrite: true);
-                }
-            }
-            else
-            {
-                File.Move(temp, FilePath);
-            }
+            Swap(temp);
             temp = null;
         }
         finally
         {
-            if (temp is not null)
+            if (temp is not null) TryDelete(temp);
+        }
+    }
+
+    /// <summary>
+    /// Bounded advisory lock across processes. Returns null when another holder keeps the lock
+    /// past <see cref="WriteLockTimeoutMilliseconds"/> or locking is not permitted; the caller then
+    /// writes unlocked, which the atomic swap still keeps consistent.
+    /// </summary>
+    private FileStream? TryAcquireWriteLock()
+    {
+        var deadline = Environment.TickCount64 + WriteLockTimeoutMilliseconds;
+        while (true)
+        {
+            try
             {
-                try
-                {
-                    File.Delete(temp);
-                }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-                {
-                    // A leftover temp file is harmless; the next save uses a fresh name.
-                }
+                return new FileStream(LockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return null;
+            }
+            catch (IOException)
+            {
+                if (Environment.TickCount64 >= deadline) return null;
+                Thread.Sleep(WriteLockRetryMilliseconds);
             }
         }
     }
 
+    /// <summary>Replaces the document; a briefly locked file is retried, never waited on forever.</summary>
+    private void Swap(string temp)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                if (File.Exists(FilePath))
+                {
+                    try
+                    {
+                        File.Replace(temp, FilePath, BackupPath, ignoreMetadataErrors: true);
+                    }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+                    {
+                        // Some file systems cannot replace: keep the last good state aside first.
+                        TryBackup();
+                        File.Move(temp, FilePath, overwrite: true);
+                    }
+                }
+                else
+                {
+                    File.Move(temp, FilePath);
+                }
+                return;
+            }
+            catch (Exception e) when (attempt < SwapAttempts && e is IOException)
+            {
+                Thread.Sleep(SwapRetryMilliseconds);
+            }
+        }
+    }
+
+    private void TryBackup()
+    {
+        try
+        {
+            File.Copy(FilePath, BackupPath, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // No backup is better than a failed save; the corrupt-recovery path still applies.
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // A leftover temp file is harmless; the next save uses a fresh name.
+        }
+    }
+
     /// <summary>Deterministic bytes: fixed property order, entries sorted by id, one trailing newline.</summary>
-    private byte[] Serialize()
+    private byte[] Serialize(IReadOnlyList<PortfolioEntry> entries)
     {
         var document = new PortfolioDocument
         {
             SchemaVersion = SchemaVersion,
-            Entries = _entries
+            Entries = entries
                 .OrderBy(e => e.Id, StringComparer.Ordinal)
                 .Select(e => new PortfolioEntryDto
                 {

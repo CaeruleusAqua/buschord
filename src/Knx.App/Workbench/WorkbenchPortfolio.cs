@@ -25,9 +25,31 @@ public readonly record struct PortfolioResult(PortfolioActionStatus Status, stri
 }
 
 /// <summary>
+/// Outcome of one background "check all": files re-read, changed, failed, missing and whether a
+/// cancellation stopped the loop early. Registry decisions are unchanged; the caller only shows it.
+/// </summary>
+public readonly record struct PortfolioCheckResult(int Checked, int Updated, int Failed, int Missing, bool Cancelled);
+
+/// <summary>
+/// Version stamp for work that runs off the UI thread: the surface bumps it before it starts a
+/// background read and applies the result only while no newer action rendered a fresher state.
+/// </summary>
+public sealed class PortfolioRefreshGate
+{
+    private int _version;
+
+    /// <summary>Starts one operation and invalidates every earlier result.</summary>
+    public int Begin() => Interlocked.Increment(ref _version);
+
+    /// <summary>True when no other operation started since <paramref name="version"/>.</summary>
+    public bool IsCurrent(int version) => Volatile.Read(ref _version) == version;
+}
+
+/// <summary>
 /// Pure decisions and labels behind the project portfolio surface, so the shell and the console
 /// checks share one contract. The registry owns persistence; this type only validates before it
-/// calls the registry and never touches project files (no move, no delete, no save).
+/// calls the registry and never touches project files (no move, no delete, no save). Re-reads run
+/// on the thread pool so hashing a project never blocks the UI thread.
 /// </summary>
 public static class WorkbenchPortfolio
 {
@@ -86,7 +108,16 @@ public static class WorkbenchPortfolio
 
     /// <summary>Removes only the registry entry; the project file is never deleted.</summary>
     public static PortfolioResult Remove(PortfolioRegistry registry, string id)
-        => registry.Remove(id) ? new(PortfolioActionStatus.Done) : new(PortfolioActionStatus.EntryMissing);
+    {
+        try
+        {
+            return registry.Remove(id) ? new(PortfolioActionStatus.Done) : new(PortfolioActionStatus.EntryMissing);
+        }
+        catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException)
+        {
+            return new(PortfolioActionStatus.Failed);
+        }
+    }
 
     /// <summary>Changes the display name only; the file and the revision stay untouched.</summary>
     public static PortfolioResult Rename(PortfolioRegistry registry, string id, string? name)
@@ -102,6 +133,10 @@ public static class WorkbenchPortfolio
         catch (ArgumentException)
         {
             return new(PortfolioActionStatus.InvalidName, entry.Id, entry.Path);
+        }
+        catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException)
+        {
+            return new(PortfolioActionStatus.Failed, entry.Id, entry.Path);
         }
     }
 
@@ -120,6 +155,47 @@ public static class WorkbenchPortfolio
             return new(PortfolioActionStatus.Failed, entry.Id, entry.Path);
         }
     }
+
+    /// <summary>
+    /// Re-reads size and hash on the thread pool: hashing a large project must never block the UI
+    /// thread. The caller marshals the result back itself.
+    /// </summary>
+    public static Task<PortfolioResult> RefreshAsync(PortfolioRegistry registry, string id)
+        => Task.Run(() => Refresh(registry, id));
+
+    /// <summary>
+    /// Re-reads every existing entry on the thread pool and reports what changed. Files that are
+    /// missing stay registered and are only counted, so the registry keeps every decision the user
+    /// made. A cancellation stops after the file that is currently being hashed; the partial
+    /// result is returned with <see cref="PortfolioCheckResult.Cancelled"/> set and nothing rolls
+    /// back, because each refresh is a completed, persisted mutation.
+    /// </summary>
+    public static Task<PortfolioCheckResult> CheckAllAsync(PortfolioRegistry registry,
+        CancellationToken cancellation = default)
+        => Task.Run(() =>
+        {
+            var entries = registry.Entries;
+            var checkedCount = 0;
+            var updated = 0;
+            var failed = 0;
+            var missing = 0;
+            foreach (var entry in entries)
+            {
+                if (cancellation.IsCancellationRequested)
+                    return new PortfolioCheckResult(checkedCount, updated, failed, missing, true);
+                if (!File.Exists(entry.Path))
+                {
+                    missing++;
+                    continue;
+                }
+                checkedCount++;
+                var result = Refresh(registry, entry.Id);
+                if (result.Status == PortfolioActionStatus.Updated) updated++;
+                else if (result.Status == PortfolioActionStatus.Failed) failed++;
+            }
+            return new PortfolioCheckResult(checkedCount, updated, failed, missing,
+                cancellation.IsCancellationRequested);
+        });
 
     /// <summary>Checks whether an entry may be opened; missing files never reach the loader.</summary>
     public static PortfolioResult OpenTarget(PortfolioRegistry registry, string id)

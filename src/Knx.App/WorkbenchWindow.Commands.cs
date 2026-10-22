@@ -393,9 +393,16 @@ public partial class WorkbenchWindow
         Grid.SetRow(scroll, 1);
         body.Children.Add(scroll);
 
+        // Hashing runs on the thread pool: the gate drops a late result after a newer action
+        // rendered, and closing the dialog cancels the remaining files. Rows stay UI-thread only.
+        var gate = new PortfolioRefreshGate();
+        var checks = new CancellationTokenSource();
+        dialog.Closed += (_, _) => checks.Cancel();
+
         void Report(string text) => message.Text = text;
         void Render()
         {
+            gate.Begin();
             rows.Children.Clear();
             var entries = registry.Entries;
             count.Text = W("PortfolioCount", entries.Count);
@@ -405,7 +412,7 @@ public partial class WorkbenchWindow
                 return;
             }
             foreach (var entry in entries)
-                rows.Children.Add(BuildPortfolioRow(dialog, registry, entry, Render, Report));
+                rows.Children.Add(BuildPortfolioRow(dialog, registry, entry, gate, Render, Report));
         }
 
         void AddCurrent()
@@ -423,22 +430,20 @@ public partial class WorkbenchWindow
             Render();
         }
 
-        void CheckAll()
+        async Task CheckAllAsync()
         {
-            var checkedCount = 0;
-            foreach (var entry in registry.Entries)
-            {
-                if (!File.Exists(entry.Path)) continue;
-                checkedCount++;
-                WorkbenchPortfolio.Refresh(registry, entry.Id);
-            }
-            Report(W("PortfolioChecked", checkedCount));
+            var version = gate.Begin();
+            var result = await WorkbenchPortfolio.CheckAllAsync(registry, checks.Token);
+            // A cancelled run reports the files it did reach; a stale one is dropped entirely.
+            if (!gate.IsCurrent(version)) return;
+            Report(W("PortfolioChecked", result.Checked)
+                + (result.Failed > 0 ? " · " + W("PortfolioFailed") : ""));
             Render();
         }
 
         Render();
         dialog.Content = DialogLayout(body, DialogActions(
-            ActionButton(W("PortfolioCheckAll"), CheckAll, "quiet"),
+            ActionButton(W("PortfolioCheckAll"), () => _ = GuardAsync(CheckAllAsync), "quiet"),
             ActionButton(W("Close"), dialog.Close, "quiet"),
             ActionButton(W("PortfolioAddCurrent"), AddCurrent, "primary")));
         dialog.Opened += (_, _) => Render();
@@ -447,7 +452,7 @@ public partial class WorkbenchWindow
 
     /// <summary>One portfolio row: status, path, revision/hash, last open and safe actions.</summary>
     private Control BuildPortfolioRow(Window owner, PortfolioRegistry registry, PortfolioEntry entry,
-        Action render, Action<string> report)
+        PortfolioRefreshGate gate, Action render, Action<string> report)
     {
         var state = registry.State(entry);
         var left = new StackPanel { Spacing = 2 };
@@ -522,9 +527,13 @@ public partial class WorkbenchWindow
                     if (await OpenPortfolioEntryAsync(entry.Id)) ViewModel.Status = W("PortfolioOpened", entry.Name);
                 }));
             }, "primary"));
-            actions.Children.Add(ActionButton(W("PortfolioRefresh"), () =>
+            actions.Children.Add(ActionButton(W("PortfolioRefresh"), () => _ = GuardAsync(async () =>
             {
-                var result = WorkbenchPortfolio.Refresh(registry, entry.Id);
+                // Hashing a project runs on the thread pool; a late result must not overwrite
+                // what a newer action already rendered.
+                var version = gate.Begin();
+                var result = await WorkbenchPortfolio.RefreshAsync(registry, entry.Id);
+                if (!gate.IsCurrent(version)) return;
                 report(result.Status switch
                 {
                     PortfolioActionStatus.Updated => W("PortfolioRefreshed", registry.Find(entry.Id)?.Revision ?? entry.Revision),
@@ -532,7 +541,7 @@ public partial class WorkbenchWindow
                     _ => PortfolioActionError(result, registry),
                 });
                 render();
-            }, "quiet"));
+            }), "quiet"));
         }
         actions.Children.Add(ActionButton(W("Rename"), () => _ = GuardAsync(async () =>
         {
@@ -614,9 +623,11 @@ public partial class WorkbenchWindow
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         panel.Children.Add(Note(W("PortfolioRemoveText", name)));
         var confirmed = false;
+        var remove = ActionButton(W("PortfolioRemoveEntry"), () => { confirmed = true; dialog.Close(); });
+        // A destructive remove never takes the primary class: it is the danger action, last.
+        remove.Classes.Add("wb-danger");
         dialog.Content = DialogLayout(panel, DialogActions(
-            ActionButton(W("Cancel"), dialog.Close, "quiet"),
-            ActionButton(W("PortfolioRemoveEntry"), () => { confirmed = true; dialog.Close(); }, "primary")));
+            ActionButton(W("Cancel"), dialog.Close, "quiet"), remove));
         await dialog.ShowDialog(owner);
         return confirmed;
     }

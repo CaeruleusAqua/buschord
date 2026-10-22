@@ -1458,6 +1458,30 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         afterRemove.Entries.Count == 1
         && afterRemove.Find(alpha.Id) is { VersionRef: "r3" } kept && kept.BackupRefs.Count == 2);
 
+    // A failed persist must leave the in-memory registry unchanged (transactional commit).
+    var transactionRoot = Path.Combine(Path.GetTempPath(), "buschord_portfolio_tx_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(transactionRoot);
+    var transactionPath = Path.Combine(transactionRoot, "portfolio.json");
+    var transactionRegistry = new PortfolioRegistry(transactionPath);
+    var transactionProject = Path.Combine(transactionRoot, "tx.knxproj");
+    File.WriteAllText(transactionProject, "tx");
+    var transactionEntry = transactionRegistry.Add(transactionProject);
+    File.Delete(transactionPath);
+    Directory.CreateDirectory(transactionPath);
+    var persistFailed = false;
+    try
+    {
+        transactionRegistry.Rename(transactionEntry.Id, "should not stick");
+    }
+    catch (IOException)
+    {
+        persistFailed = true;
+    }
+    Check("Portfolio: fehlgeschlagenes Speichern ändert den Speicher nicht",
+        persistFailed && transactionRegistry.Find(transactionEntry.Id)?.Name == transactionEntry.Name);
+    Directory.Delete(transactionPath);
+    Directory.Delete(transactionRoot, recursive: true);
+
     // Korruptes Dokument: letzte gute Fassung aus .bak, danach wieder schreibbar.
     var corruptRoot = Path.Combine(Path.GetTempPath(), "buschord_portfolio_corrupt_" + Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(corruptRoot);
