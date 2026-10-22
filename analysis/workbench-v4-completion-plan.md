@@ -519,6 +519,26 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
   `9e5c41e` Revisionen/Compare; ein Projekt wird gleichzeitig bearbeitet,
   keine parallelen Projekt-Tabs – bewusste Grenze)
 
+### H12. Externe Abnahme- und Entscheidungsblocker
+
+Diese Punkte sind implementiert bzw. vorbereitet, können aber ohne reale
+Hardware, Freigabe oder menschliche Übersetzung nicht ehrlich abgeschlossen
+werden:
+
+- **H12.1 Reale DPI/HC/Narrator-Abnahme:** 150/200-%-DPI, Multi-Monitor,
+  Windows-High-Contrast und Narrator-Sprachausgabe; UIA-Namen und simulierte
+  Layouts sind belegt, echte Systemkonfiguration nicht.
+- **H12.2 Reale Busabnahme:** Descriptor-Livescan, echte Gruppenantwort und
+  zweiter Tunnel/Schnittstellenkonflikt; Read-only-Tunnel/Routing und
+  Timeout-Verhalten sind live belegt, Schreibzugriffe bleiben gesperrt.
+- **H12.3 Dritte Sprache:** Sprachwahl und menschliche Übersetzung/Review
+  fehlen; Architektur, Workflow und CI-Gates sind fertig.
+- **H12.4 GitHub-Purge:** `refs/pull/1/head` und gecachte Blobs lassen sich
+  nicht per Git/API löschen; GitHub-Support-Ticket nötig. Token und
+  Test-Zugangsdaten rotieren.
+- **H12.5 Release-Zweig:** `main` ist noch der alte Release-Zweig und muss
+  bewusst aus `development` aktualisiert werden.
+
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
 - DCA/Plugin-Hosting: read-only Erkennung und Sperre, kein In-Process-Host (32-bit-ETS, COM/.NET-Framework, keine Sandbox).
