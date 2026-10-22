@@ -2046,20 +2046,20 @@ public partial class WorkbenchWindow : Window
             : objects.SelectMany(r => r.Object.Links).ToHashSet();
         foreach (var group in ProjectQuery.GroupAddresses(project).Where(g => groupIds.Contains(g.Id)))
         {
-            paths.Add(group.Address.ToString()); paths.Add(group.Id); paths.Add("Gruppenadresse " + group.Id);
+            paths.Add(group.Address.ToString()); paths.Add(group.Id); paths.Add($"Gruppenadresse {group.Id}");
         }
-        foreach (var id in ids) { paths.Add(id); paths.Add("Gerät " + id); }
+        foreach (var id in ids) { paths.Add(id); paths.Add($"Gerät {id}"); }
         if (WorkbenchProjection.Resolve(project, target) is SpaceNode room)
             foreach (var node in room.Descendants.Append(room))
             {
-                paths.Add("Gebäudeknoten " + node.Id);
+                paths.Add($"Gebäudeknoten {node.Id}");
                 foreach (var id in node.DeviceRefs) paths.Add($"{node.Path} [{id}]");
             }
         if (target.Kind == "line")
             foreach (var area in project.Installations.SelectMany(i => i.Areas))
                 foreach (var line in area.Lines.Where(l => l.Id == target.Id))
                 {
-                    paths.Add($"Linie {area.Address}.{line.Address}"); paths.Add("Linie " + line.Id);
+                    paths.Add($"Linie {area.Address}.{line.Address}"); paths.Add($"Linie {line.Id}");
                     foreach (var segment in line.Segments) paths.Add($"Segment {area.Address}.{line.Address}.{segment.Address}");
                 }
         // ProjectCheck exposes paths, not object references; compare complete paths, never name substrings.

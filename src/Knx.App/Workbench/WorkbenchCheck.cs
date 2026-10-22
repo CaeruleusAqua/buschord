@@ -314,8 +314,8 @@ internal static class WorkbenchCheck
                     if (quickDialog is null) await Task.Delay(20);
                 }
                 var quickFooter = quickDialog?.GetVisualDescendants().OfType<Border>()
-                    .FirstOrDefault(border => border.Classes.Contains("wb-dialog-footer"))?.Child as StackPanel;
-                var quickButtons = quickFooter?.Children.OfType<Button>().ToList() ?? [];
+                    .FirstOrDefault(border => border.Classes.Contains("wb-dialog-footer"));
+                var quickButtons = quickFooter?.GetVisualDescendants().OfType<Button>().ToList() ?? [];
                 Check("quick dialogs use the shared V4 chrome and action order", quickDialog is not null
                     && quickDialog.Classes.Contains("wb-dialog")
                     && quickButtons.Count >= 2
