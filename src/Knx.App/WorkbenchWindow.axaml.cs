@@ -2772,20 +2772,27 @@ public partial class WorkbenchWindow : Window
         Children = { new ConceptIcon { Symbol = symbol, Width = size, Height = size }, Label(text) }
     };
     private static TextBlock Note(string text) => new() { Text = text, FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new(0, 3), Classes = { "wb-muted" } };
-    /// <summary>Shell-generated empty view: icon, heading and explanation instead of a bare sentence.</summary>
-    private static Control EmptyState(string symbol, string heading, string explanation) => new StackPanel
+    /// <summary>Shell-generated empty view: icon, heading and explanation; scrolls when the dock is short.</summary>
+    private static Control EmptyState(string symbol, string heading, string explanation) => new ScrollViewer
     {
-        Spacing = 6, MaxWidth = 420,
-        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-        Children =
+        HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+        VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+        HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+        VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        Content = new StackPanel
         {
-            new ConceptIcon { Symbol = symbol, Width = 30, Height = 30, Opacity = 0.7,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center },
-            new TextBlock { Text = heading, FontWeight = FontWeight.SemiBold, TextAlignment = TextAlignment.Center,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap },
-            new TextBlock { Text = explanation, FontSize = 11, Classes = { "wb-muted" }, TextAlignment = TextAlignment.Center,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap }
+            Spacing = 6, MaxWidth = 420,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Children =
+            {
+                new ConceptIcon { Symbol = symbol, Width = 30, Height = 30, Opacity = 0.7,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center },
+                new TextBlock { Text = heading, FontWeight = FontWeight.SemiBold, TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = explanation, FontSize = 11, Classes = { "wb-muted" }, TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, TextWrapping = TextWrapping.Wrap }
+            }
         }
     };
     private static Button ActionButton(string text, Action action, string? style = null, string? accessibleName = null)
