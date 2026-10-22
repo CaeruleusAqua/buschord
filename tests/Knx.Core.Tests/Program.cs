@@ -1484,5 +1484,62 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
     Directory.Delete(corruptRoot, recursive: true);
 }
 
+// --- Projekt-Revisionen: knxproj-Roundtrip, Inhalt-Hash und Altprojekt-Kompatibilität ---
+{
+    var revisionDirectory = Path.Combine(Path.GetTempPath(), "knx-revisions-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(revisionDirectory);
+    try
+    {
+        var revisionPath = Path.Combine(revisionDirectory, "revision.knxproj");
+        var revisionProject = BuildProject("P-REV", "Revisionen", Dev("1.1.1", "Aktor"));
+        revisionProject.MasterData.Signature = "native-signature";
+        Knxproj.Save(revisionProject, revisionPath);
+        var revision = ProjectRevisions.Capture(revisionProject, revisionPath, "Abnahme",
+            new DateTimeOffset(2026, 10, 22, 10, 0, 0, TimeSpan.FromHours(2)));
+        Knxproj.Save(revisionProject, revisionPath);
+        var revisionLoaded = Knxproj.Load(revisionPath);
+        var revisionReloaded = revisionLoaded.Workbench.Revisions.Single();
+        Check("Revision: knxproj-Roundtrip", revisionReloaded.Id == revision.Id
+            && revisionReloaded.Number == 1 && revisionReloaded.Description == "Abnahme"
+            && revisionReloaded.SourcePath == revisionPath
+            && revisionReloaded.SourceHash == revision.SourceHash
+            && revisionReloaded.ContentHash == revision.ContentHash
+            && revisionReloaded.SignatureStatus == RevisionSignatureStatus.Unverified
+            && revisionReloaded.SignatureHash == revision.SignatureHash);
+        Check("Revision: Inhalt-Hash überlebt Speichern/Laden",
+            ProjectRevisions.ContentHash(revisionLoaded) == revision.ContentHash);
+        var contentBefore = ProjectRevisions.ContentHash(revisionProject);
+        ProjectRevisions.Capture(revisionProject, description: "ohne Änderung");
+        Check("Revision: Log-Eintrag ändert den Inhalt-Hash nicht",
+            ProjectRevisions.ContentHash(revisionProject) == contentBefore);
+        var device = ProjectQuery.DeviceList(revisionProject).Single();
+        device.ParameterValues["mode"] = "\"dim\"";
+        Check("Revision: Parameteränderung ändert den Inhalt-Hash",
+            ProjectRevisions.ContentHash(revisionProject) != contentBefore);
+
+        var oldPath = Path.Combine(revisionDirectory, "old.knxproj");
+        var oldProject = BuildProject("P-OLD", "Altprojekt", Dev("1.1.2", "Taster"));
+        Knxproj.Save(oldProject, oldPath);
+        var oldLoaded = Knxproj.Load(oldPath);
+        Check("Revision: Altprojekt ohne Log bleibt ladbar", oldLoaded.Workbench.Revisions.Count == 0);
+
+        var oldMetadata = BuildProject("P-OLD-M", "Altmetadaten", Dev("1.1.3", "Sensor"));
+        oldMetadata.Workbench.Devices["ghost"] = new Knx.Workbench.DeviceMetadata();
+        var oldXml = Knxproj.ToXml(oldMetadata);
+        var oldWorkbench = oldXml.Descendants(System.Xml.Linq.XName.Get("Workbench", "urn:buschord:project:1")).Single();
+        var oldData = System.Text.Json.Nodes.JsonNode.Parse(oldWorkbench.Attribute("Data")!.Value)!.AsObject();
+        oldData.Remove("Revisions");
+        oldWorkbench.SetAttributeValue("Data", oldData.ToJsonString());
+        var oldMetadataLoaded = Knxproj.FromXml(oldXml);
+        Check("Revision: altes Workbench-JSON ohne Revisions bleibt ladbar",
+            oldMetadataLoaded.Workbench.Revisions.Count == 0
+            && oldMetadataLoaded.Workbench.Devices.ContainsKey("ghost"));
+    }
+    finally
+    {
+        Directory.Delete(revisionDirectory, recursive: true);
+    }
+}
+
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER: {string.Join("; ", failures)}");
 return failures.Count == 0 ? 0 : 1;

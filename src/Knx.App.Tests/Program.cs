@@ -444,5 +444,35 @@ File.Delete(reportPath);
     Directory.Delete(settingsRoot, recursive: true);
 }
 
+// --- Revision/Signatur-Abschnitt im Projektbericht --------------------------------------
+{
+    var revisionProject = new Project
+    {
+        Id = "P-REV",
+        Name = "Revisionsprojekt <Nord>",
+        MasterData = { Signature = "native-signature" },
+    };
+    var revisionTime = new DateTimeOffset(2026, 10, 22, 11, 0, 0, TimeSpan.FromHours(2));
+    var revision = ProjectRevisions.Capture(revisionProject, @"C:\Kunde Geheim\project.knxproj",
+        "Abnahme <1>", revisionTime);
+    var revisionReport = ProjectReport.Render(revisionProject, new ProjectReportOptions { GeneratedAt = fixedTime });
+    Check("Bericht: Revision im Titel", revisionReport.Contains("Revision")
+        && revisionReport.Contains($"{revision.Number} · 22.10.2026 11:00"));
+    Check("Bericht: Revisionsabschnitt mit Hash und Signaturstatus",
+        revisionReport.Contains("id=\"revisions\"")
+        && revisionReport.Contains(revision.ContentHash)
+        && revisionReport.Contains("Signature: unverified"));
+    Check("Bericht: Revisionsbeschreibung maskiert", revisionReport.Contains("Abnahme &lt;1&gt;"));
+    Check("Bericht: Quellpfad erscheint nicht", !revisionReport.Contains("Kunde Geheim"));
+    Check("Bericht: Revisionsabschnitt deterministisch",
+        revisionReport == ProjectReport.Render(revisionProject, new ProjectReportOptions { GeneratedAt = fixedTime }));
+    var withoutRevisions = ProjectReport.Render(revisionProject, new ProjectReportOptions
+    {
+        GeneratedAt = fixedTime,
+        IncludeRevisions = false,
+    });
+    Check("Bericht: Revisionsabschnitt abschaltbar", !withoutRevisions.Contains("id=\"revisions\""));
+}
+
 Console.WriteLine(failures.Count == 0 ? "REPORTS OK" : $"{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);

@@ -18,7 +18,10 @@ public sealed class WorkbenchMetadata
     public Dictionary<string, DeviceMetadata> Devices { get; set; } = [];
     public Dictionary<string, GroupMetadata> Groups { get; set; } = [];
     public Dictionary<string, string> FloorShortNames { get; set; } = [];
-    [JsonIgnore] public bool IsEmpty => Objects.Count + Devices.Count + Groups.Count + FloorShortNames.Count == 0;
+    /// <summary>Durable document revisions; empty for projects saved before the log existed.</summary>
+    public List<ProjectRevision> Revisions { get; set; } = [];
+    [JsonIgnore] public bool IsEmpty =>
+        Objects.Count + Devices.Count + Groups.Count + FloorShortNames.Count + Revisions.Count == 0;
 
     /// <summary>Rejects malformed supplemental data before it reaches project-public state.</summary>
     public void Validate()
@@ -27,6 +30,8 @@ public sealed class WorkbenchMetadata
         if (Devices is null) throw new InvalidDataException("Workbench device metadata is null.");
         if (Groups is null) throw new InvalidDataException("Workbench group metadata is null.");
         if (FloorShortNames is null) throw new InvalidDataException("Workbench floor metadata is null.");
+        if (Revisions is null) throw new InvalidDataException("Workbench revision log is null.");
+        ProjectRevisions.Validate(Revisions);
         if (Objects.Any(p => string.IsNullOrWhiteSpace(p.Key) || p.Value is null))
             throw new InvalidDataException("Workbench object metadata contains an empty key or null entry.");
         if (Devices.Any(p => string.IsNullOrWhiteSpace(p.Key) || p.Value is null))

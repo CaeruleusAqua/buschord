@@ -214,7 +214,7 @@ public static class WorkbenchJson
         if (!Representable(project, reimported))
             throw new InvalidDataException(
                 "V4 JSON cannot represent every detail of this project; use native knxproj. " +
-                "Export would discard native fields or opaque data.");
+                "Export would discard native fields, metadata or opaque data.");
         return json;
     }
 
@@ -255,7 +255,8 @@ public static class WorkbenchJson
             Objects = metadata.Objects.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new { p.Key, p.Value }),
             Devices = metadata.Devices.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new { p.Key, p.Value }),
             Groups = metadata.Groups.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new { p.Key, p.Value }),
-            metadata.FloorShortNames
+            metadata.FloorShortNames,
+            Revisions = metadata.Revisions.OrderBy(r => r.Number).ThenBy(r => r.Id, StringComparer.Ordinal).ToArray()
         };
         return JsonSerializer.Serialize(ordered);
     }

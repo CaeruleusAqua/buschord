@@ -13,6 +13,8 @@ public sealed class ProjectReportOptions
     public bool IncludeComObjects { get; set; } = true;
     public bool IncludeLinkMatrix { get; set; } = true;
     public bool IncludeFindings { get; set; } = true;
+    /// <summary>Include the durable revision/signature section when the project has revisions.</summary>
+    public bool IncludeRevisions { get; set; } = true;
     /// <summary>Report title; defaults to the project name.</summary>
     public string? Title { get; set; }
     /// <summary>Generation timestamp printed in header and title page; defaults to now.</summary>
@@ -75,6 +77,8 @@ public static class ProjectReport
             AppendSection(html, "com-objects", Strings.Get("ReportComObjects"), ComObjectBody(project));
         if (options.IncludeLinkMatrix)
             AppendSection(html, "link-matrix", Strings.Get("ReportLinkMatrix"), LinkMatrixBody(project));
+        if (options.IncludeRevisions && project.Workbench.Revisions.Count > 0)
+            AppendSection(html, "revisions", "Revision", RevisionBody(project));
         if (options.IncludeFindings)
             AppendSection(html, "findings", Strings.Get("ReportFindings"), FindingsBody(findings));
 
@@ -138,6 +142,9 @@ public static class ProjectReport
         if (project.ProjectStart is { } start)
             AppendFact(html, Strings.Get("ReportFactStart"), start.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture));
         if (!string.IsNullOrWhiteSpace(project.Guid)) AppendFact(html, Strings.Get("ReportFactGuid"), project.Guid!);
+        if (ProjectRevisions.Latest(project) is { } latest)
+            AppendFact(html, "Revision", $"{latest.Number} · {latest.Timestamp:dd.MM.yyyy HH:mm}");
+        AppendFact(html, "Signature", ProjectSignatureText(project));
         html.AppendLine("</table>");
 
         html.AppendLine("<div class=\"figures\">");
@@ -322,6 +329,38 @@ public static class ProjectReport
         html.AppendLine("</tbody></table>");
         return html.ToString();
     }
+
+    private static string RevisionBody(Project project)
+    {
+        var revisions = project.Workbench.Revisions
+            .OrderBy(r => r.Number)
+            .ThenBy(r => r.Id, StringComparer.Ordinal)
+            .ToList();
+        var html = new StringBuilder();
+        html.AppendLine($"<p class=\"mono\">SHA-256: {Escape(ProjectRevisions.ContentHash(project))}</p>");
+        html.AppendLine($"<p>Signature: {Escape(ProjectSignatureText(project))}</p>");
+        html.AppendLine($"<table><thead><tr><th scope=\"col\">Revision</th>" +
+                        $"<th scope=\"col\">Timestamp</th>" +
+                        $"<th scope=\"col\">SHA-256</th>" +
+                        $"<th scope=\"col\">Signature</th>" +
+                        $"<th scope=\"col\">{Escape(Strings.Get("ReportColDescription"))}</th></tr></thead><tbody>");
+        foreach (var revision in revisions)
+            html.AppendLine("<tr>" +
+                            $"<td class=\"mono\">{revision.Number}</td>" +
+                            $"<td class=\"mono\">{Escape(revision.Timestamp.ToString("O", CultureInfo.InvariantCulture))}</td>" +
+                            $"<td class=\"mono\">{Escape(revision.ContentHash)}</td>" +
+                            $"<td>{Escape(RevisionSignatureText(revision))}</td>" +
+                            $"<td>{Show(revision.Description)}</td>" +
+                            "</tr>");
+        html.AppendLine("</tbody></table>");
+        return html.ToString();
+    }
+
+    private static string ProjectSignatureText(Project project) =>
+        ProjectRevisions.SignatureStatus(project) == RevisionSignatureStatus.Absent ? "absent" : "unverified";
+
+    private static string RevisionSignatureText(ProjectRevision revision) =>
+        revision.SignatureStatus == RevisionSignatureStatus.Absent ? "absent" : "unverified";
 
     private static string FindingsBody(IReadOnlyList<CheckFinding> findings)
     {
