@@ -168,7 +168,9 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - Shell-Abnahme: Tabellen-Checkboxen, DCA-Read-only, Hilfefenster, Pinned Compare/Dokumentation und deterministischer Layout-Selftest (`84cb150`, `6b3fb83`, `286c025`); Remote-CI für `664fa5b` grün.
 - Security/Lokalisierung: CSV-Formelinjektion behoben (`65c253d`), Projektprüfung/CSV/Report/Owl lokalisiert (`2846c16`, `ba25051`), Security- und i18n-Berichte integriert; Parser-/Cache-Grenzen und Fixture-Provenienz laufen als H10.
 - Remote: `origin` auf SSH umgestellt, Push ohne GitHub-UI möglich. History-Rewrite veröffentlicht; `development` (`7962a1a`) und `main` (`49feddd`) sind sauber, Schutzregeln wiederhergestellt. Remote-CI/CodeQL für `development` `7962a1a` grün; `main` ist der alte Release-Zweig und scheitert noch am entfernten Encryption-Fixture (wird aus `development` aktualisiert). Ein zuvor im Chat genanntes Token wurde nicht gespeichert und sollte rotiert werden.
-- Katalog-Performance (`49f3f22`, `33612e0`): persistenter SHA-256-revalidierter Metadatenindex, Suchindex ohne UI-Programmparse, lazy KSXML-Modelle; real gemessen warm 0,8–1,6 s statt 55–66 s, erster DPT-Suchlauf <1 ms statt 9,33 s; DCA-/Katalog-/Workbench-Suite grün.
+- Katalog-Performance (`49f3f22`, `33612e0`, `ee39797`): persistenter SHA-256-revalidierter Metadatenindex, Suchindex ohne UI-Programmparse, lazy KSXML-Modelle; real gemessen warm **134 ms** (Ziel <300 ms), erster DPT-Suchlauf <1 ms statt 9,33 s; DCA-/Katalog-/Workbench-Suite grün.
+- Handover/Portfolio (`05f8ab1`, `3fb21de`, `9e5c41e`, `8d14db3`): deterministisches Übergabe-ZIP, Portfolio-Dialog, Revisionen/Compare inkl. Segmentmedium/-domäne und MCP revision-aware; vollständige Suite grün.
+- Frameless Workbench (`a017e6c`): native Titelleiste entfernt, V4-Topstrip mit Min/Max/Close-Rollen, eigenes Window-Menü, Alt+F4/Snap/Resize real geprüft, Rollback-Flag; High-Contrast/150–200-%-DPI/Multi-Monitor bleiben offen.
 - Bus-Hardware (`8b2b678`): CEMI-Gruppenflag/Hop-Count, APCI-/Payload-Offsets, Con-Filter und Gruppenantwort-Matching, Descriptor-Encoding und Multicast-Routing korrigiert; read-only Tunnel/Routing live geprüft, Schreibpfad bleibt gesperrt.
 - QA (`7b80741`) und Fixture-Hygiene (`171ebca`): unabhängige Vollsuite grün, Katalogspalten/Fokus-P2 behoben (`26f596f`), reale/GPL-Fixtures durch synthetische ersetzt; History-Rewrite ist ausgeführt und veröffentlicht (H10.7).
 
@@ -340,18 +342,18 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   dem erweiterten Strip ist nicht erreichbar, Close-Menüeintrag ist
   gegreyt. Wenn ein natives Systemmenü auf dem Strip Pflicht ist, bleibt
   die native Titelleiste.
-- [ ] **H6.2 Shell-Chrome:** Marke, Menüs, Projektsuche, Status und
-  Fensteraktionen (Minimieren/Maximieren/Wiederherstellen/Schließen) in
-  einem optisch integrierten, fokussierbaren Topstrip; native Titelleiste
-  entfällt nur mit den S0-Korrekturen und wenn Drag, Doppelklick, Snap,
-  Resize sowie ein erreichbarer Ersatz für das Systemmenü erhalten bleiben.
-- [ ] **H6.3 Barrierefreiheit:** Automationsnamen, Fokusreihenfolge,
-  Zielgrößen, Tastatur (Alt+F4/Alt+Space), Screenreader und High Contrast.
-- [ ] **H6.4 Dialoge:** einheitliche Entscheidung für Workbench und modale
-  Fenster; Schließen/Abbrechen darf nicht erschwert werden.
-- [ ] **H6.5 Reale Windows-Abnahme:** 100/150/200-%-DPI, Multi-Monitor,
-  Snap Layouts, Maximieren-Padding, Taskleiste, Screenshots; nicht nur
-  headless.
+- [x] **H6.2 Shell-Chrome:** Marke, Menüs, Projektsuche, Status und
+  Fensteraktionen in einem integrierten Topstrip; native Titelleiste entfällt
+  mit den S0-Korrekturen, Drag/Doppelklick/Resize/Snap und einem eigenen
+  Window-Menü als Systemmenü-Ersatz. (`cf768c9`, `a017e6c`; Rollback
+  `--native-titlebar`/`BUSCHORD_NATIVE_TITLEBAR=1`)
+- [ ] **H6.3 Barrierefreiheit:** Automationsnamen, Fokus, Zielgrößen und
+  Tastatur sind umgesetzt; **High-Contrast live und Narrator-Sprache offen**.
+- [x] **H6.4 Dialoge:** Workbench frameless, modale Fenster bleiben native;
+  Schließen/Abbrechen unverändert erreichbar. (`cf768c9`)
+- [ ] **H6.5 Reale Windows-Abnahme:** 100-%-Drag/Snap/Resize/Min/Max/Close
+  und Alt+F4 real geprüft; **150/200-%-DPI, Multi-Monitor, Touch und
+  HC** bleiben offen.
 
 ### H7. Veröffentlichung (Schritt 10, R08)
 
