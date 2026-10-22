@@ -283,7 +283,22 @@ Summary:
   the a11y harness `inspector-field-has-name` failure is stale (fields are
   named); F14 and F13 are fixed in source.
 
-## 6. R08 — what ran locally, what only CI can prove
+## 5a. Post-audit addendum (2026-10-22, development `02e1e12`)
+
+The original table above is the audit at `ac0480a`. Current status:
+
+| ID | Status | Evidence |
+| --- | --- | --- |
+| R01 | **done** | five `analysis/ets/*.md` reports present and linked from the plan |
+| R02 | **done with documented limits** | 51 MCP tools, pinned compare/docs/checkbox actions, handover/acceptance; direct persistent object target and full multi-project tabs remain deliberate limits |
+| R03 | **done with documented limits** | B1-B8 implemented or listed as deliberate limits; real writes/DCA/Secure/multi-project excluded |
+| R04 | **partial** | real UIA probe and simulated 150/200 layouts pass; real 150/200 % DPI, multi-monitor, Narrator speech and high contrast remain open |
+| R05 | **done** | localization gates green; ProjectCheck/CSV/report/Owl localized; technical path tokens are data |
+| R06 | **done** | dialogs/panes/shell/theme unified; 900/1024/1440 screenshots and contrast matrix |
+| R07 | **done** | open P1/P2s fixed or documented; remaining items are P3/limits |
+| R08 | **done** | local full suite and remote CI/CodeQL green at the integrated HEAD; repeat after the next push |
+
+## 6. R08 - what ran locally, what only CI can prove
 
 ### Executed locally on this branch (all exit 0)
 
