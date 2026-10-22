@@ -183,6 +183,9 @@ foreach (var (module, _, map) in maps)
     string[] skip =
     [
         "src/Knx.Bus/", "src/Knx.Mcp/", "src/Knx.App.Tests/",
+        // Bilingual document templates carry their de/en prose inline; moving them into the
+        // UI dictionaries is tracked separately (same class as the acceptance protocol).
+        "src/Knx.Reports/HandoverPackage",
         "src/Knx.App/Smoke.cs", "src/Knx.App/Screenshot.cs", "src/Knx.App/Workbench/WorkbenchCheck.cs",
         "src/Knx.Core/Localization.cs", "src/Knx.App/Localization/WorkbenchStrings.cs", "src/Knx.App/Services/CatalogBrowser.cs",
     ];
