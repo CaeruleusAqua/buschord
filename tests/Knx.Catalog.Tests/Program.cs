@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json.Nodes;
 using Knx;
 using Knx.Catalog;
 
@@ -467,6 +468,27 @@ var rebuilt = corruptStore.LoadAll();
 Check("Index: defekter Cache wird neu gebaut",
     corruptStore.LastIndexStatistics is { XmlCatalogFiles: >= 1 } && rebuilt.Count == 2,
     corruptStore.LastIndexStatistics?.ToString());
+
+// A cache document is untrusted: a source entry pointing outside the archive must be
+// discarded and the catalogue rebuilt, never opened as an arbitrary file.
+var poisonFile = Path.Combine(indexLibrary, "poison.knxprod");
+File.Copy(archive, poisonFile);
+var poisonSeed = new CatalogStore(indexLibrary, indexCache);
+_ = poisonSeed.LoadAll();
+var poisonIndex = poisonSeed.Index.IndexPathFor(poisonFile);
+JsonNode poison;
+using (var gz = new GZipStream(File.OpenRead(poisonIndex), CompressionMode.Decompress))
+    poison = JsonNode.Parse(gz)!;
+var poisonPrograms = poison["Programs"]?.AsArray();
+if (poisonPrograms is { Count: > 0 }) poisonPrograms[0]!["SourceEntry"] = "../../outside.xml";
+using (var gz = new GZipStream(File.Create(poisonIndex), CompressionMode.Compress))
+using (var writer = new StreamWriter(gz, new UTF8Encoding(false)))
+    writer.Write(poison.ToJsonString());
+var poisonedStore = new CatalogStore(indexLibrary, indexCache);
+var poisoned = poisonedStore.LoadAll();
+Check("Index: Cache-Quelle außerhalb des Archivs wird verworfen",
+    poisonedStore.LastIndexStatistics is { XmlCatalogFiles: >= 1 } && poisoned.Count == 3,
+    poisonedStore.LastIndexStatistics?.ToString());
 
 var removeStore = new CatalogStore(indexLibrary, indexCache);
 var removedIndex = removeStore.Index.IndexPathFor(corruptFile);

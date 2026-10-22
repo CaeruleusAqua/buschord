@@ -39,6 +39,7 @@ env:
     tests/Knx.WorkbenchTheme.Tests
     tests/Knx.WorkbenchPerformance.Tests
     tests/Knx.Localization.Tests
+    tests/Knx.ProjectCompare.Tests
     src/Knx.App.Tests
 
 jobs:
