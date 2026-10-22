@@ -43,7 +43,6 @@ public partial class WorkbenchWindow : Window
     private string? _catalogLineId;
     private string? _catalogRoomId;
     private int _demoTick;
-    private MonitorScope _monitorScope = MonitorScope.All;
     private bool _refreshing;
     private bool _shuttingDown;
     private bool _confirmingClose;
@@ -440,7 +439,6 @@ public partial class WorkbenchWindow : Window
                 await Task.Delay(120, token);
                 if (_simulateProgrammingFailure) throw new InvalidOperationException(W("SimulatedFailure"));
             });
-        _monitorScope = MonitorScope.All;
         _sessionTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _sessionTimer.Tick -= OnSessionTick;
         _sessionTimer.Tick += OnSessionTick;

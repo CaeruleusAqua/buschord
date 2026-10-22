@@ -132,6 +132,12 @@ jobs:
         run: dotnet run --project tests/Knx.ParameterUi.Tests -c Release --no-build -- --native
       - name: Project lifecycle window regressions (Windows only)
         run: dotnet run --project tests/Knx.Shell.Tests -c Release --no-build
+      - name: V4 state regressions (Windows only)
+        shell: bash
+        run: |
+          for mode in --state-k1 --state-k2 --state-k3; do
+            dotnet run --project tests/Knx.Shell.Tests -c Release --no-build -- "$mode"
+          done
       - name: Workbench native self-check de/light (Windows only)
         run: dotnet run --project src/Knx.App -c Release --no-build -- --workbench-selftest --theme=light --lang=de
       - name: Workbench native self-check en/dark (Windows only)
