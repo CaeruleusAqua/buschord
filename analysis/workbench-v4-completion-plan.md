@@ -206,10 +206,10 @@ wenn Implementierung, fokussierter Test und Abnahmeevidenz im Abschnitt
 - [x] **H1.3 Objekttabelle:** Auswahl-Checkbox je Zeile, Select-all/Tri-State,
   GA-Chips, Zeilenkontextmenü und Tastaturäquivalenz; 10.000-Objekt-
   Virtualisierung bleibt getestet. (`84cb150`; WorkbenchUiState/Performance)
-- [ ] **H1.4 Shell-Chrome:** Buttons/Felder im Shellfenster auf WbLine/WbPaper/
+- [x] **H1.4 Shell-Chrome:** Buttons/Felder im Shellfenster auf WbLine/WbPaper/
   WbHover statt ETS-Chrome; Statuszeile mit Projekt-/Issue-Hierarchie;
-  Empty-States mit Icon, Überschrift und Erklärung. Teilweise in `84cb150`
-  (Status/Empty/Rail); finale visuelle Abnahme offen.
+  Empty-States mit Icon, Überschrift und Erklärung. (`84cb150`, `81d4a4a`,
+  `9691f24`, `72f4971`)
 - [x] **H1.5 Hilfe/Konzept:** scrollbares, lokalisiertes Hilfefenster statt
   Messagebox; alle Help-Abschnitte, F1/Escape, keine abgeschnittenen Texte.
   (`84cb150`, HelpWindow)
@@ -233,9 +233,9 @@ wenn Implementierung, fokussierter Test und Abnahmeevidenz im Abschnitt
 - [x] **H2.2 Aktionsreihenfolge und Destruktives:** primär rechts, Cancel
   quiet, Delete/Verwerfen mit `wb-danger`, kein destruktiver Default-Fokus;
   Save/Don't-Save/Cancel in ConfirmDialog sicher. (`f605870`)
-- [ ] **H2.3 Englisch/Lokalisierung:** harte deutsche Strings in Compare,
+- [x] **H2.3 Englisch/Lokalisierung:** harte deutsche Strings in Compare,
   Replace, Report, Confirm, Splash und dynamischen Statusmeldungen entfernen;
-  `de` bleibt Default, `en` vollständig.
+  `de` bleibt Default, `en` vollständig. (`2846c16`, `ba25051`, `f53aa74`)
 - [x] **H2.4 SearchPane:** V4-Compact-Tool statt Legacy-Full-Page; Filter/
   Ergebnisse primär, Ersetzen aufklappbar, keine Mini-Scrollboxen; Suche/
   Ersetzen/Stale-Schutz/Undo unverändert. (`39be758`, `ab0f8a4`)
@@ -249,16 +249,16 @@ wenn Implementierung, fokussierter Test und Abnahmeevidenz im Abschnitt
 
 ### H3. Parameter, DCA und Herstellergrenzen (Schritt 5)
 
-- [ ] **H3.1 DCA-Host-Verdrahtung:** `MainWindowViewModel` liefert einen
-  lokalisierten Read-only-Grund aus dem Katalogprogramm
-  (`CatalogBrowser.Blocked(..., CatalogUse.EditParameters)`); Workbench setzt
-  ihn nach jedem Gerätewechsel/Refresh und bei `CatalogLoaded`; Editoren,
-  Apply und Reset bleiben aus, Werte unverändert. Das ist der noch fehlende
-  Produktpfad aus B4/DCA.
-- [ ] **H3.2 DCA-Regressionstest:** synthetisches `RequiresDca`-Programm,
+- [x] **H3.1 DCA-Host-Verdrahtung:** `MainWindowViewModel` liefert einen
+  lokalisierten Read-only-Grund aus Katalogprogramm oder Projektarchiv;
+  Workbench setzt ihn nach Gerätewechsel/Refresh/`CatalogLoaded`; Editoren,
+  Apply und Reset bleiben aus, Werte unverändert. (`53c06d9`)
+- [x] **H3.2 DCA-Regressionstest:** synthetisches `RequiresDca`-Programm,
   Read-only-Banner, unveränderte Werte, kein Apply; Catalog-cold-Fall.
-- [ ] **H3.3 Opaque/unsupported:** bestehende Opaque-Erkennung und
-  Warnungen nicht regressieren; keine Herstellerdynamik ausführen.
+  (`53c06d9`, `84cb150`)
+- [x] **H3.3 Opaque/unsupported:** bestehende Opaque-Erkennung und
+  Warnungen bleiben erhalten; keine Herstellerdynamik wird ausgeführt.
+  (`53c06d9`)
 
 ### H4. Abnahme und Dokumentation (Schritte 8, 9, 13; Matrix R01–R08)
 
