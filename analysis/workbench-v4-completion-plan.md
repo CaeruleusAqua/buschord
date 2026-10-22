@@ -403,6 +403,11 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   Stand `8b2b678`: Tunnel/Routing read-only live geprüft, Timeout- und
   Con-Filter-Verhalten belegt; kein Gruppenantwort-/Descriptor-Livescan und
   kein zweiter Tunnel (Schnittstellenkonflikt) getestet.
+  Stand 2026-10-22: erneuter Live-Lauf **blockiert** - dieser Host hat kein
+  Interface im Gateway-Subnetz, CONNECT läuft in den Timeout, passive
+  Routing-Listener empfangen 0 Frames. Kein cEMI gesendet; Descriptor-,
+  Gruppenantwort- und Konfliktnachweis bleiben offen
+  (`analysis/knx-live-read-acceptance.md`).
 
 ### H9. Mehrsprachigkeit und Übersetzungsinfrastruktur (neu, 2026-10-21)
 
