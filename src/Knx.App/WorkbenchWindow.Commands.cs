@@ -222,18 +222,24 @@ public partial class WorkbenchWindow
         }
         try
         {
+            string path;
             if (saveAs || ViewModel.ProjectPath.Length == 0)
             {
                 var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = project.Name + ".knxproj", DefaultExtension = "knxproj" });
-                if (file?.TryGetLocalPath() is not { } path) return false;
+                if (file?.TryGetLocalPath() is not { } chosen) return false;
+                path = chosen;
                 if (File.Exists(path)) TryBackup(path);
-                ViewModel.SaveProjectAs(path);
             }
             else
             {
-                if (File.Exists(ViewModel.ProjectPath)) TryBackup(ViewModel.ProjectPath);
-                ViewModel.SaveProject();
+                path = ViewModel.ProjectPath;
+                if (File.Exists(path)) TryBackup(path);
             }
+            // Record the durable revision before writing, so the saved archive carries the
+            // revision that describes the state being saved. The log is additive and undo-safe.
+            ProjectRevisions.Capture(project, path);
+            if (saveAs || ViewModel.ProjectPath.Length == 0) ViewModel.SaveProjectAs(path);
+            else ViewModel.SaveProject();
             if (backupWarning is not null) ViewModel.Status = backupWarning;
             else if (_parameters.HasUnappliedChanges) ViewModel.Status = W("SavedWithDrafts");
             return true;
@@ -667,7 +673,7 @@ public partial class WorkbenchWindow
         if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
         try
         {
-            var report = ProjectComparer.Compare(project, Knxproj.Load(path));
+            var report = ProjectComparer.CompareRevisions(project, Knxproj.Load(path));
             var window = new CompareWindow();
             window.Load(report);
             await window.ShowDialog(this);
