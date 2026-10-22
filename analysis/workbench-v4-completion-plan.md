@@ -166,6 +166,9 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - UI-Feinschliff: Dark-Tooltips mit lesbarem Text, Konzept-Linienicons für die Workbench und V4-Einstellungsfenster; ETS-Projektpasswort-Dialog und verifizierter `/21`-Leselauf für `Lostau.knxproj` (67 Geräte, 636 Gruppenadressen).
 - Shell-Abnahme: Tabellen-Checkboxen, DCA-Read-only, Hilfefenster, Pinned Compare/Dokumentation und deterministischer Layout-Selftest (`84cb150`, `6b3fb83`, `286c025`); Remote-CI für `664fa5b` grün.
 - Security/Lokalisierung: CSV-Formelinjektion behoben (`65c253d`), Projektprüfung/CSV/Report/Owl lokalisiert (`2846c16`, `ba25051`), Security- und i18n-Berichte integriert; Parser-/Cache-Grenzen und Fixture-Provenienz laufen als H10.
+- Katalog-Performance (`49f3f22`, `33612e0`): persistenter SHA-256-revalidierter Metadatenindex, Suchindex ohne UI-Programmparse, lazy KSXML-Modelle; real gemessen warm 0,8–1,6 s statt 55–66 s, erster DPT-Suchlauf <1 ms statt 9,33 s; DCA-/Katalog-/Workbench-Suite grün.
+- Bus-Hardware (`8b2b678`): CEMI-Gruppenflag/Hop-Count, APCI-/Payload-Offsets, Con-Filter und Gruppenantwort-Matching, Descriptor-Encoding und Multicast-Routing korrigiert; read-only Tunnel/Routing live geprüft, Schreibpfad bleibt gesperrt.
+- QA (`7b80741`) und Fixture-Hygiene (`171ebca`): unabhängige Vollsuite grün, Katalogspalten/Fokus-P2 behoben (`26f596f`), reale/GPL-Fixtures durch synthetische ersetzt; Git-History-Rewrite bleibt offener Freigabepunkt H10.7.
 
 ## F. Clean-Code-Review (Schritt 11)
 
@@ -389,6 +392,9 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
 - [ ] **H8.4 Abnahme:** reproduzierbare Read-only-Ergebnisse,
   Timeout-/Reconnect-/Schnittstellenkonflikt-Verhalten und dokumentierte
   Grenzen; echte Schreibfreigabe bleibt separat und ausdrücklich.
+  Stand `8b2b678`: Tunnel/Routing read-only live geprüft, Timeout- und
+  Con-Filter-Verhalten belegt; kein Gruppenantwort-/Descriptor-Livescan und
+  kein zweiter Tunnel (Schnittstellenkonflikt) getestet.
 
 ### H9. Mehrsprachigkeit und Übersetzungsinfrastruktur (neu, 2026-10-21)
 
@@ -419,12 +425,11 @@ automatische Hardcoded-Text-Prüfung.
 - [ ] **H9.6 Grenzen:** Projekt-/Gerätenamen, Herstellertexte und technische
   CSV-Werte bleiben Daten, nicht UI-Sprache; DPT-/KNX-Codes werden nicht
   übersetzt.
-- [ ] **H9.7 Live-Sprachwechsel:** `{loc:Tr}`/`{loc:Wb}` sind statische
-  Markup-Extensions; Menüs und Tool-Tabs werden einmalig gebaut. Die
-  Inventur (`5b7bb25`) belegt, dass ein Wechsel im offenen Fenster Teile der
-  Shell nicht aktualisiert. Lösung: bindende Markup-Extensions plus
-  Menu-/Tool-Tab-Refresh oder dokumentierter Neustart; mit Test
-  de→en→de im offenen Fenster.
+- [x] **H9.7 Live-Sprachwechsel:** `{loc:Tr}`/`{loc:Wb}` sind bindende
+  Markup-Extensions; Menüs, Rail, View-/Tool-Tabs, Tooltips und
+  Automationsnamen werden beim Sprachwechsel neu aufgebaut. (`a8aba25`;
+  Shell-Test de→en→de; Help-Body/Float-Titel brauchen weiterhin ein
+  erneutes Öffnen)
 
 ### H10. Security-Härtung (neu, 2026-10-21)
 
