@@ -326,7 +326,10 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   Import/Entfernen/Änderung nachweisen. Stand `33612e0`: warm 0,8–1,6 s
   (Ziel <300 ms noch offen), Kaltindex 113,6 s (progressiv statt blockierend,
   Ziel <3 s offen), Parameter-Öffnen 0,6–1,9 s (Agent
-  `agents/perf/parameter-open`).
+  `agents/perf/parameter-open`). Nachtrag `857dcda`/`53c06d9`: Warmstart
+  median 398 ms (Ziel <300 ms knapp verfehlt), erste Katalogdatei 1–40 ms,
+  Kaltindex 140 s progressiv; Parameter-Öffnen-Test <1 s, JSON-Klon und
+  strukturelle Draft-Signatur entfernt.
 
 ### H6. Frameless / keine native Titelleiste (neu, 2026-10-21)
 
@@ -457,8 +460,10 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
   keine absoluten Pfade aus dem Cache übernehmen, Extraktion begrenzen,
   Temp-Dateien aufräumen. (`49f3f22`, `33612e0`: SHA-256-Revalidierung,
   Hex-Archivnamen, atomare Writes, Lazy-Model-Restore)
-- [ ] **H10.4 DCA-Fallback:** Projekt-XML-Applikationen ohne Katalog dürfen
+- [x] **H10.4 DCA-Fallback:** Projekt-XML-Applikationen ohne Katalog dürfen
   nicht versehentlich editierbar werden; Read-only-Grund erhalten.
+  (`53c06d9`: Archiv-Applikation wird bei fehlendem Katalog geprüft;
+  Broken/DownloadInfoIncomplete/DCA am Lese- und Schreibpfad; Tests)
 - [x] **H10.5 Fixtures/Provenienz:** `knx_master.xml`, `.knxproj`-Fixtures
   und Testkorpora auf Hersteller-/Kundendaten und Lizenz prüfen; durch
   synthetische Minima ersetzen, wo nötig. (`171ebca`: 1-MB-KNX-Master und
