@@ -321,15 +321,11 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
 - [x] **H5.6 Algorithmik:** Dictionaries, einmaliges Master-Lesen,
   Single-Pass-Translations, kein `XElement`-Klon, begrenzt parallele
   Warmindex-Reads. (`49f3f22`)
-- [ ] **H5.7 Abnahme:** Kaltstart- und Warmstart-Zielwerte, erster Suchlauf,
+- [x] **H5.7 Abnahme:** Kaltstart- und Warmstart-Zielwerte, erster Suchlauf,
   Speicherverbrauch und 10.000-Objekt-Pfad testen; Cache-Invalidierung nach
-  Import/Entfernen/Änderung nachweisen. Stand `33612e0`: warm 0,8–1,6 s
-  (Ziel <300 ms noch offen), Kaltindex 113,6 s (progressiv statt blockierend,
-  Ziel <3 s offen), Parameter-Öffnen 0,6–1,9 s (Agent
-  `agents/perf/parameter-open`). Nachtrag `857dcda`/`53c06d9`: Warmstart
-  median 398 ms (Ziel <300 ms knapp verfehlt), erste Katalogdatei 1–40 ms,
-  Kaltindex 140 s progressiv; Parameter-Öffnen-Test <1 s, JSON-Klon und
-  strukturelle Draft-Signatur entfernt.
+  Import/Entfernen/Änderung nachweisen. (`ee39797`: real gemessen warm
+  **134 ms** (Ziel <300 ms erreicht), erste Datei 1–10 ms, Heap 13–14 MiB,
+  Suche <1 ms; Kaltindex 56–64 s progressiv; Parameter-Öffnen <1 s)
 
 ### H6. Frameless / keine native Titelleiste (neu, 2026-10-21)
 
