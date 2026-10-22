@@ -1,6 +1,7 @@
 using System.Text;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.Platform.Storage;
 using Knx.App.Services;
 using Knx.ProjectCompare;
@@ -14,7 +15,14 @@ public partial class CompareWindow : Window
     public CompareWindow()
     {
         InitializeComponent();
-        Opened += (_, _) => DiffGrid.Focus();
+        // A ListBox itself is not focusable; focus the first row after layout, with the
+        // list as a keyboard fallback when the report is empty.
+        DiffGrid.Focusable = true;
+        Opened += (_, _) => Dispatcher.UIThread.Post(() =>
+        {
+            if (DiffGrid.ContainerFromIndex(0) is Control row) row.Focus();
+            else DiffGrid.Focus();
+        });
     }
 
     public void Load(DifferenceReport report)
