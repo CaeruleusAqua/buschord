@@ -511,9 +511,11 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
   Vorprüfung, Dry-Run und Versuchsprotokoll; Schreibpfad bleibt gesperrt.
   (`868879a`, `DownloadPreflight`, MCP `download_plan`; echte Writes weiter
   `NotSupportedException`)
-- [ ] **H11.7 Übergabepaket:** Raum-/Funktionsbuch, Signatur-/Parameterbericht,
+- [x] **H11.7 Übergabepaket:** Raum-/Funktionsbuch, Signatur-/Parameterbericht,
   Revision/Change-Log, Paket+Manifest/Hash, Bedienungsanleitung und
-  Kontakt-/Datenschutzseiten.
+  Kontakt-/Datenschutzseiten. (`05f8ab1`: deterministisches ZIP mit 16
+  Dokumenten/Manifest, MCP `handover_package_export`, de/en,
+  read-only, Demo-/Simulationskennzeichnung)
 - [x] **H11.8 Portfolio/Multi-Projekt** und Versions-/Archivstrategie mit
   ehrlichem Signaturstatus. (`a5b8966` Registry, `3fb21de` Workbench-Dialog,
   `9e5c41e` Revisionen/Compare; ein Projekt wird gleichzeitig bearbeitet,
