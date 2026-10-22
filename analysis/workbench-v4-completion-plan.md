@@ -416,9 +416,10 @@ automatische Hardcoded-Text-Prüfung.
   Community-/CLA-Regeln, keine Hersteller-/Kundendaten, unvollständige
   Sprachen klar kennzeichnen. (`cb7e996`,
   `analysis/i18n-translation-workflow.md`; offene Produktentscheidungen dort)
-- [ ] **H9.4 CI-Gates:** Key-Parität, leere/verwaiste Keys, Platzhalter,
+- [x] **H9.4 CI-Gates:** Key-Parität, leere/verwaiste Keys, Platzhalter,
   verbotene deutsche Literale in `en`, Pseudo-Lokalisierung, Report-/CSV-
-  Sprachtests und Screenshots.
+  Sprachtests und Screenshots. (`f53aa74`, `tests/Knx.Localization.Tests`;
+  Ausnahmen-Liste und README dokumentiert)
 - [ ] **H9.5 Pilot:** dritte Sprache (z. B. Französisch oder Niederländisch)
   end-to-end mit echten Ressourcen, Tests und Abnahme; keine Maschinen-
   übersetzung ohne Review.
@@ -455,9 +456,13 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
   synthetische Minima ersetzen, wo nötig. (`171ebca`: 1-MB-KNX-Master und
   GPL-Fixture entfernt, synthetische Fixtures + Provenienz-README; History
   enthält die alten Blobs weiterhin → Rewrite-Entscheidung offen)
-- [ ] **H10.6 Release-Entscheidung:** verbleibende P3
+- [x] **H10.6 Release-Entscheidung:** verbleibende P3
   (Klartext-Backups, `CatalogUse.Download`, Import-Atomarität,
-  `.signature`) dokumentieren oder beheben.
+  `.signature`) dokumentieren oder beheben. (`7082f81`,
+  `analysis/security-p3-followups.md`: Downloadpfad nachweislich gesperrt,
+  Import-Atomarität + Signaturpräsenz getestet, Backup-Standort
+  dokumentiert; Signaturprüfung/Verschlüsselung bewusst als
+  Policy-Folgeentscheidung offen)
 - [x] **H10.7 Git-History:** Rewrite ausgeführt und veröffentlicht
   (filter-repo, Mirror-Backup
   `C:\projects\ai_work\buschord-history-backup-20261022-061415.git`):
