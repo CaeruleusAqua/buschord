@@ -824,7 +824,7 @@ public partial class WorkbenchWindow : Window
     private Control BuildNavRow(NavEntry entry)
     {
         var node = entry.Node;
-        var grid = new Grid { ColumnDefinitions = new("22,*,Auto"), Margin = new(entry.Depth * 12, 0, 4, 0), Height = 29, Tag = node };
+        var grid = new Grid { ColumnDefinitions = new("24,*,Auto"), Margin = new(entry.Depth * 12, 0, 4, 0), Height = 29, Tag = node };
         var pinned = node.Target is { } nodeTarget && Workspace.IsFavorite(nodeTarget);
         AutomationProperties.SetName(grid, node.Meta.Length > 0 ? $"{node.Name}, {node.Meta}" : node.Name);
         if (Workspace.ActiveTab?.Target is { } activeTarget && node.Target == activeTarget) grid.Classes.Add("wb-row-active");
@@ -840,6 +840,7 @@ public partial class WorkbenchWindow : Window
         if (hasChildren)
             expand.Content = new ConceptIcon { Symbol = expanded ? "down" : "chevron", Width = 16, Height = 16 };
         expand.IsEnabled = node.Children.Count > 0; expand.Padding = new(0);
+        expand.Width = expand.Height = expand.MinWidth = expand.MinHeight = 24;
         grid.Children.Add(expand);
         var label = Label(node.Name); label.FontSize = 11; Grid.SetColumn(label, 1); grid.Children.Add(label);
         var meta = Label(pinned ? "★ " + node.Meta : node.Meta); meta.FontSize = 9; meta.Classes.Add("wb-subtle"); Grid.SetColumn(meta, 2); grid.Children.Add(meta);
@@ -1088,12 +1089,12 @@ public partial class WorkbenchWindow : Window
             IsChecked = tab?.SelectedObjectIds.Contains(row.Key) == true,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            MinWidth = 0, Padding = new(0), Tag = row,
+            MinWidth = 24, Width = 24, Padding = new(0), Tag = row,
         };
         AutomationProperties.SetName(select, W("SelectObject", row.Name));
         select.IsCheckedChanged += (_, _) => SetRowSelection(row, select.IsChecked == true);
         grid.Children.Add(select);
-        var name = new Grid { ColumnDefinitions = new("22,Auto,*"), Margin = new(4 + row.Depth * 12, 0, 6, 0) };
+        var name = new Grid { ColumnDefinitions = new("24,Auto,*"), Margin = new(4 + row.Depth * 12, 0, 6, 0) };
         if (row.CanExpand)
         {
             var expand = ActionButton("", () =>
@@ -1104,7 +1105,9 @@ public partial class WorkbenchWindow : Window
                 CaptureScroll(); RefreshEditor();
             }, "quiet", W("ExpandCollapse", row.Name));
             expand.Content = new ConceptIcon { Symbol = row.Expanded ? "down" : "chevron", Width = 16, Height = 16 };
-            expand.Padding = new(0); name.Children.Add(expand);
+            expand.Padding = new(0);
+            expand.Width = expand.Height = expand.MinWidth = expand.MinHeight = 24;
+            name.Children.Add(expand);
         }
         var address = Label(row.Address); address.FontSize = 10; address.Classes.Add("wb-subtle"); address.Margin = new(0, 0, 9, 0); Grid.SetColumn(address, 1); name.Children.Add(address);
         var text = Label(row.Name); text.FontSize = 11; text.FontWeight = row.Kind == "device" ? FontWeight.SemiBold : FontWeight.Normal;
@@ -2514,6 +2517,9 @@ public partial class WorkbenchWindow : Window
         var width = widthOverride ?? Bounds.Width;
         var narrow = width is > 0 and < 1100;
         var navigationWidth = narrow ? 210 : Workspace.NavigatorWidth;
+        var toolsHeight = Workspace.ToolsVisible
+            ? Math.Min(Workspace.ToolsHeight, Bounds.Height is > 0 and < 740 ? 140 : Workspace.ToolsHeight)
+            : 0;
         Navigator.IsVisible = NavSplitter.IsVisible = Workspace.NavigatorVisible;
         Zones.ColumnDefinitions[1].Width = new(Workspace.NavigatorVisible ? navigationWidth : 0);
         Zones.ColumnDefinitions[2].Width = new(Workspace.NavigatorVisible ? 5 : 0);
@@ -2531,6 +2537,10 @@ public partial class WorkbenchWindow : Window
             // Reflow the covered strip instead of painting controls underneath the overlay.
             TabStrip.Margin = new Thickness(0, 0, Inspector.Width, 0);
             Editor.Margin = new Thickness(0, 0, Inspector.Width, 0);
+            // The overlay ends above the lower dock; otherwise it would cover its focusables
+            // and clip the dock content at 900x600 when both are open.
+            Inspector.Margin = new Thickness(0, 0, 0,
+                Workspace.ToolsVisible && !Workspace.ToolsMaximized ? toolsHeight + 5 : 0);
         }
         else
         {
@@ -2541,6 +2551,7 @@ public partial class WorkbenchWindow : Window
             Zones.ColumnDefinitions[4].Width = new(Workspace.InspectorVisible ? 5 : 0);
             Zones.ColumnDefinitions[5].Width = new(Workspace.InspectorVisible ? Workspace.InspectorWidth : 0);
             InspectorSplitter.IsVisible = Workspace.InspectorVisible;
+            Inspector.Margin = default;
             TabStrip.Margin = default;
             Editor.Margin = default;
         }
@@ -2559,7 +2570,9 @@ public partial class WorkbenchWindow : Window
         LayoutObjectToolbar(editorWidth is > 0 and < 620);
         MainColumn.RowDefinitions[1].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(0) : new(1, GridUnitType.Star);
         MainColumn.RowDefinitions[2].Height = new(Workspace.ToolsVisible ? 5 : 0);
-        MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized ? new(1, GridUnitType.Star) : new(Workspace.ToolsVisible ? Math.Min(Workspace.ToolsHeight, Bounds.Height is > 0 and < 740 ? 176 : Workspace.ToolsHeight) : 0);
+        MainColumn.RowDefinitions[3].Height = Workspace.ToolsVisible && Workspace.ToolsMaximized
+            ? new(1, GridUnitType.Star)
+            : new(toolsHeight);
         if (Workspace.ToolsVisible && ToolHost.Content is null)
             ToolHost.Content = CreateToolView(Workspace.ActiveTool);
     }
