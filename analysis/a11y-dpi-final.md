@@ -498,3 +498,31 @@ $env:WB_HOLD_UIA = "150"; .\bin\Release\net9.0\win-x64\A11yHarness.exe
 powershell -NoProfile -ExecutionPolicy Bypass -File .\uia-probe.ps1
 Get-Content artifacts\uia-probe.txt
 ```
+
+## Addendum — targeted recheck at development HEAD `bb68664` (2026-10-22)
+
+Re-ran only the four failing checks plus the target-size observations against current
+`development` HEAD `bb686645330550ff030f67d37630ffff56368529` (includes `587b332` shell polish
+and `bb68664` "Give the compare dialog an initial focus target"). Built in a detached
+worktree at that commit; harness mode `WB_RECHECK=1`; product unmodified. Artifacts:
+`%TEMP%\opencode\wb-v4-a11y\recheck-bb68664`.
+
+| Re-run check | fd0729d | bb68664 | Measurement at bb68664 |
+|---|---|---|---|
+| `compare-initial-focus` | FAIL (`<null>`) | **still FAIL** | report loaded (1 diff row): `DiffGrid.Focusable=False`, `DiffGrid.IsFocused=False`, `FocusManager=<null>`; `DiffGrid.Focus()` at `CompareWindow.axaml.cs:17` is a no-op. The first row can take focus (`ListBoxItem.Focus()=True`); fix with `DiffGrid.ContainerFromIndex(0)?.Focus()` or a fallback button. |
+| `layout-900x600-inspector-tools-unscrollable-clipping` | FAIL (1) | **still FAIL** | same clip: monitor empty state at (476,606)…(685,621) in a 600 px window. |
+| `inspector-obscures-focusables-900x600-inspector-tools` | FAIL (11) | **still FAIL** | 11 dock controls under the overlay, all pointer hits on the inspector; `Tools` is still not reflowed (`WorkbenchWindow.axaml.cs:2531-2532` sets only `TabStrip`/`Editor`). |
+| `inspector-covered-focus-targets` | FAIL (11) | **still FAIL** | the same 11 controls. |
+| Nav chevron target | 16×30 / 4×30 | **still 16×30 / 4×30** | `Auf-/zuklappen: Villa Linden` / `Erdgeschoss` 16×30; leaf `Ohne Einbauort` 4×30. |
+| Table row chevron target | 20×32 (see correction) | **still 16×30** | `Auf-/zuklappen: Tastsensor Wohnzimmer` 16×30. |
+| Table row checkbox | not separately reported | 20×32 | `Objekt auswählen: Tastsensor Wohnzimmer` 20×32. |
+| Doc-tab close / rail / help / inspector close | PASS | PASS | 24×24 / 35×35 / 35×35 / 37×30. |
+
+Correction from the recheck: the earlier "table row chevron 20×32" measurement had picked the
+row checkbox (a `ToggleButton`); the actual expand chevron is **16×30**, the checkbox is
+20×32. Both remain below 24×24 in width.
+
+**Verdict at bb68664: none of the four failures and none of the target-size observations is
+fixed.** The CompareWindow focus fix is present but ineffective because a `ListBox` is not
+focusable; shell polish did not change the narrow overlay reflow or the chevron geometry.
+
