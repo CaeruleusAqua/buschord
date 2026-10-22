@@ -1,7 +1,9 @@
 using System.Text;
+using System.Text.Json;
 using Knx;
 using Knx.App.Services;
 using Knx.Bus;
+using Knx.Portfolio;
 using Knx.ProjectCompare;
 using Knx.Reports;
 using Knx.Workbench;
@@ -377,6 +379,70 @@ Check("Bericht: Datei geschrieben", File.Exists(reportPath) && written.Bytes == 
 Check("Bericht: Datei ist UTF-8 ohne BOM", reportBytes[0] == (byte)'<');
 Check("Bericht: Datei entspricht Render", System.Text.Encoding.UTF8.GetString(reportBytes) == report);
 File.Delete(reportPath);
+
+// --- Portfolio-Anbindung an bestehende Einstellungen (H11.8) ---
+{
+    var settingsRoot = Path.Combine(Path.GetTempPath(), "buschord_settings_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(settingsRoot);
+    var firstProject = Path.Combine(settingsRoot, "haus.knxproj");
+    var secondProject = Path.Combine(settingsRoot, "halle.knxproj");
+    var missingProject = Path.Combine(settingsRoot, "weg.knxproj");
+    File.WriteAllText(firstProject, "haus");
+    File.WriteAllText(secondProject, "halle");
+
+    string Q(string value) => JsonSerializer.Serialize(value);
+
+    // Datei im alten Format: nur bekannte Felder plus ein unbekanntes, das ignoriert werden muss.
+    var settingsFile = Path.Combine(settingsRoot, "settings.json");
+    File.WriteAllText(settingsFile, $$"""
+    {
+      "Theme": "Dunkel",
+      "Language": "en",
+      "ShowMonitorTimestamps": false,
+      "ConfirmDelete": false,
+      "TunnelAddress": "1.1.250",
+      "LastProject": {{Q(firstProject)}},
+      "RecentProjects": [{{Q(firstProject)}}, {{Q(secondProject)}}, {{Q(missingProject)}}],
+      "FutureSetting": 42
+    }
+    """);
+
+    var legacySettings = AppSettings.Load(settingsFile);
+    Check("Einstellungen: alte Datei bleibt lesbar",
+        legacySettings is { Theme: "Dunkel", Language: "en", ShowMonitorTimestamps: false, ConfirmDelete: false, TunnelAddress: "1.1.250" }
+        && legacySettings.LastProject == Path.GetFullPath(firstProject)
+        && legacySettings.RecentProjects.Count == 3);
+    Check("Einstellungen: unbekanntes Feld wird ignoriert", legacySettings.RecentProjects[1] == Path.GetFullPath(secondProject));
+
+    var portfolioFile = Path.Combine(settingsRoot, "portfolio.json");
+    var registry = new PortfolioRegistry(portfolioFile);
+    var beforeSeed = File.ReadAllBytes(settingsFile);
+    var seeded = registry.Seed(legacySettings);
+    Check("Portfolio: Seeding übernimmt nur vorhandene Projekte",
+        seeded == 2 && registry.Entries.Count == 2 && registry.FindByPath(missingProject) is null);
+    Check("Portfolio: letztes Projekt gilt als zuletzt geöffnet",
+        registry.Entries[0].Path == Path.GetFullPath(firstProject));
+    Check("Portfolio: Einstellungen bleiben unverändert",
+        File.ReadAllBytes(settingsFile).SequenceEqual(beforeSeed)
+        && legacySettings.LastProject == Path.GetFullPath(firstProject)
+        && legacySettings.RecentProjects.Count == 3);
+    Check("Portfolio: erneutes Seeding legt nichts doppelt an",
+        registry.Seed(legacySettings) == 0 && registry.Entries.Count == 2);
+    Check("Portfolio: eigene Datei neben den Einstellungen",
+        PortfolioRegistry.DefaultPath != AppSettings.Path
+        && Path.GetFileName(PortfolioRegistry.DefaultPath) == "portfolio.json");
+
+    // Einzelprojekt-Verhalten der Einstellungen bleibt bestehen.
+    legacySettings.TouchProject(secondProject);
+    Check("Einstellungen: TouchProject unverändert",
+        legacySettings.LastProject == Path.GetFullPath(secondProject)
+        && legacySettings.RecentProjects[0] == Path.GetFullPath(secondProject)
+        && legacySettings.RecentProjects.Count == 3);
+    for (var i = 0; i < 15; i++) legacySettings.TouchProject(Path.Combine(settingsRoot, $"p{i}.knxproj"));
+    Check("Einstellungen: Recent-Liste bleibt auf 10 begrenzt", legacySettings.RecentProjects.Count == 10);
+
+    Directory.Delete(settingsRoot, recursive: true);
+}
 
 Console.WriteLine(failures.Count == 0 ? "REPORTS OK" : $"{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);

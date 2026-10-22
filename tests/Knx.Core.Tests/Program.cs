@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using Knx;
+using Knx.Portfolio;
 
 // Self-Check für den Knxproj-Kern: Round-Trip (erzeugen → speichern → laden → vergleichen)
 // und Auswertung der synthetischen Master-Data. Lauf: dotnet run --project tests/Knx.Core.Tests
@@ -1314,6 +1315,173 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         Path.GetFileName(second.Path) == Path.GetFileName(first.Path)
         && store.LastImportReport is { HasSignatureFile: false, ReplacedExisting: true });
     Check("Import: keine Temp-Datei bleibt zurück", !Directory.EnumerateFiles(library, "*.tmp").Any());
+}
+
+// --- Portfolio-Registry (H11.8): offline index for several project files ---
+{
+    var portfolioRoot = Path.Combine(Path.GetTempPath(), "buschord_portfolio_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(portfolioRoot);
+    var registryPath = Path.Combine(portfolioRoot, "portfolio.json");
+    var subdirectory = Path.Combine(portfolioRoot, "sub");
+    Directory.CreateDirectory(subdirectory);
+
+    string WriteProjectFile(string relative, string content)
+    {
+        var path = Path.Combine(portfolioRoot, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
+        return path;
+    }
+
+    static bool Throws<T>(Action action) where T : Exception
+    {
+        try
+        {
+            action();
+            return false;
+        }
+        catch (T)
+        {
+            return true;
+        }
+    }
+
+    var alphaPath = WriteProjectFile("alpha.knxproj", "alpha-v1");
+    var betaPath = WriteProjectFile("beta.knxproj", "beta-v1");
+
+    var registry = new PortfolioRegistry(registryPath);
+    Check("Portfolio: leerer Start ohne Fehler", registry.Entries.Count == 0 && registry.LoadError is null);
+    Check("Portfolio: Dokument noch nicht angelegt", !File.Exists(registryPath));
+
+    var alpha = registry.Add(alphaPath);
+    Check("Portfolio: stabile Id", alpha.Id.Length == 15 && alpha.Id.StartsWith("pf-"), alpha.Id);
+    Check("Portfolio: Name aus Dateiname", alpha.Name == "alpha");
+    Check("Portfolio: Größe und SHA-256 erfasst",
+        alpha.SizeBytes == new FileInfo(alphaPath).Length && alpha.Sha256.Length == 64 && alpha.Sha256.All(Uri.IsHexDigit));
+    Check("Portfolio: Revision startet bei 1", alpha.Revision == 1);
+    Check("Portfolio: Duplikat liefert denselben Eintrag",
+        registry.Add(alphaPath).Id == alpha.Id && registry.Entries.Count == 1);
+    Check("Portfolio: Duplikat über Pfadvariante",
+        registry.Add(Path.Combine(subdirectory, "..", "alpha.knxproj")).Id == alpha.Id && registry.Entries.Count == 1);
+    Check("Portfolio: Find by id", registry.Find(alpha.Id)?.Path == Path.GetFullPath(alphaPath));
+    Check("Portfolio: Find by path", registry.FindByPath(alphaPath)?.Id == alpha.Id);
+    Check("Portfolio: Find unbekannt", registry.Find("pf-000000000000") is null && registry.FindByPath("nope") is null);
+
+    var beta = registry.Add(betaPath, "Beta Anlage");
+    Check("Portfolio: Alias-Name", beta.Name == "Beta Anlage" && registry.Entries.Count == 2);
+    Check("Portfolio: neue Einträge zuerst", registry.Entries[0].Id == beta.Id);
+    Check("Portfolio: Touch ordnet nach letzter Öffnung",
+        registry.Touch(alpha.Id) && registry.Entries[0].Id == alpha.Id && registry.Entries[0].Revision == 1);
+    Check("Portfolio: Rename ändert nur den Namen",
+        registry.Rename(alpha.Id, "Alpha Haus")
+        && registry.Find(alpha.Id) is { Name: "Alpha Haus", Revision: 1 } renamed
+        && renamed.Path == alpha.Path);
+    Check("Portfolio: Rename unbekannt", !registry.Rename("pf-000000000000", "x"));
+    Check("Portfolio: Remove unbekannt", !registry.Remove("pf-000000000000"));
+
+    var reloaded = new PortfolioRegistry(registryPath);
+    Check("Portfolio: Persistenz nach Neuladen",
+        reloaded.LoadError is null && reloaded.Entries.Count == 2
+        && reloaded.Find(alpha.Id) is { Name: "Alpha Haus" } persisted && persisted.Sha256 == alpha.Sha256);
+    var documentText = File.ReadAllText(registryPath);
+    Check("Portfolio: Schema-Version im Dokument", documentText.Contains("\"schemaVersion\": 1"));
+    Check("Portfolio: keine Temp-Datei", !Directory.EnumerateFiles(portfolioRoot, "*.tmp").Any());
+    Check("Portfolio: Sicherung der letzten guten Fassung", File.Exists(registryPath + ".bak"));
+
+    var stable = File.ReadAllBytes(registryPath);
+    reloaded.Save();
+    Check("Portfolio: Laden und Speichern ist byte-stabil", File.ReadAllBytes(registryPath).SequenceEqual(stable));
+
+    var movedPath = Path.Combine(portfolioRoot, "gamma.knxproj");
+    File.Copy(alphaPath, movedPath);
+    Check("Portfolio: Move behält Id und Revision",
+        registry.Move(alpha.Id, movedPath)
+        && registry.Find(alpha.Id) is { Revision: 1 } movedEntry
+        && movedEntry.Path == Path.GetFullPath(movedPath));
+    Check("Portfolio: Move auf belegten Pfad wird abgelehnt",
+        Throws<InvalidOperationException>(() => registry.Move(alpha.Id, betaPath)));
+    Check("Portfolio: Move unbekannt", !registry.Move("pf-000000000000", movedPath));
+
+    File.WriteAllText(movedPath, "alpha-v2");
+    Check("Portfolio: gleiche Größe bleibt Ok",
+        registry.State(registry.Find(alpha.Id)!) == PortfolioState.Ok);
+    Check("Portfolio: Refresh erkennt Hash-Änderung",
+        registry.Refresh(alpha.Id) && registry.Find(alpha.Id) is { Revision: 2 } refreshed
+        && refreshed.Sha256 == PortfolioRegistry.Hash(movedPath));
+    Check("Portfolio: Refresh ohne Änderung", !registry.Refresh(alpha.Id));
+
+    File.WriteAllText(movedPath, "alpha-v2-plus");
+    Check("Portfolio: Größenänderung wird erkannt",
+        registry.State(registry.Find(alpha.Id)!) == PortfolioState.Changed);
+    Check("Portfolio: zweite Hash-Änderung erhöht Revision",
+        registry.Refresh(alpha.Id) && registry.Find(alpha.Id)?.Revision == 3);
+
+    File.Delete(movedPath);
+    var missing = registry.Summarize(alpha.Id);
+    Check("Portfolio: fehlende Datei gemeldet",
+        missing is { State: PortfolioState.Missing, Revision: 3 } && registry.State(registry.Find(alpha.Id)!) == PortfolioState.Missing);
+    Check("Portfolio: fehlende Datei bleibt registriert", registry.Find(alpha.Id)?.Path == Path.GetFullPath(movedPath));
+
+    var movedAway = WriteProjectFile("elsewhere/alpha-moved.knxproj", "alpha-v2-plus");
+    var detected = registry.DetectMove(alpha.Id, portfolioRoot);
+    Check("Portfolio: verschobene Datei erkannt", detected == Path.GetFullPath(movedAway), detected);
+    Check("Portfolio: Move repariert den Pfad",
+        detected is not null && registry.Move(alpha.Id, detected)
+        && registry.State(registry.Find(alpha.Id)!) == PortfolioState.Ok
+        && registry.Find(alpha.Id)?.Revision == 3);
+
+    Check("Portfolio: Backup-Referenz angehängt",
+        registry.AttachBackup(alpha.Id, "20261022T120000-aaaaaaaaaaaa")
+        && !registry.AttachBackup(alpha.Id, "20261022T120000-aaaaaaaaaaaa")
+        && registry.AttachBackup(alpha.Id, "20261022T130000-bbbbbbbbbbbb"));
+    Check("Portfolio: Versions-Referenz gesetzt",
+        registry.SetVersionRef(alpha.Id, "r3")
+        && !registry.SetVersionRef(alpha.Id, "r3"));
+    var summary = registry.Summarize(alpha.Id);
+    Check("Portfolio: Zusammenfassung mit Revision und Backups",
+        summary is { Revision: 3, State: PortfolioState.Ok, HasBackups: true, VersionRef: "r3" }
+        && summary.BackupRefs.Count == 2 && summary.BackupRefs[^1] == "20261022T130000-bbbbbbbbbbbb");
+
+    Check("Portfolio: Remove entfernt Eintrag", registry.Remove(beta.Id) && !registry.Remove(beta.Id));
+    var afterRemove = new PortfolioRegistry(registryPath);
+    Check("Portfolio: Entfernung und Referenzen persistiert",
+        afterRemove.Entries.Count == 1
+        && afterRemove.Find(alpha.Id) is { VersionRef: "r3" } kept && kept.BackupRefs.Count == 2);
+
+    // Korruptes Dokument: letzte gute Fassung aus .bak, danach wieder schreibbar.
+    var corruptRoot = Path.Combine(Path.GetTempPath(), "buschord_portfolio_corrupt_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(corruptRoot);
+    var corruptPath = Path.Combine(corruptRoot, "portfolio.json");
+    var firstPath = Path.Combine(corruptRoot, "first.knxproj");
+    var secondPath = Path.Combine(corruptRoot, "second.knxproj");
+    File.WriteAllText(firstPath, "first");
+    File.WriteAllText(secondPath, "second");
+    var corrupt = new PortfolioRegistry(corruptPath);
+    var first = corrupt.Add(firstPath);
+    corrupt.Add(secondPath);
+    Check("Portfolio: .bak enthält die vorherige Fassung", File.Exists(corruptPath + ".bak"));
+    File.WriteAllText(corruptPath, "{ \"schemaVersion\": 1, \"entries\": [");
+
+    var recovered = new PortfolioRegistry(corruptPath);
+    Check("Portfolio: Korruption gemeldet",
+        recovered.LoadError is not null && recovered.LoadError.Contains("corrupt") && recovered.LoadError.Contains("Recovered"),
+        recovered.LoadError);
+    Check("Portfolio: letzte gute Fassung wiederhergestellt",
+        recovered.Entries.Count == 1 && recovered.Entries[0].Id == first.Id);
+    Check("Portfolio: korruptes Dokument aufbewahrt", File.Exists(corruptPath + ".corrupt"));
+    recovered.Add(secondPath);
+    var healed = new PortfolioRegistry(corruptPath);
+    Check("Portfolio: nach Reparatur wieder vollständig",
+        healed.LoadError is null && healed.Entries.Count == 2);
+
+    var versionPath = Path.Combine(corruptRoot, "future.json");
+    File.WriteAllText(versionPath, "{\"schemaVersion\":99,\"entries\":[]}");
+    var unsupported = new PortfolioRegistry(versionPath);
+    Check("Portfolio: unbekanntes Schema wird abgelehnt",
+        unsupported.LoadError is not null && unsupported.Entries.Count == 0);
+
+    Directory.Delete(portfolioRoot, recursive: true);
+    Directory.Delete(corruptRoot, recursive: true);
 }
 
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER: {string.Join("; ", failures)}");
