@@ -124,19 +124,26 @@ public sealed class DownloadSession
 
             var image = _program.Image;
             var total = image.Length;
+            if (plan.ImageLength != total)
+                return Finish(false, $"download refused: the preflight plan covers {plan.ImageLength} bytes " +
+                                     $"but the program image has {total}");
             var written = 0;
             var offset = 0;
-            while (offset < total)
+            foreach (var planned in plan.Chunks)
             {
                 ct.ThrowIfCancellationRequested();
-                var chunk = image.Skip(offset).Take(_program.ChunkSize).ToArray();
-                var writeReq = Management.MemoryWrite(_device, (ushort)(_program.StartAddress + offset), chunk);
+                var relative = planned.Address - plan.StartAddress;
+                if (relative != offset || planned.Length is < 1 or > 12 || offset + planned.Length > total)
+                    return Finish(false, $"download refused: preflight chunk at 0x{planned.Address:X4} " +
+                                         $"does not match the image at offset {offset}");
+                var chunk = image.AsSpan(offset, planned.Length).ToArray();
+                var writeReq = Management.MemoryWrite(_device, planned.Address, chunk);
                 var memResp = await _tunnel.RequestAsync(writeReq, Apci.MemoryResponse, _device, _responseTimeout, ct);
                 if (memResp is null)
                     return Finish(false, $"memory write nicht bestätigt bei Offset {offset}");
 
                 // verify: read back and compare
-                var readReq = Management.MemoryRead(_device, (ushort)(_program.StartAddress + offset), (byte)chunk.Length);
+                var readReq = Management.MemoryRead(_device, planned.Address, (byte)chunk.Length);
                 var readResp = await _tunnel.RequestAsync(readReq, Apci.MemoryResponse, _device, _responseTimeout, ct);
                 if (readResp is null)
                     return Finish(false, $"verify read ohne Antwort bei Offset {offset}");
@@ -149,6 +156,8 @@ public sealed class DownloadSession
                 Progress?.Invoke(new DownloadProgress(DownloadStage.Flashing, 5 + 85 * written / total,
                     $"geschrieben {written}/{total}"));
             }
+            if (offset != total)
+                return Finish(false, $"download refused: preflight plan covers {offset} of {total} image bytes");
 
             Progress?.Invoke(new DownloadProgress(DownloadStage.Restarting, 95, "Neustart"));
             var restartReq = Management.Restart(_device, erase: false);
