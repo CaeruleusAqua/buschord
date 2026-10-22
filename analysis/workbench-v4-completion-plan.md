@@ -13,8 +13,8 @@ werden hier abgehakt, nicht nur im Chat.
 - [x] 1. ETS-Referenz je Funktionsbereich mit REA neu analysieren und dokumentieren.
 - [x] 2. V4-Restlücken aus Akzeptanzmatrix, UX- und Visual-Review konsolidieren.
 - [ ] 3. Shell/Design abschließen: Katalog, Icons, Fokus, DPI, Dark/Light, Englisch.
-- [ ] 4. Projekt-, Raum-, Linien-, Geräte- und Gruppenadressfunktionen vervollständigen.
-- [ ] 5. Katalog, Parameter, dynamische Herstellerlogik und DCA-Grenzen abschließen.
+- [x] 4. Projekt-, Raum-, Linien-, Geräte- und Gruppenadressfunktionen vervollständigen. (`ac0480a`, `84cb150`, `6b3fb83`)
+- [x] 5. Katalog, Parameter, dynamische Herstellerlogik und DCA-Grenzen abschließen. (`39be758`, `53c06d9`, `49f3f22`; DCA-Hosting bleibt bewusste Grenze)
 - [ ] 6. Inbetriebnahme, Download, Diagnose, Monitor und Secure vollständig anbinden.
 - [x] 7. Berichte, Vergleich, Suche/Ersetzen, Exporte und Demo-Abläufe abschließen.
 - [ ] 8. Tastatur, Screenreader, 100/150/200-%-DPI und kleine Fenster abnehmen.
@@ -57,10 +57,10 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 ### B2. Navigator und Arbeitsgegenstände
 
 - [x] Alle Baumaktionen: anlegen, umbenennen, löschen, verschieben, kopieren, Adresse ändern, Kontextmenüs.
-- [ ] Drag-and-drop für Geräte/Adressen mit gleichwertigem Tastaturweg.
+- [x] Drag-and-drop für Geräte/Adressen mit gleichwertigem Tastaturweg. (`ac0480a`; OS-Pointer headless nicht beweisbar, Projektions-/Command-Test)
 - [x] Linien-/Segment-/Raumwechsel inklusive Undo und Adressvorschlägen.
 - [x] Navigationszustand, Filter, Aufklappzustand und Auswahl je Perspektive vollständig persistieren.
-- [ ] "In Topologie zeigen", "Daneben öffnen", Favoriten/Pinning gemäß ETS-Ablauf.
+- [x] "In Topologie zeigen", "Daneben öffnen", Favoriten/Pinning gemäß ETS-Ablauf. (`ac0480a`, `6b3fb83`)
 - [x] Externe Kanäle/Effekt-Raumbezug im UI vollständig erklären und prüfen.
 
 ### B3. Tabelle, Inspektor, Zuordnungen
@@ -71,16 +71,16 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 - [x] Sendeadresse setzen/entfernen, Warnung bei verbleibenden Links, keine stille Ersatzwahl.
 - [x] KO-Aktivierung/Flags/DPT/Länge editierbar oder bewusst schreibgeschützt kennzeichnen.
 - [x] Long-list-Darstellung, Zähler und vollständiger Zuordnungseditor für >10.000 Objekte.
-- [ ] Inspector als Property-Grid mit Abschnitten, Fußaktionen und stabiler Fokusführung.
+- [x] Inspector als Property-Grid mit Abschnitten, Fußaktionen und stabiler Fokusführung. (`ac0480a`, `84cb150`)
 
 ### B4. Parameter
 
-- [ ] Native Parameter-UI vollständig V4-stylen; Abschnittsnavigation und Footer.
-- [ ] Entwurfsindikator sichtbar; Undo/Projektwechsel/Refresh verwirft nur mit klarer Meldung.
+- [x] Native Parameter-UI vollständig V4-stylen; Abschnittsnavigation und Footer. (`39be758`, `53c06d9`)
+- [x] Entwurfsindikator sichtbar; Undo/Projektwechsel/Refresh verwirft nur mit klarer Meldung. (`53c06d9`)
 - [x] Wirkungsvorschau für alle unterstützten KO-/Link-Änderungen; unbekannte Herstellerdynamik/DCA klar trennen.
 - [x] Demo-Schalten/Dimmen vollständig mit Vorschau, Apply, Undo und Linkerhalt.
 - [x] Fehler-/Validierungszustände je Feld und Sammelfehler im Footer.
-- [ ] DCA-erforderliche Geräte read-only kennzeichnen und opaque Daten erhalten.
+- [x] DCA-erforderliche Geräte read-only kennzeichnen und opaque Daten erhalten. (`84cb150`, `53c06d9`; Katalog- und Archivpfad)
 
 ### B5. Katalog
 
@@ -112,13 +112,13 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 
 ### B8. Shell, Lokalisierung, Barrierefreiheit
 
-- [ ] Englische Sprache für alle Workbench-Texte, Dialoge, Fehlermeldungen und dynamische Strings.
-- [ ] Fokusführung nach Tabs, Dialogen, Suche und Projektwechsel; sichtbarer Fokus überall.
-- [ ] Screenreader-Namen für Zeilen, Tabs, Icons, Tabellen und Statusmeldungen.
-- [ ] 100/150/200-%-DPI und 900×600/1024×700/1440×900 abnehmen; keine abgeschnittenen Aktionen.
+- [x] Englische Sprache für alle Workbench-Texte, Dialoge, Fehlermeldungen und dynamische Strings. (`2846c16`, `ba25051`, `f53aa74`; technische Pfad-Tokens bleiben Daten)
+- [x] Fokusführung nach Tabs, Dialogen, Suche und Projektwechsel; sichtbarer Fokus überall. (`84cb150`, A11y-Recheck)
+- [x] Screenreader-Namen für Zeilen, Tabs, Icons, Tabellen und Statusmeldungen. (`84cb150`, realer UIA-Probe; Narrator-Sprachausgabe nicht separat)
+- [ ] 100/150/200-%-DPI und 900×600/1024×700/1440×900 abnehmen; keine abgeschnittenen Aktionen. (`9691f24`/`72f4971` 900/1024/1440 + simulierte 150/200; **reale 150/200-%-DPI offen**)
 - [x] Tool-Float/Maximieren/Close und Baum-Carets auf die Konzept-Linienicons umstellen.
-- [ ] Katalog, Parameter, Beziehungen und Dialoge auf eine Designsprache bringen.
-- [ ] Dark/Light-Kontrast, Disabled, Empty, Error und Hover vollständig prüfen.
+- [x] Katalog, Parameter, Beziehungen und Dialoge auf eine Designsprache bringen. (`f605870`, `39be758`)
+- [x] Dark/Light-Kontrast, Disabled, Empty, Error und Hover vollständig prüfen. (`45f035b`, `f9d0e7f`, A11y-Kontrastmatrix)
 
 ## C. Technische Leitplanken
 
