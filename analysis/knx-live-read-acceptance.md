@@ -115,6 +115,28 @@ carries unicast UDP 3671 to the gateway). Each item is still **open**:
 Do not tick H8.4 until items 1-4 have real evidence and items 5-6 are either
 run or explicitly waived by the user.
 
+## 5b. Post-fix live rerun (2026-10-22 ~20:00, gateway reachable again)
+
+The host was back on the KNX WLAN segment. All checks below were read-only;
+no GroupValueWrite, download, programming, IA write, memory write, reset or
+secure operation was sent.
+
+| Check | Result |
+|---|---|
+| Unicast discovery / `--bus-probe` | gateway answered; `SCN-IP100.03 IP Router mit Sec`, IA 1.0.0 |
+| Tunnel connect / passive listen 20 s | connected as 1.1.250; **12 telegrams**, all group frames, hop 5/6, APCI `GroupValueWrite`, **0 L_Data.con** in feed |
+| Descriptor read 1.0.0 | response after 26 ms, mask `0x091A` (unknown mask in current table) |
+| Descriptor read 1.1.29 | response after 155 ms, mask `0x0701` (BIM M112) |
+| Descriptor read 1.3.3 | response after 128 ms, mask `0x07B0` (System B / BCU 2) |
+| GroupValueRead 3/1/15 | **real GroupValueResponse**, value `01`, source 1.1.18, hop 5, 3 s timeout |
+| GroupValueRead 3/0/1, 3/0/21, 3/3/3 | no GroupValueResponse within 3 s (read-only request acknowledged, no responder) |
+| Reconnect after clean disconnect | second tunnel connected as 1.1.250, status connected, clean disconnect |
+| Second tunnel / interface conflict | deliberately skipped: would occupy another tunnel and could disturb an ETS session; not needed for a read-only verdict |
+
+Remaining H8.4 gaps are now limited to a second-tunnel/interface-conflict run
+and a full line scan (broadcast management, explicitly not run). The read-only
+acceptance is otherwise reproducible.
+
 ## 6. What was not run, and why
 
 - No descriptor read, no group read, no scan, no cEMI at all: no tunnel could be

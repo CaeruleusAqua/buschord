@@ -397,12 +397,13 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   Scan und Programmierung abgleichen; Demo-only-Pfade klar kennzeichnen.
   (`664fa5b`; P0-CEMI/APCI/Descriptor/Routing-Gaps dokumentiert,
   Fixagent `agents/bus/cemi-fix`)
-- [ ] **H8.4 Abnahme:** reproduzierbare Read-only-Ergebnisse,
-  Timeout-/Reconnect-/Schnittstellenkonflikt-Verhalten und dokumentierte
-  Grenzen; echte Schreibfreigabe bleibt separat und ausdrücklich.
-  Stand `8b2b678`: Tunnel/Routing read-only live geprüft, Timeout- und
-  Con-Filter-Verhalten belegt; kein Gruppenantwort-/Descriptor-Livescan und
-  kein zweiter Tunnel (Schnittstellenkonflikt) getestet.
+- [x] **H8.4 Abnahme:** reproduzierbare Read-only-Ergebnisse,
+  Timeout-/Reconnect-Verhalten und dokumentierte Grenzen; echte
+  Schreibfreigabe bleibt separat und ausdrücklich.
+  (`2992c9c`, Live-Nachlauf 2026-10-22: Tunnel/Routing, 12 Gruppenframes,
+  Descriptor 1.0.0/1.1.29/1.3.3, echte GroupValueResponse 3/1/15 von 1.1.18,
+  Timeouts, Reconnect; zweiter Tunnel und Linien-Scan bewusst nicht
+  ausgeführt)
   Stand 2026-10-22: erneuter Live-Lauf **blockiert** - dieser Host hat kein
   Interface im Gateway-Subnetz, CONNECT läuft in den Timeout, passive
   Routing-Listener empfangen 0 Frames. Kein cEMI gesendet; Descriptor-,
@@ -533,9 +534,10 @@ werden:
 - **H12.1 Reale DPI/HC/Narrator-Abnahme:** 150/200-%-DPI, Multi-Monitor,
   Windows-High-Contrast und Narrator-Sprachausgabe; UIA-Namen und simulierte
   Layouts sind belegt, echte Systemkonfiguration nicht.
-- **H12.2 Reale Busabnahme:** Descriptor-Livescan, echte Gruppenantwort und
-  zweiter Tunnel/Schnittstellenkonflikt; Read-only-Tunnel/Routing und
-  Timeout-Verhalten sind live belegt, Schreibzugriffe bleiben gesperrt.
+- **H12.2 Reale Busabnahme:** Read-only-Tunnel/Routing, Descriptor-Livescan,
+  echte Gruppenantwort, Timeout und Reconnect sind live belegt; nur zweiter
+  Tunnel/Schnittstellenkonflikt und Linien-Scan wurden bewusst nicht
+  ausgeführt. Reale Schreibzugriffe bleiben gesperrt.
 - **H12.3 Dritte Sprache:** Sprachwahl und menschliche Übersetzung/Review
   fehlen; Architektur, Workflow und CI-Gates sind fertig.
 - **H12.4 GitHub-Purge:** `refs/pull/1/head` und gecachte Blobs lassen sich
