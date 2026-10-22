@@ -25,7 +25,7 @@ The workbench and its shared panes use the **Concept** line set.
 | Tool tabs | `monitor`, `download` (programming), `refresh` (scan), `search`, `clock` (changes), `warning` (problems) |
 | Tool dock float, maximize, hide | `export`, `maximize`, `close` |
 | Inspector close | `close` |
-| Catalog and search fields, empty states | `search`, `catalog` |
+| Catalog and search fields, empty states | `search`, `catalog`, `building` (start), `folder` (portfolio) |
 | Report window | `doc` |
 
 ## Limitations
@@ -40,6 +40,6 @@ concept icon is used instead:
 - Changes list → `clock` (no history glyph).
 - Project check and tool problems → `warning` (the concept's findings icon).
 
-Unused but available: `device`, `home`, `folder`, `more`, `link`, `check`,
-`upload`, `undo`, `redo`, `layers`, `panel`, `split`, `arrow`, `lock`, `eye`,
-`play`, `stop`, `pin`, `bulb`, `trash`, `flash`, `flag`, `move`.
+Unused but available: `device`, `home`, `more`, `link`, `check`, `upload`,
+`undo`, `redo`, `layers`, `panel`, `split`, `arrow`, `lock`, `eye`, `play`,
+`stop`, `pin`, `bulb`, `trash`, `flash`, `flag`, `move`.

@@ -52,6 +52,19 @@ MutationResult result = WorkbenchProject.AddLinks(project, [key], "central-off",
   It excludes labels, room/effect placement and revision counters.
   Opaque native manufacturer XML remains preserved, not evaluated as application
   dynamics or a complete programmable device image.
+- `ProjectRevisions` (`ProjectRevisions.cs`) owns the durable revision log in
+  `Workbench.Revisions`: monotonic `REV-0001` ids, canonical SHA-256
+  `ContentHash` (revisions excluded), optional source path/hash, description and
+  `RevisionSignatureStatus.Absent|Unverified`. `Capture` appends in memory;
+  `Latest`/`All` read it; `Validate` rejects duplicate ids/numbers and inconsistent
+  signature data. Signature text is preserved and hashed, never verified. The log
+  serializes with the Workbench extension and survives save/load; no Workbench
+  command or MCP tool captures a revision, so only callers of `Capture` add one.
+- `ProjectComparer.Compare` compares project/installation facts, devices
+  (including parameters), group addresses, links with connector facts, Workbench
+  metadata and the building tree in ordinal order. `CompareRevisions` optionally
+  attaches each side's latest revision; the Workbench and MCP compare commands use
+  the plain comparison, so revision metadata is not rendered there.
 - `DeviceProgrammingState` (`DeviceProgrammingState.cs`) records what is known to be
   loaded into one device, separate from project dirty/undo state: five load flags
   (`IndividualAddress`, `ApplicationProgram`, `Parameters`, `GroupAddresses`,
@@ -84,9 +97,12 @@ MutationResult result = WorkbenchProject.AddLinks(project, [key], "central-off",
 ## Persistence and limits
 
 Supplemental facts serialize as a versioned `Workbench` element in
-`urn:buschord:project:1`, with a JSON `Data` attribute. This is an explicitly
-BusChord-owned extension, **not** a claim of ETS interoperability. Existing native
-XML/archive preservation and undo snapshot mechanisms remain in use.
+`urn:buschord:project:1`, with a JSON `Data` attribute. The revision log rides in
+the same element, so it survives save/load without touching native ETS elements.
+This is an explicitly BusChord-owned extension, **not** a claim of ETS
+interoperability. Existing native XML/archive preservation and undo snapshot
+mechanisms remain in use. `ProjectReport` renders the latest revision and the
+revision table; `HandoverPackage` writes the list as `15_projektverlauf.csv`.
 
 Device programming state uses its own versioned JSON side file
 (`DeviceProgrammingStates`, version 2, project-id bound, sorted by device id),

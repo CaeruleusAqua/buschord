@@ -17,14 +17,14 @@ derived from the KNX Association or any tool vendor.
 | Area | Status |
 |---|---|
 | Project archive read/write (`.knxproj`, schemas `/21` and `/23`) | bounded root/nested ZIP support, atomic saves and opaque-data retention; `/21` is read-only, `/23` is written; encrypted archives open with the ETS project password but saving is refused; real ETS round-trip unverified |
-| Topology, group addresses, com object links, undo/redo, project check | working |
-| Product databases (`.knxprod`, split and nested layouts) + local catalogue library | working, validated against real vendor files kept outside the repository |
-| Device parameters (KSXML) with typed editors | static manufacturer types and validated edits; BusChord override persistence; no dynamic evaluation or native ETS parameter export; DCA/plug-in applications stay read-only |
-| KNXnet/IP | discovery and tunnel handshake live-verified read-only (connect, one group read, clean disconnect); group writes, download and secure tunnelling unverified |
+| Topology, group addresses, com object links, undo/redo, project check | working; project check includes offline bus power and segment/coupler planning (P080–P082) from the project's own hardware data |
+| Product databases (`.knxprod`, split and nested layouts) + local catalogue library | working, validated against real vendor files kept outside the repository; persistent SHA-256-revalidated metadata index, lazy application models and warm start |
+| Device parameters (KSXML) with typed editors | static manufacturer types and validated edits; BusChord override persistence; no dynamic evaluation or native ETS parameter export; DCA/plug-in applications stay read-only, also when only the project archive knows the application |
+| KNXnet/IP | discovery, tunnel and routing handshake live-verified read-only (connect, one group read, clean disconnect); group writes are refused by policy and real downloads are not implemented; secure tunnelling unverified |
 | KNX Data Security (keyring, secure telegrams, secure wrapper) | foundation, not yet wired into the tunnel |
 | Semantic export (Turtle/JSON-LD) + OWL/KIM checks | working in Core and tests; the checks are not surfaced in the workbench |
-| Reports: CSV, labels (HTML in the workbench; CSV or combined HTML through MCP), project compare | working; MCP also writes one deterministic handover package (ZIP with room book, acceptance protocol and SHA-256 manifest) |
-| UI: Avalonia 12.1.4, native Workbench (no docking package), object-centred tabs, inspector, monitor/programming/scan tools, light/dark theme, German/English | working V4 shell; monitor, scan and programming are labelled simulations; advanced ETS parity still limited |
+| Reports: CSV, labels (HTML in the workbench; CSV or combined HTML through MCP), project report and compare | working; the report carries the latest revision and revision table when present; MCP also writes the KNX acceptance protocol and one deterministic handover package (ZIP with room book, acceptance protocol and SHA-256 manifest) |
+| UI: Avalonia 12.1.4, native Workbench (no third-party docking package), object-centred tabs, project portfolio dialog, inspector, monitor/programming/scan tools, light/dark theme, German/English | working V4 shell; monitor, scan and programming are labelled simulations; only German and English exist; advanced ETS parity still limited |
 | MCP server for AI agents (stdio, 51 tools) | working; includes manual communication-object links, the read-only download preflight (`download_plan`), the acceptance-protocol export and the read-only handover package |
 | Hawk/IoT device images | open |
 
@@ -33,11 +33,11 @@ Latest bounded reference-tool analysis and implemented gap fixes:
 Archive signatures are preserved but not recomputed; changed signed data may no
 longer validate in ETS.
 
-**Workbench:** the product UI is `WorkbenchWindow`. The legacy `MainWindow`/Dock
-surface no longer exists. `tests/Knx.Docking.Tests` covers floating and redocking
-tool windows, `tests/Knx.Shell.Tests` covers project lifecycle and shutdown, and
-the `Knx.Workbench*` suites cover domain, sessions, theme, UI state and
-performance.
+**Workbench:** the product UI is the native `WorkbenchWindow` with object-centred
+tabs, a project portfolio and per-project layout. `tests/Knx.Docking.Tests`
+covers floating and redocking tool windows, `tests/Knx.Shell.Tests` covers
+project lifecycle and shutdown, and the `Knx.Workbench*` suites cover domain,
+sessions, theme, UI state and performance.
 The [ETS6 UI comparison](analysis/ux/ets6-panel-recheck.md) distinguishes project
 tabs, work panels, device sub-tabs and the properties sidebar; the workbench keeps
 those roles distinct instead of presenting one flat tab strip.
@@ -75,6 +75,9 @@ uses a synthetic fixture with isolated settings, never the user's project.
 - [Concept icons](docs/ICONS.md)
 - [MCP server](mcp.md)
 
+The user interface and the manuals exist in German and English only. There is no
+third language and no RTL support yet.
+
 ## Tests
 
 Console checks (no test framework, exit code 0 = pass). These are the projects in
@@ -104,11 +107,14 @@ dotnet run --project tests/Knx.WorkbenchPerformance.Tests
 dotnet run --project tests/Knx.WorkbenchSessions.Tests
 dotnet run --project tests/Knx.WorkbenchTheme.Tests
 dotnet run --project tests/Knx.WorkbenchUiState.Tests
+dotnet run --project tests/Knx.Localization.Tests
 dotnet run --project src/Knx.App.Tests
 dotnet run --project src/Knx.Mcp -- --selftest
 ```
 
-Native-window and app regressions require a graphical Windows desktop:
+`dotnet run --project tests/Knx.ProjectCompare.Tests` covers the compare and
+revision engine locally but is not part of the CI matrix. Native-window and app
+regressions require a graphical Windows desktop:
 
 ```powershell
 dotnet run --project src/Knx.App -- --smoke
@@ -121,19 +127,20 @@ dotnet run --project tests/Knx.Shell.Tests
 ```
 
 `Knx.Docking.Tests` covers floating/redocking tool windows, `Knx.Shell.Tests`
-covers project lifecycle and shutdown, and the `Knx.Workbench*` suites cover the
-domain, sessions, theme, UI state and performance. CI skips Docking, Shell,
-`ParameterUi --native` and the app self-checks outside Windows.
+covers project lifecycle and shutdown, the `Knx.Workbench*` suites cover the
+domain, sessions, theme, UI state and performance, and `Knx.Localization.Tests`
+checks key parity, placeholders and English/German boundaries. CI skips Docking,
+Shell, `ParameterUi --native` and the app self-checks outside Windows.
 
 ## Layout
 
 ```
-src/Knx.Core            project model, knxproj, KSXML, catalogue reader/store, OWL, semantic export
-src/Knx.Bus             KNXnet/IP framing, tunnel, routing, management, download, security, recorder
-src/Knx.App             Avalonia desktop application (WorkbenchWindow, panes, dialogs, sessions)
+src/Knx.Core            project model, knxproj, KSXML, catalogue reader/store/index, portfolio, revisions, OWL, semantic export
+src/Knx.Bus             KNXnet/IP framing, tunnel, routing, management, download preflight, security, recorder
+src/Knx.App             Avalonia desktop application (WorkbenchWindow, portfolio, panes, dialogs, sessions)
 src/Knx.Mcp             MCP server (stdio) for agent control
-src/Knx.Reports         CSV, labels, project report
-src/Knx.ProjectCompare  project diff
+src/Knx.Reports         CSV, labels, project report, acceptance protocol, handover package
+src/Knx.ProjectCompare  deterministic project diff with revision metadata
 tests/                  console self checks (Knx.Docking/Shell/Workbench suites included)
 analysis/               reverse-engineering notes about the reference tools and catalogue sources
 ```

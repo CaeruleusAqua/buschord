@@ -54,11 +54,14 @@ dotnet run --project tests/Knx.WorkbenchPerformance.Tests
 dotnet run --project tests/Knx.WorkbenchSessions.Tests
 dotnet run --project tests/Knx.WorkbenchTheme.Tests
 dotnet run --project tests/Knx.WorkbenchUiState.Tests
+dotnet run --project tests/Knx.Localization.Tests
 dotnet run --project src/Knx.App.Tests
 dotnet run --project src/Knx.Mcp -- --selftest
 ```
 
-Native-window and app checks require a graphical Windows desktop:
+`dotnet run --project tests/Knx.ProjectCompare.Tests` covers the compare and
+revision engine locally; it is not part of the CI matrix. Native-window and app
+checks require a graphical Windows desktop:
 
 ```powershell
 dotnet run --project src/Knx.App -- --smoke
@@ -71,9 +74,11 @@ dotnet run --project tests/Knx.Shell.Tests
 ```
 
 `Knx.Docking.Tests` exercises floating and redocking tool windows,
-`Knx.Shell.Tests` covers project lifecycle and shutdown, and the
-`Knx.Workbench*` suites cover domain contracts, sessions, theme, UI state and
-performance. `src/Knx.App.Tests` covers the report/export pipeline.
+`Knx.Shell.Tests` covers project lifecycle and shutdown, the `Knx.Workbench*`
+suites cover domain contracts, sessions, theme, UI state and performance, and
+`Knx.Localization.Tests` checks de/en key parity, placeholders and hardcoded
+German boundaries. `src/Knx.App.Tests` covers the report/export pipeline
+(including the acceptance protocol and handover package).
 
 `tests/Knx.Catalog.Tests` needs real `.knxprod` files; point it at a local folder
 with `KNX_CATALOG_SAMPLES=<folder>` or skip it.
@@ -150,6 +155,9 @@ Keep the folder out of commits and out of screenshots.
 - No reflection or dynamic code where a typed API works.
 - Public API changes in `Knx.Core` or `Knx.Bus` deserve a comment in the PR
   explaining the compatibility impact.
+- User-visible text goes through the existing `Strings`/`WorkbenchStrings` keys
+  with a German and an English value. There is no third language and no RTL
+  support yet; do not add hardcoded German outside the checked sources.
 - Comments in English, and only where the code is not obvious.
 
 ## Reporting security issues

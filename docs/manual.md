@@ -1,6 +1,6 @@
 # BusChord – Benutzerhandbuch
 
-Stand: 2026-10-21, geprüft gegen den Quellstand `5183a0f`.
+Stand: 2026-10-22, geprüft gegen den Quellstand `72f4971`.
 Dieses Handbuch beschreibt die deutsche Oberfläche der nativen Workbench
 (`WorkbenchWindow`). Es nennt nur Wege, die im aktuellen Quellcode existieren;
 nicht belegte Punkte sind ausdrücklich als **nicht verifiziert** markiert.
@@ -38,7 +38,7 @@ eine fachliche Inbetriebnahme. Offene Grenzen stehen in Abschnitt 11.
 ### 2.1 Startfläche
 
 Ohne geöffneten Arbeitsgegenstand zeigt der Editor die Startfläche
-**„Projekt öffnen oder neu anlegen“** mit dem Hinweis „Ein Projekt öffnen, neu
+**„Projekt öffnen oder anlegen“** mit dem Hinweis „Ein Projekt öffnen, neu
 anlegen oder den Produktkatalog durchsuchen.“ und den Schaltflächen:
 
 | Schaltfläche | Wirkung |
@@ -46,12 +46,29 @@ anlegen oder den Produktkatalog durchsuchen.“ und den Schaltflächen:
 | **Projekt öffnen …** | Dateidialog für `*.knxproj` |
 | **Neues Projekt …** | Dialog „Neues Projekt“, danach Speicherort wählen |
 | **Gerät aus Katalog …** | öffnet den Produktkatalog als Tab, auch ohne Projekt |
+| **Projektportfolio verwalten …** | öffnet die Liste der registrierten Projektdateien |
 
 Darunter stehen die zuletzt geöffneten Projekte (höchstens zehn, das zuletzt
 geöffnete zuerst). Nicht mehr vorhandene Dateien werden ausgeblendet. Ein Klick
 öffnet das Projekt sofort. Der Produktkatalog ersetzt die Startfläche auch ohne
 Projekt; die übrigen Ansichten bleiben ohne Projekt leer bzw. melden
-„Projekt öffnen oder neu anlegen“.
+„Projekt öffnen oder anlegen“.
+
+**Projektportfolio.** **Projekt → Projektportfolio …** und die Startfläche öffnen
+dieselbe Liste; sie wird beim ersten Gebrauch aus der Zuletzt-Liste gefüllt und
+liegt in `%APPDATA%\BusChord\portfolio.json`. Jeder Eintrag zeigt Name, Pfad,
+Dateirevision mit kurzem SHA-256, letzten Öffnungszeitpunkt und den Zustand
+**Unverändert**, **Geändert** oder **Fehlt oder verschoben**. Aktionen:
+**Öffnen**, **Aktuelles Projekt übernehmen**, **Aktualisieren**, **Alle prüfen**,
+**Umbenennen** (Dialog „Anzeigename ändern“), **Datei suchen …** (bei fehlender
+Datei) und **Aus Portfolio entfernen**. Entfernen und Umbenennen ändern nur den
+Eintrag, nie die Projektdatei; ein ungespeichertes Projekt lässt sich nicht
+übernehmen. Fehlt die Datei, bleibt **Öffnen** gesperrt, bis sie gefunden oder
+der Eintrag entfernt wurde. Das Portfolio ist eine Liste, keine
+Mehrfachbearbeitung: Es wird immer nur ein Projekt gleichzeitig geöffnet;
+parallele Projekt-Tabs gibt es nicht. Die
+Dateirevision im Portfolio ist ein Dateizähler, nicht der Projekt-Revisionsstand
+aus Abschnitt 8.7.
 
 ### 2.2 Neues Projekt
 
@@ -83,6 +100,9 @@ Die Produktoberfläche ist eine objektbezogene Workbench:
 - **Kopfzeile** – Marke, die Menüs **Projekt**, **Bearbeiten**, **Ansicht** und
   **Werkzeuge**, die Befehlssuche (`Strg+K`), die Anzeige **OFFLINE** und die
   Schaltfläche **Programmieren** (öffnet das Werkzeug „Programmierung“).
+- **Tab-Leiste** – Arbeitsgegenstands-Tabs und die Schaltfläche **Vergleich**, die
+  die aktive Gruppenadresse im schreibgeschützten Nebenfenster verfolgt
+  (Abschnitt 2.6).
 - **Aktionsleiste links** – Perspektiven **Gebäude**, **Topologie** und **Gruppen**;
   darunter **Produktkatalog**, **Projektprüfung** (mit Befundzähler), **Monitor**,
   **Optionen** und unten die Hilfe-Schaltfläche (Fragezeichen, Tooltip
@@ -147,6 +167,11 @@ keine umschaltbaren Zustände.
   bleibt ein Tab im Hauptfenster; das Nebenfenster besitzt keine eigene Auswahl
   und kein eigenes Layout. Pro Ziel gibt es höchstens ein Fenster; es schließt mit
   dem Hauptfenster.
+- **Vergleich** in der Tab-Leiste oder `Strg+Shift+G` öffnet dieselbe
+  schreibgeschützte Nebenansicht für die aktive Gruppenadresse; ist keine
+  Gruppenadresse aktiv, wird die erste Gruppenadresse numerisch gewählt. Das ist
+  keine Projektdatei-Vergleichsansicht; diese steht unter **Projekt → Projekt
+  vergleichen …** (Abschnitt 9.3).
 
 ### 2.7 Layout, Arbeitsbereiche und Sprache
 
@@ -166,6 +191,8 @@ keine umschaltbaren Zustände.
   Zuletzt-Liste. Design und Sprache werden beim Speichern sofort übernommen; bereits
   gezeichnete Menüs und Beschriftungen können bis zum Neustart in der alten Sprache
   bleiben. Die Einstellungen liegen in `%APPDATA%\BusChord\settings.json`.
+  Verfügbar sind ausschließlich **Deutsch** und **English**. Eine dritte Sprache
+  und RTL-Darstellung werden nicht unterstützt; einen Sprachpiloten gibt es nicht.
 
 ### 2.8 Hilfe und Dokumentation
 
@@ -182,9 +209,10 @@ Dokumentationsbrowser gibt es nicht.
 Alle Dialoge sind modal zum Hauptfenster. `Escape` und **Abbrechen** schließen
 ohne Änderung; die primäre Aktion ist die Standardtaste, destruktive Aktionen sind
 nie vorausgewählt. Zu den Dialogen gehören **Neues Projekt**, **Optionen**,
-**Neue Gruppenadresse**, **Zuordnen**, **Sicherungen**, **Verschieben**,
-**Projekt vergleichen**, **Produkt ersetzen**, **Hilfe**, die Passwortabfrage sowie
-die Bestätigungen für Löschen, Verwerfen, Wiederherstellen und Demo-Reset. Eine
+**Projektportfolio**, **Neue Gruppenadresse**, **Zuordnen**, **Sicherungen**,
+**Verschieben**, **Projekt vergleichen**, **Produkt ersetzen**, **Hilfe**, die
+Passwortabfrage sowie die Bestätigungen für Löschen, Verwerfen, Wiederherstellen
+und Demo-Reset. Eine
 Änderung wird erst mit der ausdrücklichen Aktion im Dialog übernommen.
 
 ## 3. Katalog
@@ -216,6 +244,15 @@ Dateien, die nicht gelesen werden können, blockieren den Import nicht: sie werd
 im Fehlertext über der Bibliothek mit Dateiname und Grund aufgeführt. Über der
 Liste steht eine Zusammenfassung des letzten Imports mit Produkten, Programmen und
 Hinweisen auf defekte, DCA- oder fremdsoftwareabhängige Programme.
+
+Beim ersten Einlesen einer Bibliothek legt BusChord einen Metadatenindex unter
+`%LOCALAPPDATA%\BusChord\cache\catalog-index` an. Der Index wird über SHA-256 an
+die Katalogdatei gebunden, bei neuen oder geänderten Katalogen neu aufgebaut und
+beim Entfernen verworfen; Suche und späterer Start lesen den Index,
+Anwendungsprogramme werden erst beim Öffnen eines Geräts geladen. Bei einer
+großen Bibliothek kann der erste Aufbau spürbar dauern; danach startet die
+Bibliothek aus dem Index. Der Index
+enthält nur abgeleitete Metadaten und ersetzt weder `.knxprod` noch Herstellerdaten.
 
 Bekannte Fehlerfälle:
 
@@ -286,7 +323,8 @@ gekennzeichnet. BusChord führt den Plug-in-Code nicht aus:
 
 Defekte oder unvollständig deklarierte Applikationen sperren Einfügen und
 Parameterbearbeitung. „Fremdsoftware erforderlich“ ist nur ein Hinweis und keine
-Sperre.
+Sperre. Fehlt der Katalog, prüft BusChord die Applikation im Projektarchiv; auch
+dann bleiben DCA-, defekte und downloadunvollständige Geräte schreibgeschützt.
 
 ## 4. Gruppenadressen
 
@@ -320,9 +358,10 @@ Text. Ein Klick auf ein Gerät öffnet dessen Tab in der Darstellung
 ### 4.3 Kein Senden oder Lesen in der Workbench
 
 Die Workbench hat keine Schaltflächen zum Senden oder Lesen von Gruppenwerten.
-Gruppenwerte können ausschließlich über die Buswerkzeuge des MCP-Servers gelesen
-oder geschrieben werden (`bus_read`, `bus_write`); deren Wire-Verhalten ist nicht
-gegen echte Hardware abgenommen (Abschnitt 7.5).
+Gruppenwerte können ausschließlich über das MCP-Werkzeug `bus_read` gelesen werden;
+`bus_write` ist in dieser Fassung gesperrt und wird mit einem Fehler abgewiesen.
+Das Wire-Verhalten von `bus_read` ist nicht gegen echte Hardware abgenommen
+(Abschnitt 7.5).
 
 ## 5. Kommunikationsobjekte und Zuordnungen
 
@@ -422,8 +461,10 @@ Herstellerverhalten und keine Geräteprogrammierung.
 Läuft die Applikation über ein DCA/Plug-in oder enthält sie nicht darstellbare
 Herstellerdaten, zeigt der Editor die Werte **schreibgeschützt** und nennt den
 Grund. **Übernehmen** bleibt deaktiviert, Werte werden nicht verändert oder neu
-geschrieben. Der Grund erscheint, sobald der Katalog geladen ist; bis dahin kann
-die Ansicht noch leer bzw. ohne Sperre sein.
+geschrieben. Der Grund stammt aus dem geladenen Katalog oder, wenn dieser fehlt,
+aus der Applikation im Projektarchiv; ohne beide Quellen kann die Ansicht leer
+bleiben. Ein DCA-/Plug-in-Host wird nicht gestartet, auch nicht bei vorhandenem
+Katalog.
 
 ## 7. Werkzeuge und Sitzungen
 
@@ -466,6 +507,13 @@ Download und keine Geräteprogrammierung“.
   simulierten Erfolgsstand.
 - Ein echter Download ist nicht verdrahtet; ein Auftrag mit Ursprung `Real` wird
   ohne Executor abgelehnt.
+- Die read-only **Download-Vorprüfung** ist kein Workbench-Befehl, sondern das
+  MCP-Werkzeug `download_plan`. Es prüft Descriptor/Maske, Programmpaarung,
+  Parameter-/Link-Vollständigkeit und Adress-/Linienbezug, berechnet die
+  Image-Chunks und den druckbaren Dry-Run, sendet aber kein Programmiertelegramm.
+  Da Programmiermodus und Vor-Ort-Bestätigungen nicht abfragbar sind, bleibt der
+  Plan immer offen; `writesEnabled` ist `false` und ein echter Download ist
+  gesperrt.
 
 ### 7.3 Scan
 
@@ -490,16 +538,17 @@ abgefragt.
 - **Werkzeuge → Secure-Übersicht** zählt Geräte und Gruppenadressen mit
   ausdrücklich belegter Secure-Fähigkeit. Die Übersicht verwaltet keine Schlüssel
   oder Zertifikate und behauptet keine sichere Inbetriebnahme.
-- **Live verifiziert** sind Discovery und der Tunnel-Handshake der Busbibliothek
-  gegen einen MDT SCN-IP100.03 (2026-10-18): gezieltes SEARCH/DESCRIPTION, ein
-  Tunnel-CONNECT, genau ein Gruppenwert-Lesen auf `0/0/1` mit Tunnelling-ACK und
-  `L_Data.con`, danach ein sauberes DISCONNECT. Es wurden keine Gruppenwerte
-  geschrieben und keine Geräte programmiert. Details:
+- **Live verifiziert** sind Discovery, Routing und der Tunnel-Handshake der
+  Busbibliothek gegen einen realen KNXnet/IP-Router (2026-10-18): gezieltes
+  SEARCH/DESCRIPTION, ein Tunnel-CONNECT, genau ein Gruppenwert-Lesen auf `0/0/1`
+  mit Tunnelling-ACK und `L_Data.con`, danach ein sauberes DISCONNECT. Es wurden
+  keine Gruppenwerte geschrieben und keine Geräte programmiert. Details:
   [Router-Discovery](../analysis/router-discovery.md).
-- **Nicht verifiziert** sind Gruppenwert-Antworten, Schreibzugriffe, Download,
-  Secure-Tunnel und längere Sitzungen gegen echte Hardware. Die MCP-Werkzeuge
-  `bus_read` und `bus_write` existieren, ihr Wire-Verhalten ist aber nicht gegen
-  eine echte Anlage abgenommen.
+- **Nicht verifiziert** sind Gruppenwert-Antworten, Descriptor-/Scan-Antworten,
+  Secure-Tunnel und längere Sitzungen gegen echte Hardware. `bus_read` existiert,
+  sein Wire-Verhalten ist aber nicht gegen eine echte Anlage abgenommen.
+  `bus_write` ist gesperrt und sendet nichts; ein echter Download ist nicht
+  implementiert. Die Vorprüfung `download_plan` sendet ebenfalls nichts.
 - **Werkzeuge → Aufzeichnung exportieren …** greift auf die alte
   Recorder-Aufzeichnung zurück. Die Workbench-Monitoraufzeichnung wird über
   **CSV Filter** / **CSV alle** exportiert.
@@ -567,13 +616,31 @@ darstellbare Herstellerdaten, statt sie zu verwerfen. **Demo-Projekt · JSON
 importieren …** validiert die Datei vollständig vor dem Laden.
 **Demo zurücksetzen …** verwirft den aktuellen Demo-Stand nach Bestätigung.
 
+### 8.7 Projektstände und Revisionen
+
+Ein Projekt kann im BusChord-Namensraum `urn:buschord:project:1` einen dauerhaften
+Revisionsstand führen. Jeder Eintrag hat eine fortlaufende Nummer (`REV-0001`),
+Zeitstempel, optionalen Quellpfad und -Hash, einen kanonischen SHA-256-Inhalt,
+eine Beschreibung sowie den Signaturstatus `Absent` oder `Unverified`. Der
+Inhalts-Hash ist unabhängig von ZIP-Verpackung und Dateireihenfolge; das
+Revisionsprotokoll selbst fließt nicht in ihn ein. Signaturen werden erhalten,
+aber weder neu berechnet noch geprüft.
+
+Der Projektbericht zeigt den letzten Stand und, wenn Einträge vorhanden sind, die
+vollständige Revisionstabelle. Das Übergabepaket schreibt die Liste als
+`15_projektverlauf.csv`; seine README nennt fehlende Revisionen ausdrücklich. **Die
+Workbench und der MCP-Server legen in dieser Fassung keine Revision an**; es gibt
+keinen Menübefehl und kein MCP-Werkzeug dafür. Ohne einen Aufrufer, der
+`ProjectRevisions.Capture` verwendet, bleibt die Liste leer. Der Dateizähler im
+Projektportfolio (Abschnitt 2.1) ist davon unabhängig.
+
 ## 9. Prüfen, Exporte, Berichte, Vergleich
 
 ### 9.1 Projektprüfung
 
 **Werkzeuge → Projektprüfung**, der Befundzähler in der Aktionsleiste oder die
 Darstellung **Prüfung** starten die Prüfung. Der Bericht nennt Fehler, Warnungen
-und Hinweise (Codes P001–P073, nicht lückenlos):
+und Hinweise (Codes P001–P082, nicht lückenlos):
 
 - fehlende Installation, Bereichs-/Linienadressen außerhalb 0–15, mehrere Segmente
   je Linie, doppelte Segmentadressen,
@@ -587,6 +654,16 @@ und Hinweise (Codes P001–P073, nicht lückenlos):
   Geräte/Objekte/Gruppenadressen,
 - Applikationsprogramme, die im geladenen Katalog fehlen, als defekt markiert sind
   oder unvollständige Downloadinformationen haben,
+- **Busstromplanung (P080):** Die Geräte einer Linie ziehen mehr Strom, als die
+  deklarierte Spannungsversorgung liefert. Geprüft wird nur, wenn mindestens eine
+  Versorgung und für alle Geräte ein `BusCurrent` im Projekt-Hardwaremodell
+  vorliegen; fehlende Daten erzeugen keinen Befund und keine erfundene Grenze.
+- **Segment-/Kopplerplanung (P081, P082):** Ein Untersegment ohne Linien- oder
+  Segmentkoppler wird als Warnung gemeldet, ein Medienwechsel innerhalb der Linie
+  ohne Medienkoppler als Hinweis. Das Hauptsegment ist das Segment mit der
+  niedrigsten Nummer; ein Koppler wird über sein Hardware-Merkmal erkannt. P081
+  schweigt, solange die Hardwaredaten des Segments unvollständig sind; P082 stützt
+  sich nur auf die deklarierten Medien von Linie und Segment.
 - Hinweise zu IP-Medien und Kopplern, deren Modellierung fehlt.
 
 Die Prüfung ist strukturell; sie ersetzt keine Geräte- oder Applikationsprüfung.
@@ -618,8 +695,14 @@ Gruppenadress- und Geräteetiketten bietet der MCP-Befehl `export_labels`.
 
 **Projekt → Projekt vergleichen …** setzt ein geladenes Projekt voraus, lädt ein
 zweites `.knxproj` und zeigt hinzugefügte, entfernte und geänderte Objekte mit
-Pfad, Typ, Name und neuem Wert. Die Statuszeile fasst „+ / − / ~“ zusammen; das
-Fenster kann die Liste als CSV speichern. Der Vergleich ändert kein Projekt.
+Pfad, Typ, Name und neuem Wert. Verglichen werden Projekt- und
+Installationsdaten, Geräte einschließlich Parameterwerten, Gruppenadressen,
+Verknüpfungen mit Sende-/Ack-/Prioritäts-/Slot-Merkmalen, BusChord-Metadaten und
+der Gebäudebaum. Die Reihenfolge ist deterministisch (Pfad, Typ, Name, Änderung,
+Wert). Die Statuszeile fasst „+ / − / ~“ zusammen; das Fenster kann die Liste als
+CSV mit Pfad, Typ, Name, Änderungsart sowie altem und neuem Wert speichern. Der
+Vergleich ändert kein Projekt und prüft keine Signaturen; geänderte Signaturen
+werden als „erhalten, nicht neu berechnet oder geprüft“ ausgewiesen.
 
 ### 9.4 Produkt austauschen
 
@@ -641,6 +724,44 @@ Die Workbench hat keinen CSV-Import für Gruppenadressen. Der MCP-Befehl
 `group_address_import_csv` liest `1/2/3;Name;DPT;Beschreibung` und meldet nicht
 lesbare Zeilen; vorhandene Adressen werden übersprungen.
 
+### 9.6 Abnahmeprotokoll
+
+Das KNX-Abnahmeprotokoll wird ausschließlich über das MCP-Werkzeug
+`acceptance_protocol_export` erzeugt; die Workbench hat dafür keinen Menüpunkt.
+HTML enthält Projektangaben mit Dokumentversion, SHA-256-Dokumenthash und
+MasterData-Signaturstatus, Topologie und Geräteliste, Gruppenadressen mit
+Datentypen, Funktionsmatrix, Geräte-Testzeilen, offene Punkte mit leerer
+Mängelliste und einen de/en-Unterschriftsblock. `format=csv` schreibt nur das
+Geräte-Testblatt. Alle Prüfspalten starten als **nicht geprüft**, Messwert und
+Bemerkung bleiben leere Eingabefelder. Die Download-Spalte zeigt nur einen
+aufgezeichneten Gerätestand aus einer JSON-Datei im `DeviceProgrammingStates`-Format:
+ohne Datei **kein Download aufgezeichnet**, Demo als **Simulation (Demo)** und
+nur ein erfolgreicher Stand mit Ursprung `real` als **real geladen** bzw.
+**real teilgeladen**, je nach Ladeflags. Die Workbench hat derzeit keinen
+Menübefehl, um diese Zustandsdatei zu exportieren; sie entsteht über
+`ProgrammingSession.ExportDownloadedJson`. Das Werkzeug ist read-only: kein
+Buszugriff, keine Projektänderung, kein Download. Es setzt den aktuellen
+Erzeugungszeitpunkt ein;
+der Dokumenthash ändert sich daher zwischen Aufrufen. Nur ein fester Zeitstempel
+über die Core-API erzeugt ein byte-identisches Dokument.
+
+### 9.7 Übergabepaket
+
+`handover_package_export` schreibt ein deterministisches ZIP für das geöffnete
+Projekt oder eine nur gelesene `.knxproj`. Enthalten sind Projektbericht,
+Gruppenadress-, Geräte- und Topologie-CSV, Funktionsmatrix, Raum- und
+Verknüpfungsbuch, Etiketten, Turtle-Export, Abnahmeprotokoll, Parameternachweis,
+Vorlagenseiten für Betrieb, Wartung/Kontakte und Datenschutz, die
+Revisionsliste, eine README und `00_MANIFEST.sha256` mit einer SHA-256-Zeile je
+anderer Datei. `language` (`de`/`en`) und ein festes `generated_at` machen die
+Wiederholung byte-identisch; ohne Zeitstempel wird die aktuelle Zeit verwendet.
+Ein State-File eines fremden Projekts wird abgewiesen. Das Werkzeug ersetzt kein
+geöffnetes Projekt, schreibt die `.knxproj` nicht und legt nur das ZIP an. Das
+Paket enthält keine Keyrings, Kataloge, Herstellerdateien oder absoluten
+Quellpfade; fehlende Revisionen, Gebäudestruktur, Zustände und Demo-Ladungen
+werden ausdrücklich benannt. Details:
+[MCP-Server](../mcp.md).
+
 ## 10. Tastenkürzel
 
 In der Workbench verdrahtet:
@@ -650,6 +771,7 @@ In der Workbench verdrahtet:
 | `Strg+B` | Navigator ein-/ausblenden |
 | `Strg+J` | Werkzeugbereich ein-/ausblenden |
 | `Strg+K` | Befehlssuche |
+| `Strg+Shift+G` | aktive Gruppenadresse im Vergleichs-Nebenfenster öffnen |
 | `Strg+S` | Projekt speichern |
 | `Strg+O` | Projekt öffnen |
 | `Strg+N` | Neues Projekt |
@@ -661,13 +783,20 @@ In der Workbench verdrahtet:
 | `Enter` / `Leertaste` | Tab-Darstellung oder Werkzeug aktivieren |
 
 Textfelder behalten ihr lokales Undo; `Strg+Z` im Editor ändert nicht zusätzlich das
-Projekt. `Strg+G`, `F2` und `F5` sind in der Workbench **nicht** belegt.
+Projekt. `Strg+G` (ohne Shift), `F2` und `F5` sind in der Workbench **nicht**
+belegt; belegt ist `Strg+Shift+G`.
 
 ## 11. Grenzen und Sicherheit
 
 - **Keine Busaktion aus der Workbench.** Projektänderungen senden nichts. Monitor,
   Scan und Programmierung sind gekennzeichnete Simulationen, kein realer Download.
-  Echte Busaufrufe gibt es nur als ausdrückliche MCP-Werkzeuge.
+  Echte Busaufrufe gibt es nur als ausdrückliche, lesende MCP-Werkzeuge;
+  `bus_write` ist gesperrt.
+- **Keine echten Downloads oder Adressschreibungen.** Der Schreibpfad ist
+  deaktiviert (`WritesEnabled = false`), `bus_write` wird abgewiesen, ein realer
+  Programmierauftrag hat keinen Executor, und `download_plan` sendet kein
+  Programmiertelegramm. Der Plan ist immer offen, weil Programmiermodus und
+  Vor-Ort-Bestätigungen nicht abfragbar sind.
 - **Keine Firewall- oder Netzwerkänderungen.** BusChord öffnet UDP-Sockets für
   Discovery/Tunnel; es ändert keine System- oder Routerkonfiguration.
 - **Keine Passwortumgehung.** Verschlüsselte Projekte werden nur mit dem
@@ -676,7 +805,22 @@ Projekt. `Strg+G`, `F2` und `F5` sind in der Workbench **nicht** belegt.
   Grundlage, aber nicht in den Tunnel verdrahtet; die Secure-Übersicht verwaltet
   keine Schlüssel.
 - **Kein DCA-Host.** DCA/Plug-in-Code wird nicht ausgeführt; Parameter bleiben
-  lesbar, Download ist gesperrt.
+  lesbar, Download ist gesperrt. Die Sperre greift auch über die Applikation im
+  Projektarchiv, wenn der Katalog fehlt.
+- **Ein Projekt, keine parallelen Projekt-Tabs.** Das Portfolio listet mehrere
+  Dateien, öffnet aber immer nur eine; Öffnen ersetzt das aktuelle Projekt.
+- **Nur Deutsch und Englisch.** Es gibt keine dritte Sprache, keine RTL-Darstellung
+  und keinen begonnenen Sprachpiloten.
+- **Feste Anzeigegrenzen.** Der Monitor zeigt die letzten 500 Zeilen; die
+  vollständige Aufzeichnung liegt in einer temporären Datei und wird beim Beenden
+  gelöscht, sofern sie nicht vorher als CSV exportiert wurde. Die Änderungsliste
+  hält 500 Einträge, die Workbench 60 Undo-Schritte, der MCP-Server 100.
+- **Kein Revisions-Menü.** Revisionen werden gelesen und in Bericht/Übergabe
+  ausgegeben, aber weder die Workbench noch der MCP-Server legen neue an
+  (Abschnitt 8.7).
+- **Katalogindex ist abgeleitet.** Der erste Aufbau einer großen Bibliothek kann
+  dauern; der Index unter `%LOCALAPPDATA%` ist kein Ersatz für die `.knxprod` und
+  wird bei Änderungen neu geprüft.
 - **Kein ETS-Roundtrip-Nachweis.** Das Schreiben wurde mit synthetischen Archiven
   und eigenen Prüfungen getestet, nicht durch Wiederöffnen in ETS abgenommen.
   Signaturprüfungen in ETS können nach Änderungen fehlschlagen.
@@ -702,20 +846,23 @@ Oberfläche und ändert die `.knxproj` erst bei `project_save`. Der Server biete
 51 Werkzeuge: Projekt, Suche/Ersetzen, Gruppenadressen, Geräte, manuelle
 Verknüpfungen, Analyse (Prüfung, Smart Linking, Produkttausch), Exporte, Katalog,
 Bus, Undo/Redo, das Abnahmeprotokoll, das Übergabepaket und die read-only
-Download-Vorprüfung.
+Download-Vorprüfung. `bus_write` ist vorhanden, aber gesperrt; Buszugriffe sind
+lesend.
 
 Einzelheiten, Startbefehle, Verbindungsbeispiel und Werkzeugliste stehen in
 [mcp.md](../mcp.md). Für Agenten gilt dasselbe Sicherheitsmodell: Bearbeitung ist
-offline, Buszugriffe sind ausdrückliche Aufrufe, verschlüsselte Projekte bleiben
-schreibgeschützt.
+offline, Buszugriffe sind ausdrückliche lesende Aufrufe, verschlüsselte Projekte
+bleiben schreibgeschützt.
 
 ## 13. Was dieses Handbuch nicht belegt
 
 Folgende Punkte sind bewusst als offen markiert und nicht durch dieses Handbuch
 verifiziert:
 
-- Interoperabilität von Gruppenwert-Antworten, Schreibzugriffen und Download mit
-  echter Hardware (live belegt sind Discovery und Tunnel-Handshake, siehe 7.5).
+- Interoperabilität von Gruppenwert-Antworten, Descriptor-/Scan-Antworten und
+  Secure-Tunneln mit echter Hardware (live belegt sind Discovery, Routing und
+  Tunnel-Handshake, siehe 7.5). Schreibzugriffe und Download sind gesperrt und
+  wurden nicht ausgeführt.
 - ETS-Roundtrip und Signaturgültigkeit nach Änderungen.
 - ETS-Interpretation der BusChord-Parameter-Overrides.
 - Ausführung von DCA/Plug-in-Code, Secure-Inbetriebnahme und echte
