@@ -15,8 +15,8 @@ catalog status and release gates. Technical design:
 | 4 | Français | `fr` | FR, BE, CH, LU | P1 | supported |
 | 5 | Español | `es` | ES, MX, CL, CO, LatAm | P1 | supported |
 | 6 | Nederlands | `nl` | NL, BE | P1 | supported |
-| 7 | 简体中文 | `zh-CN` | CN | P2 | planned |
-| 8 | Polski | `pl` | PL | P2 | planned |
+| 7 | 简体中文 | `zh-CN` | CN | P2 | supported |
+| 8 | Polski | `pl` | PL | P2 | supported |
 
 Regional variants share one base catalog until a real difference is needed:
 `de-DE`/`de-AT`/`de-CH` -> `de`, `en-US`/`en-GB` -> `en`, `fr-FR`/`fr-BE`/
@@ -70,7 +70,7 @@ embedded JSON overlays, resolved without per-language lookup code. Implemented:
 - `i18n/<module>/<lang>.json` overlays for `core`, `workbench`, `catalog`.
 - One resolver with longest-prefix language matching and fallback
   `requested -> en -> de -> key`.
-- Settings selector and `--lang=` for `de`, `en`, `fr`, `it`, `es`, `nl`;
+- Settings selector and `--lang=` for `de`, `en`, `fr`, `it`, `es`, `nl`, `zh-CN`, `pl`;
   `de-DE`/`en-US` and the other regional tags normalize to their base catalogs.
 
 Still required:

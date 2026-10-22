@@ -32,11 +32,11 @@
   {
     "code": "zh-CN",
     "name": "简体中文",
-    "status": "planned"
+    "status": "supported"
   },
   {
     "code": "pl",
     "name": "Polski",
-    "status": "planned"
+    "status": "supported"
   }
 ]

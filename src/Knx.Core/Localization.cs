@@ -47,6 +47,8 @@ public sealed class Strings : INotifyPropertyChanged
         new("it", "Italiano"),
         new("es", "Español"),
         new("nl", "Nederlands"),
+        new("zh-CN", "简体中文"),
+        new("pl", "Polski"),
     ];
 
     public static IReadOnlyList<string> Available { get; } = Options.Select(option => option.Code).ToArray();

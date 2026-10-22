@@ -16,8 +16,8 @@ source exactly.
 
 `reference` (German source) -> `supported`; `planned` means no catalog yet.
 
-`de`, `en`, `fr`, `it`, `es` and `nl` are supported. `fr` was the pilot; all
-supported catalogs are normal product content. `zh-CN` and `pl` are planned.
+`de`, `en`, `fr`, `it`, `es`, `nl`, `zh-CN` and `pl` are supported.
+All supported catalogs are normal product content.
 
 ## Adding a language
 

@@ -89,6 +89,8 @@ Check("i18n: de-AT resolves to the German base catalog", Strings.Language == "de
 foreach (var (tag, expected) in new[]
          {
              ("fr-FR", "fr"), ("it-IT", "it"), ("es-ES", "es"), ("nl-NL", "nl"),
+             ("zh-cn", "zh-CN"),
+             ("pl-PL", "pl"),
          })
 {
     Strings.Language = tag;
@@ -100,7 +102,7 @@ Check("i18n: unsupported language falls back to German", Strings.Language == "de
 Strings.Language = originalLanguage;
 
 // --- G1x: every supported overlay has the same shape as the German/English maps ---
-var supportedLanguages = new[] { "fr", "it", "es", "nl" };
+var supportedLanguages = Strings.Available.Where(language => language is not ("de" or "en")).ToArray();
 var catalogModules = new (string Module, Assembly Assembly,
     IReadOnlyDictionary<string, (string De, string En)> Source)[]
 {
@@ -150,7 +152,9 @@ foreach (var language in supportedLanguages)
     Strings.Language = language;
     var core = Strings.Get("MenuFile");
     var workbench = WorkbenchStrings.Get("Project");
-    Check($"i18n: {language} UI resolves", core != "Datei" && core.Length > 0 && workbench != "Projekt",
+    var expectedCore = LanguageCatalog.Load(typeof(Strings).Assembly, "core", language)["MenuFile"];
+    var expectedWorkbench = LanguageCatalog.Load(typeof(WorkbenchStrings).Assembly, "workbench", language)["Project"];
+    Check($"i18n: {language} UI resolves", core == expectedCore && workbench == expectedWorkbench,
         $"{core} / {workbench}");
 }
 Strings.Language = originalCatalogLanguage;

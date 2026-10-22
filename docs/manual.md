@@ -192,7 +192,8 @@ keine umschaltbaren Zustände.
   gezeichnete Menüs und Beschriftungen können bis zum Neustart in der alten Sprache
   bleiben. Die Einstellungen liegen in `%APPDATA%\BusChord\settings.json`.
   Verfügbar sind **Deutsch**, **English**, **Französisch**, **Italienisch**,
-  **Spanisch** und **Niederländisch**. Berichtsspezifische Tabellen und MCP-Exporte
+  **Spanisch**, **Niederländisch**, **Chinesisch (vereinfacht)** und **Polnisch**.
+  Berichtsspezifische Tabellen und MCP-Exporte
   bleiben vorerst Deutsch/Englisch. Eine RTL-Darstellung wird nicht unterstützt.
 
 ### 2.8 Hilfe und Dokumentation
@@ -810,7 +811,8 @@ belegt; belegt ist `Strg+Shift+G`.
   Projektarchiv, wenn der Katalog fehlt.
 - **Ein Projekt, keine parallelen Projekt-Tabs.** Das Portfolio listet mehrere
   Dateien, öffnet aber immer nur eine; Öffnen ersetzt das aktuelle Projekt.
-- **Deutsch, English, Französisch, Italienisch, Spanisch und Niederländisch.**
+- **Deutsch, English, Französisch, Italienisch, Spanisch, Niederländisch,
+  Chinesisch (vereinfacht) und Polnisch.**
   Berichtsspezifische Tabellen und MCP-Exporte bleiben vorerst Deutsch/Englisch.
   RTL wird nicht unterstützt.
 - **Feste Anzeigegrenzen.** Der Monitor zeigt die letzten 500 Zeilen; die

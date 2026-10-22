@@ -439,7 +439,7 @@ automatische Hardcoded-Text-Prüfung.
 - [ ] **H9.5 Pilot:** dritte Sprache end-to-end mit echten Ressourcen, Tests
   und Abnahme. Priorisierung: `analysis/language-roadmap.md` (P0 de/en,
   P1 it/fr/es/nl, P2 zh-CN/pl; Pilot **fr**). Französisch, Italienisch,
-  Spanisch und Niederländisch sind als vollständige Kataloge in UI/CSV
+  Spanisch, Niederländisch, Chinesisch (vereinfacht) und Polnisch sind als vollständige Kataloge in UI/CSV
   implementiert (`i18n/*/`, Resolver, Sprachwahl, Tests); Berichtstabellen und
   MCP-Exporte bleiben de/en.
 - [x] **H9.6 Grenzen:** Projekt-/Gerätenamen, Herstellertexte und technische
@@ -544,8 +544,8 @@ werden:
   belegt; ein Linien-/Bus-Scan lief read-only, lieferte aber 0 Responder und
   damit keinen positiven Gerätenachweis (dafür wäre ein Gerät im
   Programmiermodus nötig). Reale Schreibzugriffe bleiben gesperrt.
-- **H12.3 Weitere Sprachen:** P1 (fr/it/es/nl) ist in UI/CSV umgesetzt;
-  P2 (zh-CN/pl) ist geplant. Berichtstabellen/MCP-Exporte bleiben de/en.
+- **H12.3 Weitere Sprachen:** P1 (fr/it/es/nl) und P2 (zh-CN/pl) sind in UI/CSV
+  umgesetzt. Berichtstabellen/MCP-Exporte bleiben de/en.
 - **H12.4 GitHub-Purge:** `refs/pull/1/head` und gecachte Blobs lassen sich
   nicht per Git/API löschen; GitHub-Support-Ticket nötig. Token und
   Test-Zugangsdaten rotieren.
