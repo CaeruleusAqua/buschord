@@ -179,3 +179,22 @@ bewusste Grenzen: 07 (Dokumentationsseite), 60 (zehn Werkzeugarten),
 7. Reale 150/200-%-DPI- und Screenreader-Abnahme (R04).
 
 Jede Änderung bekommt eigene Tests und wird erst nach Review integriert.
+
+## Nachtrag 2026-10-22 (saubere Historie, `development` `322c332`)
+
+Die Zeilen oben sind der historische Stand `55ff6e1`. Aktueller Stand:
+
+| Punkt | Status | Nachweis |
+| --- | --- | --- |
+| 07 Dokumentation | done | lokalisiertes `HelpWindow`, Rail-/Menüaktion, Escape/Fokus (`84cb150`) |
+| 17 Checkbox-Spalte | done | Tri-State-Kopf + Zeilen-Checkboxen, Shift/Ctrl/Tastatur (`84cb150`) |
+| 24 / E09 gepinnter Vergleich | done | `WorkbenchCompare` + Companion-Fenster, Ctrl+Shift+G (`6b3fb83`) |
+| 60 / E26 Werkzeugarten | partial | sechs Dockwerkzeuge + Katalog + Hilfe; keine separate Doku-Seite nötig, Grenze dokumentiert |
+| E17 Tab-Rollen | done | echte `TabItem`-Peers mit ItemStatus (`84cb150`) |
+| R05 Englisch | partial | Projektprüfung/CSV/Report/Owl lokalisiert (`2846c16`, `ba25051`); Pfad-Tokens/technische Werte bleiben Daten |
+| R07 Kontrast | done | Disabled-Opacity entfernt, Muted/Status/Aktiv-Perspektive kontrastgeprüft (`45f035b`, `f9d0e7f`, `bc92979`) |
+| R04 reales DPI/Screenreader | offen | nur Simulation; echte 150/200-%- und Narrator-/UIA-Abnahme ausstehend |
+| R08 CI | done | lokale Vollsuite grün; Remote-CI/CodeQL für `development` grün; `main` ist alter Release-Zweig |
+
+Offene Grenzen bleiben: reale Bus-Schreibzugriffe, DCA-Hosting, Secure-Inbetriebnahme,
+Multi-Projekt, USB/RDAC, Cloud, dritte Sprache/RTL.
