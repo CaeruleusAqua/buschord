@@ -397,13 +397,13 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   Scan und Programmierung abgleichen; Demo-only-Pfade klar kennzeichnen.
   (`664fa5b`; P0-CEMI/APCI/Descriptor/Routing-Gaps dokumentiert,
   Fixagent `agents/bus/cemi-fix`)
-- [x] **H8.4 Abnahme:** reproduzierbare Read-only-Ergebnisse,
+- [ ] **H8.4 Abnahme:** reproduzierbare Read-only-Ergebnisse,
   Timeout-/Reconnect-Verhalten und dokumentierte Grenzen; echte
   Schreibfreigabe bleibt separat und ausdrücklich.
-  (`2992c9c`, Live-Nachlauf 2026-10-22: Tunnel/Routing, 12 Gruppenframes,
+  (`2992c9c` + Live-Nachlauf 2026-10-22: Tunnel/Routing, 12 Gruppenframes,
   Descriptor 1.0.0/1.1.29/1.3.3, echte GroupValueResponse 3/1/15 von 1.1.18,
-  Timeouts, Reconnect; zweiter Tunnel und Linien-Scan bewusst nicht
-  ausgeführt)
+  Timeouts, Reconnect belegt; zweiter Tunnel/Schnittstellenkonflikt und
+  Linien-Scan bewusst offen, daher Abnahme noch nicht geschlossen)
   Stand 2026-10-22: erneuter Live-Lauf **blockiert** - dieser Host hat kein
   Interface im Gateway-Subnetz, CONNECT läuft in den Timeout, passive
   Routing-Listener empfangen 0 Frames. Kein cEMI gesendet; Descriptor-,
