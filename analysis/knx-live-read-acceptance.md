@@ -135,11 +135,12 @@ secure operation was sent.
 | Line scan | read-only `bus_scan` on `1.1` (2 s) and whole bus (3 s): 0 `IndividualAddressResponse`, no descriptor probes; positive scan not proven |
 
 Remaining H8.4 gap is now a **positive line scan**: both read-only scans returned
-0 responders, consistent with no device being in programming mode (or the
-gateway not forwarding the broadcast), so no device inventory was proven.
-Second-tunnel behaviour is verified for two simultaneous channels; channel
-exhaustion and ETS coexistence are not tested. The read-only acceptance is
-otherwise reproducible.
+0 responders, consistent with no device being in programming mode (the IA read
+is answered by programming-mode devices; or the gateway does not forward the
+broadcast), so no device inventory was proven. A positive run needs a device
+physically put into programming mode, which was not done. Second-tunnel
+behaviour is verified for two simultaneous channels; channel exhaustion and ETS
+coexistence are not tested. The read-only acceptance is otherwise reproducible.
 
 ## 6. What was not run, and why
 
