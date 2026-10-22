@@ -47,7 +47,7 @@ Check("ping answers with an object", ping["result"] is JsonObject, ping.ToJsonSt
 
 var listed = await Call(3, "tools/list");
 var tools = listed["result"]?["tools"]?.AsArray() ?? new JsonArray();
-Check("tools/list returns 49 tools", tools.Count == 49, tools.Count.ToString());
+Check("tools/list returns 50 tools", tools.Count == 50, tools.Count.ToString());
 Check("every tool has a snake_case name",
     tools.All(t => (string?)t?["name"] is { Length: > 0 } name &&
                    name.All(c => char.IsLower(c) || char.IsDigit(c) || c == '_')));
@@ -426,6 +426,87 @@ Check("report_export honours section switches",
     smallReport["result"]?["isError"] is null && File.Exists(smallReportPath) &&
     !File.ReadAllText(smallReportPath).Contains("Topologie und Geräte"));
 foreach (var path in new[] { reportPath, smallReportPath })
+    if (File.Exists(path)) File.Delete(path);
+
+// ---------------------------------------------------------------- acceptance protocol export
+
+await Tool(90, "group_link_add", linkArgs);
+var acceptancePath = Path.Combine(Path.GetTempPath(), "knx_mcp_acceptance_" + Guid.NewGuid().ToString("N") + ".html");
+var acceptanceBefore = Knx.Knxproj.ToXml(server.Project!).ToString();
+var acceptance = await Tool(91, "acceptance_protocol_export", new
+{
+    path = acceptancePath,
+    technician = "T. Prüfer",
+    building_owner = "B. Eigentümer",
+});
+var acceptanceContent = File.Exists(acceptancePath) ? File.ReadAllText(acceptancePath) : "";
+Check("acceptance_protocol_export writes HTML",
+    acceptance["result"]?["isError"] is null && acceptanceContent.Length > 0, acceptance.ToJsonString());
+Check("acceptance_protocol_export reports devices and open items",
+    acceptance["result"]?["structuredContent"]?["devices"]?.GetValue<int>() == 1 &&
+    acceptance["result"]?["structuredContent"]?["openItems"]?.GetValue<int>() == 1, acceptance.ToJsonString());
+Check("acceptance protocol is honest without recorded states",
+    acceptance["result"]?["structuredContent"]?["commissioning"]?.GetValue<string>() == "not_recorded" &&
+    acceptanceContent.Contains("Kein Download aufgezeichnet") &&
+    acceptanceContent.Contains("kein Download aufgezeichnet") &&
+    acceptanceContent.Contains("nicht geprüft") &&
+    acceptanceContent.Contains("T. Prüfer") && acceptanceContent.Contains("B. Eigentümer") &&
+    !acceptanceContent.Contains("<script") && !acceptanceContent.Contains("http://"),
+    acceptance.ToJsonString());
+Check("acceptance protocol carries a document hash",
+    (string?)acceptance["result"]?["structuredContent"]?["documentHash"] is { Length: 64 } hash &&
+    acceptanceContent.Contains("sha256:" + hash), acceptance.ToJsonString());
+Check("acceptance protocol names the device and group address",
+    acceptanceContent.Contains("Katalogaktor") && acceptanceContent.Contains("Wohnzimmer Decke"));
+Check("acceptance_protocol_export does not change the project",
+    Knx.Knxproj.ToXml(server.Project!).ToString() == acceptanceBefore);
+Check("acceptance_protocol_export leaves the bus disconnected",
+    (await Tool(92, "bus_status"))["result"]?["structuredContent"]?["connected"]?.GetValue<bool>() == false);
+
+// A recorded demo load proves simulation only; it must never read as a real download.
+var acceptanceDeviceId = Knx.ProjectQuery.DeviceList(server.Project!).Single().Id;
+var acceptanceSignature = Knx.Workbench.WorkbenchProject.ConfigurationSignature(server.Project!, acceptanceDeviceId);
+var demoState = Knx.Workbench.DeviceProgrammingState.Empty(acceptanceDeviceId)
+    .ApplySuccess(Knx.Workbench.DeviceLoadFlags.All, acceptanceSignature, DateTimeOffset.UnixEpoch, "iface-1",
+        Knx.Workbench.ProgrammingOrigin.Demo);
+var statesPath = Path.Combine(Path.GetTempPath(), "knx_mcp_states_" + Guid.NewGuid().ToString("N") + ".json");
+File.WriteAllText(statesPath, Knx.Workbench.DeviceProgrammingStates.Serialize(server.Project!.Id, new[] { demoState }));
+var simulatedPath = Path.Combine(Path.GetTempPath(), "knx_mcp_acceptance_sim_" + Guid.NewGuid().ToString("N") + ".html");
+var simulated = await Tool(93, "acceptance_protocol_export", new
+{
+    path = simulatedPath,
+    states_path = statesPath,
+    language = "en",
+});
+var simulatedContent = File.Exists(simulatedPath) ? File.ReadAllText(simulatedPath) : "";
+Check("acceptance protocol reflects a recorded demo load as simulation",
+    simulated["result"]?["structuredContent"]?["commissioning"]?.GetValue<string>() == "simulation" &&
+    simulated["result"]?["structuredContent"]?["openItems"]?.GetValue<int>() == 0 &&
+    simulatedContent.Contains("Simulation – recorded demo loads") &&
+    !simulatedContent.Contains("loaded for real"), simulated.ToJsonString());
+
+var acceptanceCsvPath = Path.Combine(Path.GetTempPath(), "knx_mcp_acceptance_" + Guid.NewGuid().ToString("N") + ".csv");
+var acceptanceCsv = await Tool(94, "acceptance_protocol_export", new
+{
+    path = acceptanceCsvPath,
+    format = "csv",
+    states_path = statesPath,
+});
+var acceptanceCsvContent = File.Exists(acceptanceCsvPath) ? File.ReadAllText(acceptanceCsvPath) : "";
+Check("acceptance protocol CSV carries the device row",
+    acceptanceCsv["result"]?["isError"] is null && acceptanceCsvContent.Contains("Adresse") &&
+    acceptanceCsvContent.Contains("Katalogaktor") && acceptanceCsvContent.Contains("Simulation (Demo)"),
+    acceptanceCsv.ToJsonString());
+
+var wrongStatesPath = Path.Combine(Path.GetTempPath(), "knx_mcp_states_wrong_" + Guid.NewGuid().ToString("N") + ".json");
+File.WriteAllText(wrongStatesPath, Knx.Workbench.DeviceProgrammingStates.Serialize("P-OTHER", new[] { demoState }));
+var rejectedStates = await Tool(95, "acceptance_protocol_export", new { path = acceptancePath, states_path = wrongStatesPath });
+Check("acceptance_protocol_export rejects a foreign state file",
+    rejectedStates["result"]?["isError"]?.GetValue<bool>() == true &&
+    (rejectedStates["result"]?["content"]?[0]?["text"]?.GetValue<string>() ?? "")
+        .Contains("another project", StringComparison.Ordinal), rejectedStates.ToJsonString());
+
+foreach (var path in new[] { acceptancePath, simulatedPath, acceptanceCsvPath, statesPath, wrongStatesPath })
     if (File.Exists(path)) File.Delete(path);
 
 // ---------------------------------------------------------------- project search / replace

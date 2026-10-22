@@ -32,6 +32,38 @@ allow src/Knx.Core/ProjectCheck.cs|Linie
 allow src/Knx.Core/ProjectCheck.cs|Bereich {}
 allow src/Knx.Core/ProjectCheck.cs|Linie {}.{}
 
+# --- allowed: acceptance-protocol document template (bilingual de/en table inside
+# src/Knx.Reports/AcceptanceProtocol.cs; document prose, not UI chrome. Move these into the
+# core dictionary once that file is in the feature's scope.) ---
+allow src/Knx.Reports/AcceptanceProtocol.cs|{0} Geräte · {1} offene Punkte
+allow src/Knx.Reports/AcceptanceProtocol.cs|vorhanden, unverändert übernommen
+allow src/Knx.Reports/AcceptanceProtocol.cs|Kein Download aufgezeichnet
+allow src/Knx.Reports/AcceptanceProtocol.cs|Dieses Dokument gibt den Projektstand wieder. Prüfspalten stehen auf „nicht geprüft“, solange kein Nachweis vorliegt.
+allow src/Knx.Reports/AcceptanceProtocol.cs|Ein Download gilt nur dann als belegt, wenn ein aufgezeichneter Ladezustand mit Herkunft „real“ vorliegt; Demo-Ladungen sind Simulation.
+allow src/Knx.Reports/AcceptanceProtocol.cs|Das Protokoll ersetzt keine Messung vor Ort.
+allow src/Knx.Reports/AcceptanceProtocol.cs|Anlage und Topologie
+allow src/Knx.Reports/AcceptanceProtocol.cs|Anlage/Bereich/Linie/Segment
+allow src/Knx.Reports/AcceptanceProtocol.cs|Geräteprüfung
+allow src/Knx.Reports/AcceptanceProtocol.cs|Je Gerät eine Zeile. Prüfspalten vor Ort ausfüllen: ☐ nicht geprüft, ✓ in Ordnung, ✗ Mangel; Messwert und Bemerkung frei eintragen.
+allow src/Knx.Reports/AcceptanceProtocol.cs|Sichtprüfung
+allow src/Knx.Reports/AcceptanceProtocol.cs|nicht geprüft
+allow src/Knx.Reports/AcceptanceProtocol.cs|kein Download aufgezeichnet
+allow src/Knx.Reports/AcceptanceProtocol.cs|real geladen
+allow src/Knx.Reports/AcceptanceProtocol.cs|real teilgeladen
+allow src/Knx.Reports/AcceptanceProtocol.cs|Simulation (Demo), teilgeladen
+allow src/Knx.Reports/AcceptanceProtocol.cs|Letzter Fehler
+allow src/Knx.Reports/AcceptanceProtocol.cs|Konfiguration seit der Ladung geändert
+allow src/Knx.Reports/AcceptanceProtocol.cs|Offene Punkte und Mängelliste
+allow src/Knx.Reports/AcceptanceProtocol.cs|Punkte aus dem Projektstand und den aufgezeichneten Ladungen; die Mängelliste darunter ist für die Vor-Ort-Aufnahme.
+allow src/Knx.Reports/AcceptanceProtocol.cs|Keine offenen Punkte aus dem Projektstand.
+allow src/Knx.Reports/AcceptanceProtocol.cs|Konfiguration geändert
+allow src/Knx.Reports/AcceptanceProtocol.cs|Kein Ladezustand für dieses Gerät aufgezeichnet.
+allow src/Knx.Reports/AcceptanceProtocol.cs|Mängelliste
+allow src/Knx.Reports/AcceptanceProtocol.cs|Abnahme und Unterschriften
+allow src/Knx.Reports/AcceptanceProtocol.cs|Mit der Unterschrift wird die Abnahme der aufgeführten Leistungen bestätigt.
+allow src/Knx.Reports/AcceptanceProtocol.cs|Nr.;Adresse;Gerät;Produkt-Ref;Programm-Ref;Anlage/Bereich/Linie/Segment;Sichtprüfung;Funktion;Bus;
+allow src/Knx.Reports/AcceptanceProtocol.cs|Parameter;Download;Ladeflags;Letzter Versuch;Letzter Erfolg;Fehler;Messwert;Bemerkung
+
 # --- ratchet: known German leaks in product source (fix by moving the text to the
 # dictionaries; remove the entry in the same commit). Do not add new entries. ---
 ratchet src/Knx.App/MainWindowViewModel.cs|Neue Gruppenadresse

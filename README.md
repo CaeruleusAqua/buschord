@@ -25,7 +25,7 @@ derived from the KNX Association or any tool vendor.
 | Semantic export (Turtle/JSON-LD) + OWL/KIM checks | working in Core and tests; the checks are not surfaced in the workbench |
 | Reports: CSV, labels (HTML in the workbench; CSV or combined HTML through MCP), project compare | working |
 | UI: Avalonia 12.1.4, native Workbench (no docking package), object-centred tabs, inspector, monitor/programming/scan tools, light/dark theme, German/English | working V4 shell; monitor, scan and programming are labelled simulations; advanced ETS parity still limited |
-| MCP server for AI agents (stdio, 49 tools) | working; includes manual communication-object links and the read-only download preflight (`download_plan`) |
+| MCP server for AI agents (stdio, 50 tools) | working; includes manual communication-object links, the read-only download preflight (`download_plan`) and the acceptance-protocol export |
 | Hawk/IoT device images | open |
 
 Latest bounded reference-tool analysis and implemented gap fixes:

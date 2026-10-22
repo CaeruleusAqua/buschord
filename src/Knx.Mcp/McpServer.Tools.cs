@@ -8,6 +8,7 @@ using Knx.Bus;
 using Knx.Catalog;
 using Knx.ProjectCompare;
 using Knx.Reports;
+using Knx.Workbench;
 
 namespace Knx.Mcp;
 
@@ -226,6 +227,24 @@ public sealed partial class McpServer
                 BoolProp("include_link_matrix", "Include the link matrix summary per main range (default true)."),
                 BoolProp("include_findings", "Include the project check findings (default true).")),
             Sync(ReportExport)),
+        new("acceptance_protocol_export",
+            "Write a printable KNX acceptance/test protocol (HTML or CSV) for the open project: project facts " +
+            "with document version, document hash and master-data signature status, topology and device list, " +
+            "group addresses with datapoint types, function matrix, per-device test rows with on-site check boxes " +
+            "and fill-in measured-value/remark columns, open items with a blank defect list and a sign-off block. " +
+            "Read-only: no bus access, no project change, no download. The check columns start open (not tested) " +
+            "and the download status stays 'no download recorded' unless a device programming state file " +
+            "(states_path, workbench export) proves a demo or real load.",
+            Schema(
+                StrProp("path", "Output .html or .csv file path.", true),
+                EnumProp("format", "Document format.", ["html", "csv"]),
+                EnumProp("language", "Document language.", ["de", "en"]),
+                StrProp("title", "Protocol title; defaults to the project name."),
+                StrProp("states_path", "Optional device programming state JSON (workbench export) used for the download status."),
+                StrProp("technician", "Technician name printed in the sign-off block."),
+                StrProp("building_owner", "Building owner name printed in the sign-off block."),
+                IntProp("defect_lines", "Blank defect-list rows (0..50, default 5).")),
+            Sync(AcceptanceProtocolExport)),
         new("project_compare",
             "Compare two .knxproj files and report added, removed and changed installations, devices and " +
             "group addresses.",
@@ -804,6 +823,64 @@ public sealed partial class McpServer
             errors = ProjectCheck.Count(findings, CheckSeverity.Error),
             warnings = ProjectCheck.Count(findings, CheckSeverity.Warning),
             infos = ProjectCheck.Count(findings, CheckSeverity.Info),
+        };
+    }
+
+    private object AcceptanceProtocolExport(JsonElement args)
+    {
+        var project = Current;
+        var format = (Str(args, "format") ?? "html").ToLowerInvariant();
+        if (format is not ("html" or "csv"))
+            throw new ToolException($"unknown format '{format}' (expected html or csv)");
+        var language = Str(args, "language")?.ToLowerInvariant();
+        if (language is not null && language is not ("de" or "en"))
+            throw new ToolException($"unknown language '{language}' (expected de or en)");
+        var path = WritePath(Required(args, "path"));
+
+        IReadOnlyDictionary<string, DeviceProgrammingState>? states = null;
+        if (Str(args, "states_path") is { Length: > 0 } statesPath)
+        {
+            var full = Path.GetFullPath(statesPath);
+            if (!File.Exists(full)) throw new ToolException($"device programming state file not found: {full}");
+            try
+            {
+                states = DeviceProgrammingStates.Parse(File.ReadAllText(full), project.Id);
+            }
+            catch (Exception ex) when (ex is FormatException or IOException or UnauthorizedAccessException)
+            {
+                throw new ToolException($"device programming state file rejected: {ex.Message}");
+            }
+        }
+
+        var options = new AcceptanceProtocolOptions
+        {
+            Title = Str(args, "title"),
+            Language = language ?? Strings.Language,
+            Technician = Str(args, "technician"),
+            BuildingOwner = Str(args, "building_owner"),
+            DefectLines = Math.Clamp(Int(args, "defect_lines") ?? 5, 0, 50),
+            ProgrammingStates = states,
+        };
+        var file = format == "html"
+            ? AcceptanceProtocol.Write(project, path, options)
+            : AcceptanceProtocol.WriteCsv(project, path, options);
+        var summary = AcceptanceProtocol.Summarize(project, options);
+
+        return new
+        {
+            path = file.Path,
+            format,
+            bytes = file.Bytes,
+            language = options.Language == "en" ? "en" : "de",
+            devices = summary.Devices,
+            openItems = summary.OpenItems,
+            commissioning = summary.Commissioning switch
+            {
+                AcceptanceCommissioningMode.Real => "real",
+                AcceptanceCommissioningMode.Simulation => "simulation",
+                _ => "not_recorded",
+            },
+            documentHash = summary.DocumentHash,
         };
     }
 

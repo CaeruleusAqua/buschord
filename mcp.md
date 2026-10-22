@@ -89,6 +89,7 @@ No DPT compatibility is inferred when reference metadata is unavailable.
 
 **Export** — `export_csv(kind, path)`, `export_semantic(format, path)`,
 `export_labels(kind, format, path)`, `report_export(path, title?, include_*)`,
+`acceptance_protocol_export(path, format?, language?, title?, states_path?, technician?, building_owner?, defect_lines?)`,
 `project_compare(left_path, right_path)`
 
 `report_export` writes one self-contained printable HTML project report (title page with counts,
@@ -98,6 +99,20 @@ link matrix summary, project check findings). Optional `include_title_page`, `in
 booleans default to `true`. There is no PDF output: a dependency-free PDF writer would have to
 embed fonts, so the report is printed from the browser (page breaks, print header/footer and page
 numbers come from the inline CSS).
+
+`acceptance_protocol_export` writes the KNX acceptance/test protocol (P13): HTML is the full
+document (project facts with document version, SHA-256 document hash and master-data signature
+status, topology and device list, group addresses with datapoint types, function matrix, per-device
+test rows, open items with a blank defect list and a de/en sign-off block); `format=csv` writes the
+per-device test sheet alone (same rows, spreadsheet-ready, UTF-8 with BOM). It is read-only: no bus
+access, no project change, no download. Visual/function/bus/parameter checks always start as
+`not tested`, measured value and remark stay blank fill-in columns, and the download column reports
+only recorded device programming states (`states_path`, the workbench's `ExportDownloadedJson` side
+file): without a state every device reads `no download recorded`, demo states read
+`simulation (demo)`, and only a successful state with origin `real` reads as a real load. The result
+carries `documentHash`, `devices`, `openItems` and `commissioning` (`real`, `simulation` or
+`not_recorded`; failed attempts never count as a load). Identical inputs, including `title`,
+`language`, names and states, produce an identical document and hash.
 
 **Editing** – `undo`, `redo`
 

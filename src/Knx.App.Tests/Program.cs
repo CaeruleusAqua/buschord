@@ -474,5 +474,240 @@ File.Delete(reportPath);
     Check("Bericht: Revisionsabschnitt abschaltbar", !withoutRevisions.Contains("id=\"revisions\""));
 }
 
+// ---------------------------------------------------------------- Abnahmeprotokoll (P13)
+
+var ap = new Project
+{
+    Id = "P-AP",
+    Name = "Haus & <Objekt>",
+    Comment = "<script>alert('x')</script>",
+    Guid = "6f1e8c2a-0000-0000-0000-000000000000",
+};
+ap.MasterData.Signature = "SIG-ABC";
+var apInst = new Installation { Id = "I-AP", Name = "Haus" };
+var apArea = new Area { Id = "A-AP", Address = 1, Name = "Erdgeschoss" };
+var apLine = new Line { Id = "L-AP", Address = 1, Name = "Licht" };
+var apDevice = new DeviceInstance
+{
+    Id = "D-AP-1",
+    Address = new IndividualAddress(1, 1, 1),
+    Name = "Aktor <1> & \"x\" äöü",
+    ProductRefId = "M-00FA_H-1_P-1",
+    Hardware2ProgramRefId = "M-00FA_H-1_HP-1",
+    Description = "äöü",
+};
+var apObject = new ComObjectInstanceRef
+{
+    Id = "CO-AP-1", ComObjectId = "O-1", Number = 1, Text = "Schalten <aus>", FunctionText = "Schalten",
+};
+apObject.Links.Add("GA-AP-1");
+apObject.Links.Add("GA-AP-9"); // dangling on purpose: the matrix names it as unknown
+apDevice.ComObjectRefs.Add(apObject);
+apLine.Devices.Add(apDevice);
+apArea.Lines.Add(apLine);
+apInst.Areas.Add(apArea);
+var apArea2 = new Area { Id = "A-AP2", Address = 2, Name = "Obergeschoss" };
+var apLine2 = new Line { Id = "L-AP2", Address = 1, Name = "Licht 2" };
+apLine2.Devices.Add(new DeviceInstance
+{
+    Id = "D-AP-2", Address = new IndividualAddress(2, 1, 5), Name = "Dimmer", ProductRefId = "M-00FA_H-1_P-2",
+});
+apArea2.Lines.Add(apLine2);
+apInst.Areas.Add(apArea2);
+var apRange = new GroupRange { Id = "GR-AP", Name = "Licht", RangeStart = 1, RangeEnd = 15 };
+apRange.Addresses.Add(new GroupAddressEntry
+{
+    Id = "GA-AP-1", Name = "Decke <Licht>", Address = GroupAddress.ThreeLevel(1, 1, 1), DatapointType = "DPST-1-1",
+});
+apRange.Addresses.Add(new GroupAddressEntry
+{
+    Id = "GA-AP-2", Name = "Wand \"indirekt\"", Address = GroupAddress.ThreeLevel(1, 1, 2),
+});
+apInst.MainRanges.Add(apRange);
+ap.Installations.Add(apInst);
+
+var apTime = new DateTimeOffset(2026, 10, 22, 9, 30, 0, TimeSpan.FromHours(2));
+var apOptions = new AcceptanceProtocolOptions { GeneratedAt = apTime };
+var apHtml = AcceptanceProtocol.Render(ap, apOptions);
+var apHash = AcceptanceProtocol.ComputeHash(ap, apOptions);
+
+Check("Protokoll: Kopf mit Projekt, Signatur und Hash",
+    apHtml.Contains("Abnahmeprotokoll") && apHtml.Contains("P-AP") && apHtml.Contains("6f1e8c2a") &&
+    apHtml.Contains("SIG-ABC") && apHtml.Contains("vorhanden, unverändert übernommen") &&
+    apHtml.Contains("sha256:" + apHash));
+Check("Protokoll: Hash ist 64-stelliges Kleinbuch-Hex",
+    apHash.Length == 64 && apHash.All(char.IsAsciiHexDigit) && apHash == apHash.ToLowerInvariant());
+Check("Protokoll: Dokumentversion im Kopf",
+    apHtml.Contains("<th scope=\"row\">Dokumentversion</th><td>" + AcceptanceProtocol.Version + "</td>"));
+Check("Protokoll: Topologie, Geräte und Container",
+    apHtml.Contains("Anlage und Topologie") && apHtml.Contains("M-00FA_H-1_P-1") &&
+    apHtml.Contains("M-00FA_H-1_HP-1") && apHtml.Contains("Haus · Erdgeschoss · Licht"));
+Check("Protokoll: Gruppenadressen mit DPT und Bereich",
+    apHtml.Contains("1/1/1") && apHtml.Contains("DPST-1-1") && apHtml.Contains("Licht (1..15)"));
+Check("Protokoll: Funktionsmatrix mit Verknüpfung und offenem Link",
+    apHtml.Contains("Funktionsmatrix") && apHtml.Contains("Decke &lt;Licht&gt;") &&
+    apHtml.Contains("GA-AP-9 (unbekannt)"));
+Check("Protokoll: Prüfzeilen starten als nicht geprüft",
+    apHtml.Contains("Sichtprüfung") && apHtml.Contains("☐ nicht geprüft") &&
+    apHtml.Contains("Prüfspalten vor Ort ausfüllen") &&
+    System.Text.RegularExpressions.Regex.Matches(apHtml, "<td class=\"check\">☐</td>").Count == 2 * 4 &&
+    apHtml.Contains("kein Download aufgezeichnet") && apHtml.Contains("<td class=\"fill\"></td>"));
+Check("Protokoll: Messwert und Bemerkung sind leere Platzhalter",
+    apHtml.Contains("Messwert") && apHtml.Contains("Bemerkung") && apHtml.Contains("Mängelliste"));
+Check("Protokoll: Unterschriftenblock",
+    apHtml.Contains("Ort, Datum") && apHtml.Contains("Techniker/in") &&
+    apHtml.Contains("Bauherr/Bauherrin") && apHtml.Contains("Unterschrift"));
+Check("Protokoll: Werte maskiert",
+    apHtml.Contains("Haus &amp; &lt;Objekt&gt;") && apHtml.Contains("Aktor &lt;1&gt; &amp; &quot;x&quot; äöü") &&
+    apHtml.Contains("&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;"));
+Check("Protokoll: kein Skript und keine externen URLs",
+    !apHtml.Contains("<script") && !apHtml.Contains("http://") && !apHtml.Contains("https://"));
+Check("Protokoll: Gerätezeilen nach Adresse sortiert",
+    AcceptanceProtocol.DeviceRows(ap, apOptions) is var apRows && apRows.Count == 2 &&
+    apRows[0].Device.Address.ToString() == "1.1.1" && apRows[1].Device.Address.ToString() == "2.1.5");
+Check("Protokoll: ohne Ladezustand ist jedes Gerät offen",
+    AcceptanceProtocol.OpenItems(ap, apOptions).Count == 2 &&
+    AcceptanceProtocol.OpenItems(ap, apOptions).All(i => i.Kind == AcceptanceOpenItemKind.DownloadNotRecorded) &&
+    AcceptanceProtocol.CommissioningMode(ap, apOptions) == AcceptanceCommissioningMode.NotRecorded &&
+    apHtml.Contains("Kein Download aufgezeichnet"));
+Check("Protokoll: deterministisch",
+    apHtml == AcceptanceProtocol.Render(ap, new AcceptanceProtocolOptions { GeneratedAt = apTime }) &&
+    apHash == AcceptanceProtocol.ComputeHash(ap, new AcceptanceProtocolOptions { GeneratedAt = apTime }));
+Check("Protokoll: Hash folgt dem Erstellungszeitpunkt",
+    apHash != AcceptanceProtocol.ComputeHash(ap, new AcceptanceProtocolOptions { GeneratedAt = apTime.AddMinutes(1) }));
+
+// Dokumentsprache folgt der Option, nicht der UI-Sprache.
+Strings.Language = "en";
+var apGerman = AcceptanceProtocol.Render(ap, new AcceptanceProtocolOptions { GeneratedAt = apTime, Language = "de" });
+Strings.Language = "de";
+var apEnglish = AcceptanceProtocol.Render(ap, new AcceptanceProtocolOptions { GeneratedAt = apTime, Language = "en" });
+Check("Protokoll: deutsche Sprache bleibt bei UI Englisch",
+    apGerman.Contains("<html lang=\"de\">") && apGerman.Contains("Geräteprüfung") &&
+    apGerman.Contains("nicht geprüft") && !apGerman.Contains("Device tests"));
+Check("Protokoll: englische Überschriften",
+    apEnglish.Contains("<html lang=\"en\">") && apEnglish.Contains("Acceptance protocol") &&
+    apEnglish.Contains("Device tests") && apEnglish.Contains("not tested") &&
+    apEnglish.Contains("Acceptance and signatures"));
+Check("Protokoll: keine deutschen Überschriften auf Englisch",
+    !apEnglish.Contains("Geräteprüfung") && !apEnglish.Contains("nicht geprüft") &&
+    !apEnglish.Contains("Abnahmeprotokoll") && !apEnglish.Contains("Mängelliste"));
+
+// Leeres Projekt.
+var apEmpty = new Project { Id = "P-AP0", Name = "Leeres Projekt" };
+var apEmptyHtml = AcceptanceProtocol.Render(apEmpty, new AcceptanceProtocolOptions { GeneratedAt = apTime });
+Check("Protokoll: leeres Projekt rendert",
+    apEmptyHtml.StartsWith("<!DOCTYPE html>") && apEmptyHtml.TrimEnd().EndsWith("</html>") &&
+    apEmptyHtml.Contains("Leeres Projekt"));
+Check("Protokoll: leere Abschnitte benannt",
+    apEmptyHtml.Contains("Keine Geräte im Projekt") && apEmptyHtml.Contains("Keine Gruppenadressen im Projekt") &&
+    apEmptyHtml.Contains("Keine Kommunikationsobjekte im Projekt") &&
+    apEmptyHtml.Contains("Keine offenen Punkte aus dem Projektstand"));
+var apEmptyEnglish = AcceptanceProtocol.Render(apEmpty, new AcceptanceProtocolOptions { GeneratedAt = apTime, Language = "en" });
+Check("Protokoll: englische Leerzustände",
+    apEmptyEnglish.Contains("No devices in the project") &&
+    apEmptyEnglish.Contains("No group addresses in the project") &&
+    apEmptyEnglish.Contains("No communication objects in the project") &&
+    apEmptyEnglish.Contains("No open items from the project data"));
+Check("Protokoll: leeres Projekt hat trotzdem einen Hash",
+    AcceptanceProtocol.ComputeHash(apEmpty, new AcceptanceProtocolOptions { GeneratedAt = apTime }).Length == 64 &&
+    AcceptanceProtocol.OpenItems(apEmpty).Count == 0);
+
+// Aufgezeichnete Ladezustände: Demo bleibt Simulation, Drift und Fehler bleiben offen.
+var apSignature = WorkbenchProject.ConfigurationSignature(ap, "D-AP-1");
+var apLoaded = DeviceProgrammingState.Empty("D-AP-1")
+    .ApplySuccess(DeviceLoadFlags.All, apSignature, apTime, "iface-1", ProgrammingOrigin.Demo);
+var apLoadedOptions = new AcceptanceProtocolOptions
+{
+    GeneratedAt = apTime,
+    ProgrammingStates = new Dictionary<string, DeviceProgrammingState> { ["D-AP-1"] = apLoaded },
+};
+var apLoadedHtml = AcceptanceProtocol.Render(ap, apLoadedOptions);
+Check("Protokoll: Demo-Ladung ist Simulation, kein echter Download",
+    AcceptanceProtocol.CommissioningMode(ap, apLoadedOptions) == AcceptanceCommissioningMode.Simulation &&
+    apLoadedHtml.Contains("Simulation (Demo)") && apLoadedHtml.Contains("Simulation – aufgezeichnete Demo-Ladungen") &&
+    !apLoadedHtml.Contains("real geladen") && !apLoadedHtml.Contains("Real – aufgezeichnete Ladungen"));
+Check("Protokoll: geladenes Gerät ist zu, ungeladenes bleibt offen",
+    AcceptanceProtocol.DeviceRows(ap, apLoadedOptions).Single(r => r.Device.Id == "D-AP-1").Status.NeedsProgramming == false &&
+    AcceptanceProtocol.OpenItems(ap, apLoadedOptions) is [{ Kind: AcceptanceOpenItemKind.DownloadNotRecorded } apOpen] &&
+    apOpen.Device.Id == "D-AP-2");
+Check("Protokoll: Zusammenfassung passt zum Dokument",
+    AcceptanceProtocol.Summarize(ap, apLoadedOptions) is { Devices: 2, OpenItems: 1 } apSummary &&
+    apSummary.DocumentHash == AcceptanceProtocol.ComputeHash(ap, apLoadedOptions) &&
+    apSummary.Commissioning == AcceptanceCommissioningMode.Simulation);
+var apReal = apLoaded with { Origin = ProgrammingOrigin.Real, LastAttemptOrigin = ProgrammingOrigin.Real };
+Check("Protokoll: echte Ladung wird als real ausgewiesen",
+    AcceptanceProtocol.CommissioningMode(ap, new AcceptanceProtocolOptions
+    {
+        ProgrammingStates = new Dictionary<string, DeviceProgrammingState> { ["D-AP-1"] = apReal },
+    }) == AcceptanceCommissioningMode.Real);
+
+var apPartialOptions = new AcceptanceProtocolOptions
+{
+    GeneratedAt = apTime,
+    ProgrammingStates = new Dictionary<string, DeviceProgrammingState>
+    {
+        ["D-AP-1"] = DeviceProgrammingState.Empty("D-AP-1")
+            .ApplySuccess(DeviceLoadFlags.Parameters, apSignature, apTime, "iface-1", ProgrammingOrigin.Demo),
+    },
+};
+Check("Protokoll: unvollständige Ladung nennt die fehlenden Flags",
+    AcceptanceProtocol.OpenItems(ap, apPartialOptions)[0].Kind == AcceptanceOpenItemKind.ProgrammingOutstanding &&
+    AcceptanceProtocol.Render(ap, apPartialOptions).Contains("Fehlende Ladeflags: Adr, Prg, Grp, Cfg") &&
+    AcceptanceProtocol.Render(ap, apPartialOptions).Contains("Simulation (Demo), teilgeladen"));
+var apDriftOptions = new AcceptanceProtocolOptions
+{
+    GeneratedAt = apTime,
+    ProgrammingStates = new Dictionary<string, DeviceProgrammingState>
+    {
+        ["D-AP-1"] = apLoaded with { ImageHash = "anderer-stand" },
+    },
+};
+Check("Protokoll: Signaturdrift ist ein offener Punkt",
+    AcceptanceProtocol.OpenItems(ap, apDriftOptions)[0].Kind == AcceptanceOpenItemKind.SignatureDrift &&
+    AcceptanceProtocol.Render(ap, apDriftOptions).Contains("Konfiguration seit der Ladung geändert"));
+var apFailureOptions = new AcceptanceProtocolOptions
+{
+    GeneratedAt = apTime,
+    ProgrammingStates = new Dictionary<string, DeviceProgrammingState>
+    {
+        ["D-AP-1"] = DeviceProgrammingState.Empty("D-AP-1")
+            .ApplyFailure("Timeout", apTime, "iface-1", ProgrammingOrigin.Demo),
+    },
+};
+var apFailureHtml = AcceptanceProtocol.Render(ap, apFailureOptions);
+Check("Protokoll: Fehlversuch ist ein offener Punkt",
+    AcceptanceProtocol.OpenItems(ap, apFailureOptions)[0].Kind == AcceptanceOpenItemKind.LastError &&
+    apFailureHtml.Contains("Download fehlgeschlagen") && apFailureHtml.Contains("Letzter Fehler: Timeout"));
+Check("Protokoll: Fehlversuch belegt keinen Download",
+    AcceptanceProtocol.CommissioningMode(ap, apFailureOptions) == AcceptanceCommissioningMode.NotRecorded &&
+    apFailureHtml.Contains("Kein Download aufgezeichnet") &&
+    !apFailureHtml.Contains("Real – aufgezeichnete Ladungen") &&
+    !apFailureHtml.Contains("Simulation – aufgezeichnete Demo-Ladungen"));
+
+// CSV-Variante.
+var apCsv = AcceptanceProtocol.RenderCsv(ap, apLoadedOptions);
+Check("Protokoll-CSV: Kopf und Gerätezeile",
+    apCsv.StartsWith("Nr.;Adresse;Gerät;Produkt-Ref;Programm-Ref;") &&
+    apCsv.Contains("1.1.1;\"Aktor <1> & \"\"x\"\" äöü\";M-00FA_H-1_P-1") &&
+    apCsv.Contains("Simulation (Demo)") && apCsv.Contains("nicht geprüft"));
+CheckNeutralized("Protokoll-CSV: keine Formelzelle", apCsv);
+Check("Protokoll-CSV: englischer Kopf",
+    AcceptanceProtocol.RenderCsv(ap, new AcceptanceProtocolOptions { Language = "en" })
+        .StartsWith("No.;Address;Device;Product reference;"));
+
+var apHtmlPath = Path.Combine(Path.GetTempPath(), "knx_acceptance_" + Guid.NewGuid().ToString("N") + ".html");
+var apWritten = AcceptanceProtocol.Write(ap, apHtmlPath, apLoadedOptions);
+var apBytes = File.ReadAllBytes(apHtmlPath);
+Check("Protokoll: HTML-Datei UTF-8 ohne BOM",
+    File.Exists(apHtmlPath) && apWritten.Bytes == apBytes.Length && apBytes[0] == (byte)'<' &&
+    System.Text.Encoding.UTF8.GetString(apBytes) == apLoadedHtml);
+var apCsvPath = Path.Combine(Path.GetTempPath(), "knx_acceptance_" + Guid.NewGuid().ToString("N") + ".csv");
+var apCsvWritten = AcceptanceProtocol.WriteCsv(ap, apCsvPath, apLoadedOptions);
+var apCsvBytes = File.ReadAllBytes(apCsvPath);
+Check("Protokoll: CSV-Datei UTF-8 mit BOM",
+    apCsvWritten.Bytes == apCsvBytes.Length && apCsvBytes[0] == 0xEF && apCsvBytes[1] == 0xBB && apCsvBytes[2] == 0xBF);
+File.Delete(apHtmlPath);
+File.Delete(apCsvPath);
+
 Console.WriteLine(failures.Count == 0 ? "REPORTS OK" : $"{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
