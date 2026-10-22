@@ -546,4 +546,24 @@ empty-state controls below the window bottom (the harness counter shows `FAILURE
 the layout path does not increment it; the layout line is the one `FAIL`). Remaining P2 from
 this addendum: dock body overflow at 900×600 with the inspector open.
 
+### Third recheck — `9691f24` (2026-10-22, final)
+
+Re-ran the 900×600 inspector+tools state at `9691f24a83e9e1316a575d8c9bdca2b469469bd6`
+("Keep short dock empty states scrollable"). Built at that commit; artifacts:
+`%TEMP%\opencode\wb-v4-a11y\recheck-9691f24`.
+
+| Check | c333937 | 9691f24 | Measurement |
+|---|---|---|---|
+| unscrollable clipping, 900×600 + inspector + tools | FAIL (3) | **PASS (0)** | layout dump `clipped-without-scroll=0`; the empty state is now wrapped in a vertical `ScrollViewer` (`EmptyState`, `WorkbenchWindow.axaml.cs:2776`). |
+| empty state actually scrollable | — | **no** | the scroller is **638×0 DIP** at (262,573): `Viewport=0`, `Extent=73`. The dock (140 DIP) spends its 105 DIP content area on three wrapped toolbar rows + the 28 DIP table header, so the fill row gets 0 DIP. Programmatic `Offset=73` moves the heading's layout position (y 609 → 536) but it stays invisible in the capture; there is no visible scrollbar or wheel area to reach it. |
+| overlay coverage / target sizes / compare focus | fixed | unchanged | 0 visible focusables under the overlay; targets and compare focus still pass. |
+
+**Answer to the targeted question:** the *unscrollable overflow* is gone from the layout
+audit, but the monitor empty state does **not** scroll for the user at 900×600 with the
+inspector and tools open — its scroller is collapsed to zero height and the state remains
+invisible. A usable fix needs vertical room for the dock body (content minimum, a taller or
+collapsible dock, or hiding the monitor table header while empty); wrapping alone is not
+enough at 140 DIP.
+
+
 
