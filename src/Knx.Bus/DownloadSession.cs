@@ -72,16 +72,22 @@ public sealed class DownloadSession
     private readonly IndividualAddress _device;
     private readonly string? _interfaceName;
     private readonly DownloadAttemptLog? _log;
+    private readonly bool _allowWrites;
     private readonly TimeSpan _responseTimeout = TimeSpan.FromSeconds(3);
 
+    /// <summary>
+    /// A download session is write-disabled by default. Tests/loopback harnesses must opt in
+    /// explicitly; product callers stay behind <see cref="KnxBus.WritesEnabled"/>.
+    /// </summary>
     public DownloadSession(KnxTunnel tunnel, IndividualAddress device, IApplicationProgram program,
-        string? interfaceName = null, DownloadAttemptLog? log = null)
+        string? interfaceName = null, DownloadAttemptLog? log = null, bool allowWrites = false)
     {
         _tunnel = tunnel;
         _device = device;
         _program = program;
         _interfaceName = interfaceName;
         _log = log;
+        _allowWrites = allowWrites;
     }
 
     public event Action<DownloadProgress>? Progress;
@@ -107,6 +113,9 @@ public sealed class DownloadSession
                                      $"but this session targets {_device}");
             if (plan.ImageHash is { } plannedHash && plannedHash != DownloadPreflight.ImageHash(_program.Image))
                 return Finish(false, "download refused: the preflight plan was built for a different image");
+            if (!_allowWrites)
+                return Finish(false, "download refused: write sessions are opt-in and real downloads " +
+                                     "remain disabled by product policy");
 
             Progress?.Invoke(new DownloadProgress(DownloadStage.ReadingDescriptor, 0, "descriptor lesen"));
             var response = await _tunnel.RequestAsync(

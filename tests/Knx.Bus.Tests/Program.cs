@@ -880,8 +880,12 @@ async Task<(bool Ok, string Detail)> RunLoopbackAsync()
             ExpectedLine = 1,
         });
         var attemptLog = new DownloadAttemptLog();
+        var blockedSession = new DownloadSession(tunnel, new IndividualAddress(1, 1, 16), program, "loopback-fake");
+        var blocked = await blockedSession.RunAsync(plan);
+        Check("preflight: session refuses real writes without explicit opt-in",
+            !blocked.Success && blocked.Message.Contains("opt-in", StringComparison.Ordinal));
         var session = new DownloadSession(tunnel, new IndividualAddress(1, 1, 16), program, "loopback-fake",
-            attemptLog);
+            attemptLog, allowWrites: true);
         var stages = new List<DownloadStage>();
         session.Progress += p => Console.WriteLine($"[dl] {p.Stage} {p.Percent}% {p.Message}");
         var result = await session.RunAsync(plan);
