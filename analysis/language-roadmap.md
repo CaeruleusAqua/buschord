@@ -12,7 +12,7 @@ catalog status and release gates. Technical design:
 | 1 | Deutsch | `de` | DE, AT, CH | P0 | reference (complete) |
 | 2 | English | `en` | UK, IE, AU, IN, MY, AE, international | P0 | reviewed (complete) |
 | 3 | Italiano | `it` | IT, CH | P1 | planned |
-| 4 | Français | `fr` | FR, BE, CH, LU | P1 | planned - pilot |
+| 4 | Français | `fr` | FR, BE, CH, LU | P1 | preview - pilot |
 | 5 | Español | `es` | ES, MX, CL, CO, LatAm | P1 | planned |
 | 6 | Nederlands | `nl` | NL, BE | P1 | planned |
 | 7 | 简体中文 | `zh-CN` | CN | P2 | planned |
@@ -70,23 +70,31 @@ language.
 
 ## 5. Technical work still required
 
-The current product still stores `de`/`en` in C# tuples. The roadmap depends on
-the catalog migration from the architecture plan:
+The current product stores `de`/`en` in C# tuples; additional languages are
+embedded JSON overlays, resolved without per-language lookup code. Implemented:
 
-- `i18n/<module>/<lang>.json` for `core`, `workbench`, `catalog`, embedded as
-  resources; thin `Strings`/`WorkbenchStrings`/`CatalogUiText` facades keep call
-  sites unchanged.
-- One registry-driven resolver with longest-prefix matching and fallback
+- `i18n/<module>/<lang>.json` overlays for `core`, `workbench`, `catalog`.
+- One resolver with longest-prefix language matching and fallback
   `requested -> en -> de -> key`.
-- Settings and `--lang=` generated from the registry; `preview` suffix and
-  `draft` visibility as above.
+- Settings selector and `--lang=` for `fr` (preview suffix); `de-DE`/`en-US`
+  normalize to their base catalogs.
+
+Still required:
+
+- Move the German/English reference itself into catalogs (the current overlay
+  approach is a strangler step).
+- Registry-driven `Available`/Settings list instead of the hardcoded three.
 - Placeholder, plural, date and number rules per language; no raw
   `string.Format` against the OS culture.
-- CI gates: key parity, no empty values, placeholder shape, German-literal scan,
-  pseudo-locale, CSV/report language, screenshots.
+- Report-specific tables and report `lang` for non-de/en languages.
+- CI gates: catalog parity, no empty values, placeholder shape, German-literal
+  scan, pseudo-locale, CSV/report language, screenshots.
 
-The pilot is not complete until `i18n/fr.json` (all modules) is imported,
-reviewed and screenshot-approved. Until then French remains `planned`.
+The pilot is not complete until the French catalog is native-reviewed and
+screenshot-approved. The current `fr` catalog is a complete **preview** over the
+German/English reference: UI and CSV resolve in French, report-specific private
+tables and MCP exports still fall back to German/English. `i18n/fr` remains
+`preview` until that review happens.
 
 ## 6. Acceptance per language
 

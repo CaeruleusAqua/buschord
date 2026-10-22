@@ -439,7 +439,9 @@ automatische Hardcoded-Text-Prüfung.
 - [ ] **H9.5 Pilot:** dritte Sprache end-to-end mit echten Ressourcen, Tests
   und Abnahme; keine Maschinenübersetzung ohne Review. Priorisierung und
   Statusmodell: `analysis/language-roadmap.md` (P0 de/en, P1 it/fr/es/nl,
-  P2 zh-CN/pl; Pilot **fr**). Offen: Übersetzer/Review und Katalogmigration.
+  P2 zh-CN/pl; Pilot **fr**). Französisch ist als vollständige **Preview** in
+  UI/CSV implementiert (`i18n/*/fr.json`, Resolver, Sprachwahl, Tests);
+  muttersprachlicher Review, Berichtstabellen und MCP-Exporte bleiben offen.
 - [x] **H9.6 Grenzen:** Projekt-/Gerätenamen, Herstellertexte und technische
   CSV-Werte bleiben Daten, nicht UI-Sprache; DPT-/KNX-Codes werden nicht
   übersetzt. (in `analysis/i18n-text-inventory.md` und den Übersetzungs-
@@ -544,7 +546,8 @@ werden:
   Programmiermodus nötig). Reale Schreibzugriffe bleiben gesperrt.
 - **H12.3 Dritte Sprache:** Sprachwahl und Priorisierung liegen vor
   (`analysis/language-roadmap.md`: P0 de/en, P1 it/fr/es/nl, P2 zh-CN/pl);
-  menschliche Übersetzung/Review und die Katalogmigration fehlen.
+  Französisch ist als Preview implementiert, aber noch nicht muttersprachlich
+  reviewt; Berichtstabellen/MCP-Exporte bleiben de/en.
 - **H12.4 GitHub-Purge:** `refs/pull/1/head` und gecachte Blobs lassen sich
   nicht per Git/API löschen; GitHub-Support-Ticket nötig. Token und
   Test-Zugangsdaten rotieren.

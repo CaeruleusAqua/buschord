@@ -32,29 +32,21 @@ public sealed class Strings : INotifyPropertyChanged
     /// become <c>de</c>, <c>en-US</c>/<c>en-GB</c> become <c>en</c>. Unknown or
     /// empty input falls back to German, matching the previous behaviour.
     /// </summary>
-    public static string Normalize(string? code)
-    {
-        if (string.IsNullOrWhiteSpace(code)) return "de";
-        var baseCode = code.Trim().Replace('_', '-').Split('-', 2)[0].ToLowerInvariant();
-        return Available.Contains(baseCode) ? baseCode : "de";
-    }
+    public static string Normalize(string? code) => LanguageCatalog.Normalize(code, Available);
 
-    public static IReadOnlyList<string> Available { get; } = ["de", "en"];
+    public static IReadOnlyList<string> Available { get; } = ["de", "en", "fr"];
+
+    /// <summary>French preview overlay; missing keys fall back to English, then German.</summary>
+    public static IReadOnlyDictionary<string, string> FrenchCatalogue =>
+        Overlays.Value.TryGetValue("fr", out var french) ? french : LanguageCatalog.EmptyCatalog;
 
     /// <summary>Every key with its German and English text; used to verify completeness.</summary>
     public static IReadOnlyDictionary<string, (string De, string En)> Catalogue => Map;
 
     public string this[string key] => Get(key);
 
-    public static string Get(string key, params object[] args)
-    {
-        var text = Map.TryGetValue(key, out var entry)
-            ? _language == "en" ? entry.En : entry.De
-            : key;
-        if (args.Length == 0) return text;
-        try { return string.Format(text, args); }
-        catch (FormatException) { return text; }
-    }
+    public static string Get(string key, params object[] args) =>
+        LanguageCatalog.Resolve(Map, Overlays.Value, key, _language, args);
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -63,6 +55,9 @@ public sealed class Strings : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
+
+    private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>> Overlays =
+        new(() => LanguageCatalog.LoadOverlays(typeof(Strings).Assembly, "core", Available));
 
     private static readonly Dictionary<string, (string De, string En)> Map = new()
     {

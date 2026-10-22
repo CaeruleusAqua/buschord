@@ -691,8 +691,10 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         Strings.Get("BtnSave"));
 
     Strings.Language = "de";
-    Check("i18n: beide Sprachen vollständig",
-        Strings.Available.Count == 2);
+    Check("i18n: drei Sprachen registriert",
+        Strings.Available.Count == 3
+        && Strings.Available.Contains("de") && Strings.Available.Contains("en") && Strings.Available.Contains("fr"),
+        string.Join(",", Strings.Available));
 }
 
 // --- Lokalisierung der Projektprüfung: deutsche Vorgabe, englische Übersetzung, gleiche Pfade ---
@@ -803,8 +805,8 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
     {
         Strings.Language = language;
         Check($"i18n: Platzhalter formatierbar ({language})",
-            keys.All(p => Formats(p.Key, language == "en" ? p.Value.En : p.Value.De)),
-            string.Join(",", keys.Where(p => !Formats(p.Key, language == "en" ? p.Value.En : p.Value.De))
+            keys.All(p => Formats(p.Key, p.Value.De)),
+            string.Join(",", keys.Where(p => !Formats(p.Key, p.Value.De))
                 .Select(p => p.Key)));
     }
     Strings.Language = "de";

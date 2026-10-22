@@ -186,13 +186,14 @@ keine umschaltbaren Zustände.
   `%APPDATA%\BusChord\workspaces` und lädt sie wieder. Unlesbare oder veraltete
   Layoutdateien werden ignoriert, ohne den Start zu blockieren.
 - **Ansicht → Optionen …** (oder die Aktionsleiste) öffnet die Einstellungen:
-  Design (System/Hell/Dunkel), Sprache (Deutsch/English),
-  „Vor dem Löschen nachfragen“, Bus-Schnittstelle, eigene Tunneladresse und die
+  Design (System/Hell/Dunkel), Sprache (Deutsch/English/Français Preview),
+  "Vor dem Löschen nachfragen", Bus-Schnittstelle, eigene Tunneladresse und die
   Zuletzt-Liste. Design und Sprache werden beim Speichern sofort übernommen; bereits
   gezeichnete Menüs und Beschriftungen können bis zum Neustart in der alten Sprache
   bleiben. Die Einstellungen liegen in `%APPDATA%\BusChord\settings.json`.
-  Verfügbar sind ausschließlich **Deutsch** und **English**. Eine dritte Sprache
-  und RTL-Darstellung werden nicht unterstützt; einen Sprachpiloten gibt es nicht.
+  Verfügbar sind **Deutsch**, **English** und **Französisch (Preview)**. Französisch
+  ist nicht muttersprachlich abgenommen; berichtsspezifische Tabellen und MCP-Exporte
+  bleiben vorerst Deutsch/Englisch. Eine RTL-Darstellung wird nicht unterstützt.
 
 ### 2.8 Hilfe und Dokumentation
 
@@ -809,8 +810,9 @@ belegt; belegt ist `Strg+Shift+G`.
   Projektarchiv, wenn der Katalog fehlt.
 - **Ein Projekt, keine parallelen Projekt-Tabs.** Das Portfolio listet mehrere
   Dateien, öffnet aber immer nur eine; Öffnen ersetzt das aktuelle Projekt.
-- **Nur Deutsch und Englisch.** Es gibt keine dritte Sprache, keine RTL-Darstellung
-  und keinen begonnenen Sprachpiloten.
+- **Deutsch, English und Französisch (Preview).** Französisch ist nicht
+  muttersprachlich abgenommen; berichtsspezifische Tabellen und MCP-Exporte
+  bleiben vorerst Deutsch/Englisch. RTL wird nicht unterstützt.
 - **Feste Anzeigegrenzen.** Der Monitor zeigt die letzten 500 Zeilen; die
   vollständige Aufzeichnung liegt in einer temporären Datei und wird beim Beenden
   gelöscht, sofern sie nicht vorher als CSV exportiert wurde. Die Änderungsliste

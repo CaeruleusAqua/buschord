@@ -39,16 +39,19 @@ public sealed class WorkbenchStrings : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 
-    public static string Get(string key, params object[] args)
-    {
-        var text = Map.TryGetValue(key, out var entry)
-            ? Knx.Strings.Language == "en" ? entry.En : entry.De
-            : key;
-        return args.Length == 0 ? text : string.Format(text, args);
-    }
+    public static string Get(string key, params object[] args) =>
+        Knx.LanguageCatalog.Resolve(Map, Overlays.Value, key, Knx.Strings.Language, args);
+
+    /// <summary>French preview overlay; missing keys fall back to English, then German.</summary>
+    public static IReadOnlyDictionary<string, string> FrenchCatalogue =>
+        Overlays.Value.TryGetValue("fr", out var french) ? french : Knx.LanguageCatalog.EmptyCatalog;
 
     /// <summary>Every shell key; the UI checks assert both languages stay complete.</summary>
     public static IReadOnlyCollection<string> Keys => Map.Keys;
+
+    private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>> Overlays =
+        new(() => Knx.LanguageCatalog.LoadOverlays(
+            typeof(WorkbenchStrings).Assembly, "workbench", Knx.Strings.Available));
 
     // Keys are grouped by shell region; German values preserve the previous literals.
     private static readonly Dictionary<string, (string De, string En)> Map = new()

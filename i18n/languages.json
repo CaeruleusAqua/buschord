@@ -1,0 +1,50 @@
+[
+  {
+    "code": "de",
+    "name": "Deutsch",
+    "status": "reference",
+    "reviewers": []
+  },
+  {
+    "code": "en",
+    "name": "English",
+    "status": "reviewed",
+    "reviewers": []
+  },
+  {
+    "code": "fr",
+    "name": "Français",
+    "status": "preview",
+    "reviewers": []
+  },
+  {
+    "code": "it",
+    "name": "Italiano",
+    "status": "planned",
+    "reviewers": []
+  },
+  {
+    "code": "es",
+    "name": "Español",
+    "status": "planned",
+    "reviewers": []
+  },
+  {
+    "code": "nl",
+    "name": "Nederlands",
+    "status": "planned",
+    "reviewers": []
+  },
+  {
+    "code": "zh-CN",
+    "name": "简体中文",
+    "status": "planned",
+    "reviewers": []
+  },
+  {
+    "code": "pl",
+    "name": "Polski",
+    "status": "planned",
+    "reviewers": []
+  }
+]

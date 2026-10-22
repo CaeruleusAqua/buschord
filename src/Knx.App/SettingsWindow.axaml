@@ -47,6 +47,7 @@
               <ComboBox Grid.Row="1" Grid.Column="1" x:Name="LanguageBox" Classes="wb-field" Width="240" HorizontalAlignment="Left">
                 <ComboBoxItem Content="Deutsch" />
                 <ComboBoxItem Content="English" />
+                <ComboBoxItem Content="Français (Preview)" />
               </ComboBox>
 
               <CheckBox Grid.Row="2" Grid.Column="1" x:Name="ConfirmDeleteBox"
