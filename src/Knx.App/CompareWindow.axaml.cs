@@ -14,6 +14,7 @@ public partial class CompareWindow : Window
     public CompareWindow()
     {
         InitializeComponent();
+        Opened += (_, _) => DiffGrid.Focus();
     }
 
     public void Load(DifferenceReport report)
