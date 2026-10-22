@@ -513,7 +513,10 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
   Revision/Change-Log, Paket+Manifest/Hash, Bedienungsanleitung und
   Kontakt-/Datenschutzseiten.
 - [ ] **H11.8 Portfolio/Multi-Projekt** und Versions-/Archivstrategie mit
-  ehrlichem Signaturstatus.
+  ehrlichem Signaturstatus. Core-Registry mit atomarem JSON, Hash/Missing-
+  Erkennung, Move/Rename, Backup-/Version-Refs ist implementiert
+  (`a5b8966`); UI-Verdrahtung läuft als `agents/impl/portfolio-ui`,
+  Versionsvergleich als `agents/impl/project-versioning-2`.
 
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
