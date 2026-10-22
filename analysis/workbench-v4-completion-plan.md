@@ -493,9 +493,10 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
 - [ ] **H11.5 Abnahmeprotokoll:** HTML/CSV-Protokoll mit Geräte-/GA-/Link-
   Matrix, Testzeilen, Unterschrift und Simulationskennzeichnung (Agent
   `agents/impl/acceptance-protocol`).
-- [ ] **H11.6 Download-Gate:** Descriptor-/Masken-/Programming-Mode-
-  Vorprüfung, Dry-Run und Versuchsprotokoll; Schreibpfad bleibt gesperrt
-  (Agent `agents/impl/download-gate`).
+- [x] **H11.6 Download-Gate:** Descriptor-/Masken-/Programming-Mode-
+  Vorprüfung, Dry-Run und Versuchsprotokoll; Schreibpfad bleibt gesperrt.
+  (`868879a`, `DownloadPreflight`, MCP `download_plan`; echte Writes weiter
+  `NotSupportedException`)
 - [ ] **H11.7 Übergabepaket:** Raum-/Funktionsbuch, Signatur-/Parameterbericht,
   Revision/Change-Log, Paket+Manifest/Hash, Bedienungsanleitung und
   Kontakt-/Datenschutzseiten.
