@@ -103,8 +103,5 @@ ratchet src/Knx.Reports/LabelCreator.cs|<html lang="de"><head><meta charset="utf
 
 # --- known unresolved key references (fix by adding the key to the right map or correcting
 # the call site) ---
-# W(...) resolves in WorkbenchStrings only; LinkProjectChanged lives in the core Strings map,
-# so the workbench dialog currently shows the raw key.
-missing src/Knx.App/WorkbenchWindow.Commands.cs|LinkProjectChanged
 # Deliberate unknown key: tests/Knx.Core.Tests exercises the "unknown key returns the key" fallback.
 missing tests/Knx.Core.Tests/Program.cs|GibtEsNicht

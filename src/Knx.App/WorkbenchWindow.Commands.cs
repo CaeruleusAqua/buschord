@@ -923,7 +923,7 @@ public partial class WorkbenchWindow
             var results = selected.Select(item =>
             {
                 var key = new ObjectKey(item.DeviceId, item.ObjectId);
-                var reason = live is null ? W("LinkProjectChanged") : WorkbenchProject.ValidateLink(live, key, ga.Id);
+                var reason = live is null ? Strings.Get("LinkProjectChanged") : WorkbenchProject.ValidateLink(live, key, ga.Id);
                 var already = live is not null && ProjectQuery.ComObjectRefs(live)
                     .Any(r => r.Device.Id == item.DeviceId && r.Ref.Id == item.ObjectId && r.Ref.Links.Contains(ga.Id));
                 return new LinkPreview(item, reason, already);
