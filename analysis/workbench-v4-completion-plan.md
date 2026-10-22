@@ -404,7 +404,8 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   Descriptor 1.0.0/1.1.29/1.3.3, echte GroupValueResponse 3/1/15 von 1.1.18,
   Timeouts, Reconnect und zwei parallele Tunnel auf Kanal 16/17 belegt;
   Linien-/Bus-Scan read-only ausgeführt, aber 0 Responder und damit kein
-  positiver Gerätenachweis; Abnahme bleibt offen)
+  positiver Gerätenachweis; dafür müsste ein Gerät physisch in den
+  Programmiermodus; Abnahme bleibt offen)
   Stand 2026-10-22: erneuter Live-Lauf **blockiert** - dieser Host hat kein
   Interface im Gateway-Subnetz, CONNECT läuft in den Timeout, passive
   Routing-Listener empfangen 0 Frames. Kein cEMI gesendet; Descriptor-,
@@ -538,7 +539,8 @@ werden:
 - **H12.2 Reale Busabnahme:** Read-only-Tunnel/Routing, Descriptor-Livescan,
   echte Gruppenantwort, Timeout, Reconnect und zwei parallele Tunnel sind live
   belegt; ein Linien-/Bus-Scan lief read-only, lieferte aber 0 Responder und
-  damit keinen positiven Gerätenachweis. Reale Schreibzugriffe bleiben gesperrt.
+  damit keinen positiven Gerätenachweis (dafür wäre ein Gerät im
+  Programmiermodus nötig). Reale Schreibzugriffe bleiben gesperrt.
 - **H12.3 Dritte Sprache:** Sprachwahl und menschliche Übersetzung/Review
   fehlen; Architektur, Workflow und CI-Gates sind fertig.
 - **H12.4 GitHub-Purge:** `refs/pull/1/head` und gecachte Blobs lassen sich
