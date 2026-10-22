@@ -471,7 +471,9 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
   (`6771031`) und `main` (`49feddd`) sind force-gepusht, die Schutzregeln
   wurden danach exakt wiederhergestellt, Clean-Branches gelöscht. Offen:
   exponierte Test-Zugangsdaten und der im Chat genannte GitHub-Token
-  rotieren; GitHub-Caches/Forks können alte Objekte bis GC/Support halten.
+  rotieren; GitHub-Caches/Forks und der geschlossene PR-Ref
+  `refs/pull/1/head` (nicht löschbar, `deny updating a hidden ref`) können
+  alte Objekte bis GC/Support halten – GitHub-Support-Purge einplanen.
 
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
