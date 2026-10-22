@@ -333,13 +333,19 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
 - [x] **H6.1 Design und API-Nachweis:** `analysis/ui-frameless-window-design.md`
   mit Wireframe, Avalonia-12-API (`WindowDecorations`,
   `ExtendClientAreaToDecorationsHint`, `ElementRole`), Windows-Hit-Test-/
-  Snap-/Resize-Verhalten und Dialogentscheidung. (`33ee3dc`; S0-Spike
-  `agents/ui/frameless-spike` noch offen)
+  Snap-/Resize-Verhalten und Dialogentscheidung. (`33ee3dc`)
+- [x] **H6.1a S0-Spike:** `analysis/ui-frameless-window-spike.md`
+  (`1ba8523`): Drag, Doppelklick, Snap, Resize, Ein-Klick-Maximieren,
+  Alt+F4 und Buttons funktionieren; drei Korrekturen nötig: eigenes
+  Decorations-Theme muss den Fluent-Caption unterdrücken, Systemmenü auf
+  dem erweiterten Strip ist nicht erreichbar, Close-Menüeintrag ist
+  gegreyt. Wenn ein natives Systemmenü auf dem Strip Pflicht ist, bleibt
+  die native Titelleiste.
 - [ ] **H6.2 Shell-Chrome:** Marke, Menüs, Projektsuche, Status und
   Fensteraktionen (Minimieren/Maximieren/Wiederherstellen/Schließen) in
   einem optisch integrierten, fokussierbaren Topstrip; native Titelleiste
-  entfällt nur, wenn Drag, Doppelklick, Snap, Resize und Systemmenü erhalten
-  bleiben.
+  entfällt nur mit den S0-Korrekturen und wenn Drag, Doppelklick, Snap,
+  Resize sowie ein erreichbarer Ersatz für das Systemmenü erhalten bleiben.
 - [ ] **H6.3 Barrierefreiheit:** Automationsnamen, Fokusreihenfolge,
   Zielgrößen, Tastatur (Alt+F4/Alt+Space), Screenreader und High Contrast.
 - [ ] **H6.4 Dialoge:** einheitliche Entscheidung für Workbench und modale
@@ -350,11 +356,12 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
 
 ### H7. Veröffentlichung (Schritt 10, R08)
 
-- [ ] **H5.1** Alle Commits nach `origin/development` pushen; Remote-CI und
-  CodeQL abwarten und Ergebnisse hier eintragen.
-- [ ] **H5.2** Plan-Checkboxen 3–6, 8 und 13 erst nach belegter Abnahme
-  schließen; `ac0480a` und die Integrations-SHAs dokumentieren.
-- [ ] **H5.3** Agenten-Worktrees/Branches nach bestätigter Integration und
+- [x] **H7.1** Alle Commits nach `origin/development` pushen; Remote-CI und
+  CodeQL abwarten und Ergebnisse hier eintragen. (SSH-Push eingerichtet;
+  `development`-CI/CodeQL grün; nach jedem Integrationsblock erneut)
+- [ ] **H7.2** Plan-Checkboxen 3–6, 8 und 13 erst nach belegter Abnahme
+  schließen; Integrations-SHAs dokumentieren.
+- [ ] **H7.3** Agenten-Worktrees/Branches nach bestätigter Integration und
   ohne ungesicherte Änderungen aufräumen; offene Grenzen stehen lassen.
 
 ### Bekannte P1/P2-Quellen (nicht doppelt abhaken)
