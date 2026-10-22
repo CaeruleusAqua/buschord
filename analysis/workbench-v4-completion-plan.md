@@ -362,8 +362,9 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   `development`-CI/CodeQL grün; nach jedem Integrationsblock erneut)
 - [ ] **H7.2** Plan-Checkboxen 3–6, 8 und 13 erst nach belegter Abnahme
   schließen; Integrations-SHAs dokumentieren.
-- [ ] **H7.3** Agenten-Worktrees/Branches nach bestätigter Integration und
+- [x] **H7.3** Agenten-Worktrees/Branches nach bestätigter Integration und
   ohne ungesicherte Änderungen aufräumen; offene Grenzen stehen lassen.
+  (17 abgeschlossene Worktrees entfernt, Branches/Commits bleiben erhalten)
 
 ### Bekannte P1/P2-Quellen (nicht doppelt abhaken)
 
