@@ -565,5 +565,25 @@ invisible. A usable fix needs vertical room for the dock body (content minimum, 
 collapsible dock, or hiding the monitor table header while empty); wrapping alone is not
 enough at 140 DIP.
 
+### Fourth recheck — `72f4971` (2026-10-22, final)
+
+Re-ran the same state at `72f49717aca0eba62fa5cb5c538bbc9f03bcf2bc` ("Reclaim monitor header
+space for the short dock empty state"). Built at that commit; artifacts:
+`%TEMP%\opencode\wb-v4-a11y\recheck-72f4971`.
+
+| Check | 9691f24 | 72f4971 | Measurement |
+|---|---|---|---|
+| empty state visible | no (638×0) | **PASS** | header hidden while the monitor is empty (`WorkbenchWindow.axaml.cs:2146/2152`); empty-state scroller now 638×17 at (262,556), viewport 17 DIP; the icon top at y=556 is visible. |
+| empty state scrollable | no (viewport 0) | **PASS** | extent 73 > viewport 17; max offset 56; at offset 36 the heading `Noch keine Aufzeichnung` is fully inside 556…573 (`recheck-empty-state-heading.png`). |
+| unscrollable clipping | PASS (0) | PASS (0) | layout dump `clipped-without-scroll=0`. |
+| overlay coverage / target sizes / compare focus | fixed | unchanged | 0 covered focusables, 24×24 targets, compare first row focused. |
+
+**Pass/fail: PASS** — the empty state is visible and scrollable at 900×600 with the inspector
+and tools open. Caveat: the reclaimed viewport is only **17 DIP** tall (content 73 DIP), so
+the icon and the text are never visible together and the heading needs a ~36 DIP scroll; it
+is usable but cramped. This closes the last open item from the four failures and the
+target-size observations in this report.
+
+
 
 
