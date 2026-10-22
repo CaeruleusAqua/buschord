@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using IOPath = System.IO.Path;
 using System.Security.Cryptography;
 
@@ -12,7 +13,17 @@ public sealed record CatalogLoadProgress(int Loaded, int Total, string File);
 
 /// <summary>Summary of one catalogue import, including gating facts.</summary>
 public sealed record CatalogImportReport(string File, string CatalogName, int Products, int Sections, int Programs,
-    bool HasBrokenProgram, bool HasDcaProgram, bool HasExternalSoftware);
+    bool HasBrokenProgram, bool HasDcaProgram, bool HasExternalSoftware)
+{
+    /// <summary>
+    /// The container carries a *.signature entry. Presence is surfaced only; the signature is
+    /// never verified here (that needs the ETS trust chain).
+    /// </summary>
+    public bool HasSignatureFile { get; init; }
+
+    /// <summary>The import replaced an existing library entry with the same identity.</summary>
+    public bool ReplacedExisting { get; init; }
+}
 
 /// <summary>What the last <see cref="CatalogStore.LoadAll"/> read from cache and from XML.</summary>
 public sealed record CatalogIndexStatistics(int Files, int IndexHits, int IndexMisses, int XmlCatalogFiles,
@@ -65,10 +76,12 @@ public sealed class CatalogStore
         var catalog = KnxProductCatalog.Open(path, _index.Directory);
         System.IO.Directory.CreateDirectory(Directory);
         var target = IOPath.Combine(Directory, LibraryFileName(catalog));
+        var replaced = false;
         if (!string.Equals(IOPath.GetFullPath(catalog.Path), IOPath.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
         {
             // Copy beside the target, then replace it in one move: a failed import never
             // destroys the previously imported catalogue.
+            replaced = File.Exists(target);
             var temp = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
@@ -87,9 +100,36 @@ public sealed class CatalogStore
         catalog.Relocate(target);
         LastImportReport = new(target, catalog.Name, catalog.Products.Count, catalog.CatalogSections.Count,
             catalog.Programs.Count, catalog.Programs.Any(p => p.Broken || p.DownloadInfoIncomplete),
-            catalog.Programs.Any(p => p.RequiresDca), catalog.Programs.Any(p => p.RequiresExternalSoftware));
+            catalog.Programs.Any(p => p.RequiresDca), catalog.Programs.Any(p => p.RequiresExternalSoftware))
+        {
+            HasSignatureFile = HasSignatureEntry(catalog),
+            ReplacedExisting = replaced,
+        };
         _index.Save(catalog);
         return catalog;
+    }
+
+    /// <summary>
+    /// True when the container (or, for a nested vendor ZIP, the extracted inner archive) carries
+    /// a *.signature entry. The entry is only surfaced, never parsed or verified.
+    /// </summary>
+    private static bool HasSignatureEntry(KnxProductCatalog catalog)
+    {
+        foreach (var path in new[] { catalog.BackingArchivePath, catalog.Path })
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) continue;
+            try
+            {
+                using var zip = ZipFile.OpenRead(path);
+                if (zip.Entries.Any(entry => entry.Name.EndsWith(".signature", StringComparison.OrdinalIgnoreCase)))
+                    return true;
+            }
+            catch (Exception)
+            {
+                // Loose XML catalogues are no archives; there is nothing to check.
+            }
+        }
+        return false;
     }
 
     /// <summary>Parses every catalogue in the library; broken files land in <see cref="LoadErrors"/>.</summary>

@@ -247,6 +247,9 @@ try
 
     // ETS-1: local backup/recovery independent of undo, layout and background timers.
     {
+        Check(Path.IsPathFullyQualified(ProjectBackup.DefaultRootPath)
+            && ProjectBackup.DefaultRootPath.Contains("BusChord", StringComparison.Ordinal),
+            "default backup root is a local profile path: " + ProjectBackup.DefaultRootPath);
         var backupRoot = Path.Combine(directory, "backups");
         var backupSource = Path.Combine(directory, "backup-source.knxproj");
         var opaqueMember = new byte[] { 9, 8, 7, 0, 255, 42 };

@@ -13,11 +13,20 @@ namespace Knx;
 /// Creation, restore and delete never extract entries and never change the source project.
 /// Restore validates the backup hash and loads the archive through <see cref="Knxproj"/> before
 /// the destination is replaced atomically.
+/// Backups are stored unencrypted under <see cref="DefaultRootPath"/>: they are byte copies of
+/// customer data, outlive the project folder and stay readable by any process of this user.
+/// Only a new backup of the same identity prunes older ones; there is no automatic deletion.
 /// </remarks>
 public static class ProjectBackup
 {
     /// <summary>Number of backups kept per project identity when no other value is passed.</summary>
     public const int DefaultRetention = 10;
+
+    /// <summary>
+    /// Directory used when no <c>backupRoot</c> is passed. Exposed so a UI can name the
+    /// unencrypted backup location and its retention to the user.
+    /// </summary>
+    public static string DefaultRootPath => DefaultRoot();
 
     private const int MaxArchiveBytes = 128 * 1024 * 1024;
     private const int ManifestVersion = 1;

@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
 using Knx;
 
@@ -1231,6 +1233,87 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         Csv.Field("  =1+1") == "'  =1+1" && Csv.Field("\t  @cmd") == "'\t  @cmd");
     Check("CSV: Zeile verbindet maskierte Felder",
         Csv.Row(';', "1/1/1", "=1+1", "a;b") == "1/1/1;'=1+1;\"a;b\"");
+}
+
+// ---- Katalogbibliothek: Import ersetzt atomar, meldet Ersatz und Signaturdatei ----
+{
+    var storeRoot = Path.Combine(Path.GetTempPath(), "knx_catalog_store_selftest");
+    if (Directory.Exists(storeRoot)) Directory.Delete(storeRoot, true);
+    var library = Path.Combine(storeRoot, "library");
+    var sources = Path.Combine(storeRoot, "sources");
+    Directory.CreateDirectory(sources);
+
+    // Two containers with the same library identity (same product/program ids), different bytes
+    // and an optional vendor signature entry.
+    byte[] CatalogContainer(string productName, bool signature)
+    {
+        using var buffer = new MemoryStream();
+        using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, true))
+        {
+            using (var writer = new StreamWriter(zip.CreateEntry("knxprod.xml").Open(), new UTF8Encoding(false)))
+                writer.Write($$"""
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <KNX xmlns="http://knx.org/xml/prod/20"><ManufacturerData>
+                      <Manufacturer RefId="M-00FA">
+                        <Hardware><Hardware Id="M-00FA_H-1" Name="H" SerialNumber="1" VersionNumber="1"
+                                   HasIndividualAddress="true" HasApplicationProgram="true">
+                          <Products><Product Id="M-00FA_H-1_P-1" Text="{{productName}}"/></Products>
+                          <Hardware2Programs><Hardware2Program Id="M-00FA_H-1_HP-1">
+                            <ApplicationProgramRef RefId="M-00FA_A-1"/></Hardware2Program></Hardware2Programs>
+                        </Hardware></Hardware>
+                        <ApplicationPrograms><ApplicationProgram Id="M-00FA_A-1" Name="App"
+                                                ApplicationNumber="1" ApplicationVersion="1">
+                          <Static><ParameterTypes><ParameterType Id="PT-1" Name="N" SizeInBit="8" DataType="Number"/></ParameterTypes>
+                            <Parameters><Parameter Id="P-1" Name="N" ParameterType="PT-1" Value="1"/></Parameters>
+                            <ParameterRefs><ParameterRef Id="PR-1" RefId="P-1"/></ParameterRefs>
+                          </Static></ApplicationProgram></ApplicationPrograms>
+                      </Manufacturer>
+                    </ManufacturerData></KNX>
+                    """);
+            if (signature)
+                zip.CreateEntry("M-00FA/M-00FA.signature").Open().Write([1, 2, 3, 4]);
+        }
+        return buffer.ToArray();
+    }
+
+    var signedPath = Path.Combine(sources, "signed.knxprod");
+    var unsignedPath = Path.Combine(sources, "unsigned.knxprod");
+    File.WriteAllBytes(signedPath, CatalogContainer("Actuator A", signature: true));
+    File.WriteAllBytes(unsignedPath, CatalogContainer("Actuator B", signature: false));
+
+    var store = new Knx.Catalog.CatalogStore(library);
+    var first = store.Import(signedPath);
+    var firstBytes = File.ReadAllBytes(first.Path);
+    Check("Import: Signaturdatei erkannt, kein Ersatz",
+        store.LastImportReport is { HasSignatureFile: true, ReplacedExisting: false });
+
+    // Windows refuses to replace an open file; the failed re-import must keep the good entry.
+    if (OperatingSystem.IsWindows())
+    {
+        using var locked = new FileStream(first.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        try
+        {
+            store.Import(unsignedPath);
+            Check("Import: fehlgeschlagener Re-Import bricht ab", false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Check("Import: fehlgeschlagener Re-Import lässt Bibliothekseintrag unverändert",
+                File.ReadAllBytes(first.Path).SequenceEqual(firstBytes));
+            Check("Import: fehlgeschlagener Re-Import lässt keine Temp-Datei zurück",
+                !Directory.EnumerateFiles(library, "*.tmp").Any());
+        }
+    }
+    else
+    {
+        Console.WriteLine("  SKIP Import: gesperrter Bibliothekseintrag (Unix erlaubt Ersetzen offener Dateien)");
+    }
+
+    var second = store.Import(unsignedPath);
+    Check("Import: gleiche Identität ersetzt denselben Eintrag und meldet Ersatz",
+        Path.GetFileName(second.Path) == Path.GetFileName(first.Path)
+        && store.LastImportReport is { HasSignatureFile: false, ReplacedExisting: true });
+    Check("Import: keine Temp-Datei bleibt zurück", !Directory.EnumerateFiles(library, "*.tmp").Any());
 }
 
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER: {string.Join("; ", failures)}");
