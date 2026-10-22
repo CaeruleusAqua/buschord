@@ -135,7 +135,7 @@ consolidates the state of the rewritten `development` line at the base commit be
   label sheet, semantic Turtle/JSON-LD exports and compare CSV (`e8ec200`, `8e751e5`,
   `51223a6`; manual §9.2).
 - Project-wide search and replace with preview, stale protection and Undo (`51223a6`).
-- MCP server (48 tools) offers the same exports plus `export_labels` (CSV or combined HTML),
+- MCP server (50 tools) offers the same exports plus `export_labels` (CSV or combined HTML),
   `project_check` as JSON and `group_address_import_csv`; the Workbench itself has no GA CSV
   import and no label CSV export (manual §9.2, §9.5; `mcp.md`).
 - CSV hardening: one shared escaper neutralizes `= + - @`, tab/CR and leading spaces in all

@@ -500,11 +500,13 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
 - [x] **H11.3 Übergabe/Bauherren:** `analysis/handover-readiness.md`
   (`83b5953`). Verdict: **nicht übergabereif**; heute nur manuell
   zusammengestellte Teilpakete.
-- [ ] **H11.4 Hardware-/Busplanung:** Busstrom, Segment-/Kopplerfelder
-  parsen und Projektprüfungen ergänzen (Agent `agents/impl/hardware-planning`).
-- [ ] **H11.5 Abnahmeprotokoll:** HTML/CSV-Protokoll mit Geräte-/GA-/Link-
-  Matrix, Testzeilen, Unterschrift und Simulationskennzeichnung (Agent
-  `agents/impl/acceptance-protocol`).
+- [x] **H11.4 Hardware-/Busplanung:** Busstrom, Segment-/Kopplerfelder
+  parsen und Projektprüfungen ergänzen. (`facef973`: Segment Number/Medium/
+  Domain, Hardware-Fakten, P080/P081/P082; echte ETS-/MDT-Daten belegt)
+- [x] **H11.5 Abnahmeprotokoll:** HTML/CSV-Protokoll mit Geräte-/GA-/Link-
+  Matrix, Testzeilen, Unterschrift und Simulationskennzeichnung.
+  (`72cb8b0`: `AcceptanceProtocol`, MCP `acceptance_protocol_export`,
+  deterministisch/escaped, Simulation bleibt Simulation)
 - [x] **H11.6 Download-Gate:** Descriptor-/Masken-/Programming-Mode-
   Vorprüfung, Dry-Run und Versuchsprotokoll; Schreibpfad bleibt gesperrt.
   (`868879a`, `DownloadPreflight`, MCP `download_plan`; echte Writes weiter
@@ -512,11 +514,10 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
 - [ ] **H11.7 Übergabepaket:** Raum-/Funktionsbuch, Signatur-/Parameterbericht,
   Revision/Change-Log, Paket+Manifest/Hash, Bedienungsanleitung und
   Kontakt-/Datenschutzseiten.
-- [ ] **H11.8 Portfolio/Multi-Projekt** und Versions-/Archivstrategie mit
-  ehrlichem Signaturstatus. Core-Registry mit atomarem JSON, Hash/Missing-
-  Erkennung, Move/Rename, Backup-/Version-Refs ist implementiert
-  (`a5b8966`); UI-Verdrahtung läuft als `agents/impl/portfolio-ui`,
-  Versionsvergleich als `agents/impl/project-versioning-2`.
+- [x] **H11.8 Portfolio/Multi-Projekt** und Versions-/Archivstrategie mit
+  ehrlichem Signaturstatus. (`a5b8966` Registry, `3fb21de` Workbench-Dialog,
+  `9e5c41e` Revisionen/Compare; ein Projekt wird gleichzeitig bearbeitet,
+  keine parallelen Projekt-Tabs – bewusste Grenze)
 
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
