@@ -118,6 +118,50 @@
   <Style Selector="Border.wb-panel">
     <Setter Property="Background" Value="{DynamicResource WbPanel}" />
   </Style>
+  <!-- Docked and floating tools share the host, not the native titlebar. -->
+  <Style Selector="Window.wb-host">
+    <Setter Property="FontFamily" Value="Inter, Segoe UI" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    <Setter Property="Background" Value="{DynamicResource WbBackground}" />
+  </Style>
+  <Style Selector="Window.wb-host TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <!-- Controls without wb-* classes still use the host's V4 tokens, docked or floating. -->
+  <Style Selector="Window.wb-host Button:not(.wb-button)"><Setter Property="MinHeight" Value="30"/><Setter Property="Padding" Value="10,0"/><Setter Property="FontSize" Value="12"/><Setter Property="CornerRadius" Value="5"/><Setter Property="Background" Value="{DynamicResource WbPaper}"/><Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/></Style>
+  <Style Selector="Window.wb-host Button:not(.wb-button):pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbHover}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
+  <Style Selector="Window.wb-host Button:not(.wb-button):pressed /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
+  <Style Selector="Window.wb-host Button.quiet"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/></Style>
+  <!-- WbAccent on WbTint is 4.24:1; darker selected text keeps the active state legible. -->
+  <Style Selector="Window.wb-host Button.active"><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
+  <Style Selector="Window.wb-host Button.primary"><Setter Property="Background" Value="{DynamicResource WbAccent}"/><Setter Property="Foreground" Value="{DynamicResource WbOnAccent}"/></Style>
+  <Style Selector="Window.wb-host TextBox"><Setter Property="MinHeight" Value="28"/><Setter Property="FontSize" Value="11"/></Style>
+  <Style Selector="Window.wb-host TextBlock.muted"><Setter Property="Foreground" Value="{DynamicResource WbMuted}"/><Setter Property="FontSize" Value="11"/></Style>
+  <Style Selector="Window.wb-host ListBoxItem">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinHeight" Value="29" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Window.wb-host ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbTint}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <!-- One caption and semantic palette in every V4 surface. -->
+  <Style Selector="TextBlock.wb-th">
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Grid.wb-table-header">
+    <Setter Property="Background" Value="{DynamicResource WbTableHeader}" />
+  </Style>
+  <Style Selector="TextBlock.wb-subtle">
+    <Setter Property="Foreground" Value="{DynamicResource WbSubtle}" />
+  </Style>
+  <Style Selector="TextBlock.wb-accent">
+    <Setter Property="Foreground" Value="{DynamicResource WbAccent}" />
+  </Style>
   <Style Selector="TextBlock.wb-text">
     <Setter Property="FontFamily" Value="{StaticResource WbFontFamily}" />
     <Setter Property="FontSize" Value="{StaticResource WbFontSize}" />

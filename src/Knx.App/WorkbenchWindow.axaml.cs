@@ -983,13 +983,13 @@ public partial class WorkbenchWindow : Window
         var lines = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).ToList();
         var dialog = CreateDialog(W("Move"), 460, 220);
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
-        var picker = new ComboBox { ItemsSource = lines, SelectedIndex = Math.Max(0, lines.FindIndex(l => l.Id == sourceLine.Id)) };
+        var picker = new ComboBox { ItemsSource = lines, SelectedIndex = Math.Max(0, lines.FindIndex(l => l.Id == sourceLine.Id)), Classes = { "wb-field" } };
         picker.ItemTemplate = new FuncDataTemplate<Line>((line, _) => Label(line is null ? ""
             : $"{line.Address} · {line.Name ?? W("Line")}"));
         panel.Children.Add(Note(W("ChooseLine")));
         panel.Children.Add(picker);
         var actions = DialogActions(
-            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            DialogCancel(dialog),
             ActionButton(W("Move"), () =>
             {
                 if (picker.SelectedItem is not Line target) return;
@@ -1013,12 +1013,12 @@ public partial class WorkbenchWindow : Window
         var sourceArea = areas.FirstOrDefault(a => a.Lines.Contains(line) || a.Lines.Any(l => l.Id == line.Id));
         var dialog = CreateDialog(W("Move"), 460, 220);
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
-        var picker = new ComboBox { ItemsSource = areas, SelectedIndex = Math.Max(0, areas.FindIndex(a => a.Id == sourceArea?.Id)) };
+        var picker = new ComboBox { ItemsSource = areas, SelectedIndex = Math.Max(0, areas.FindIndex(a => a.Id == sourceArea?.Id)), Classes = { "wb-field" } };
         picker.ItemTemplate = new FuncDataTemplate<Area>((area, _) => Label(area is null ? ""
             : $"{area.Address} · {area.Name ?? W("AreaNode", area.Address, "")}"));
         panel.Children.Add(Note(W("Move"))); panel.Children.Add(picker);
         var actions = DialogActions(
-            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            DialogCancel(dialog),
             ActionButton(W("Move"), () =>
             {
                 if (picker.SelectedItem is not Area target) return;
@@ -1036,12 +1036,12 @@ public partial class WorkbenchWindow : Window
         var lines = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).ToList();
         var dialog = CreateDialog(W("Move"), 460, 220);
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
-        var picker = new ComboBox { ItemsSource = lines, SelectedIndex = 0 };
+        var picker = new ComboBox { ItemsSource = lines, SelectedIndex = 0, Classes = { "wb-field" } };
         picker.ItemTemplate = new FuncDataTemplate<Line>((line, _) => Label(line is null ? ""
             : $"{line.Address} · {line.Name ?? W("Line")}"));
         panel.Children.Add(Note(W("Move"))); panel.Children.Add(picker);
         var actions = DialogActions(
-            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            DialogCancel(dialog),
             ActionButton(W("Move"), () =>
             {
                 if (picker.SelectedItem is not Line target) return;
@@ -1510,11 +1510,11 @@ public partial class WorkbenchWindow : Window
     {
         var dialog = CreateDialog(title, 420, 180);
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
-        var box = new TextBox { Watermark = title };
+        var box = new TextBox { PlaceholderText = title, Classes = { "wb-field" } };
         string? result = null;
         var actions = DialogActions(
-            ActionButton(W("Cancel"), dialog.Close, "quiet"),
-            ActionButton(primary, () => { result = box.Text; dialog.Close(); }, "primary"));
+            DialogCancel(dialog),
+            ActionButton(primary, () => { result = box.Text; dialog.Close(); }, "primary", isDefault: true));
         panel.Children.Add(box);
         dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => box.Focus();
@@ -2477,31 +2477,33 @@ public partial class WorkbenchWindow : Window
     {
         if (_sessions is not { } sessions || ViewModel.Project is not { } project)
         { ViewModel.Status = W("ScanNeedsProject"); return; }
-        var dialog = CreateDialog(W("ValueTitle"), 420, 240);
+        var dialog = CreateDialog(W("ValueTitle"), 480, 320);
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
-        var picker = new ComboBox { ItemsSource = groups, SelectedIndex = groups.Count > 0 ? 0 : -1 };
+        var picker = new ComboBox { ItemsSource = groups, SelectedIndex = groups.Count > 0 ? 0 : -1, Classes = { "wb-field" } };
         picker.ItemTemplate = new FuncDataTemplate<GroupAddressEntry>((g, _) => Label(g is null ? ""
             : $"{g.Address} · {g.Name} · {g.DatapointType ?? "—"}"));
-        var value = new TextBox { Text = "1", PlaceholderText = W("ValueText") };
+        var value = new TextBox { Text = "1", PlaceholderText = W("ValueText"), Classes = { "wb-field" } };
         panel.Children.Add(Label(W("ValueGroupAddress"))); panel.Children.Add(picker);
         panel.Children.Add(Label(W("ValueText"))); panel.Children.Add(value);
+        var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Classes = { "wb-error" } };
+        AutomationProperties.SetLiveSetting(error, AutomationLiveSetting.Polite);
         var actions = DialogActions(
-            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            DialogCancel(dialog),
             ActionButton(W("SimulateRead"), () =>
             {
-                if (picker.SelectedItem is not GroupAddressEntry ga) return;
+                if (picker.SelectedItem is not GroupAddressEntry ga) { error.Text = W("ChooseGroupAddress"); return; }
                 try { sessions.Monitor.SimulateRead(ga.Id, value.Text ?? ""); ViewModel.Status = W("ValueWritten", ga.Address.ToString()); dialog.Close(); }
-                catch (Exception ex) { ViewModel.Status = ex.Message; }
+                catch (Exception ex) { error.Text = ex.Message; }
             }),
             ActionButton(W("SimulateWrite"), () =>
             {
-                if (picker.SelectedItem is not GroupAddressEntry ga) return;
+                if (picker.SelectedItem is not GroupAddressEntry ga) { error.Text = W("ChooseGroupAddress"); return; }
                 try { sessions.Monitor.SimulateWrite(ga.Id, value.Text ?? ""); ViewModel.Status = W("ValueWritten", ga.Address.ToString()); dialog.Close(); }
-                catch (Exception ex) { ViewModel.Status = ex.Message; }
+                catch (Exception ex) { error.Text = ex.Message; }
             }, "primary"));
         panel.Children.Add(Note(W("MonitorDemoNote")));
-        dialog.Content = DialogLayout(panel, actions);
+        dialog.Content = DialogLayout(panel, actions, error);
         dialog.Opened += (_, _) => picker.Focus();
         dialog.ShowDialog(this);
     }
@@ -2871,7 +2873,7 @@ public partial class WorkbenchWindow : Window
     {
         var content = CreateToolView(Workspace.ActiveTool);
         var window = new Window { Title = ToolWindowTitle(Workspace.ActiveTool), Width = 1000, Height = 380,
-            Content = content };
+            MinWidth = 480, MinHeight = 240, Classes = { "wb-host" }, Content = content };
         // Project undo/redo stays shell state: the floated tool forwards Ctrl+Z/Ctrl+Y to the shell
         // instead of keeping a second edit history. Text editors keep their own undo.
         window.AddHandler(KeyDownEvent, (_, e) => RouteUndoRedo(e), RoutingStrategies.Tunnel);
@@ -2965,9 +2967,9 @@ public partial class WorkbenchWindow : Window
             }
         }
     };
-    private static Button ActionButton(string text, Action action, string? style = null, string? accessibleName = null)
+    private static Button ActionButton(string text, Action action, string? style = null, string? accessibleName = null, bool isDefault = false)
     {
-        var button = new Button { Content = text };
+        var button = new Button { Content = text, IsDefault = isDefault };
         button.Classes.Add("wb-button");
         if (style == "primary") button.Classes.Add("wb-primary");
         else if (style == "quiet") button.Classes.Add("wb-quiet");

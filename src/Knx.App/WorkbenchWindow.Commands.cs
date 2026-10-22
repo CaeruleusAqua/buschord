@@ -6,6 +6,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Knx.App.Services;
 using Knx.App.Views;
 using Knx.App.Workbench;
@@ -85,35 +86,57 @@ public partial class WorkbenchWindow
             Title = title,
             Width = width,
             Height = height,
+            MinWidth = Math.Min(width, 420),
+            MinHeight = Math.Min(height, 220),
             WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
-        // Shared V4 dialog chrome (App.axaml: Window.wb-dialog); quick dialogs keep their own flows.
+        // Keep native titlebars; unhandled Escape bubbles after editors/popups have their turn.
         dialog.Classes.Add("wb-dialog");
+        dialog.KeyDown += (_, e) =>
+        {
+            if (!e.Handled && e.Key == Avalonia.Input.Key.Escape)
+            { dialog.Close(); e.Handled = true; }
+        };
+        dialog.Opened += (_, _) => dialog.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.IsCancel)?.Focus();
         return dialog;
     }
 
     /// <summary>Shared V4 dialog layout: body above the 13 px footer, so actions stay reachable.</summary>
-    private static Grid DialogLayout(Control body, Control actions)
+    private static Grid DialogLayout(Control body, Control actions, Control? message = null)
     {
         var grid = new Grid { RowDefinitions = new("*,Auto") };
-        grid.Children.Add(body);
-        var footer = new Border { Classes = { "wb-dialog-footer" }, Child = actions };
+        // Stack forms need a bounded viewport, not a footer over their last fields.
+        grid.Children.Add(body is StackPanel ? new ScrollViewer
+        {
+            Content = body,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+        } : body);
+        var footer = new Border { Classes = { "wb-dialog-footer" }, Child = message is null ? actions
+            : new StackPanel { Spacing = 8, Children = { message, actions } } };
         Grid.SetRow(footer, 1);
         grid.Children.Add(footer);
         return grid;
     }
 
     /// <summary>V4 action order: quiet Cancel first, primary last, right-aligned.</summary>
-    private static StackPanel DialogActions(params Control[] actions)
+    private static WrapPanel DialogActions(params Control[] actions)
     {
-        var row = new StackPanel
+        var row = new WrapPanel
         {
             Orientation = Avalonia.Layout.Orientation.Horizontal,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-            Spacing = 8
+            ItemSpacing = 8, LineSpacing = 8
         };
         foreach (var action in actions) row.Children.Add(action);
         return row;
+    }
+
+    private static Button DialogCancel(Window dialog)
+    {
+        var button = ActionButton(W("Cancel"), dialog.Close, "quiet");
+        button.IsCancel = true;
+        return button;
     }
 
     private async Task GuardAsync(Func<Task> action)
@@ -196,12 +219,12 @@ public partial class WorkbenchWindow
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         panel.Children.Add(Note(message));
         panel.Children.Add(Note(W("PasswordPrompt")));
-        var box = new TextBox { PasswordChar = '●' };
+        var box = new TextBox { PasswordChar = '●', Classes = { "wb-field" } };
         panel.Children.Add(box);
         string? result = null;
         var actions = DialogActions(
-            ActionButton(W("Cancel"), dialog.Close, "quiet"),
-            ActionButton(W("Open"), () => { result = box.Text; dialog.Close(); }, "primary"));
+            DialogCancel(dialog),
+            ActionButton(W("Open"), () => { result = box.Text; dialog.Close(); }, "primary", isDefault: true));
         dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => box.Focus();
         await dialog.ShowDialog(this);
@@ -343,7 +366,7 @@ public partial class WorkbenchWindow
             panel.Children.Add(row);
         }
         dialog.Content = DialogLayout(new ScrollViewer { Content = panel },
-            DialogActions(ActionButton(W("Cancel"), dialog.Close, "quiet")));
+            DialogActions(DialogCancel(dialog)));
         await dialog.ShowDialog(this);
     }
 
@@ -615,13 +638,13 @@ public partial class WorkbenchWindow
         var dialog = CreateDialog(W("PortfolioRenameTitle"), 460, 240);
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         panel.Children.Add(Note(W("PortfolioRenamePrompt")));
-        var box = new TextBox { Text = current };
+        var box = new TextBox { Text = current, Classes = { "wb-field" } };
         AutomationProperties.SetName(box, W("PortfolioRenamePrompt"));
         panel.Children.Add(box);
         string? result = null;
         dialog.Content = DialogLayout(panel, DialogActions(
-            ActionButton(W("Cancel"), dialog.Close, "quiet"),
-            ActionButton(W("Rename"), () => { result = box.Text; dialog.Close(); }, "primary")));
+            DialogCancel(dialog),
+            ActionButton(W("Rename"), () => { result = box.Text; dialog.Close(); }, "primary", isDefault: true)));
         dialog.Opened += (_, _) => { box.Focus(); box.SelectAll(); };
         await dialog.ShowDialog(owner);
         return result;
@@ -637,7 +660,7 @@ public partial class WorkbenchWindow
         // A destructive remove never takes the primary class: it is the danger action, last.
         remove.Classes.Add("wb-danger");
         dialog.Content = DialogLayout(panel, DialogActions(
-            ActionButton(W("Cancel"), dialog.Close, "quiet"), remove));
+            DialogCancel(dialog), remove));
         await dialog.ShowDialog(owner);
         return confirmed;
     }
@@ -765,7 +788,7 @@ public partial class WorkbenchWindow
         Add(W("SecureOverview"), ShowSecureOverview);
         Add(W("HelpTip"), ShowHelp);
         dialog.Content = DialogLayout(new ScrollViewer { Content = panel },
-            DialogActions(ActionButton(W("Cancel"), dialog.Close, "quiet")));
+            DialogActions(DialogCancel(dialog)));
         dialog.ShowDialog(this);
     }
 
@@ -796,7 +819,7 @@ public partial class WorkbenchWindow
     {
         var dialog = CreateDialog(W("FindWorkItemOrCommand"), 660, 480);
         var panel = new DockPanel { Margin = new(22) };
-        var query = new TextBox { PlaceholderText = W("PaletteWatermark"), Margin = new(0, 0, 0, 12) };
+        var query = new TextBox { PlaceholderText = W("PaletteWatermark"), Margin = new(0, 0, 0, 12), Classes = { "wb-field" } };
         var list = new ListBox { Focusable = true };
         Avalonia.Automation.AutomationProperties.SetName(query, W("FindWorkItemOrCommand"));
         Avalonia.Automation.AutomationProperties.SetName(list, W("SearchResults"));
@@ -835,7 +858,7 @@ public partial class WorkbenchWindow
             if (e.Key == Avalonia.Input.Key.Enter) { Activate(); e.Handled = true; }
             else if (e.Key == Avalonia.Input.Key.Escape) { dialog.Close(); e.Handled = true; }
         };
-        dialog.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Escape) dialog.Close(); else if (e.Key == Avalonia.Input.Key.Enter) Activate(); };
+        dialog.KeyDown += (_, e) => { if (!e.Handled && e.Key == Avalonia.Input.Key.Enter) { Activate(); e.Handled = true; } };
         Filter(); dialog.Opened += (_, _) => query.Focus(); dialog.ShowDialog(this);
     }
 
@@ -876,35 +899,37 @@ public partial class WorkbenchWindow
     private void ShowNewGroupAddressDialog()
     {
         if (ViewModel.Project is not { } project) { ViewModel.Status = W("NoProjectLoaded"); return; }
-        var dialog = CreateDialog(W("NewGroupAddress"), 480, 360);
+        var dialog = CreateDialog(W("NewGroupAddress"), 480, 440);
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
-        var address = new TextBox { Text = ProjectQuery.NextFreeGroupAddress(project, 1, 1).ToString() };
-        var name = new TextBox();
-        var dpt = new TextBox { Text = "DPST-1-1" };
+        var address = new TextBox { Text = ProjectQuery.NextFreeGroupAddress(project, 1, 1).ToString(), Classes = { "wb-field" } };
+        var name = new TextBox { Classes = { "wb-field" } };
+        var dpt = new TextBox { Text = "DPST-1-1", Classes = { "wb-field" } };
         var rooms = project.Installations.SelectMany(i => i.Locations.AllNodes).Where(n => n.Kind == SpaceKind.Room).ToList();
-        var room = new ComboBox { ItemsSource = rooms, PlaceholderText = W("RoomOptional") };
+        var room = new ComboBox { ItemsSource = rooms, PlaceholderText = W("RoomOptional"), Classes = { "wb-field" } };
         room.ItemTemplate = new FuncDataTemplate<SpaceNode>((r, _) => Label(r is null ? "" : r.Path));
         panel.Children.Add(Label(W("GroupAddress"))); panel.Children.Add(address);
         panel.Children.Add(Label(W("NameLabel"))); panel.Children.Add(name);
         panel.Children.Add(Label(W("DatapointType"))); panel.Children.Add(dpt);
         panel.Children.Add(Label(W("RoomOptional"))); panel.Children.Add(room);
+        var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Classes = { "wb-error" } };
+        AutomationProperties.SetLiveSetting(error, AutomationLiveSetting.Polite);
         var actions = DialogActions(
-            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            DialogCancel(dialog),
             ActionButton(W("Create"), () =>
             {
                 GroupAddress parsed;
                 try { parsed = GroupAddress.Parse(address.Text ?? ""); }
                 catch (Exception ex) when (ex is FormatException or ArgumentOutOfRangeException or OverflowException)
-                { ViewModel.Status = W("InvalidGroupAddress"); return; }
-                if (parsed.Raw == 0) { ViewModel.Status = W("InvalidGroupAddress"); return; }
+                { error.Text = W("InvalidGroupAddress"); address.Focus(); return; }
+                if (parsed.Raw == 0) { error.Text = W("InvalidGroupAddress"); address.Focus(); return; }
                 if (!ViewModel.CreateGroupAddress(parsed, name.Text ?? "", dpt.Text,
-                        (room.SelectedItem as SpaceNode)?.Id)) return;
+                        (room.SelectedItem as SpaceNode)?.Id)) { error.Text = ViewModel.Status; return; }
                 dialog.Close();
                 RefreshWorkspace();
                 if (ProjectQuery.FindGroupAddress(ViewModel.Project!, parsed) is { } created)
                     OpenTarget(new("ga", created.Id));
-            }, "primary"));
-        dialog.Content = DialogLayout(panel, actions);
+            }, "primary", isDefault: true));
+        dialog.Content = DialogLayout(panel, actions, error);
         dialog.Opened += (_, _) => name.Focus();
         dialog.ShowDialog(this);
     }
@@ -927,22 +952,22 @@ public partial class WorkbenchWindow
         var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
         var dialog = CreateDialog(W("BatchTitle", selected.Count), 720, 560);
         var top = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 8 };
-        var picker = new ComboBox { ItemsSource = groups, MinWidth = 420, PlaceholderText = W("ChooseGroupAddress") };
+        var picker = new ComboBox { ItemsSource = groups, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+            PlaceholderText = W("ChooseGroupAddress"), Classes = { "wb-field" } };
         picker.ItemTemplate = new FuncDataTemplate<GroupAddressEntry>((g, _) => Label(g is null ? "" : $"{g.Address} · {g.Name} · {g.DatapointType ?? "DPT?"}"));
         var preview = new ListBox { Height = 320 };
         var errors = new TextBlock { FontSize = 11, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+        AutomationProperties.SetLiveSetting(errors, AutomationLiveSetting.Polite);
         var add = ActionButton(W("LinkAction"), () => { }, "primary");
         add.IsEnabled = false;
         top.Children.Add(Label(W("BatchIntro")));
         top.Children.Add(picker);
         top.Children.Add(preview);
-        top.Children.Add(errors);
         var actions = DialogActions(
-            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            DialogCancel(dialog),
             add);
-        dialog.Content = DialogLayout(top, actions);
+        dialog.Content = DialogLayout(top, actions, errors);
         dialog.Opened += (_, _) => picker.Focus();
-        dialog.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Escape) dialog.Close(); };
         void Validate()
         {
             if (picker.SelectedItem is not GroupAddressEntry ga) { preview.ItemsSource = null; errors.Text = ""; add.IsEnabled = false; return; }
@@ -965,7 +990,8 @@ public partial class WorkbenchWindow
                 ? results.All(r => r.AlreadyLinked) ? W("BatchAllAlreadyLinked")
                 : W("BatchCompatible")
                 : W("BatchIncompatible", invalid.Count);
-            errors.Foreground = Avalonia.Media.Brush.Parse(invalid.Count == 0 ? "#268175" : "#b45054");
+            errors.Classes.Set("wb-success", invalid.Count == 0);
+            errors.Classes.Set("wb-error", invalid.Count != 0);
         }
         picker.SelectionChanged += (_, _) => Validate();
         add.Click += (_, _) =>
@@ -979,12 +1005,21 @@ public partial class WorkbenchWindow
                 if (!result.Ok)
                 {
                     ViewModel.Status = result.Errors.FirstOrDefault()?.Reason ?? W("LinkImpossible");
+                    errors.Classes.Set("wb-success", false);
+                    errors.Classes.Set("wb-error", true);
+                    errors.Text = ViewModel.Status;
                     return;
                 }
                 ViewModel.Status = W("LinksAdded", result.Changed, ga.Address);
                 dialog.Close(); RefreshWorkspace();
             }
-            catch (Exception ex) { ViewModel.Status = W("LinkFailed", ex.Message); }
+            catch (Exception ex)
+            {
+                ViewModel.Status = W("LinkFailed", ex.Message);
+                errors.Classes.Set("wb-success", false);
+                errors.Classes.Set("wb-error", true);
+                errors.Text = ViewModel.Status;
+            }
         };
         dialog.ShowDialog(this);
     }
