@@ -458,11 +458,14 @@ SEC-1–SEC-3 sind vor einem Release zu beheben.
 - [ ] **H10.6 Release-Entscheidung:** verbleibende P3
   (Klartext-Backups, `CatalogUse.Download`, Import-Atomarität,
   `.signature`) dokumentieren oder beheben.
-- [ ] **H10.7 Git-History:** Die entfernten Fixtures (`knx_master.xml`,
-  GPL-`.knxproj` inkl. eingebetteter Zugangsdaten) liegen weiterhin in der
-  Historie. Vor einem Public-Release History-Rewrite (filter-repo/BFG) und
-  Force-Push nur mit ausdrücklicher Freigabe; betroffene Test-Zugangsdaten
-  rotieren. HEAD ist clean, Historie nicht.
+- [ ] **H10.7 Git-History:** Rewrite ausgeführt (filter-repo, Mirror-Backup
+  `C:\projects\ai_work\buschord-history-backup-20261022-061415.git`):
+  beide Fixture-Pfade sind aus allen 219 Commits entfernt, Clean-Branches
+  `development-rewritten` (`caabd4b`) und `main-rewritten` (`49feddd`) sind
+  gepusht, `cla-signatures` ist force-gepusht. Offen: `development`/`main`
+  sind geschützt und lehnen Force-Push ab; dafür kurzfristig „Allow force
+  pushes“ freigeben oder gültigen Admin-Token bereitstellen. Danach
+  Zugangsdaten rotieren und GitHub-Support/GC für alte Objekte prüfen.
 
 ## Bewusst nicht nachgebaut (dokumentierte Grenzen)
 
