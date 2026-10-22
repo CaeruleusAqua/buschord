@@ -13,6 +13,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
 {
     private KnxBus? _bus;
     private UndoStack _undo = new();
+    private bool _restoringHistory;
+    // History restores keep this lifetime; opening/replacing a project starts a new one, even for the same ID.
+    internal object ProjectSessionIdentity { get; private set; } = new();
+    internal Func<bool>? HistoryBlocked { get; set; }
     private readonly CatalogLibrary _catalog;
     private readonly Dictionary<string, CatalogApplicationProgram> _catalogPrograms = [];
     private bool _awaitingCatalog;
@@ -128,6 +132,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     partial void OnProjectChanged(Project? value)
     {
+        if (!_restoringHistory) ProjectSessionIdentity = new();
         StartDismissed = false;
         OnPropertyChanged(nameof(HasProject));
         OnPropertyChanged(nameof(ProjectLabel));
@@ -249,6 +254,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         var undo = new UndoStack();
         undo.Reset(project);
         RememberProject(path);
+        ProjectSessionIdentity = new();
         Project = project;
         ClearSelection();
         ProjectPath = path;
@@ -267,6 +273,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             Knxproj.Save(project, path);
             RememberProject(path);
         }
+        ProjectSessionIdentity = new();
         Project = project;
         ClearSelection();
         ProjectPath = path ?? "";
@@ -360,8 +367,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void Undo()
     {
+        if (HistoryBlocked?.Invoke() == true) return;
         if (_undo.Undo() is not { } restored) return;
-        Project = restored;
+        RestoreHistory(restored);
         NotifyEditState();
         Refresh();
         var description = Strings.Get("MenuEditUndo");
@@ -372,13 +380,21 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void Redo()
     {
+        if (HistoryBlocked?.Invoke() == true) return;
         if (_undo.Redo() is not { } restored) return;
-        Project = restored;
+        RestoreHistory(restored);
         NotifyEditState();
         Refresh();
         var description = Strings.Get("MenuEditRedo");
         Status = description;
         ProjectEdited?.Invoke(this, description);
+    }
+
+    private void RestoreHistory(Project project)
+    {
+        _restoringHistory = true;
+        try { Project = project; }
+        finally { _restoringHistory = false; }
     }
 
     private void NotifyEditState()

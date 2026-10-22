@@ -122,7 +122,17 @@ public partial class WorkbenchWindow
         catch (Exception ex) { ViewModel.Status = ex.Message; await ConfirmDialog.ShowMessageAsync(this, W("ActionFailed"), ex.Message); }
     }
 
-    public void ShowCatalog() => OpenTarget(new("tool", "catalog"));
+    public void ShowCatalog()
+    {
+        EnsureSessions();
+        if (Workspace.ActiveTab?.Target != new WorkbenchTarget("tool", "catalog"))
+        {
+            _catalogProject = ViewModel.ProjectSessionIdentity;
+            _catalogLineId = CurrentLine()?.Id;
+            _catalogRoomId = Workspace.ActiveTab?.Target is { Kind: "room" } target ? target.Id : null;
+        }
+        OpenTarget(new("tool", "catalog"));
+    }
     private void ShowSettings() => _ = GuardAsync(async () => await new SettingsWindow(ViewModel.Settings).ShowDialog(this));
     private void ShowHelp()
     {
@@ -241,7 +251,7 @@ public partial class WorkbenchWindow
             if (saveAs || ViewModel.ProjectPath.Length == 0) ViewModel.SaveProjectAs(path);
             else ViewModel.SaveProject();
             if (backupWarning is not null) ViewModel.Status = backupWarning;
-            else if (_parameters.HasUnappliedChanges) ViewModel.Status = W("SavedWithDrafts");
+            else if (HasParameterDrafts) ViewModel.Status = W("SavedWithDrafts");
             return true;
         }
         catch (Exception ex) { ViewModel.Status = W("SaveFailedStatus", ex.Message); await ConfirmDialog.ShowMessageAsync(this, W("SaveFailed"), ex.Message); return false; }
@@ -249,7 +259,7 @@ public partial class WorkbenchWindow
 
     private async Task<bool> ConfirmDiscardAsync()
     {
-        if (_parameters.HasUnappliedChanges && !await ConfirmDialog.AskDiscardDraftsAsync(this)) return false;
+        if (HasParameterDrafts && !await ConfirmDialog.AskDiscardDraftsAsync(this)) return false;
         if (!ViewModel.IsDirty) return true;
         return await ConfirmDialog.AskUnsavedAsync(this, ViewModel.Project?.Name ?? "") switch
         {
@@ -259,14 +269,14 @@ public partial class WorkbenchWindow
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
-        if (!_shuttingDown && (ViewModel.IsDirty || _parameters.HasUnappliedChanges))
+        if (!_shuttingDown && (ViewModel.IsDirty || HasParameterDrafts))
         {
             e.Cancel = true;
             if (_confirmingClose) return;
             _confirmingClose = true;
             Dispatcher.UIThread.Post(async () =>
             {
-                try { if (await ConfirmDiscardAsync()) { _parameters.DiscardDrafts(); _shuttingDown = true; Close(); } }
+                try { if (await ConfirmDiscardAsync()) { _parameters.DiscardDrafts(); _demoDrafts.Clear(); _shuttingDown = true; Close(); } }
                 finally { _confirmingClose = false; }
             });
             return;

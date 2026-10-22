@@ -36,7 +36,12 @@ public partial class WorkbenchWindow : Window
     private readonly WorkbenchAudit _audit = new();
     private WorkbenchSessions? _sessions;
     private DispatcherTimer? _sessionTimer;
-    private Project? _sessionProject;
+    private object? _sessionIdentity;
+    private readonly WorkbenchDemoDrafts _demoDrafts = new();
+    private bool HasParameterDrafts => _parameters.HasUnappliedChanges || _demoDrafts.HasChanges(ViewModel.Project);
+    private object? _catalogProject;
+    private string? _catalogLineId;
+    private string? _catalogRoomId;
     private int _demoTick;
     private MonitorScope _monitorScope = MonitorScope.All;
     private bool _refreshing;
@@ -84,6 +89,7 @@ public partial class WorkbenchWindow : Window
     public WorkbenchWindow(MainWindowViewModel viewModel, WorkbenchWorkspace workspace, string? layoutPath = null, CatalogLibrary? catalogLibrary = null)
     {
         ViewModel = viewModel;
+        ViewModel.HistoryBlocked = () => _sessions?.Programming.IsRunning == true;
         Workspace = workspace;
         _layoutPath = layoutPath;
         _catalogLibrary = catalogLibrary ?? CatalogLibrary.Shared;
@@ -167,6 +173,7 @@ public partial class WorkbenchWindow : Window
         }
         Closed += (_, _) =>
         {
+            ViewModel.HistoryBlocked = null;
             ViewModel.PropertyChanged -= OnModelChanged;
             ViewModel.Devices.CollectionChanged -= OnDevicesChanged;
             ViewModel.CatalogLoaded -= OnCatalogLoaded;
@@ -412,14 +419,17 @@ public partial class WorkbenchWindow : Window
         {
             _sessionTimer?.Stop();
             if (_sessions is not null) { _ = DisposeSessionsAsync(); }
-            _sessionProject = null;
+            _sessionIdentity = null;
             ToolHost.Content = null;
             UpdateMonitorPulse();
             return;
         }
-        if (_sessions is not null && ReferenceEquals(_sessionProject, project)) return;
+        if (_sessions is not null && ReferenceEquals(_sessionIdentity, ViewModel.ProjectSessionIdentity)) return;
         _ = DisposeSessionsAsync();
-        _sessionProject = project;
+        _sessionIdentity = ViewModel.ProjectSessionIdentity;
+        _demoDrafts.Clear();
+        _catalogProject = null;
+        _catalogLineId = _catalogRoomId = null;
         _sessions = new(() => ViewModel.Project,
             filter => ResolveMonitorIds(filter),
             (p, device) => new FrozenConfiguration(
@@ -445,7 +455,7 @@ public partial class WorkbenchWindow : Window
     {
         var sessions = _sessions;
         _sessions = null;
-        _sessionProject = null;
+        _sessionIdentity = null;
         if (sessions is null) return;
         try { await sessions.DisposeAsync(); }
         catch (Exception ex) { ViewModel.Status = W("ToolSessionEnded", ex.Message); }
@@ -712,9 +722,10 @@ public partial class WorkbenchWindow : Window
         return tab.Target.Kind switch
         {
             "line" => WorkbenchProjection.Lines(project).FirstOrDefault(l => l.Id == tab.Target.Id),
-            "device" => ProjectQuery.LocateDevice(project, ProjectQuery.DeviceList(project).First(d => d.Id == tab.Target.Id).Address)?.Line,
+            "device" => ProjectQuery.DeviceList(project).FirstOrDefault(d => d.Id == tab.Target.Id) is { } device
+                ? ProjectQuery.LocateDevice(project, device.Address)?.Line : null,
             "room" => WorkbenchProjection.Devices(project, tab.Target).Select(d => ProjectQuery.LocateDevice(project, d.Address)?.Line)
-                .FirstOrDefault(l => l is not null),
+                .FirstOrDefault(l => l is not null) ?? WorkbenchProjection.Lines(project).FirstOrDefault(),
             _ => WorkbenchProjection.Lines(project).FirstOrDefault()
         };
     }
@@ -787,9 +798,13 @@ public partial class WorkbenchWindow : Window
                 if (RelationsHost.IsVisible) RelationsHost.Content = CreateRelationsView();
                 if (tool && tab.Target.Id == "catalog")
                 {
-                    var line = CurrentLine();
-                    var roomId = Workspace.ActiveTab?.Target is { Kind: "room" } target ? target.Id : null;
-                    if (ToolPageHost.Content is CatalogPane open) { if (line is not null) open.PreferredLine = line; open.PreferredRoomId = roomId; }
+                    var sameProject = ReferenceEquals(_catalogProject, ViewModel.ProjectSessionIdentity);
+                    var line = ViewModel.Project is { } catalogProject
+                        ? WorkbenchProjection.Lines(catalogProject).FirstOrDefault(l => sameProject && l.Id == _catalogLineId)
+                            ?? WorkbenchProjection.Lines(catalogProject).FirstOrDefault() : null;
+                    var roomId = sameProject ? _catalogRoomId : null;
+                    if (roomId is not null && WorkbenchProjection.Resolve(ViewModel.Project, new("room", roomId)) is null) roomId = null;
+                    if (ToolPageHost.Content is CatalogPane open) { open.PreferredLine = line; open.PreferredRoomId = roomId; }
                     else ToolPageHost.Content = new CatalogPane(ViewModel, _catalogLibrary) { DataContext = ViewModel, PreferredLine = line, PreferredRoomId = roomId };
                 }
                 else if (tab.View == "overview") ToolPageHost.Content = CreateProblemsView(tab.Target);
@@ -2519,7 +2534,8 @@ public partial class WorkbenchWindow : Window
         _modePanel.Children.Add(Label(W("DemoApplicationNote")));
         var editors = new Dictionary<string, Control>(StringComparer.Ordinal);
         var errors = new Dictionary<string, TextBlock>(StringComparer.Ordinal);
-        foreach (var (key, raw) in selected.Device.ParameterValues
+        var draft = _demoDrafts.For(selected.Device);
+        foreach (var (key, raw) in draft
                      .OrderBy(p => WorkbenchDemoForm.SortOrder(p.Key))
                      .ThenBy(p => p.Key, StringComparer.Ordinal))
         {
@@ -2546,6 +2562,16 @@ public partial class WorkbenchWindow : Window
                 IsVisible = false, Classes = { "wb-error" }
             };
             editors[key] = editor;
+            if (editor is TextBox textEditor)
+                textEditor.PropertyChanged += (_, e) =>
+                {
+                    if (e.Property == TextBox.TextProperty)
+                        draft[key] = WorkbenchDemoForm.Serialize(key, textEditor.Text ?? "");
+                };
+            if (editor is ComboBox choice)
+                choice.SelectionChanged += (_, _) => draft[key] = WorkbenchDemoForm.Serialize(key,
+                    key == "mode" ? choice.SelectedIndex == 1 ? "dim" : "switch"
+                        : choice.SelectedIndex switch { 1 => "off", 2 => "on", _ => "feedback" });
             errors[key] = error;
             _modePanel.Children.Add(DemoField(WorkbenchDemoForm.Label(key), editor, error));
         }
@@ -2582,6 +2608,7 @@ public partial class WorkbenchWindow : Window
                 values[key] = WorkbenchDemoForm.Serialize(key, value);
             }
             var mode = Mode();
+            _demoDrafts.Discard(selected.Device.Id);
             ViewModel.Edit(W("EditDemoParameters", selected.Name), p =>
             {
                 var device = ProjectQuery.DeviceList(p).FirstOrDefault(d => d.Id == selected.Device.Id);
@@ -2608,6 +2635,11 @@ public partial class WorkbenchWindow : Window
         }
         foreach (var editor in editors.Values.OfType<TextBox>()) editor.TextChanged += (_, _) => Validate();
         _modeActions.Children.Add(ActionButton(W("ReviewEffects"), Review, "quiet"));
+        _modeActions.Children.Add(ActionButton(W("DiscardDrafts"), () =>
+        {
+            _demoDrafts.Discard(selected.Device.Id);
+            UpdateModePreview();
+        }, "quiet"));
         _modeActions.Children.Add(applyButton);
         Validate();
     }
