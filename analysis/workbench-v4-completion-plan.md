@@ -22,7 +22,7 @@ werden hier abgehakt, nicht nur im Chat.
 - [x] 10. Geprüften Stand auf `development` integrieren und veröffentlichen.
 - [x] 11. Clean-Code-Review des gesamten V4-Diffs; bestätigte Befunde beheben und Regressionstests ergänzen.
 - [x] 12. Dark-Mode-Tooltips, Konzept-Icons, V4-Einstellungsfenster und ETS-Passwortöffnung abnehmen.
-- [ ] 13. UI-Konsistenz aller Fenster, Menüs, Panes und Zustände gegen das V4-Bundle prüfen und Befunde beheben.
+- [x] 13. UI-Konsistenz aller Fenster, Menüs, Panes und Zustände gegen das V4-Bundle prüfen und Befunde beheben. (`f605870`, `39be758`, `a562ed8`, `dfe3e12`)
 
 ## A. ETS-REA-Analyse (jede Funktion belegen)
 
@@ -262,35 +262,33 @@ wenn Implementierung, fokussierter Test und Abnahmeevidenz im Abschnitt
 
 ### H4. Abnahme und Dokumentation (Schritte 8, 9, 13; Matrix R01–R08)
 
-- [ ] **H4.1 R01:** ETS-REA-Berichte für alle fünf Bereiche mit Belegen
-  verifizieren und als Nachweis verlinken (die Dateien existieren; Status
-  „offen“ in der Matrix ist zu korrigieren).
-- [ ] **H4.2 R02:** jede V4-Aktion aus `src/app.js` einer nativen
+- [x] **H4.1 R01:** ETS-REA-Berichte für alle fünf Bereiche mit Belegen
+  verifizieren und als Nachweis verlinken.
+- [x] **H4.2 R02:** jede V4-Aktion aus `src/app.js` einer nativen
   Implementierung/Testzeile oder einer bewussten Grenze zuordnen.
-- [ ] **H4.3 R03:** alle B1–B8-Punkte implementieren oder als nicht
-  unterstützt dokumentieren; offene Checkboxen oben sind die Restliste.
+  (R02 done mit dokumentierten Grenzen: kein persistenter Objekt-Target,
+  keine Mehrfach-Projekttabs)
+- [x] **H4.3 R03:** alle B1–B8-Punkte implementieren oder als nicht
+  unterstützt dokumentieren. (bewusste Grenzen in §„Bewusst nicht nachgebaut“)
 - [ ] **H4.4 R04:** Fokus/Tab-Reihenfolge, Screenreader-Namen, 900×600/
   1024×700/1440×900, simulierte 150/200-%-DPI und High-Contrast prüfen.
-  Echte Narrator-/UIA- und gemischte DPI-Läufe bleiben als Plattformgrenze
-  dokumentiert, solange sie nicht auf realer Hardware ausgeführt wurden.
-- [ ] **H4.5 R05:** englische Shell, Dialoge, Panes, Fehler- und dynamische
+  Reale 150/200-%-DPI, Multi-Monitor, Narrator-Sprache und High Contrast
+  bleiben als Plattformgrenze offen.
+- [x] **H4.5 R05:** englische Shell, Dialoge, Panes, Fehler- und dynamische
   Strings automatisiert auf fehlende Keys/Deutsch prüfen; `--lang=en`-
-  Selftest und Screenshot.
-- [ ] **H4.6 R06:** Katalog/Parameter/Beziehungen/Dialoge auf eine
-  Designsprache; Screenshots light/dark bei 1440/1024/900.
-- [ ] **H4.7 R07:** jede P1/P2 aus Tokens-, Workbench-, Panes- und
+  Selftest und Screenshot. (`f53aa74`; Localization-Gates grün)
+- [x] **H4.6 R06:** Katalog/Parameter/Beziehungen/Dialoge auf eine
+  Designsprache; Screenshots light/dark bei 1440/1024/900. (`f605870`,
+  `39be758`, `a562ed8`)
+- [x] **H4.7 R07:** jede P1/P2 aus Tokens-, Workbench-, Panes- und
   A11y-Recheck beheben oder mit Entscheidung/Grenze dokumentieren; keine
-  stillen Reste. Referenzen:
-  `analysis/ui-consistency/tokens.md`,
-  `analysis/ui-consistency/workbench.md`,
-  `analysis/ui-consistency/panes.md`,
-  `analysis/workbench-v4-a11y-recheck2.md`.
-- [ ] **H4.8 R08:** Release-Build, alle Testprojekte, App-Tests, Smoke,
+  stillen Reste. (`45f035b`, `f9d0e7f`, `a562ed8`, `dfe3e12`)
+- [x] **H4.8 R08:** Release-Build, alle Testprojekte, App-Tests, Smoke,
   Screenshot-Selftest, Workbench-Selftest de/en, Remote-CI und CodeQL grün;
-  lokale und Remote-SHAs dokumentieren.
-- [ ] **H4.9 Statusmatrix:** `analysis/workbench-v4-status-matrix.md` auf
-  aktuellen Stand bringen; veraltete „partial/missing“-Zeilen (u. a. 34, 64)
-  nur mit Testbeleg schließen.
+  lokale und Remote-SHAs dokumentiert. (CI/CodeQL `554fc74` und Folgestände)
+- [x] **H4.9 Statusmatrix:** `analysis/workbench-v4-status-matrix.md` auf
+  aktuellen Stand bringen; veraltete „partial/missing“-Zeilen nur mit
+  Testbeleg schließen. (Nachtrag 2026-10-22)
 
 ### H5. Katalog-Ladezeit und Suche (neu, 2026-10-21)
 
