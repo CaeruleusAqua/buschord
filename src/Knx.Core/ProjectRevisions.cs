@@ -86,7 +86,11 @@ public static class ProjectRevisions
     public static string? SourceName(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return null;
-        var name = Path.GetFileName(path);
+        // Windows-style paths are also sanitized on Linux CI; Path.GetFileName would keep
+        // the backslashes there and leak "C:\Kunde Geheim\haus.knxproj".
+        var normalized = path.Replace('\\', '/');
+        var slash = normalized.LastIndexOf('/');
+        var name = slash >= 0 ? normalized[(slash + 1)..] : normalized;
         return string.IsNullOrWhiteSpace(name) ? null : name;
     }
 
