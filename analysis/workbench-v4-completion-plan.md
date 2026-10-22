@@ -12,12 +12,12 @@ werden hier abgehakt, nicht nur im Chat.
 
 - [x] 1. ETS-Referenz je Funktionsbereich mit REA neu analysieren und dokumentieren.
 - [x] 2. V4-Restlücken aus Akzeptanzmatrix, UX- und Visual-Review konsolidieren.
-- [ ] 3. Shell/Design abschließen: Katalog, Icons, Fokus, DPI, Dark/Light, Englisch.
+- [ ] 3. Shell/Design abschließen: Katalog, Icons, Fokus, DPI, Dark/Light, Englisch. (implementiert; offen nur reale DPI/HC-Abnahme)
 - [x] 4. Projekt-, Raum-, Linien-, Geräte- und Gruppenadressfunktionen vervollständigen. (`ac0480a`, `84cb150`, `6b3fb83`)
 - [x] 5. Katalog, Parameter, dynamische Herstellerlogik und DCA-Grenzen abschließen. (`39be758`, `53c06d9`, `49f3f22`; DCA-Hosting bleibt bewusste Grenze)
-- [ ] 6. Inbetriebnahme, Download, Diagnose, Monitor und Secure vollständig anbinden.
+- [ ] 6. Inbetriebnahme, Download, Diagnose, Monitor und Secure vollständig anbinden. (Offline/Read-only + Preflight fertig; echte Inbetriebnahme NO-GO)
 - [x] 7. Berichte, Vergleich, Suche/Ersetzen, Exporte und Demo-Abläufe abschließen.
-- [ ] 8. Tastatur, Screenreader, 100/150/200-%-DPI und kleine Fenster abnehmen.
+- [ ] 8. Tastatur, Screenreader, 100/150/200-%-DPI und kleine Fenster abnehmen. (UIA + Simulation grün; reale DPI/Narrator offen)
 - [x] 9. Gesamttests, unabhängige Abnahme, Dokumentation und CI abschließen.
 - [x] 10. Geprüften Stand auf `development` integrieren und veröffentlichen.
 - [x] 11. Clean-Code-Review des gesamten V4-Diffs; bestätigte Befunde beheben und Regressionstests ergänzen.
