@@ -109,6 +109,7 @@ public sealed class CatalogIndexStore
                 if (!IsBackingName(backing)) return false;
                 if (!File.Exists(IOPath.Combine(ArchiveDirectory, backing))) return false;
             }
+            if (!LocationsAreSafe(catalogPath, document, ArchiveDirectory)) return false;
 
             catalog = KnxProductCatalog.FromIndex(catalogPath, document, ArchiveDirectory);
             if (!reusable) WriteIdentity(index, file, contentHash);
@@ -296,6 +297,43 @@ public sealed class CatalogIndexStore
             }
             return total;
         }
+    }
+
+    /// <summary>
+    /// The cache is untrusted: every source entry/path it names must still resolve inside the
+    /// catalogue archive (or below the XML catalogue directory) before it is handed to the parser.
+    /// </summary>
+    private static bool LocationsAreSafe(string catalogPath, CatalogIndexDocument document, string archiveDirectory)
+    {
+        var isXml = document.IsXml || catalogPath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
+        if (isXml)
+        {
+            var root = IOPath.GetFullPath(IOPath.GetDirectoryName(catalogPath)!);
+            bool SafeFile(string? value)
+            {
+                if (string.IsNullOrWhiteSpace(value)) return false;
+                var full = IOPath.GetFullPath(IOPath.IsPathRooted(value) ? value : IOPath.Combine(root, value));
+                return full.Equals(root, StringComparison.OrdinalIgnoreCase) ||
+                       full.StartsWith(root + IOPath.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return document.Programs.All(p => p.SourceEntry is null && SafeFile(p.SourceFilePath)) &&
+                   document.Parts.All(p => SafeFile(p.Location));
+        }
+
+        var archive = document.BackingArchiveName is { Length: > 0 } backing
+            ? IOPath.Combine(archiveDirectory, backing)
+            : catalogPath;
+        using var zip = ZipFile.OpenRead(archive);
+        var entries = zip.Entries.Select(e => e.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        bool SafeEntry(string? value) =>
+            !string.IsNullOrWhiteSpace(value) &&
+            !IOPath.IsPathRooted(value) &&
+            !value.Split('/', '\\').Any(part => part == "..") &&
+            entries.Contains(value.Replace('\\', '/'));
+        return document.Programs.All(p => SafeEntry(p.SourceEntry) &&
+                                            (p.SourceFilePath is null || SafeEntry(p.SourceFilePath))) &&
+               document.Parts.All(p => SafeEntry(p.Location));
     }
 
     /// <summary>Only the hex archive names this store writes are accepted from a cache document.</summary>
