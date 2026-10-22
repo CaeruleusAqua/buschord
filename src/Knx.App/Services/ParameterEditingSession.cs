@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Knx;
 
 namespace Knx.App.Services;
@@ -25,13 +24,13 @@ public sealed class ParameterEditingSession
     private Func<bool>? _apply;
     private Dictionary<string, string?> _baseline = [];
     private Project? _project;
-    private string _signature = "";
     private List<ParameterInstance> _instances = [];
     private List<ParameterType> _types = [];
     private readonly Dictionary<DeviceInstance, Draft> _drafts = [];
     private string? _manualReadOnlyReason;
     private sealed record Draft(List<ParameterInstance> Instances, List<ParameterType> Types,
-        Dictionary<string, string?> Baseline, string Signature, string Message);
+        Dictionary<string, string?> Baseline, Dictionary<string, string> SavedValues,
+        string? ProductRefId, string? Hardware2ProgramRefId, string Message);
 
     public ParameterEditingSession() { }
     public ParameterEditingSession(MainWindowViewModel vm) => _vm = vm;
@@ -156,7 +155,9 @@ public sealed class ParameterEditingSession
             _project = _vm?.Project;
         }
         else if (IsDirty && _row is not null)
-            _drafts[_row.Device] = new(_instances, _types, _baseline, _signature, Message);
+            _drafts[_row.Device] = new(_instances, _types, _baseline,
+                new Dictionary<string, string>(_row.Device.ParameterValues),
+                _row.Device.ProductRefId, _row.Device.Hardware2ProgramRefId, Message);
         else if (_row is not null) _drafts.Remove(_row.Device);
         PruneDrafts();
         _row = device;
@@ -174,9 +175,8 @@ public sealed class ParameterEditingSession
         }
         var (instances, types) = _vm.LoadParametersFor(device);
         // The complete definition and saved values identify a draft generation.
-        _signature = JsonSerializer.Serialize(new { instances, types, device.Device.ProductRefId,
-            device.Device.Hardware2ProgramRefId, device.Device.ParameterValues });
-        var restored = _drafts.Remove(device.Device, out var draft) && draft.Signature == _signature;
+        var restored = _drafts.Remove(device.Device, out var draft)
+            && DraftMatches(draft, device.Device, instances, types);
         if (restored) { instances = draft!.Instances; types = draft.Types; }
         _instances = instances;
         _types = types;
@@ -365,6 +365,62 @@ public sealed class ParameterEditingSession
             ? $"Opaque application data: {reason} The values are shown read-only and are not executed or rewritten."
             : $"Opaque Applikationsdaten: {reason} Die Werte werden nur lesend angezeigt und nicht ausgeführt oder umgeschrieben.");
     }
+
+    /// <summary>
+    /// Draft compatibility: the stored definition and saved values must still be identical to the
+    /// freshly loaded model. Replaces the former full-model JSON signature (a second 4-46 MB
+    /// serialisation per open) with an allocation-free structural comparison: the copy
+    /// constructors share their strings, so the walk compares references in the common case.
+    /// </summary>
+    private static bool DraftMatches(Draft draft, DeviceInstance device, List<ParameterInstance> instances,
+        List<ParameterType> types)
+    {
+        if (draft.ProductRefId != device.ProductRefId
+            || draft.Hardware2ProgramRefId != device.Hardware2ProgramRefId) return false;
+        var savedValues = device.ParameterValues;
+        if (draft.SavedValues.Count != savedValues.Count) return false;
+        foreach (var (id, value) in savedValues)
+            if (!draft.SavedValues.TryGetValue(id, out var before) || before != value) return false;
+        if (draft.Types.Count != types.Count || draft.Instances.Count != instances.Count) return false;
+        for (var index = 0; index < types.Count; index++)
+            if (!SameDeclaration(draft.Types[index], types[index])) return false;
+        for (var index = 0; index < instances.Count; index++)
+        {
+            var instance = instances[index];
+            if (!SameDeclaration(draft.Instances[index], instance)) return false;
+            // The loaded value is the saved overlay; the draft baseline is that overlay at draft time.
+            if (instance.Value != draft.Baseline.GetValueOrDefault(instance.Id)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Declaration equality of two types, ignoring object identity. The resolved
+    /// <see cref="ParameterInstance.ParameterType"/> needs no comparison of its own: it is derived
+    /// from <see cref="ParameterInstance.ParameterTypeId"/> and the type list compared here.
+    /// </summary>
+    private static bool SameDeclaration(ParameterType a, ParameterType b) =>
+        a.Id == b.Id && a.Name == b.Name && a.DataType == b.DataType && a.SizeInBit == b.SizeInBit
+        && a.Encoding == b.Encoding && a.NumberType == b.NumberType && a.UnsupportedReason == b.UnsupportedReason
+        && a.UIHint == b.UIHint && a.Unit == b.Unit && a.Description == b.Description && a.IsVisible == b.IsVisible
+        && a.Restrictions.Count == b.Restrictions.Count
+        && a.Restrictions.Zip(b.Restrictions).All(pair => SameDeclaration(pair.First, pair.Second));
+
+    private static bool SameDeclaration(ParameterRestriction a, ParameterRestriction b) =>
+        a.EnumerationValue == b.EnumerationValue && a.EnumerationText == b.EnumerationText && a.Id == b.Id
+        && a.Min == b.Min && a.Max == b.Max && a.MinimumValue == b.MinimumValue && a.MaximumValue == b.MaximumValue
+        && a.Pattern == b.Pattern;
+
+    /// <summary>Declaration equality of two instances; their draft values are compared separately.</summary>
+    private static bool SameDeclaration(ParameterInstance a, ParameterInstance b) =>
+        a.Id == b.Id && a.Name == b.Name && a.ParameterId == b.ParameterId && a.Unit == b.Unit
+        && a.UnsupportedReason == b.UnsupportedReason && a.Description == b.Description
+        && a.ParameterTypeId == b.ParameterTypeId && a.DefaultValue == b.DefaultValue
+        && a.IsVisible == b.IsVisible && a.IsEnabled == b.IsEnabled
+        && a.IsStaticallyVisible == b.IsStaticallyVisible && a.IsStaticallyEnabled == b.IsStaticallyEnabled
+        && a.Row == b.Row && a.Column == b.Column
+        && a.Children.Count == b.Children.Count
+        && a.Children.Zip(b.Children).All(pair => SameDeclaration(pair.First, pair.Second));
 
     private void Publish() { Preview = null; Changed?.Invoke(this, EventArgs.Empty); }
 }

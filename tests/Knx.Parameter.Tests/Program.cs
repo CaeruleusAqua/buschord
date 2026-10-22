@@ -217,6 +217,53 @@ foreach (var (id, value, valid) in new (string, string?, bool)[] {
     ("large", "9007199254740992", true), ("large", "9007199254740993", false) })
     Check(ParameterValidation.TryValidate(types[id], value, out _) == valid, $"validation {id}/{value}");
 
+// ---- detached model copies: the editor owns its values, the source stays untouched ----
+var sourceType = new ParameterType
+{
+    Id = "T-COPY", Name = "Type", DataType = ParameterDataType.Enumeration, SizeInBit = 8,
+    Encoding = "e", NumberType = "u", UnsupportedReason = "unsupported", Unit = "V",
+    Description = "d", IsVisible = false, UIHint = ParameterUIHint.ComboBox,
+};
+sourceType.Restrictions.Add(new ParameterRestriction
+{
+    EnumerationValue = "1", EnumerationText = "On", Id = "E", Min = 1, Max = 9,
+    MinimumValue = "1", MaximumValue = "9", Pattern = "[0-9]",
+});
+var sourceInstance = new ParameterInstance
+{
+    Id = "I-COPY", Name = "Instance", ParameterId = "P", Unit = "V", UnsupportedReason = "u",
+    Description = "d", ParameterTypeId = "T-COPY", ParameterType = sourceType, Value = "1",
+    DefaultValue = "0", IsVisible = false, IsEnabled = false, IsStaticallyVisible = true,
+    IsStaticallyEnabled = false, Row = 2, Column = 3,
+};
+sourceInstance.Children.Add(new ParameterInstance { Id = "I-CHILD", Name = "Child", Value = "9" });
+var typeCopy = new ParameterType(sourceType);
+var instanceCopy = new ParameterInstance(sourceInstance);
+Check(typeCopy.Id == "T-COPY" && typeCopy.Name == "Type" && typeCopy.DataType == ParameterDataType.Enumeration
+    && typeCopy.SizeInBit == 8 && typeCopy.Encoding == "e" && typeCopy.NumberType == "u"
+    && typeCopy.UnsupportedReason == "unsupported" && typeCopy.UIHint == ParameterUIHint.ComboBox
+    && typeCopy.Unit == "V" && typeCopy.Description == "d" && !typeCopy.IsVisible
+    && typeCopy.Restrictions.Single() is { EnumerationValue: "1", EnumerationText: "On", Id: "E", Min: 1, Max: 9,
+        MinimumValue: "1", MaximumValue: "9", Pattern: "[0-9]" },
+    "Type copy carries every declaration and restriction");
+Check(!ReferenceEquals(typeCopy.Restrictions[0], sourceType.Restrictions[0]), "Type copy detaches its restrictions");
+typeCopy.Description = "mutated"; typeCopy.IsVisible = true; typeCopy.Restrictions[0].Max = 5;
+Check(sourceType.Description == "d" && !sourceType.IsVisible && sourceType.Restrictions[0].Max == 9,
+    "Type copy mutation leaves the source untouched");
+Check(instanceCopy.Id == "I-COPY" && instanceCopy.Name == "Instance" && instanceCopy.ParameterId == "P"
+    && instanceCopy.Unit == "V" && instanceCopy.UnsupportedReason == "u" && instanceCopy.Description == "d"
+    && instanceCopy.ParameterTypeId == "T-COPY" && ReferenceEquals(instanceCopy.ParameterType, sourceType)
+    && instanceCopy.Value == "1" && instanceCopy.DefaultValue == "0"
+    && !instanceCopy.IsVisible && !instanceCopy.IsEnabled
+    && instanceCopy.IsStaticallyVisible && !instanceCopy.IsStaticallyEnabled
+    && instanceCopy.Row == 2 && instanceCopy.Column == 3
+    && instanceCopy.Children.Single() is { Id: "I-CHILD", Value: "9" }
+    && !ReferenceEquals(instanceCopy.Children[0], sourceInstance.Children[0]),
+    "Instance copy carries every value, flag and child");
+instanceCopy.Value = "7"; instanceCopy.IsVisible = true; instanceCopy.Children[0].Value = "8";
+Check(sourceInstance.Value == "1" && !sourceInstance.IsVisible && sourceInstance.Children[0].Value == "9",
+    "Instance copy mutation leaves the source and its children untouched");
+
 var root = Path.Combine(Path.GetTempPath(), "knx-parameters-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try

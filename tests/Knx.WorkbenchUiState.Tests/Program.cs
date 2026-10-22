@@ -1,6 +1,7 @@
 using Knx;
 using Knx.App.Localization;
 using Knx.App.Workbench;
+using System.IO.Compression;
 using System.Text;
 
 var checks = 0;
@@ -211,6 +212,70 @@ try
     dcaSession.ResetToDefaults();
     Check("DCA apply and reset leave saved values untouched", !dcaSession.Apply()
         && dcaSession.Rows.Select(r => r.Value).SequenceEqual(dcaValues) && dcaDevice.ParameterValues.Count == 0);
+
+    // SEC-4: without any catalogue the project archive's own application program still declares
+    // DCA/broken; the pane and the write boundary must respect it.
+    var secProject = new Project { Id = "P-SEC4", Name = "SEC-4" };
+    var secInstallation = new Installation { Id = "I-SEC4" };
+    var secArea = new Area { Id = "A-SEC4", Address = 1 };
+    var secLine = new Line { Id = "L-SEC4", Address = 1 };
+    var archiveDcaDevice = new DeviceInstance { Id = "D-SEC4-DCA", Name = "Archive DCA", Address = new(1, 1, 1), ProductRefId = "M-0DCA_A-1" };
+    var archiveBrokenDevice = new DeviceInstance { Id = "D-SEC4-BROKEN", Name = "Archive broken", Address = new(1, 1, 2), ProductRefId = "M-0BRK_A-1" };
+    var archiveStaticDevice = new DeviceInstance { Id = "D-SEC4-STATIC", Name = "Archive static", Address = new(1, 1, 3), ProductRefId = "M-0STA_A-1" };
+    secLine.Devices.Add(archiveDcaDevice); secLine.Devices.Add(archiveBrokenDevice); secLine.Devices.Add(archiveStaticDevice);
+    secArea.Lines.Add(secLine); secInstallation.Areas.Add(secArea); secProject.Installations.Add(secInstallation);
+    var secPath = Path.Combine(root, "sec4.knxproj");
+    Knxproj.Save(secProject, secPath);
+    using (var secArchive = ZipFile.Open(secPath, ZipArchiveMode.Update))
+    {
+        void Part(string name, string programAttributes, string staticContent)
+        {
+            using var stream = secArchive.CreateEntry(name).Open();
+            using var writer = new StreamWriter(stream);
+            writer.Write($"""
+                <KNX><ApplicationProgram Id="{Path.GetFileNameWithoutExtension(name)}" {programAttributes}><Static>
+                {staticContent}
+                <ParameterTypes><ParameterType Id="PT-1" Name="Brightness" SizeInBit="8" DataType="Number"/></ParameterTypes>
+                <Parameters><Parameter Id="P-1" Name="Brightness" ParameterType="PT-1" Value="50"/></Parameters>
+                <ParameterRefs><ParameterRef Id="PR-1" RefId="P-1"/></ParameterRefs>
+                </Static></ApplicationProgram></KNX>
+                """);
+        }
+        Part("M-0DCA/M-0DCA_A-1.xml", "", "<Extension EtsUiPlugin=\"{11111111-1111-1111-1111-111111111111}\"/>");
+        Part("M-0BRK/M-0BRK_A-1.xml", "Broken=\"1\"", "");
+        Part("M-0STA/M-0STA_A-1.xml", "", "");
+    }
+    var secLibraryRoot = Path.Combine(root, "sec4-catalog");
+    Directory.CreateDirectory(secLibraryRoot);
+    var secVm = new Knx.App.Services.MainWindowViewModel(
+        new Knx.App.Services.CatalogLibrary(new Knx.Catalog.CatalogStore(secLibraryRoot)));
+    secVm.CreateProject(Knxproj.Load(secPath), null);
+    secVm.ProjectPath = secPath;
+    var archiveDcaRow = secVm.Devices.Single(d => d.Device.ProductRefId == "M-0DCA_A-1");
+    var archiveBrokenRow = secVm.Devices.Single(d => d.Device.ProductRefId == "M-0BRK_A-1");
+    var archiveStaticRow = secVm.Devices.Single(d => d.Device.ProductRefId == "M-0STA_A-1");
+    var archiveDcaReason = secVm.ParameterReadOnlyReason(archiveDcaRow.Device);
+    Check("SEC-4: archive DCA program blocks editing without any catalogue",
+        archiveDcaReason is { Length: > 0 } dcaArchiveText && dcaArchiveText.Contains("DCA", StringComparison.Ordinal));
+    Check("SEC-4: archive broken program blocks editing without any catalogue",
+        secVm.ParameterReadOnlyReason(archiveBrokenRow.Device) is { Length: > 0 });
+    Check("SEC-4: archive static program stays editable",
+        secVm.ParameterReadOnlyReason(archiveStaticRow.Device) is null);
+    var archiveDcaLoaded = secVm.LoadParametersFor(archiveDcaRow);
+    var archiveDcaBaseline = archiveDcaLoaded.Instances.ToDictionary(i => i.Id, i => i.Value);
+    archiveDcaLoaded.Instances[0].Value = "9";
+    var archiveApplyRefused = false;
+    try { secVm.ApplyParameterValues(archiveDcaRow.Device, archiveDcaLoaded.Instances, archiveDcaLoaded.Types, archiveDcaBaseline); }
+    catch (InvalidOperationException) { archiveApplyRefused = true; }
+    Check("SEC-4: Apply refuses archive DCA values even when the host skips the read-only flag",
+        archiveApplyRefused && archiveDcaRow.Device.ParameterValues.Count == 0);
+    var archiveDcaSession = new Knx.App.Services.ParameterEditingSession(secVm);
+    archiveDcaSession.Load(archiveDcaRow);
+    archiveDcaSession.SetReadOnly(archiveDcaReason);
+    archiveDcaSession.Rows[0].Value = "9";
+    Check("SEC-4: archive DCA session stays read-only and never applies",
+        archiveDcaSession.IsReadOnly && !archiveDcaSession.CanApply && !archiveDcaSession.Apply()
+        && archiveDcaSession.Rows[0].Value == "9" && archiveDcaRow.Device.ParameterValues.Count == 0);
 
     // V4 compare pins one group address: the active one wins, everything else uses the first address.
     var compareProject = new Project { Id = "P-COMPARE", Name = "Compare" };

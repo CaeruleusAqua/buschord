@@ -297,6 +297,44 @@ try
     var fresh = coldVm.LoadParametersFor(coldVm.Devices[1]);
     Check("Catalogue definitions are detached too", fresh.Types[0].Restrictions[0].Max == 255 && fresh.Instances[0].ParameterType!.IsVisible);
 
+    // Parameter open: the copy constructor replaces the JSON round trip, so the shared catalogue
+    // program stays untouched and every open returns a fresh, equal, detached model.
+    var sharedProgram = published.Catalogs[0].FindProgramFor(published.Catalogs[0].Products[0])!;
+    var sharedInstance = sharedProgram.ParameterInstances.Single(i => i.Id == "R-N");
+    var sharedType = sharedProgram.ParameterTypes.Single(t => t.Id == "N");
+    var firstOpen = coldVm.LoadParametersFor(coldVm.Devices[0]);
+    firstOpen.Instances[0].Value = "999";
+    firstOpen.Instances[0].IsVisible = false;
+    firstOpen.Types[0].IsVisible = false;
+    firstOpen.Types[0].Restrictions[0].Max = 1;
+    var secondOpen = coldVm.LoadParametersFor(coldVm.Devices[0]);
+    Check("Catalogue loads never mutate the shared catalogue program",
+        sharedInstance.Value == "42" && sharedInstance.IsVisible
+        && sharedType.IsVisible && sharedType.Restrictions[0].Max == 255);
+    Check("Second open is a fresh, equal model detached from the first open",
+        !ReferenceEquals(secondOpen.Instances[0], firstOpen.Instances[0])
+        && !ReferenceEquals(secondOpen.Types[0], firstOpen.Types[0])
+        && secondOpen.Instances[0].Value == "51" && secondOpen.Instances[0].IsVisible
+        && secondOpen.Types[0].IsVisible && secondOpen.Types[0].Restrictions[0].Max == 255);
+    Check("Instance types are remapped onto the copied type list",
+        ReferenceEquals(secondOpen.Instances[0].ParameterType, secondOpen.Types.Single(t => t.Id == "N")));
+    var openClock = System.Diagnostics.Stopwatch.StartNew();
+    coldVm.LoadParametersFor(coldVm.Devices[0]);
+    openClock.Stop();
+    Check("Warm catalogue parameter open stays below a second", openClock.ElapsedMilliseconds < 1000);
+
+    // Drafts still belong to one saved-value generation: an override outside the loaded rows
+    // invalidates the draft exactly like a changed row value.
+    catalogPane.Load(coldVm.Devices[0]);
+    CatalogRow().Value = "60";
+    catalogPane.Load(coldVm.Devices[1]);
+    coldVm.Devices[0].Device.ParameterValues["R-GHOST"] = "1";
+    catalogPane.Load(coldVm.Devices[0]);
+    Check("A saved value outside the loaded rows still invalidates the draft",
+        CatalogRow().Value == "51" && !catalogPane.HasUnappliedChanges);
+    coldVm.Devices[0].Device.ParameterValues.Remove("R-GHOST");
+    catalogPane.DiscardDrafts();
+
     var session = new ParameterEditingSession(coldVm);
     session.Load(coldVm.Devices[0]);
     session.Rows[0].Value = "999";

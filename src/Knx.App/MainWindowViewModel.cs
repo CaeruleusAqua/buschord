@@ -674,14 +674,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 var program = CatalogProgram(device.Device);
                 if (program is null) return ([], []);
                 // Editors own their mutable values and definitions; never overlay the shared catalogue.
-                var copyOptions = new System.Text.Json.JsonSerializerOptions
-                {
-                    PreferredObjectCreationHandling = System.Text.Json.Serialization.JsonObjectCreationHandling.Populate,
-                };
-                types = System.Text.Json.JsonSerializer.Deserialize<List<ParameterType>>(
-                    System.Text.Json.JsonSerializer.Serialize(program.ParameterTypes), copyOptions)!;
-                instances = System.Text.Json.JsonSerializer.Deserialize<List<ParameterInstance>>(
-                    System.Text.Json.JsonSerializer.Serialize(program.ParameterInstances), copyOptions)!;
+                (types, instances) = CopyProgramModel(program);
                 comObjects = program.ComObjects;
                 ParameterWarning = string.Join(", ", program.UnsupportedFeatures);
             }
@@ -702,16 +695,118 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Localized reason why the catalogue application forbids local parameter editing, or null
-    /// when editing is allowed or the catalogue snapshot is still cold. The caller re-evaluates it
-    /// on <see cref="CatalogLoaded"/>.
+    /// Detached copy of one catalogue application program for the editor: types and instances are
+    /// copied with the copy constructors and every instance is remapped onto its copied type, so
+    /// the editor can mutate values without touching the shared catalogue model. Replaces the
+    /// former JSON round trip: 0.6 ms / 0.6 MB instead of 50 ms / 7.7 MB on the local 90 MB
+    /// catalogue (276-387 ms / 46 MB on the archive measured in analysis/catalog-load-performance).
+    /// </summary>
+    private static (List<ParameterType> Types, List<ParameterInstance> Instances) CopyProgramModel(
+        CatalogApplicationProgram program)
+    {
+        var types = new List<ParameterType>(program.ParameterTypes.Count);
+        var copies = new Dictionary<ParameterType, ParameterType>(program.ParameterTypes.Count);
+        foreach (var type in program.ParameterTypes)
+        {
+            var copy = new ParameterType(type);
+            copies[type] = copy;
+            types.Add(copy);
+        }
+        var instances = new List<ParameterInstance>(program.ParameterInstances.Count);
+        foreach (var instance in program.ParameterInstances)
+        {
+            var copy = new ParameterInstance(instance);
+            copy.ParameterType = instance.ParameterType switch
+            {
+                { } shared when copies.TryGetValue(shared, out var mapped) => mapped,
+                { } standalone => new ParameterType(standalone),
+                _ => null,
+            };
+            instances.Add(copy);
+        }
+        return (types, instances);
+    }
+
+    /// <summary>
+    /// Localized reason why the device's application forbids local parameter editing, or null when
+    /// editing is allowed. The catalogue application is the primary source; when it declares no
+    /// block (cold library, missing catalogue) the application program embedded in the project
+    /// archive is checked too, so a DCA/broken program never becomes editable through the gap.
+    /// The caller re-evaluates it on <see cref="CatalogLoaded"/>.
     /// </summary>
     public string? ParameterReadOnlyReason(DeviceInstance device)
     {
         var program = CatalogProgram(device);
         var reason = CatalogBrowser.Blocked(program, CatalogUse.EditParameters);
+        if (reason == CatalogBlockReason.None) reason = ArchiveBlockReason(device);
         return reason == CatalogBlockReason.None ? null : CatalogUiText.Reason(reason);
     }
+
+    /// <summary>
+    /// Block reason declared by the application program embedded in the project archive, cached
+    /// per project path and ref id plus archive length/last write, so a device selection does not
+    /// re-read the archive and a replaced project file is re-read.
+    /// </summary>
+    private CatalogBlockReason ArchiveBlockReason(DeviceInstance device)
+    {
+        var refId = device.Hardware2ProgramRefId ?? device.ProductRefId;
+        if (ProjectPath.Length == 0 || string.IsNullOrWhiteSpace(refId)) return CatalogBlockReason.None;
+        long length;
+        long ticks;
+        try
+        {
+            var info = new FileInfo(ProjectPath);
+            if (!info.Exists) return CatalogBlockReason.None;
+            length = info.Length;
+            ticks = info.LastWriteTimeUtc.Ticks;
+        }
+        catch (Exception)
+        {
+            return CatalogBlockReason.None;
+        }
+        var key = (ProjectPath, refId);
+        if (_archiveBlocks.TryGetValue(key, out var cached) && cached.Length == length && cached.Ticks == ticks)
+            return cached.Reason;
+        var reason = ReadArchiveBlockReason(refId);
+        _archiveBlocks[key] = (length, ticks, reason);
+        return reason;
+    }
+
+    private readonly Dictionary<(string Path, string RefId), (long Length, long Ticks, CatalogBlockReason Reason)>
+        _archiveBlocks = [];
+
+    /// <summary>
+    /// Reads Broken/DownloadInfoIncomplete and the ETS plug-in extensions from the archive's
+    /// application program, mirroring the catalogue predicate (<c>KnxProductCatalog</c> metadata
+    /// plus <c>CatalogApplicationProgram.RequiresDca</c>). Unreadable archives stay unblocked here;
+    /// <see cref="LoadParametersFor"/> reports them.
+    /// </summary>
+    private CatalogBlockReason ReadArchiveBlockReason(string refId)
+    {
+        try
+        {
+            var document = Knxproj.LoadApplicationProgram(ProjectPath, refId);
+            var program = document?.Descendants().FirstOrDefault(e => e.Name.LocalName == "ApplicationProgram");
+            if (program is null) return CatalogBlockReason.None;
+            if (IsTrue(program.Attribute("Broken")?.Value)) return CatalogBlockReason.Broken;
+            if (IsTrue(program.Attribute("DownloadInfoIncomplete")?.Value)) return CatalogBlockReason.DownloadInfoIncomplete;
+            foreach (var extension in program.Descendants().Where(e => e.Name.LocalName == "Extension"))
+                if (extension.Attributes().Any(a => IsDcaName(a.Name.LocalName) && !string.IsNullOrWhiteSpace(a.Value))
+                    || extension.Elements().Any(e => IsDcaName(e.Name.LocalName)))
+                    return CatalogBlockReason.DcaUnsupported;
+            return CatalogBlockReason.None;
+        }
+        catch (Exception)
+        {
+            return CatalogBlockReason.None;
+        }
+    }
+
+    // ponytail: these four names mirror CatalogApplicationProgram.IsDcaExtension; widen both together.
+    private static bool IsDcaName(string name) =>
+        name is "EtsUiPlugin" or "EtsDownloadPlugin" or "EtsDataHandler" or "EtsDataHandlerCapabilities";
+
+    private static bool IsTrue(string? value) => value is "1" || bool.TryParse(value, out var flag) && flag;
 
     /// <summary>
     /// Resolves the device's application program from the shared catalogue snapshot. With a cold
@@ -754,6 +849,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         if (Project is not { } project || !ProjectQuery.DeviceList(project).Any(d => ReferenceEquals(d, device)))
             throw new InvalidOperationException(Strings.Get("LinkProjectChanged"));
+        // SEC-4 write boundary: a host that skips ParameterReadOnlyReason cannot persist DCA,
+        // broken or download-incomplete values either.
+        var archiveBlock = ArchiveBlockReason(device);
+        if (archiveBlock != CatalogBlockReason.None)
+            throw new InvalidOperationException(CatalogUiText.Reason(archiveBlock));
         if (instances.Select(i => i.Id).Distinct().Count() != instances.Count)
             throw new InvalidDataException("Ambiguous parameter reference ids");
         var changes = instances.Where(i => !baseline.TryGetValue(i.Id, out var before)

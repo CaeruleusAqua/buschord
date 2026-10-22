@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Knx;
 
 /// <summary>KSXML parameter system: types, blocks, instances and references.
@@ -22,6 +24,21 @@ public enum ParameterUIHint
 /// <summary>Restriktion eines Parameterwerts.</summary>
 public sealed class ParameterRestriction
 {
+    public ParameterRestriction() { }
+
+    /// <summary>Copies every declared bound, label and pattern of <paramref name="other"/>.</summary>
+    public ParameterRestriction(ParameterRestriction other)
+    {
+        EnumerationValue = other.EnumerationValue;
+        EnumerationText = other.EnumerationText;
+        Id = other.Id;
+        Min = other.Min;
+        Max = other.Max;
+        MinimumValue = other.MinimumValue;
+        MaximumValue = other.MaximumValue;
+        Pattern = other.Pattern;
+    }
+
     public string? EnumerationValue { get; set; }
     public string? EnumerationText { get; set; }
     public string? Id { get; set; }
@@ -36,6 +53,29 @@ public sealed class ParameterRestriction
 /// <summary>Parameter-Typ (KSXML: ParameterType).</summary>
 public sealed class ParameterType
 {
+    public ParameterType() { }
+
+    /// <summary>
+    /// Detached copy of the declaration: editors own their definitions and never mutate the
+    /// shared catalogue model. Replaces the former JSON round trip for parameter models.
+    /// </summary>
+    [SetsRequiredMembers]
+    public ParameterType(ParameterType other)
+    {
+        Id = other.Id;
+        Name = other.Name;
+        DataType = other.DataType;
+        SizeInBit = other.SizeInBit;
+        Encoding = other.Encoding;
+        NumberType = other.NumberType;
+        UnsupportedReason = other.UnsupportedReason;
+        UIHint = other.UIHint;
+        Unit = other.Unit;
+        Description = other.Description;
+        IsVisible = other.IsVisible;
+        foreach (var restriction in other.Restrictions) Restrictions.Add(new ParameterRestriction(restriction));
+    }
+
     public required string Id { get; init; }
     public required string Name { get; init; }
     public ParameterDataType DataType { get; set; } = ParameterDataType.None;
@@ -81,6 +121,35 @@ public sealed class ParameterBlockColumn
 /// <summary>Parameter-Instanz (KSXML: ParameterInstance).</summary>
 public sealed class ParameterInstance
 {
+    public ParameterInstance() { }
+
+    /// <summary>
+    /// Detached copy of the declaration and its current values. <see cref="ParameterType"/> stays
+    /// a shared reference so an editor can remap it onto its own copied type list; children are
+    /// copied recursively. Editors mutate this copy, never the shared catalogue model.
+    /// </summary>
+    [SetsRequiredMembers]
+    public ParameterInstance(ParameterInstance other)
+    {
+        Id = other.Id;
+        Name = other.Name;
+        ParameterId = other.ParameterId;
+        Unit = other.Unit;
+        UnsupportedReason = other.UnsupportedReason;
+        Description = other.Description;
+        ParameterTypeId = other.ParameterTypeId;
+        ParameterType = other.ParameterType;
+        Value = other.Value;
+        DefaultValue = other.DefaultValue;
+        IsVisible = other.IsVisible;
+        IsEnabled = other.IsEnabled;
+        IsStaticallyVisible = other.IsStaticallyVisible;
+        IsStaticallyEnabled = other.IsStaticallyEnabled;
+        Row = other.Row;
+        Column = other.Column;
+        foreach (var child in other.Children) Children.Add(new ParameterInstance(child));
+    }
+
     public required string Id { get; init; }
     public required string Name { get; init; }
     /// <summary>Static Parameter id when this row represents a ParameterRef.</summary>

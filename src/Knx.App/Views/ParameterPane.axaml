@@ -110,6 +110,13 @@
     <ScrollViewer x:Name="ParameterScroll" HorizontalScrollBarVisibility="Disabled" Padding="0,2,2,0"
                   AutomationProperties.Name="{loc:Tr ParameterTitle}">
       <ItemsControl x:Name="ParameterList" HorizontalAlignment="Stretch">
+        <!-- Lazy row containers: with 2,181 instances the non-virtualizing stack realised every
+             field editor up front (~1.3 s per open); only the visible rows are built now. -->
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate>
             <!-- One field column, capped at the reference's 540 px; label above its editor. -->

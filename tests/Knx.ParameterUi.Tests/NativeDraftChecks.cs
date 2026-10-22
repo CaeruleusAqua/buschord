@@ -142,6 +142,49 @@ internal static class NativeDraftChecks
                 && !editing.HasUnappliedChanges && !pane.FindControl<StackPanel>("PreviewPanel")!.IsVisible);
             vm.UndoCommand.Execute(null);
             Assert("One undo restores reviewed Apply", vm.Devices[0].Device.ParameterValues["R-N"] == "70");
+
+            // Long programs: the list virtualizes its rows, so only the visible editors exist, and
+            // a section jump still scrolls to a row without a realized container.
+            var longPath = Path.Combine(root, "long.knxproj");
+            var longProject = new Project { Id = "P-LONG", Name = "Long" };
+            var longInstallation = new Installation { Id = "I-L" };
+            var longArea = new Area { Id = "A-L", Address = 1 };
+            var longLine = new Line { Id = "L-L", Address = 1 };
+            longLine.Devices.Add(new DeviceInstance { Id = "LONG", Name = "Long", Address = new(1, 1, 1), ProductRefId = "M-0LNG_A-1" });
+            longArea.Lines.Add(longLine); longInstallation.Areas.Add(longArea); longProject.Installations.Add(longInstallation);
+            Knxproj.Save(longProject, longPath);
+            var longXml = new System.Text.StringBuilder("<KNX><ApplicationProgram Id=\"M-0LNG_A-1\"><Static><ParameterTypes>");
+            longXml.Append("<ParameterType Id=\"N\" Name=\"Number\"><TypeNumber Type=\"unsignedInt\" SizeInBit=\"8\" minInclusive=\"0\" maxInclusive=\"255\"/></ParameterType></ParameterTypes><Parameters>");
+            for (var i = 0; i < 60; i++) longXml.Append($"<Parameter Id=\"P{i}\" Name=\"Kanal {(char)('A' + i % 26)}: Parameter {i}\" ParameterType=\"N\" Value=\"1\"/>");
+            longXml.Append("</Parameters><ParameterRefs>");
+            for (var i = 0; i < 60; i++) longXml.Append($"<ParameterRef Id=\"R{i}\" RefId=\"P{i}\"/>");
+            longXml.Append("</ParameterRefs></Static><Dynamic><choose/></Dynamic></ApplicationProgram></KNX>");
+            using (var zip = ZipFile.Open(longPath, ZipArchiveMode.Update))
+            using (var stream = zip.CreateEntry("M-0LNG/M-0LNG_A-1.xml").Open())
+            using (var writer = new StreamWriter(stream))
+                writer.Write(longXml.ToString());
+            var longVm = new MainWindowViewModel();
+            longVm.CreateProject(Knxproj.Load(longPath), null);
+            longVm.ProjectPath = longPath;
+            using var longPane = new ParameterPane(longVm);
+            var longWindow = new Window { Content = longPane, Width = 700, Height = 500 };
+            longWindow.Show();
+            longPane.Load(longVm.Devices[0]);
+            await Task.Delay(400);
+            var longRows = longPane.Session.Rows.Length;
+            var longEditors = longPane.GetVisualDescendants().OfType<NumericUpDown>().Count();
+            Assert("Virtualized parameter list realizes only the visible editors",
+                longRows == 60 && longEditors > 0 && longEditors < longRows / 2);
+            var sectionButtons = longPane.FindControl<ItemsControl>("SectionList")!
+                .GetVisualDescendants().OfType<Button>().Where(b => b.Tag is string).ToArray();
+            var parameterScroll = longPane.FindControl<ScrollViewer>("ParameterScroll")!;
+            sectionButtons[2].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Task.Delay(300);
+            Assert("Section jump scrolls the virtualized list",
+                sectionButtons.Length > 3 && parameterScroll.Offset.Y > 0
+                && longPane.Session.SelectedSection == (string)sectionButtons[2].Tag!);
+            longWindow.Close();
+
             if (_shots)
             {
                 peerWindow.Hide();

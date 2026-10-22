@@ -142,6 +142,7 @@ public sealed partial class ParameterPane : UserControl, IDisposable
         if (sender is not Button { Tag: string title }) return;
         Session.SelectSection(title);
         if (Session.Sections.FirstOrDefault(s => s.Title == title) is not { } section) return;
-        if (ParameterList.ContainerFromIndex(section.FirstRow) is { } container) container.BringIntoView();
+        // ScrollIntoView works with the virtualized list, where far rows have no container yet.
+        ParameterList.ScrollIntoView(section.FirstRow);
     }
 }
