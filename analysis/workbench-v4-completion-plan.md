@@ -304,28 +304,27 @@ Hauptgrund für die wahrgenommene Ladezeit; nicht die ZIP-Entpackung allein.
   `analysis/catalog-load-performance.md` (`c84cb29`): erster Suchlauf
   2,4–4,8 s und 559 MB, `LoadAll` 124 Dateien kalt 11,2 s, warm 1,2–1,9 s,
   Programmteil 0,6–1,9 s/140 MB.
-- [ ] **H5.2 Suchpfad entkoppeln:** `CatalogBrowser.Filter` darf nicht für
-  jedes Produkt `FindProgramFor` aufrufen und damit alle lazy
-  Application-Programme eines Katalogs nachladen. Produkt-/Programm-/COM-
-  Metadaten in einen Suchindex aufnehmen; DPT-/COM-Suche daraus bedienen.
-- [ ] **H5.3 Persistenter Index:** kalten Snapshot nicht bei jedem Start aus
-  429 MB XML neu aufbauen. Metadatenindex (Katalog, Hersteller, Produkt,
-  Programm, COM/DPT, Sektionen) mit Datei-Identität (Größe + Änderungszeit +
-  Schema-Version) cachen; Invalidierung und atomisches Schreiben festlegen.
-  IndexedDB ist im nativen Avalonia/.NET-Kontext nicht verfügbar; Äquivalent
-  ist ein lokaler Datei-/SQLite-Index.
-- [ ] **H5.4 Lazy Programs:** Programme/Parameter erst beim Öffnen eines
-  Produkts vollständig parsen; Metadaten getrennt von `Ksxml.Parse` laden.
-  Split- und Monolith-Archive gleich behandeln.
-- [ ] **H5.5 Progressive UI:** Katalogliste/Index sofort binden, pro Datei
-  Fortschritt zeigen, Suche während des Indexaufbaus nutzbar halten;
-  Abbruch/Reload dürfen keinen halben Snapshot veröffentlichen.
-- [ ] **H5.6 Algorithmik:** `Programs.Any`, `FindProduct`-Linearsuche und
-  wiederholte XML-Scans durch Dictionaries ersetzen; Dateien mit begrenzter
-  Parallelität parsen, ohne UI-Thread oder Speicher zu überlasten.
+- [x] **H5.2 Suchpfad entkoppeln:** `CatalogBrowser.Filter` ruft kein
+  `FindProgramFor` mehr auf; Produkt-/Programm-/COM-Metadaten werden im
+  Suchindex durchsucht. (`49f3f22`; erster DPT-Suchlauf <1 ms statt 9,33 s)
+- [x] **H5.3 Persistenter Index:** gzip-JSON-Metadatenindex mit
+  Datei-Identität + SHA-256-Revalidierung, atomarem Schreiben und
+  Schema-Version; warmstart parst kein XML. (`49f3f22`, `33612e0`)
+- [x] **H5.4 Lazy Programs:** KSXML-Parameter werden erst bei
+  `FindProgram`/`FindProgramFor` materialisiert; Split- und Monolith-Archive
+  teilen den Pfad. (`49f3f22`, `33612e0`)
+- [x] **H5.5 Progressive UI:** Basismetadaten, programmangereicherte
+  Metadaten und stabile Snapshots werden getrennt veröffentlicht; Reload
+  veröffentlicht keinen halben Snapshot. (`49f3f22`)
+- [x] **H5.6 Algorithmik:** Dictionaries, einmaliges Master-Lesen,
+  Single-Pass-Translations, kein `XElement`-Klon, begrenzt parallele
+  Warmindex-Reads. (`49f3f22`)
 - [ ] **H5.7 Abnahme:** Kaltstart- und Warmstart-Zielwerte, erster Suchlauf,
   Speicherverbrauch und 10.000-Objekt-Pfad testen; Cache-Invalidierung nach
-  Import/Entfernen/Änderung nachweisen.
+  Import/Entfernen/Änderung nachweisen. Stand `33612e0`: warm 0,8–1,6 s
+  (Ziel <300 ms noch offen), Kaltindex 113,6 s (progressiv statt blockierend,
+  Ziel <3 s offen), Parameter-Öffnen 0,6–1,9 s (Agent
+  `agents/perf/parameter-open`).
 
 ### H6. Frameless / keine native Titelleiste (neu, 2026-10-21)
 
