@@ -1,10 +1,9 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="using:Knx.App.Localization" xmlns:views="using:Knx.App.Views"
         x:Class="Knx.App.Views.HelpWindow"
+        Classes="wb-dialog"
         Width="620" Height="640" MinWidth="420" MinHeight="360"
-        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
-        Background="{DynamicResource WbPaper}" Foreground="{DynamicResource WbText}"
-        FontFamily="Inter, Segoe UI" FontSize="12">
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
   <Window.Styles>
     <Style Selector="TextBlock.help-heading">
       <Setter Property="FontSize" Value="13"/>
@@ -28,8 +27,7 @@
     <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
       <StackPanel x:Name="Sections" Margin="24,4,24,20" Spacing="18"/>
     </ScrollViewer>
-    <Border Grid.Row="2" Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}"
-            BorderThickness="0,1,0,0" Padding="16,10">
+    <Border Grid.Row="2" Classes="wb-dialog-footer">
       <Button x:Name="CloseButton" Classes="wb-button wb-primary" HorizontalAlignment="Right" MinWidth="110"/>
     </Border>
   </Grid>

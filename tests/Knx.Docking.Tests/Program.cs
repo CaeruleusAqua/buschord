@@ -143,9 +143,12 @@ internal static class Program
             main.ShowTool("monitor");
             var undoFloat = Float(main);
             await Settle();
-            Console.WriteLine("NOTE floating tool windows have no Ctrl+Z/Ctrl+Y route; undo/redo stays with the shell window");
-            Check("floating tool window ignores the shell undo shortcut",
-                !Ctrl(undoFloat, Key.Z).Handled
+            Console.WriteLine("NOTE floated tool windows forward Ctrl+Z/Ctrl+Y to the shell's single project history");
+            Check("floating tool window routes Ctrl+Z to the shell undo",
+                Ctrl(undoFloat, Key.Z).Handled
+                && ProjectQuery.GroupAddresses(main.ViewModel.Project!).Count() == groupsBefore);
+            Check("floating tool window routes Ctrl+Y to the shell redo",
+                Ctrl(undoFloat, Key.Y).Handled
                 && ProjectQuery.GroupAddresses(main.ViewModel.Project!).Count() == groupsBefore + 1);
             Check("Ctrl+Z on the shell undoes exactly one edit while a tool floats",
                 Ctrl(main, Key.Z).Handled

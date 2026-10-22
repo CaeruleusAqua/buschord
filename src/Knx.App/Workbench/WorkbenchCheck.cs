@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Collections;
+using System.Globalization;
 using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Automation;
@@ -7,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Knx.App.Localization;
@@ -207,6 +209,26 @@ internal static class WorkbenchCheck
                 LoadFixture(window);
                 var p = window.ViewModel.Project!;
                 var d = ProjectQuery.DeviceList(p).First();
+                // Quick dialogs share the V4 chrome: wb-dialog window, footer surface, Cancel before the primary.
+                var newGroupAddressItem = MenuItems(window.FindControl<Menu>("MainMenu")!.ItemsSource)
+                    .First(item => Equals(item.Header, WorkbenchStrings.Get("NewGroupAddress")));
+                newGroupAddressItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                Window? quickDialog = null;
+                for (var attempt = 0; attempt < 100 && quickDialog is null; attempt++)
+                {
+                    quickDialog = desktop.Windows.FirstOrDefault(candidate => candidate.Title == WorkbenchStrings.Get("NewGroupAddress"));
+                    if (quickDialog is null) await Task.Delay(20);
+                }
+                var quickFooter = quickDialog?.GetVisualDescendants().OfType<Border>()
+                    .FirstOrDefault(border => border.Classes.Contains("wb-dialog-footer"))?.Child as StackPanel;
+                var quickButtons = quickFooter?.Children.OfType<Button>().ToList() ?? [];
+                Check("quick dialogs use the shared V4 chrome and action order", quickDialog is not null
+                    && quickDialog.Classes.Contains("wb-dialog")
+                    && quickButtons.Count >= 2
+                    && quickButtons[0].Classes.Contains("wb-quiet")
+                    && quickButtons[^1].Classes.Contains("wb-primary"));
+                quickDialog?.Close();
+                await Task.Delay(40);
                 var docStrip = window.FindControl<StackPanel>("ObjectTabs")!;
                 var viewStrip = window.FindControl<WrapPanel>("Representations")!;
                 var toolStrip = window.FindControl<StackPanel>("ToolTabs")!;
@@ -317,6 +339,19 @@ internal static class WorkbenchCheck
                     && inspectorBody.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == WorkbenchStrings.Get("SectionDevice")));
                 Check("inspector footer holds the apply action",
                     inspectorFooter.Children.OfType<Button>().Any(b => Equals(b.Content, WorkbenchStrings.Get("ApplyProperties"))));
+                var fieldGrids = inspectorBody.GetVisualDescendants().OfType<Grid>()
+                    .Where(grid => grid.ColumnDefinitions.Count == 2 && grid.ColumnDefinitions[0].Width.IsAbsolute
+                        && grid.Children.OfType<Control>().Any(child => AutomationProperties.GetAutomationId(child) is { Length: > 0 }))
+                    .ToList();
+                Check("inspector captions wrap inside their column instead of clipping", fieldGrids.Count > 0
+                    && fieldGrids.All(grid =>
+                    {
+                        if (grid.Children[0] is not TextBlock caption) return false;
+                        var column = grid.ColumnDefinitions[0].Width.Value;
+                        var measured = new FormattedText(caption.Text ?? "", CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                            new Typeface(caption.FontFamily, caption.FontStyle, caption.FontWeight), caption.FontSize, Brushes.Black);
+                        return measured.Width <= column + 1 || caption.TextWrapping == TextWrapping.Wrap;
+                    }));
                 window.Activate();
                 await Task.Delay(80);
                 var nameBox = inspectorBody.GetVisualDescendants().OfType<TextBox>().First();
@@ -409,6 +444,11 @@ internal static class WorkbenchCheck
                 await Task.Delay(60);
                 Check("leaving search restores the docked tool height", !window.Workspace.ToolsMaximized
                     && mainColumn.RowDefinitions[1].Height.IsStar);
+                var compactButtons = window.FindControl<ContentControl>("ToolHost")!.GetVisualDescendants().OfType<Button>()
+                    .Where(button => button.IsEffectivelyVisible && button.Bounds.Height > 0 && button.Classes.Contains("wb-compact")).ToList();
+                var compactHeights = string.Join('/', compactButtons.Select(button => button.Bounds.Height));
+                Check($"dock toolbars use one compact control height ({compactHeights})",
+                    compactButtons.Count > 0 && compactButtons.All(button => button.Bounds.Height <= 26.5));
                 window.ViewModel.StartRecording(); window.Workspace.ToolsVisible = false;
                 window.ShowTool("monitor");
                 Check("hiding and recreating monitor retains recorder state", window.ViewModel.IsRecording);
@@ -420,6 +460,18 @@ internal static class WorkbenchCheck
                     await Task.Delay(30);
                     var floating = desktop.Windows.Single(w => w != window);
                     Check($"fresh tool window {cycle + 1} does not reparent main content", !ReferenceEquals(floating.Content, window.FindControl<ContentControl>("ToolHost")!.Content));
+                    if (cycle == 0)
+                    {
+                        // The floated tool forwards the shell's single project history: one press undoes one edit.
+                        var undoArgs = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Z, KeyModifiers = KeyModifiers.Control };
+                        floating.RaiseEvent(undoArgs);
+                        await Task.Delay(80);
+                        Check("floating tool window routes Ctrl+Z to the shell undo", undoArgs.Handled && window.ViewModel.CanRedo);
+                        var redoArgs = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Y, KeyModifiers = KeyModifiers.Control };
+                        floating.RaiseEvent(redoArgs);
+                        await Task.Delay(80);
+                        Check("floating tool window routes Ctrl+Y to the shell redo", redoArgs.Handled && window.ViewModel.CanUndo);
+                    }
                     floating.Close();
                     Check($"closing tool window {cycle + 1} retains recorder", window.ViewModel.IsRecording);
                     Check($"closing tool window {cycle + 1} docks back into the shell", window.Workspace.ToolsVisible && window.FindControl<ContentControl>("ToolHost")!.Content is not null);

@@ -99,7 +99,6 @@ public sealed class WorkbenchStrings : INotifyPropertyChanged
         ["ExternalChannelsTip"] = ("Externe Kanäle einblenden", "Show external channels"),
         ["WithoutGroupAddress"] = ("Ohne GA", "No group address"),
         ["FilterObjects"] = ("Objekte filtern …", "Filter objects …"),
-        ["ExpandAll"] = ("Alle", "All"),
         ["SelectAll"] = ("Alles auswählen", "Select all"),
         ["SelectAllObjects"] = ("Alle Objekte auswählen", "Select all objects"),
         ["SelectObject"] = ("Objekt auswählen: {0}", "Select object: {0}"),
@@ -273,7 +272,6 @@ public sealed class WorkbenchStrings : INotifyPropertyChanged
         // ---- line scan ----
         ["Scan"] = ("Scan", "Scan"),
         ["ScanNeedsProject"] = ("Zuerst ein Projekt öffnen.", "Open a project first."),
-        ["ScanLine"] = ("Linie", "Line"),
         ["ScanStart"] = ("Linie scannen", "Scan line"),
         ["ScanRunning"] = ("Scan läuft …", "Scan running …"),
         ["ScanNote"] = ("SIMULATION · keine reale Geräteantwort", "SIMULATION · no real device response"),
@@ -421,7 +419,6 @@ public sealed class WorkbenchStrings : INotifyPropertyChanged
         ["BackupCreated"] = ("Sicherung erstellt: {0}", "Backup created: {0}"),
         ["BackupFailed"] = ("Sicherung fehlgeschlagen: {0}", "Backup failed: {0}"),
         ["Restore"] = ("Wiederherstellen", "Restore"),
-        ["RestoreBackup"] = ("Sicherung wiederherstellen", "Restore backup"),
         ["RestoreDone"] = ("Sicherung nach {0} wiederhergestellt.", "Backup restored to {0}."),
         ["AskUnsavedTitle"] = ("Ungespeicherte Änderungen", "Unsaved changes"),
         ["AskUnsavedText"] = ("Das Projekt „{0}“ enthält ungespeicherte Änderungen.\n\nVor dem Fortfahren speichern?", "The project “{0}” has unsaved changes.\n\nSave before continuing?"),

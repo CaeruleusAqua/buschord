@@ -74,13 +74,43 @@ public partial class WorkbenchWindow
         };
     }
 
-    private Window CreateDialog(string title, double width, double height) => new()
+    private Window CreateDialog(string title, double width, double height)
     {
-        Title = title,
-        Width = width,
-        Height = height,
-        WindowStartupLocation = WindowStartupLocation.CenterOwner
-    };
+        var dialog = new Window
+        {
+            Title = title,
+            Width = width,
+            Height = height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        // Shared V4 dialog chrome (App.axaml: Window.wb-dialog); quick dialogs keep their own flows.
+        dialog.Classes.Add("wb-dialog");
+        return dialog;
+    }
+
+    /// <summary>Shared V4 dialog layout: body above the 13 px footer, so actions stay reachable.</summary>
+    private static Grid DialogLayout(Control body, Control actions)
+    {
+        var grid = new Grid { RowDefinitions = new("*,Auto") };
+        grid.Children.Add(body);
+        var footer = new Border { Classes = { "wb-dialog-footer" }, Child = actions };
+        Grid.SetRow(footer, 1);
+        grid.Children.Add(footer);
+        return grid;
+    }
+
+    /// <summary>V4 action order: quiet Cancel first, primary last, right-aligned.</summary>
+    private static StackPanel DialogActions(params Control[] actions)
+    {
+        var row = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Spacing = 8
+        };
+        foreach (var action in actions) row.Children.Add(action);
+        return row;
+    }
 
     private async Task GuardAsync(Func<Task> action)
     {
@@ -147,17 +177,16 @@ public partial class WorkbenchWindow
     private async Task<string?> PromptPasswordAsync(string message)
     {
         var dialog = CreateDialog(W("Password"), 460, 230);
-        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         panel.Children.Add(Note(message));
         panel.Children.Add(Note(W("PasswordPrompt")));
         var box = new TextBox { PasswordChar = '●' };
         panel.Children.Add(box);
         string? result = null;
-        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
-        actions.Children.Add(ActionButton(W("Open"), () => { result = box.Text; dialog.Close(); }, "primary"));
-        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
-        panel.Children.Add(actions);
-        dialog.Content = panel;
+        var actions = DialogActions(
+            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            ActionButton(W("Open"), () => { result = box.Text; dialog.Close(); }, "primary"));
+        dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => box.Focus();
         await dialog.ShowDialog(this);
         return result;
@@ -281,7 +310,7 @@ public partial class WorkbenchWindow
         var path = ViewModel.ProjectPath.Length == 0 ? null : ViewModel.ProjectPath;
         var backups = ProjectBackup.List(path);
         var dialog = CreateDialog(W("Backups"), 720, 460);
-        var panel = new StackPanel { Margin = new(16), Spacing = 8 };
+        var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 8 };
         if (path is not null) panel.Children.Add(Note(path));
         if (backups.Count == 0) panel.Children.Add(Note(W("NoBackups")));
         foreach (var backup in backups)
@@ -291,8 +320,8 @@ public partial class WorkbenchWindow
             row.Children.Add(ActionButton(W("Restore"), () => _ = RestoreBackupAsync(dialog, backup), "quiet"));
             panel.Children.Add(row);
         }
-        panel.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
-        dialog.Content = new ScrollViewer { Content = panel };
+        dialog.Content = DialogLayout(new ScrollViewer { Content = panel },
+            DialogActions(ActionButton(W("Cancel"), dialog.Close, "quiet")));
         await dialog.ShowDialog(this);
     }
 
@@ -407,7 +436,7 @@ public partial class WorkbenchWindow
     private void ShowToolsOverview()
     {
         var dialog = CreateDialog(W("ToolsOverview"), 620, 420);
-        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         void Add(string title, Action run) => panel.Children.Add(ActionButton(title, () => { dialog.Close(); run(); }, "quiet"));
         Add(W("Monitor"), () => ShowTool("monitor"));
         Add(W("ProgrammingTab"), () => ShowTool("programming"));
@@ -418,8 +447,8 @@ public partial class WorkbenchWindow
         Add(W("Catalog"), ShowCatalog);
         Add(W("SecureOverview"), ShowSecureOverview);
         Add(W("HelpTip"), ShowHelp);
-        panel.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
-        dialog.Content = panel;
+        dialog.Content = DialogLayout(new ScrollViewer { Content = panel },
+            DialogActions(ActionButton(W("Cancel"), dialog.Close, "quiet")));
         dialog.ShowDialog(this);
     }
 
@@ -449,7 +478,7 @@ public partial class WorkbenchWindow
     private void ShowPalette()
     {
         var dialog = CreateDialog(W("FindWorkItemOrCommand"), 660, 480);
-        var panel = new DockPanel { Margin = new(16) };
+        var panel = new DockPanel { Margin = new(22) };
         var query = new TextBox { PlaceholderText = W("PaletteWatermark"), Margin = new(0, 0, 0, 12) };
         var list = new ListBox { Focusable = true };
         Avalonia.Automation.AutomationProperties.SetName(query, W("FindWorkItemOrCommand"));
@@ -531,7 +560,7 @@ public partial class WorkbenchWindow
     {
         if (ViewModel.Project is not { } project) { ViewModel.Status = W("NoProjectLoaded"); return; }
         var dialog = CreateDialog(W("NewGroupAddress"), 480, 360);
-        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         var address = new TextBox { Text = ProjectQuery.NextFreeGroupAddress(project, 1, 1).ToString() };
         var name = new TextBox();
         var dpt = new TextBox { Text = "DPST-1-1" };
@@ -542,24 +571,23 @@ public partial class WorkbenchWindow
         panel.Children.Add(Label(W("NameLabel"))); panel.Children.Add(name);
         panel.Children.Add(Label(W("DatapointType"))); panel.Children.Add(dpt);
         panel.Children.Add(Label(W("RoomOptional"))); panel.Children.Add(room);
-        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
-        actions.Children.Add(ActionButton(W("Create"), () =>
-        {
-            GroupAddress parsed;
-            try { parsed = GroupAddress.Parse(address.Text ?? ""); }
-            catch (Exception ex) when (ex is FormatException or ArgumentOutOfRangeException or OverflowException)
-            { ViewModel.Status = W("InvalidGroupAddress"); return; }
-            if (parsed.Raw == 0) { ViewModel.Status = W("InvalidGroupAddress"); return; }
-            if (!ViewModel.CreateGroupAddress(parsed, name.Text ?? "", dpt.Text,
-                    (room.SelectedItem as SpaceNode)?.Id)) return;
-            dialog.Close();
-            RefreshWorkspace();
-            if (ProjectQuery.FindGroupAddress(ViewModel.Project!, parsed) is { } created)
-                OpenTarget(new("ga", created.Id));
-        }, "primary"));
-        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
-        panel.Children.Add(actions);
-        dialog.Content = panel;
+        var actions = DialogActions(
+            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            ActionButton(W("Create"), () =>
+            {
+                GroupAddress parsed;
+                try { parsed = GroupAddress.Parse(address.Text ?? ""); }
+                catch (Exception ex) when (ex is FormatException or ArgumentOutOfRangeException or OverflowException)
+                { ViewModel.Status = W("InvalidGroupAddress"); return; }
+                if (parsed.Raw == 0) { ViewModel.Status = W("InvalidGroupAddress"); return; }
+                if (!ViewModel.CreateGroupAddress(parsed, name.Text ?? "", dpt.Text,
+                        (room.SelectedItem as SpaceNode)?.Id)) return;
+                dialog.Close();
+                RefreshWorkspace();
+                if (ProjectQuery.FindGroupAddress(ViewModel.Project!, parsed) is { } created)
+                    OpenTarget(new("ga", created.Id));
+            }, "primary"));
+        dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => name.Focus();
         dialog.ShowDialog(this);
     }
@@ -581,8 +609,7 @@ public partial class WorkbenchWindow
         if (selected.Count == 0) { ViewModel.Status = W("BatchNeedSelection"); return; }
         var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
         var dialog = CreateDialog(W("BatchTitle", selected.Count), 720, 560);
-        var panel = new DockPanel { Margin = new(16) };
-        var top = new StackPanel { Spacing = 8 };
+        var top = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 8 };
         var picker = new ComboBox { ItemsSource = groups, MinWidth = 420, PlaceholderText = W("ChooseGroupAddress") };
         picker.ItemTemplate = new FuncDataTemplate<GroupAddressEntry>((g, _) => Label(g is null ? "" : $"{g.Address} · {g.Name} · {g.DatapointType ?? "DPT?"}"));
         var preview = new ListBox { Height = 320 };
@@ -593,12 +620,10 @@ public partial class WorkbenchWindow
         top.Children.Add(picker);
         top.Children.Add(preview);
         top.Children.Add(errors);
-        DockPanel.SetDock(top, Avalonia.Controls.Dock.Top); panel.Children.Add(top);
-        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
-        actions.Children.Add(add);
-        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
-        DockPanel.SetDock(actions, Avalonia.Controls.Dock.Bottom); panel.Children.Add(actions);
-        dialog.Content = panel;
+        var actions = DialogActions(
+            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            add);
+        dialog.Content = DialogLayout(top, actions);
         dialog.Opened += (_, _) => picker.Focus();
         dialog.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Escape) dialog.Close(); };
         void Validate()

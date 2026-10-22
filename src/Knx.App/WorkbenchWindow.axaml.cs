@@ -964,26 +964,25 @@ public partial class WorkbenchWindow : Window
         if (source is not { Line: { } sourceLine }) { ViewModel.Status = W("TargetLineMissing"); return; }
         var lines = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).ToList();
         var dialog = CreateDialog(W("Move"), 460, 220);
-        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         var picker = new ComboBox { ItemsSource = lines, SelectedIndex = Math.Max(0, lines.FindIndex(l => l.Id == sourceLine.Id)) };
         picker.ItemTemplate = new FuncDataTemplate<Line>((line, _) => Label(line is null ? ""
             : $"{line.Address} · {line.Name ?? W("Line")}"));
         panel.Children.Add(Note(W("ChooseLine")));
         panel.Children.Add(picker);
-        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
-        actions.Children.Add(ActionButton(W("Move"), () =>
-        {
-            if (picker.SelectedItem is not Line target) return;
-            var segment = target.Id == sourceLine.Id
-                ? sourceLine.Segments.FirstOrDefault(s => s.Devices.Contains(device)) : null;
-            var room = project.Installations.SelectMany(i => i.Locations.AllNodes)
-                .FirstOrDefault(n => n.DeviceRefs.Contains(device.Id));
-            dialog.Close();
-            ApplyOperation(W("Move"), p => ProjectOperations.MoveDevice(p, device, target, segment, room?.Id));
-        }, "primary"));
-        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
-        panel.Children.Add(actions);
-        dialog.Content = panel;
+        var actions = DialogActions(
+            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            ActionButton(W("Move"), () =>
+            {
+                if (picker.SelectedItem is not Line target) return;
+                var segment = target.Id == sourceLine.Id
+                    ? sourceLine.Segments.FirstOrDefault(s => s.Devices.Contains(device)) : null;
+                var room = project.Installations.SelectMany(i => i.Locations.AllNodes)
+                    .FirstOrDefault(n => n.DeviceRefs.Contains(device.Id));
+                dialog.Close();
+                ApplyOperation(W("Move"), p => ProjectOperations.MoveDevice(p, device, target, segment, room?.Id));
+            }, "primary"));
+        dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => picker.Focus();
         await dialog.ShowDialog(this);
     }
@@ -995,20 +994,20 @@ public partial class WorkbenchWindow : Window
         var areas = installation.Areas.ToList();
         var sourceArea = areas.FirstOrDefault(a => a.Lines.Contains(line) || a.Lines.Any(l => l.Id == line.Id));
         var dialog = CreateDialog(W("Move"), 460, 220);
-        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         var picker = new ComboBox { ItemsSource = areas, SelectedIndex = Math.Max(0, areas.FindIndex(a => a.Id == sourceArea?.Id)) };
         picker.ItemTemplate = new FuncDataTemplate<Area>((area, _) => Label(area is null ? ""
             : $"{area.Address} · {area.Name ?? W("AreaNode", area.Address, "")}"));
         panel.Children.Add(Note(W("Move"))); panel.Children.Add(picker);
-        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
-        actions.Children.Add(ActionButton(W("Move"), () =>
-        {
-            if (picker.SelectedItem is not Area target) return;
-            dialog.Close();
-            ApplyOperation(W("Move"), p => ProjectOperations.MoveLine(p, line, target));
-        }, "primary"));
-        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
-        panel.Children.Add(actions); dialog.Content = panel;
+        var actions = DialogActions(
+            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            ActionButton(W("Move"), () =>
+            {
+                if (picker.SelectedItem is not Area target) return;
+                dialog.Close();
+                ApplyOperation(W("Move"), p => ProjectOperations.MoveLine(p, line, target));
+            }, "primary"));
+        dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => picker.Focus();
         await dialog.ShowDialog(this);
     }
@@ -1018,20 +1017,20 @@ public partial class WorkbenchWindow : Window
         if (ViewModel.Project is not { } project) return;
         var lines = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).ToList();
         var dialog = CreateDialog(W("Move"), 460, 220);
-        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         var picker = new ComboBox { ItemsSource = lines, SelectedIndex = 0 };
         picker.ItemTemplate = new FuncDataTemplate<Line>((line, _) => Label(line is null ? ""
             : $"{line.Address} · {line.Name ?? W("Line")}"));
         panel.Children.Add(Note(W("Move"))); panel.Children.Add(picker);
-        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
-        actions.Children.Add(ActionButton(W("Move"), () =>
-        {
-            if (picker.SelectedItem is not Line target) return;
-            dialog.Close();
-            ApplyOperation(W("Move"), p => ProjectOperations.MoveSegment(p, segment, target));
-        }, "primary"));
-        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
-        panel.Children.Add(actions); dialog.Content = panel;
+        var actions = DialogActions(
+            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            ActionButton(W("Move"), () =>
+            {
+                if (picker.SelectedItem is not Line target) return;
+                dialog.Close();
+                ApplyOperation(W("Move"), p => ProjectOperations.MoveSegment(p, segment, target));
+            }, "primary"));
+        dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => picker.Focus();
         await dialog.ShowDialog(this);
     }
@@ -1490,13 +1489,14 @@ public partial class WorkbenchWindow : Window
     private async Task<string?> PromptTextAsync(string title, string primary)
     {
         var dialog = CreateDialog(title, 420, 180);
-        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         var box = new TextBox { Watermark = title };
-        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
         string? result = null;
-        actions.Children.Add(ActionButton(primary, () => { result = box.Text; dialog.Close(); }, "primary"));
-        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
-        panel.Children.Add(box); panel.Children.Add(actions); dialog.Content = panel;
+        var actions = DialogActions(
+            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            ActionButton(primary, () => { result = box.Text; dialog.Close(); }, "primary"));
+        panel.Children.Add(box);
+        dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => box.Focus();
         await dialog.ShowDialog(this);
         return result;
@@ -1583,7 +1583,8 @@ public partial class WorkbenchWindow : Window
     private static Control Field(string label, Control editor, string automationId)
     {
         var grid = new Grid { ColumnDefinitions = new("104,*"), ColumnSpacing = 8 };
-        var caption = Note(label); caption.TextWrapping = TextWrapping.NoWrap; caption.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+        // Captions wrap inside the fixed column: "Room reference (optional)" must not be covered by the editor.
+        var caption = Note(label); caption.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
         grid.Children.Add(caption);
         Grid.SetColumn(editor, 1);
         grid.Children.Add(editor);
@@ -2113,7 +2114,7 @@ public partial class WorkbenchWindow : Window
         var headings = new[] { W("ColumnTime"), W("ColumnSource"), W("ColumnDestination"), W("ColumnService"), "DPT", W("ColumnValue"), W("ColumnOrigin") };
         for (var i = 0; i < headings.Length; i++)
         {
-            var text = Label(headings[i]); text.FontSize = 9; text.Classes.Add("wb-muted"); text.Margin = new(6, 0, 0, 0);
+            var text = Label(headings[i]); text.Classes.Add("wb-th"); text.Margin = new(6, 0, 0, 0);
             Grid.SetColumn(text, i); header.Children.Add(text);
         }
         DockPanel.SetDock(header, Avalonia.Controls.Dock.Top); panel.Children.Add(header);
@@ -2218,7 +2219,7 @@ public partial class WorkbenchWindow : Window
         var headings = new[] { W("ColumnAddress"), W("ColumnDevice"), "Status", W("ColumnJob"), W("Progress"), W("ColumnHint") };
         for (var i = 0; i < headings.Length; i++)
         {
-            var text = Label(headings[i]); text.FontSize = 9; text.Classes.Add("wb-muted"); text.Margin = new(6, 0, 0, 0);
+            var text = Label(headings[i]); text.Classes.Add("wb-th"); text.Margin = new(6, 0, 0, 0);
             Grid.SetColumn(text, i); header.Children.Add(text);
         }
         DockPanel.SetDock(header, Avalonia.Controls.Dock.Top); panel.Children.Add(header);
@@ -2300,7 +2301,7 @@ public partial class WorkbenchWindow : Window
         var headings = new[] { W("ColumnAddress"), W("ColumnDevice"), W("ColumnStatus"), W("ColumnDetail") };
         for (var i = 0; i < headings.Length; i++)
         {
-            var text = Label(headings[i]); text.FontSize = 9; text.Classes.Add("wb-muted"); text.Margin = new(6, 0, 0, 0);
+            var text = Label(headings[i]); text.Classes.Add("wb-th"); text.Margin = new(6, 0, 0, 0);
             Grid.SetColumn(text, i); header.Children.Add(text);
         }
         DockPanel.SetDock(header, Avalonia.Controls.Dock.Top); panel.Children.Add(header);
@@ -2327,7 +2328,7 @@ public partial class WorkbenchWindow : Window
         if (_sessions is not { } sessions || ViewModel.Project is not { } project)
         { ViewModel.Status = W("ScanNeedsProject"); return; }
         var dialog = CreateDialog(W("ValueTitle"), 420, 240);
-        var panel = new StackPanel { Margin = new(16), Spacing = 10 };
+        var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
         var picker = new ComboBox { ItemsSource = groups, SelectedIndex = groups.Count > 0 ? 0 : -1 };
         picker.ItemTemplate = new FuncDataTemplate<GroupAddressEntry>((g, _) => Label(g is null ? ""
@@ -2335,23 +2336,22 @@ public partial class WorkbenchWindow : Window
         var value = new TextBox { Text = "1", PlaceholderText = W("ValueText") };
         panel.Children.Add(Label(W("ValueGroupAddress"))); panel.Children.Add(picker);
         panel.Children.Add(Label(W("ValueText"))); panel.Children.Add(value);
-        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
-        actions.Children.Add(ActionButton(W("SimulateRead"), () =>
-        {
-            if (picker.SelectedItem is not GroupAddressEntry ga) return;
-            try { sessions.Monitor.SimulateRead(ga.Id, value.Text ?? ""); ViewModel.Status = W("ValueWritten", ga.Address.ToString()); dialog.Close(); }
-            catch (Exception ex) { ViewModel.Status = ex.Message; }
-        }));
-        actions.Children.Add(ActionButton(W("SimulateWrite"), () =>
-        {
-            if (picker.SelectedItem is not GroupAddressEntry ga) return;
-            try { sessions.Monitor.SimulateWrite(ga.Id, value.Text ?? ""); ViewModel.Status = W("ValueWritten", ga.Address.ToString()); dialog.Close(); }
-            catch (Exception ex) { ViewModel.Status = ex.Message; }
-        }, "primary"));
-        actions.Children.Add(ActionButton(W("Cancel"), dialog.Close, "quiet"));
-        panel.Children.Add(actions);
+        var actions = DialogActions(
+            ActionButton(W("Cancel"), dialog.Close, "quiet"),
+            ActionButton(W("SimulateRead"), () =>
+            {
+                if (picker.SelectedItem is not GroupAddressEntry ga) return;
+                try { sessions.Monitor.SimulateRead(ga.Id, value.Text ?? ""); ViewModel.Status = W("ValueWritten", ga.Address.ToString()); dialog.Close(); }
+                catch (Exception ex) { ViewModel.Status = ex.Message; }
+            }),
+            ActionButton(W("SimulateWrite"), () =>
+            {
+                if (picker.SelectedItem is not GroupAddressEntry ga) return;
+                try { sessions.Monitor.SimulateWrite(ga.Id, value.Text ?? ""); ViewModel.Status = W("ValueWritten", ga.Address.ToString()); dialog.Close(); }
+                catch (Exception ex) { ViewModel.Status = ex.Message; }
+            }, "primary"));
         panel.Children.Add(Note(W("MonitorDemoNote")));
-        dialog.Content = panel;
+        dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => picker.Focus();
         dialog.ShowDialog(this);
     }
@@ -2611,7 +2611,9 @@ public partial class WorkbenchWindow : Window
 
     private static void CompactButtons(Panel panel)
     {
-        foreach (var button in panel.Children.OfType<Button>()) button.Classes.Add("wb-compact");
+        // CheckBox derives from Button: only real buttons take the compact button geometry.
+        foreach (var button in panel.Children.OfType<Button>().Where(button => button is not Avalonia.Controls.Primitives.ToggleButton))
+            button.Classes.Add("wb-compact");
     }
 
     /// <summary>Adds a dock toolbar with the V4 compact button height, then docks it on top.</summary>
@@ -2653,7 +2655,6 @@ public partial class WorkbenchWindow : Window
         if (Workspace.ActiveTab is { } tab && tab.SelectedObjectIds.Count > 0) ShowBatchLinkDialog();
         else SetRepresentation("relations");
     }
-    private void OnCatalog(object? sender, RoutedEventArgs e) => ShowCatalog();
     private void OnProgramming(object? sender, RoutedEventArgs e) => ShowTool("programming");
     private void OnWatch(object? sender, RoutedEventArgs e)
     {
@@ -2693,6 +2694,9 @@ public partial class WorkbenchWindow : Window
         var content = CreateToolView(Workspace.ActiveTool);
         var window = new Window { Title = ToolWindowTitle(Workspace.ActiveTool), Width = 1000, Height = 380,
             Content = content };
+        // Project undo/redo stays shell state: the floated tool forwards Ctrl+Z/Ctrl+Y to the shell
+        // instead of keeping a second edit history. Text editors keep their own undo.
+        window.AddHandler(KeyDownEvent, (_, e) => RouteUndoRedo(e), RoutingStrategies.Tunnel);
         _toolWindows.Add(window);
         window.Closed += (_, _) =>
         {
@@ -2702,10 +2706,26 @@ public partial class WorkbenchWindow : Window
         };
         window.Show(this);
     }
+
+    /// <summary>
+    /// Single project history: Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y run the shell view-model's undo/redo.
+    /// Called by the shell window and by every floated tool window.
+    /// </summary>
+    private bool RouteUndoRedo(KeyEventArgs e)
+    {
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.Key is not (Key.Z or Key.Y)) return false;
+        var editingText = e.Source is Visual source && (source is TextBox || source.GetVisualAncestors().OfType<TextBox>().Any());
+        if (editingText) return false;
+        if (e.Key == Key.Z && !e.KeyModifiers.HasFlag(KeyModifiers.Shift)) ViewModel.UndoCommand.Execute(null);
+        else ViewModel.RedoCommand.Execute(null);
+        e.Handled = true;
+        return true;
+    }
+
     private void OnShellKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Handled) return;
-        var editingText = e.Source is Visual source && (source is TextBox || source.GetVisualAncestors().OfType<TextBox>().Any());
+        if (RouteUndoRedo(e)) return;
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             switch (e.Key)
@@ -2717,9 +2737,6 @@ public partial class WorkbenchWindow : Window
                 case Key.S: _ = GuardAsync(async () => await SaveAsync()); break;
                 case Key.O: _ = GuardAsync(OpenProjectAsync); break;
                 case Key.N: _ = GuardAsync(NewProjectAsync); break;
-                case Key.Z when !editingText:
-                    if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) ViewModel.RedoCommand.Execute(null); else ViewModel.UndoCommand.Execute(null); break;
-                case Key.Y when !editingText: ViewModel.RedoCommand.Execute(null); break;
                 case Key.Tab:
                     if (Workspace.Tabs.Count > 0) Workspace.ActiveTab = Workspace.Tabs[(Workspace.Tabs.IndexOf(Workspace.ActiveTab!) + 1) % Workspace.Tabs.Count]; break;
                 default: return;
