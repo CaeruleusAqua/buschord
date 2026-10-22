@@ -6,6 +6,9 @@ using Knx.Catalog;
 // Self-check for the Knxprod catalogue reader: synthetic catalogue (ZIP, loose XML,
 // directory), translations, store round trip and device creation.
 // Run: dotnet run --project tests/Knx.Catalog.Tests
+// Opt-in timing harness: KNX_CATALOG_BENCH=<library> runs Bench.cs instead of the checks.
+if (Knx.Catalog.Tests.CatalogBench.TryRun() is { } benchExit) return benchExit;
+
 var failures = new List<string>();
 void Check(string name, bool ok, string? detail = null)
 {
@@ -601,6 +604,144 @@ Check("Index: Inhalt-Hash wird geprüft",
     tamperedStore.LastIndexStatistics is { IndexMisses: 1, XmlCatalogFiles: 1 },
     tamperedStore.LastIndexStatistics?.ToString());
 
+// --- verified identity: the hash is remembered, and every change is re-verified ---
+var identityRoot = Path.Combine(indexRoot, "identity");
+var identityLibrary = Path.Combine(identityRoot, "library");
+var identityCache = Path.Combine(identityRoot, "cache");
+Directory.CreateDirectory(identityLibrary);
+var identityFile = Path.Combine(identityLibrary, "identity.knxprod");
+File.Copy(archive, identityFile);
+var identitySeed = new CatalogStore(identityLibrary, identityCache);
+_ = identitySeed.LoadAll();
+var identityPath = identitySeed.Index.IdentityPathFor(identityFile);
+Check("Identität: verifizierte Identität wird abgelegt", File.Exists(identityPath));
+var identityStamp = File.GetLastWriteTimeUtc(identityPath);
+var identityLine = File.ReadAllText(identityPath);
+var identityWarm = new CatalogStore(identityLibrary, identityCache);
+var identityWarmCatalogs = identityWarm.LoadAll();
+Check("Identität: warmer Lauf nutzt sie ohne erneutes Lesen der Datei",
+    identityWarm.LastIndexStatistics is { IndexHits: 1, IndexMisses: 0, XmlCatalogFiles: 0 }
+    && File.GetLastWriteTimeUtc(identityPath) == identityStamp
+    && File.ReadAllText(identityPath) == identityLine
+    && identityWarmCatalogs.Single().Products.Count == 2,
+    identityWarm.LastIndexStatistics?.ToString());
+File.Delete(identityPath);
+var identityRebuilt = new CatalogStore(identityLibrary, identityCache);
+_ = identityRebuilt.LoadAll();
+Check("Identität: fehlende Identität kostet nur den Hash, kein XML",
+    identityRebuilt.LastIndexStatistics is { IndexHits: 1, IndexMisses: 0, XmlCatalogFiles: 0 }
+    && File.Exists(identityPath),
+    identityRebuilt.LastIndexStatistics?.ToString());
+
+// Same size and same last-write time, different content: only the content check can decide.
+var sameRoot = Path.Combine(indexRoot, "same");
+var sameLibrary = Path.Combine(sameRoot, "library");
+var sameCache = Path.Combine(sameRoot, "cache");
+Directory.CreateDirectory(sameLibrary);
+var sameFile = Path.Combine(sameLibrary, "knxprod.xml");
+string SameSizeCatalog(string productId, char padding) => $"""
+    <KNX><ManufacturerData><Manufacturer RefId="M-SAME"><Hardware><Hardware Id="H-1"><Products>
+    <Product Id="{productId}" Text="Same size" OrderNumber="S-1"/>
+    </Products></Hardware></Hardware></Manufacturer></ManufacturerData><!--{new string(padding, 4096)}--></KNX>
+    """;
+File.WriteAllText(sameFile, SameSizeCatalog("P-AAA", 'a'));
+var sameCold = new CatalogStore(sameLibrary, sameCache);
+var sameFirst = sameCold.LoadAll();
+Check("Identität: erster Lauf liest das XML", sameFirst.Single().Products.Single().Id == "P-AAA");
+var sameStamp = File.GetLastWriteTimeUtc(sameFile);
+var sameLength = new FileInfo(sameFile).Length;
+File.WriteAllText(sameFile, SameSizeCatalog("P-BBB", 'b'));
+File.SetLastWriteTimeUtc(sameFile, sameStamp);
+Check("Identität: Testdatei hat wirklich dieselbe Größe", new FileInfo(sameFile).Length == sameLength);
+var sameSecond = new CatalogStore(sameLibrary, sameCache).LoadAll();
+Check("Identität: gleiche Größe und Änderungszeit, anderer Inhalt wird neu gelesen",
+    sameSecond.Single().Products.Single().Id == "P-BBB",
+    sameSecond.Single().Products.Single().Id);
+
+// --- packed communication objects survive the cache, including the ones without display texts ---
+var packedRoot = Path.Combine(indexRoot, "packed");
+var packedLibrary = Path.Combine(packedRoot, "library");
+var packedCache = Path.Combine(packedRoot, "cache");
+Directory.CreateDirectory(packedLibrary);
+var packedFile = Path.Combine(packedLibrary, "knxprod.xml");
+File.WriteAllText(packedFile, """
+    <KNX><ManufacturerData><Manufacturer RefId="M-PACK"><Hardware><Hardware Id="H-1"><Products>
+    <Product Id="P-PACK" Text="Packed device" OrderNumber="PK-1"/>
+    </Products><Hardware2Programs><Hardware2Program Id="HP-1"><ApplicationProgramRef RefId="A-PACK"/></Hardware2Program></Hardware2Programs>
+    </Hardware></Hardware>
+    <ApplicationPrograms><ApplicationProgram Id="A-PACK" Name="Packed application"><Static><ComObjectTable>
+    <ComObject Id="CO-TEXT" Name="With text" Text="Switch" FunctionText="Switching" Number="1" ObjectSize="1 Bit" DatapointType="DPST-1-1"/>
+    <ComObject Id="CO-PLAIN" Name="Without text" Number="2" ObjectSize="2 Byte"/>
+    </ComObjectTable></Static></ApplicationProgram></ApplicationPrograms>
+    </Manufacturer></ManufacturerData></KNX>
+    """);
+_ = new CatalogStore(packedLibrary, packedCache).LoadAll();
+var packedWarm = new CatalogStore(packedLibrary, packedCache).LoadAll().Single();
+var packedProgram = packedWarm.FindProgram("A-PACK")!;
+var packedDevice = CatalogInstaller.CreateDevice(packedWarm.Products.Single(), packedProgram,
+    new IndividualAddress(1, 2, 5), "Packed");
+Check("Gepackte ComObjects: Anzeigetexte überleben den Cache",
+    packedDevice.ComObjectRefs.Count == 2
+    && packedDevice.ComObjectRefs[0] is { Text: "Switch", FunctionText: "Switching" }
+    && packedDevice.ComObjectRefs[1].Text is null && packedDevice.ComObjectRefs[1].FunctionText is null,
+    string.Join(" | ", packedDevice.ComObjectRefs.Select(r => $"{r.Id}:{r.Text}/{r.FunctionText}")));
+Check("Gepackte ComObjects: Nummer, Größe und DPT überleben den Cache",
+    packedProgram.ComObjects[0] is { Number: 1, SizeInBit: 1, DatapointType: "DPST-1-1" }
+    && packedProgram.ComObjects[1] is { Number: 2, SizeInBit: 16, DatapointType: null },
+    string.Join(" | ", packedProgram.ComObjects.Select(c => $"{c.Id}:{c.Number}/{c.SizeInBit}/{c.DatapointType}")));
+Check("Gepackte ComObjects: Suchtext und DPT-Index bleiben vollständig",
+    packedProgram.SearchText.Contains("switch", StringComparison.Ordinal)
+    && packedProgram.SearchText.Contains("without text", StringComparison.Ordinal)
+    && packedProgram.NormalizedDatapointTypes.Contains(";dpst-1-1;", StringComparison.Ordinal),
+    packedProgram.SearchText);
+
+// --- cancellation: a cold build stops without leaving half-written cache entries ---
+var cancelRoot = Path.Combine(indexRoot, "cancel");
+var cancelLibrary = Path.Combine(cancelRoot, "library");
+var cancelCache = Path.Combine(cancelRoot, "cache");
+Directory.CreateDirectory(cancelLibrary);
+for (var index = 0; index < 3; index++)
+    File.Copy(splitZipPath, Path.Combine(cancelLibrary, $"cancel-{index}.knxprod"));
+using (var cancellation = new CancellationTokenSource())
+{
+    var canceled = false;
+    try
+    {
+        new CatalogStore(cancelLibrary, cancelCache).LoadAll(
+            new SyncProgress<CatalogLoadProgress>(_ => cancellation.Cancel()), null, cancellation.Token);
+    }
+    catch (OperationCanceledException)
+    {
+        canceled = true;
+    }
+    Check("Abbruch: der kalte Lauf bricht ab", canceled);
+}
+Check("Abbruch: keine halb geschriebenen Cache-Dateien",
+    !Directory.EnumerateFiles(cancelCache, "*.tmp").Any(),
+    string.Join(",", Directory.EnumerateFiles(cancelCache, "*.tmp").Select(Path.GetFileName)));
+var cancelResumed = new CatalogStore(cancelLibrary, cancelCache);
+var resumed = cancelResumed.LoadAll();
+Check("Abbruch: der nächste Lauf vervollständigt die Bibliothek",
+    resumed.Count == 3 && resumed.All(catalog => catalog.Programs.Count == 1)
+    && cancelResumed.LoadErrors.Count == 0,
+    $"catalogs={resumed.Count} programs={resumed.Sum(c => c.Programs.Count)} errors={cancelResumed.LoadErrors.Count}");
+
+// --- progress: a split archive reports its parts while they are read ---
+var progressRoot = Path.Combine(indexRoot, "progress");
+var progressLibrary = Path.Combine(progressRoot, "library");
+var progressCache = Path.Combine(progressRoot, "cache");
+Directory.CreateDirectory(progressLibrary);
+File.Copy(splitZipPath, Path.Combine(progressLibrary, "progress.knxprod"));
+var progressReports = new List<CatalogLoadProgress>();
+var progressStore = new CatalogStore(progressLibrary, progressCache);
+var progressLoaded = progressStore.LoadAll(new SyncProgress<CatalogLoadProgress>(progressReports.Add));
+Check("Fortschritt: Dateien und Teile werden gemeldet",
+    progressReports.Any(report => report.Loaded == 1 && report.Total == 1)
+    && progressReports.Any(report => report.Parts == 1 && report.Part == 1),
+    string.Join(" | ", progressReports.Select(report => $"{report.Loaded}/{report.Total} {report.Part}/{report.Parts}")));
+Check("Fortschritt: Programmteile sind abgezählt",
+    progressLoaded.Single().ProgramPartCount == 1 && progressLoaded.Single().MetadataComplete);
+
 // --- hostile XML: bounded section depth, bounded entry size (no real catalogue data) ---
 var deepSections = new System.Text.StringBuilder();
 deepSections.Append(
@@ -760,8 +901,7 @@ foreach (var failure in failures) Console.WriteLine("  - " + failure);
 return 1;
 
 // Looks for a real product database, bounded in depth so the profile scan stays fast.
-static string? FindRealCatalogue()
-{
+static string? FindRealCatalogue(){
     var roots = new[] { @"C:\ProgramData\KNX", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) };
     foreach (var start in roots)
     {
@@ -787,4 +927,9 @@ static string? FindRealCatalogue()
         }
     }
     return null;
+}
+/// <summary>Synchronous progress sink: Progress<T> would post to the thread pool.</summary>
+internal sealed class SyncProgress<T>(Action<T> report) : IProgress<T>
+{
+    public void Report(T value) => report(value);
 }

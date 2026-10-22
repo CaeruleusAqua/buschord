@@ -70,6 +70,12 @@ public sealed partial class KnxProductCatalog
     /// <summary>Program metadata (names, COM objects, DPT, gating flags) covers every application.</summary>
     public bool MetadataComplete { get; internal set; }
 
+    /// <summary>
+    /// Application-program parts this catalogue still has to read; zero once its program metadata
+    /// is complete (and for catalogues that keep everything in one XML part).
+    /// </summary>
+    public int ProgramPartCount => _partByName.Count;
+
     /// <summary>Number of applications whose full KSXML parameter model has been materialised.</summary>
     public int LoadedProgramModels { get; private set; }
 
@@ -346,12 +352,15 @@ public sealed partial class KnxProductCatalog
             var read = 0;
             var done = 0;
             var complete = true;
+            // One container handle for the whole batch: opening per part would re-read the archive
+            // directory of a manufacturer archive for every one of its hundreds of parts.
+            using var archive = OpenArchiveForParts();
             foreach (var (id, location) in parts)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (_loadedParts.Add(id))
                 {
-                    if (LoadPartMetadata(location)) read++;
+                    if (LoadPartMetadata(location, archive)) read++;
                     else
                     {
                         _loadedParts.Remove(id);
@@ -365,8 +374,26 @@ public sealed partial class KnxProductCatalog
         }
     }
 
+    /// <summary>Shared read handle for a batch of parts; null when they live outside an archive.</summary>
+    private ZipArchive? OpenArchiveForParts()
+    {
+        if (_archivePath is not { } path || !File.Exists(path)) return null;
+        try
+        {
+            return ZipFile.OpenRead(path);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Loads metadata of one application-program part (never the parameter model).</summary>
-    private bool LoadPartMetadata(string location)
+    private bool LoadPartMetadata(string location, ZipArchive? archive = null)
     {
         try
         {
@@ -374,6 +401,13 @@ public sealed partial class KnxProductCatalog
             if (_archivePath is null)
             {
                 document = LoadXmlFile(location);
+            }
+            else if (archive is not null)
+            {
+                var entry = archive.GetEntry(location);
+                if (entry is null) return false;
+                using var stream = OpenXmlEntry(entry);
+                document = LoadXml(stream);
             }
             else
             {

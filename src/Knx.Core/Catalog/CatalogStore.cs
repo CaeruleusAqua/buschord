@@ -8,8 +8,11 @@ namespace Knx.Catalog;
 /// <summary>One file that could not be parsed; LoadAll keeps going and reports it here.</summary>
 public sealed record CatalogLoadError(string File, string Message);
 
-/// <summary>Progress of <see cref="CatalogStore.LoadAll"/> in library files.</summary>
-public sealed record CatalogLoadProgress(int Loaded, int Total, string File);
+/// <summary>
+/// Progress of <see cref="CatalogStore.LoadAll"/> in library files, plus the application-program
+/// parts of the file currently being read (both zero while a file has no separate parts).
+/// </summary>
+public sealed record CatalogLoadProgress(int Loaded, int Total, string File, int Part = 0, int Parts = 0);
 
 /// <summary>Summary of one catalogue import, including gating facts.</summary>
 public sealed record CatalogImportReport(string File, string CatalogName, int Products, int Sections, int Programs,
@@ -141,7 +144,9 @@ public sealed class CatalogStore
     /// Reads every catalogue through the metadata cache (or parses XML on a miss). A catalogue is
     /// reported through <paramref name="catalogReady"/> as soon as its product metadata is usable,
     /// and again after its program metadata was indexed, so callers can publish progressive
-    /// snapshots. Cancellation leaves no half-written cache entry behind.
+    /// snapshots. XML work runs on a bounded pool, so a few very large archives no longer block
+    /// the rest of the library, and each file reports its program parts while they are read.
+    /// Cancellation leaves no half-written cache entry behind.
     /// </summary>
     public List<KnxProductCatalog> LoadAll(IProgress<CatalogLoadProgress>? progress,
         Action<KnxProductCatalog>? catalogReady, CancellationToken cancellationToken = default)
@@ -158,6 +163,7 @@ public sealed class CatalogStore
             .Where(IsCatalogFile).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
         var results = new KnxProductCatalog?[files.Count];
         var errors = new List<CatalogLoadError>();
+        var failed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var errorGate = new object();
         var publishGate = new object();
         var loaded = 0;
@@ -177,54 +183,66 @@ public sealed class CatalogStore
         void Report(string file) =>
             progress?.Report(new CatalogLoadProgress(Interlocked.Increment(ref loaded), files.Count, file));
 
+        // Sub-file progress: the file keeps its place in the file counter while its parts advance.
+        void ReportPart(string file, int part, int parts) => progress?.Report(
+            new CatalogLoadProgress(Volatile.Read(ref loaded), files.Count, file, part, parts));
+
         void Fail(string file, Exception ex)
         {
-            lock (errorGate) errors.Add(new CatalogLoadError(file, ex.Message));
+            lock (errorGate)
+            {
+                errors.Add(new CatalogLoadError(file, ex.Message));
+                failed.Add(file);
+            }
+        }
+
+        bool Failed(string file)
+        {
+            lock (errorGate) return failed.Contains(file);
         }
 
         // Phase 1: warm metadata, bounded parallel. A hit reads JSON only, never catalogue XML.
-        try
+        Parallel.For(0, files.Count, new ParallelOptions
         {
-            Parallel.For(0, files.Count, new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 4, 2, 4),
-                CancellationToken = cancellationToken,
-            }, index =>
-            {
-                var file = files[index];
-                try
-                {
-                    if (!_index.TryLoad(file, out var cached) || cached is null) return;
-                    Interlocked.Increment(ref hits);
-                    results[index] = cached;
-                    Ready(cached);
-                    // Complete indexes are done; incomplete ones are enriched below.
-                    if (cached.MetadataComplete) Report(file);
-                }
-                catch (Exception ex)
-                {
-                    Fail(file, ex);
-                    Report(file);
-                }
-            });
-        }
-        catch (OperationCanceledException)
+            MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8),
+            CancellationToken = cancellationToken,
+        }, index =>
         {
-            throw;
-        }
+            var file = files[index];
+            try
+            {
+                if (!_index.TryLoad(file, out var cached) || cached is null) return;
+                Interlocked.Increment(ref hits);
+                results[index] = cached;
+                Ready(cached);
+                // Complete indexes are done; incomplete ones are enriched below.
+                if (cached.MetadataComplete) Report(file);
+            }
+            catch (Exception ex)
+            {
+                Fail(file, ex);
+                Report(file);
+            }
+        });
 
         // Phase 2: XML work for misses and for caches written before program metadata existed.
-        for (var index = 0; index < files.Count; index++)
+        // Files are independent; a handful of huge archives overlap instead of blocking the run.
+        Parallel.For(0, files.Count, new ParallelOptions
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 4, 2, 4),
+            CancellationToken = cancellationToken,
+        }, index =>
+        {
             var file = files[index];
             if (results[index] is { } cached)
             {
-                if (cached.MetadataComplete) continue;
+                if (cached.MetadataComplete) return;
                 try
                 {
-                    var read = cached.LoadProgramMetadata(cancellationToken);
-                    xmlParts += read;
+                    var parts = cached.ProgramPartCount;
+                    var read = cached.LoadProgramMetadata(cancellationToken,
+                        new PartProgress(file, parts, ReportPart));
+                    Interlocked.Add(ref xmlParts, read);
                     _index.Save(cached);
                     if (read > 0) Ready(cached);
                 }
@@ -237,21 +255,23 @@ public sealed class CatalogStore
                     Fail(file, ex);
                 }
                 Report(file);
-                continue;
+                return;
             }
-            if (errors.Any(error => string.Equals(error.File, file, StringComparison.OrdinalIgnoreCase))) continue;
+            if (Failed(file)) return;
 
             try
             {
                 Interlocked.Increment(ref misses);
                 var catalog = KnxProductCatalog.Open(file, _index.Directory);
-                xmlFiles++;
+                Interlocked.Increment(ref xmlFiles);
                 results[index] = catalog;
                 Ready(catalog);
                 if (!catalog.MetadataComplete)
                 {
-                    var read = catalog.LoadProgramMetadata(cancellationToken);
-                    xmlParts += read;
+                    var parts = catalog.ProgramPartCount;
+                    var read = catalog.LoadProgramMetadata(cancellationToken,
+                        new PartProgress(file, parts, ReportPart));
+                    Interlocked.Add(ref xmlParts, read);
                     if (read > 0) Ready(catalog);
                 }
                 _index.Save(catalog);
@@ -265,7 +285,7 @@ public sealed class CatalogStore
                 Fail(file, ex);
             }
             Report(file);
-        }
+        });
 
         watch.Stop();
         LoadErrors.AddRange(errors.OrderBy(error => error.File, StringComparer.OrdinalIgnoreCase));
@@ -274,6 +294,12 @@ public sealed class CatalogStore
         LastIndexStatistics = new CatalogIndexStatistics(files.Count, hits, misses, xmlFiles, xmlParts,
             LoadErrors.Count, watch.Elapsed);
         return catalogs;
+    }
+
+    /// <summary>Forwards the part counter of one file to the library progress sink.</summary>
+    private sealed class PartProgress(string file, int parts, Action<string, int, int> report) : IProgress<int>
+    {
+        public void Report(int value) => report(file, value, parts);
     }
 
     /// <summary>Deletes one catalogue file from the library and its cache; refuses anything outside it.</summary>

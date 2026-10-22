@@ -2,8 +2,11 @@ using Knx.Catalog;
 
 namespace Knx.App.Services;
 
-/// <summary>How much of the local library has been read, in library files.</summary>
-public sealed record CatalogProgress(int Loaded, int Total, string? File = null);
+/// <summary>
+/// How much of the local library has been read, in library files, plus the application-program
+/// parts of the file currently being read (both zero while a file has no separate parts).
+/// </summary>
+public sealed record CatalogProgress(int Loaded, int Total, string? File = null, int Part = 0, int Parts = 0);
 
 /// <summary>One immutable view of the local catalogue library.</summary>
 public sealed record CatalogSnapshot(
@@ -195,6 +198,7 @@ public sealed class CatalogLibrary
     private CatalogSnapshot Load(bool progressive)
     {
         var catalogs = new List<KnxProductCatalog>();
+        var products = 0;
         var sync = new object();
         // The fan-out always exists so a caller that joins later still sees the remaining progress.
         var loaded = _store.LoadAll(new Fanout(this), catalog =>
@@ -202,11 +206,22 @@ public sealed class CatalogLibrary
             CatalogSnapshot? partial = null;
             lock (sync)
             {
-                var existing = catalogs.FindIndex(item =>
-                    string.Equals(item.Path, catalog.Path, StringComparison.OrdinalIgnoreCase));
-                if (existing >= 0) catalogs[existing] = catalog;
-                else catalogs.Add(catalog);
-                if (progressive) partial = Snapshot(catalogs);
+                // Catalogues arrive in completion order, not library order: keep the list sorted in
+                // place so a partial snapshot is one insert instead of a sort of the whole library.
+                var position = catalogs.FindIndex(item =>
+                    string.Compare(item.Path, catalog.Path, StringComparison.OrdinalIgnoreCase) >= 0);
+                if (position >= 0 &&
+                    string.Equals(catalogs[position].Path, catalog.Path, StringComparison.OrdinalIgnoreCase))
+                {
+                    products += catalog.Products.Count - catalogs[position].Products.Count;
+                    catalogs[position] = catalog;
+                }
+                else
+                {
+                    catalogs.Insert(position < 0 ? catalogs.Count : position, catalog);
+                    products += catalog.Products.Count;
+                }
+                if (progressive) partial = Snapshot(catalogs, products);
             }
             if (partial is null) return;
             try { SnapshotPublished?.Invoke(this, partial); }
@@ -214,13 +229,11 @@ public sealed class CatalogLibrary
         });
         catalogs.Clear();
         catalogs.AddRange(loaded);
-        return Snapshot(catalogs);
+        return Snapshot(catalogs, catalogs.Sum(catalog => catalog.Products.Count));
     }
 
-    private CatalogSnapshot Snapshot(List<KnxProductCatalog> catalogs) => new(
-        catalogs.OrderBy(catalog => catalog.Path, StringComparer.OrdinalIgnoreCase).ToList(),
-        _store.LoadErrors.ToList(),
-        catalogs.Sum(catalog => catalog.Products.Count));
+    private CatalogSnapshot Snapshot(List<KnxProductCatalog> catalogs, int products) =>
+        new([.. catalogs], _store.LoadErrors.ToList(), products);
 
     /// <summary>Forwards loader progress to every caller waiting for this load.</summary>
     private sealed class Fanout(CatalogLibrary owner) : IProgress<CatalogLoadProgress>
@@ -229,7 +242,7 @@ public sealed class CatalogLibrary
         {
             IProgress<CatalogProgress>[] sinks;
             lock (owner._gate) sinks = owner._sinks.ToArray();
-            var progress = new CatalogProgress(value.Loaded, value.Total, value.File);
+            var progress = new CatalogProgress(value.Loaded, value.Total, value.File, value.Part, value.Parts);
             foreach (var sink in sinks) sink.Report(progress);
         }
     }
