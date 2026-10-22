@@ -337,12 +337,12 @@ verification record and explicitly accept the company address.
   (`ProjectRevisions.cs:37,86`) and included in the V4 JSON export via
   `WorkbenchJson.cs:259`. Reports deliberately hide it, but a shared JSON export still
   carries the user's absolute path. Store a basename or omit the field from export.
-- **Portfolio actions run synchronously on the UI thread.** `CheckAll` hashes every existing
-  entry in a loop (`WorkbenchWindow.Commands.cs:420-431`); `PortfolioRegistry.Refresh` reads
-  and SHA-256s the whole project file. Large projects can freeze the modal. Also, the
-  destructive remove confirmation uses the normal primary class, not `wb-danger`
-  (`Commands.cs:613`), and the registry still mutates memory before `Persist` succeeds
-  (`PortfolioRegistry.cs:160-171,599-621`).
+- **Portfolio persistence/UI hardening - fixed in `102d838`.** Registry
+  mutations now persist a candidate copy before swapping the in-memory list,
+  writes take a bounded inter-process lock with atomic fallback, refresh/check
+  hashing runs on the thread pool with stale-result and cancellation guards,
+  and the remove confirmation uses `wb-danger`. Covered by the transactional
+  failure check in `Knx.Core.Tests`; full local suite and app self-tests green.
 - **Acceptance protocol keeps a private de/en table.** `AcceptanceProtocol.T` and its
   `Text` dictionary (`src/Knx.Reports/AcceptanceProtocol.cs:841-842`) bypass the core
   dictionary; the localization gate passes only through explicit `allow` entries. It supports

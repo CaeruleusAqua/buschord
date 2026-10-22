@@ -1,8 +1,8 @@
 # BusChord V4 — Restplan und Todo-Liste
 
-Stand: 2026-10-22. Basis: lokaler Branch `development` auf sauberer
-Historie, aktueller Stand `e5be9ed` (Review-Basis `55ff6e1`, Clean-Code-Fixes
-danach; History-Rewrite `7962a1a`).
+Stand: 2026-10-22. Basis: lokaler Branch `development` nach der
+History-Bereinigung, HEAD `102d838`; die Read-only-Live-Abnahme ist belegt
+(H8.4), die reale Inbetriebnahme bleibt NO-GO.
 Referenz: `C:\Users\julia\Downloads\knx-workbench-v4-bundle`.
 Dieser Plan führt die verbleibenden Arbeiten aus dem V4-Konzept, den Design-Reviews
 und der ETS-Paritätsanalyse. Er ist die maßgebliche Todo-Liste; erledigte Punkte

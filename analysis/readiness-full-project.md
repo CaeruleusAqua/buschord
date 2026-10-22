@@ -28,6 +28,14 @@ documented read-only live run" — never "verified against a real installation".
 Where a claim rests on another report, the report is cited; where a claim rests on
 code, `file:line` is cited.
 
+**Post-report live note (2026-10-22).** A later read-only run against the real
+gateway is documented in `analysis/knx-live-read-acceptance.md`: tunnel connect,
+12 group frames, descriptor reads for 1.0.0/1.1.29/1.3.3 and one real
+GroupValueResponse on 3/1/15 passed; no write/download/secure frame was sent.
+The P12 evidence is therefore no longer descriptor-unverified, while P10/P11
+(physical addressing, download, commissioning) remain blocked by policy and
+implementation and the overall NO-GO for real commissioning is unchanged.
+
 Status vocabulary: **done** = present and evidenced; **partial** = present with a
 missing step, affordance or unverified wire path; **missing** = not reachable.
 
@@ -257,13 +265,14 @@ SCN-IP100.03 (`analysis/router-discovery.md:51-72`, `docs/manual.md:494-502`). T
 cEMI codec defects B1–B4 that blocked real read testing at base `95f842b`
 (`analysis/knx-bus-read-test-plan.md:58-70`) were fixed afterwards
 (`analysis/release-notes-v4.md:123-128`; the group flag now uses `0x80`,
-`src/Knx.Bus/Cemi.cs:80,115,216`), but **no successful group-value response, no
-live descriptor read and no second-tunnel conflict test were run** (H8.4,
-`analysis/release-notes-v4.md:287-289`), and the diagnostic frame layout is still
-described as unverified live (`mcp.md:126-129`).
+`src/Knx.Bus/Cemi.cs:80,115,216`). The later read-only run
+(`analysis/knx-live-read-acceptance.md`) closed the descriptor and group-value
+gap: three descriptor reads and one real GroupValueResponse succeeded. A
+second-tunnel conflict test and a full line scan were deliberately not run; the
+diagnostic frame layout still lacks a broader live matrix (`mcp.md:126-129`).
 
-**Cannot:** prove a working line, read a device descriptor against real hardware,
-or hand a customer a scan report.
+**Cannot:** yet prove a full working line or hand a customer a scan report; the
+read-only descriptor path itself is proven (see the post-report live note).
 
 ### P13 Acceptance / test protocol — **missing**
 
