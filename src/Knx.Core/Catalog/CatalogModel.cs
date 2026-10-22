@@ -1,7 +1,92 @@
+using System.Globalization;
+using System.Xml.Linq;
+
 namespace Knx.Catalog;
 
 /// <summary>Location of an application program's full XML, for the lazy parameter model.</summary>
 internal sealed record ProgramSource(string? Entry, string? FilePath);
+
+/// <summary>
+/// Electrical and topology facts of one hardware item from a manufacturer's Hardware.xml
+/// (prod: Hardware). <see cref="BusCurrent"/> is the bus current in mA; on a power supply it is
+/// the current the unit delivers. The attribute names are those shipped in real product databases
+/// (MDT: BusCurrent="10", BusCurrent="640" IsPowerSupply="true", IsCoupler="true").
+/// </summary>
+public sealed record CatalogHardware
+{
+    public required string HardwareId { get; init; }
+    public string Name { get; init; } = "";
+    public double? BusCurrent { get; init; }
+    public bool IsPowerSupply { get; init; }
+    public bool IsChoke { get; init; }
+    public bool IsCoupler { get; init; }
+    public bool IsPowerLineRepeater { get; init; }
+    public bool IsIpEnabled { get; init; }
+    /// <summary>Medium types of the Hardware2Program (Hardware2Program@MediumTypes, e.g. "MT-0").</summary>
+    public IReadOnlyList<string> MediumTypeIds { get; init; } = [];
+}
+
+/// <summary>
+/// Reads the hardware facts ETS uses for bus power and coupler planning from Hardware.xml parts.
+/// Only attributes observed in shipped product databases are interpreted; every other attribute
+/// stays in the XML untouched. A device resolves through either its Hardware2Program id or its
+/// product id, so both are keys of the result.
+/// </summary>
+public static class CatalogHardwareFacts
+{
+    public static void Read(XDocument document, IDictionary<string, CatalogHardware> facts)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(facts);
+        foreach (var hardware in document.Descendants().Where(e =>
+                     e.Name.LocalName == "Hardware" && e.Attribute("Id") is not null))
+        {
+            var programs = Child(hardware, "Hardware2Programs", "Hardware2Program")
+                .Where(e => e.Attribute("Id") is not null).ToList();
+            var products = Child(hardware, "Products", "Product")
+                .Where(e => e.Attribute("Id") is not null).ToList();
+            // A nested Hardware helper or some unrelated element without products/programs is not a device.
+            if (programs.Count == 0 && products.Count == 0) continue;
+
+            var hardwareId = (string)hardware.Attribute("Id")!;
+            var current = Current(hardware.Attribute("BusCurrent")?.Value);
+            var allMediums = programs.SelectMany(p => Mediums(p.Attribute("MediumTypes")?.Value))
+                .Distinct(StringComparer.Ordinal).ToList();
+            CatalogHardware Fact(IReadOnlyList<string> mediums) => new()
+            {
+                HardwareId = hardwareId,
+                Name = (string?)hardware.Attribute("Name") ?? "",
+                BusCurrent = current,
+                IsPowerSupply = Flag(hardware, "IsPowerSupply"),
+                IsChoke = Flag(hardware, "IsChoke"),
+                IsCoupler = Flag(hardware, "IsCoupler"),
+                IsPowerLineRepeater = Flag(hardware, "IsPowerLineRepeater"),
+                IsIpEnabled = Flag(hardware, "IsIpEnabled"),
+                MediumTypeIds = mediums,
+            };
+
+            foreach (var program in programs)
+                facts.TryAdd((string)program.Attribute("Id")!, Fact(Mediums(program.Attribute("MediumTypes")?.Value)));
+            foreach (var product in products)
+                facts.TryAdd((string)product.Attribute("Id")!, Fact(allMediums));
+        }
+    }
+
+    private static IEnumerable<XElement> Child(XElement hardware, string container, string name) =>
+        hardware.Elements().Where(e => e.Name.LocalName == container)
+            .SelectMany(e => e.Elements()).Where(e => e.Name.LocalName == name);
+
+    private static bool Flag(XElement element, string name) =>
+        element.Attribute(name)?.Value.Trim().ToLowerInvariant() is "true" or "1";
+
+    // Product databases write both "10" and "2.0000000e+001"; the value is always invariant.
+    private static double? Current(string? value) =>
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var current) &&
+        double.IsFinite(current) && current >= 0 ? current : null;
+
+    private static IReadOnlyList<string> Mediums(string? value) =>
+        value is null ? [] : value.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}
 
 /// <summary>Manufacturer of a product database (prod: Manufacturer@RefId, name from the translation unit).</summary>
 public sealed record CatalogManufacturer(string Id, string Name);

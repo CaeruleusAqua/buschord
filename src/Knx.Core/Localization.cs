@@ -537,6 +537,13 @@ public sealed class Strings : INotifyPropertyChanged
                         "its status cannot be checked."),
         ["ChkP073"] = ("Segmentadresse {0} ist in der Linie {1} mehrfach vergeben.",
                         "Segment address {0} is assigned more than once in line {1}."),
+        ["ChkP080"] = ("Die Geräte ziehen {0} mA, die deklarierte Spannungsversorgung liefert nur {1} mA.",
+                        "The devices draw {0} mA but the declared power supply delivers only {1} mA."),
+        ["ChkP081"] = ("Segment {0} enthält keinen Koppler; für ein Untersegment ist ein Linien- oder " +
+                        "Segmentkoppler erforderlich.",
+                        "Segment {0} contains no coupler; a sub-segment requires a line or segment coupler."),
+        ["ChkP082"] = ("Segment {0} nutzt Medium {1}, die Linie nutzt {2}; ein Medienkoppler ist erforderlich.",
+                        "Segment {0} uses medium {1} but the line uses {2}; a media coupler is required."),
 
         // ---- CSV headers written by the exporters ----
         ["CsvGroupAddressHeader"] = ("Adresse;Name;Beschreibung;DatapointType;Puid",

@@ -783,6 +783,44 @@ catch (InvalidDataException)
     Check("Übergroße XML-Einträge werden abgelehnt", true);
 }
 
+// --- hardware facts: BusCurrent, power supply, coupler, repeater (shape of real product databases) ---
+{
+    var hardwareXml = System.Xml.Linq.XDocument.Parse("""
+        <?xml version="1.0" encoding="utf-8"?>
+        <KNX xmlns="http://knx.org/xml/project/20"><ManufacturerData><Manufacturer RefId="M-0083">
+          <Hardware Id="H-PSU" Name="Busspannungsversorgung 640mA" BusCurrent="640"
+                   IsPowerSupply="true" IsChoke="true">
+            <Products><Product Id="P-PSU" Text="STV-0640.02"/></Products>
+            <Hardware2Programs><Hardware2Program Id="HP-PSU" MediumTypes="MT-0">
+              <ApplicationProgramRef RefId="A-PSU"/></Hardware2Program></Hardware2Programs>
+          </Hardware>
+          <Hardware Id="H-DIM" Name="Dimmaktor" BusCurrent="2.0000000e+001" IsCoupler="1">
+            <Products><Product Id="P-DIM" Text="Dimmaktor"/></Products>
+            <Hardware2Programs><Hardware2Program Id="HP-DIM" MediumTypes="MT-0 MT-2">
+              <ApplicationProgramRef RefId="A-DIM"/></Hardware2Program></Hardware2Programs>
+          </Hardware>
+          <Hardware Id="H-PL-REPEATER" Name="PL-Repeater" BusCurrent="5" IsPowerLineRepeater="true">
+            <Products><Product Id="P-PL" Text="PL-Repeater"/></Products>
+          </Hardware>
+          <Hardware Id="H-EMPTY" Name="Ohne Produkt" BusCurrent="1"/>
+        </Manufacturer></ManufacturerData></KNX>
+        """);
+    var facts = new Dictionary<string, CatalogHardware>();
+    CatalogHardwareFacts.Read(hardwareXml, facts);
+
+    Check("Hardware-Fakten: Programm- und Produkt-Id aufgelöst",
+        facts.ContainsKey("HP-PSU") && facts.ContainsKey("P-PSU")
+        && facts.ContainsKey("HP-DIM") && facts.ContainsKey("P-DIM"));
+    Check("Hardware-Fakten: Spannungsversorgung 640 mA",
+        facts["HP-PSU"] is { BusCurrent: 640, IsPowerSupply: true, IsChoke: true });
+    Check("Hardware-Fakten: wissenschaftliche Schreibweise = 20 mA",
+        facts["HP-DIM"].BusCurrent == 20, facts["HP-DIM"].BusCurrent?.ToString());
+    Check("Hardware-Fakten: Koppler und Mediumstypen",
+        facts["P-DIM"].IsCoupler && facts["HP-DIM"].MediumTypeIds.SequenceEqual(["MT-0", "MT-2"]));
+    Check("Hardware-Fakten: Powerline-Repeater", facts["P-PL"].IsPowerLineRepeater);
+    Check("Hardware-Fakten: Hardware ohne Produkt/Programm wird ignoriert", !facts.ContainsKey("H-EMPTY"));
+}
+
 // --- real catalogues, when a corpus is available ---
 // A corpus is never part of the repository: point KNX_CATALOG_SAMPLES at a folder of
 // *.knxprod files (vendor downloads) to run the real-file regression.

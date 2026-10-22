@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using Knx.Catalog;
 
 namespace Knx;
 
@@ -9,7 +10,7 @@ namespace Knx;
 /// </summary>
 public sealed class UndoStack
 {
-    private readonly List<(string Xml, ArchiveState? Archive)> _snapshots = [];
+    private readonly List<(string Xml, ArchiveState? Archive, Dictionary<string, CatalogHardware> Hardware)> _snapshots = [];
     private int _savedIndex = -1;
 
     public UndoStack(int capacity = 60) => Capacity = capacity;
@@ -53,7 +54,9 @@ public sealed class UndoStack
             if (_savedIndex > Index) _savedIndex = -1;
             _snapshots.RemoveRange(Index + 1, _snapshots.Count - Index - 1);
         }
-        _snapshots.Add((xml, project.ArchiveState));
+        // Hardware facts live in the archive's Hardware.xml, not in the project XML; the snapshot keeps
+        // them so a restored project can still run the bus-power and coupler checks.
+        _snapshots.Add((xml, project.ArchiveState, new Dictionary<string, CatalogHardware>(project.Hardware)));
         if (_snapshots.Count > Capacity)
         {
             _snapshots.RemoveAt(0);
@@ -81,6 +84,7 @@ public sealed class UndoStack
         var snapshot = _snapshots[Index];
         var project = Knxproj.FromXml(XDocument.Parse(snapshot.Xml, LoadOptions.PreserveWhitespace));
         project.ArchiveState = snapshot.Archive;
+        foreach (var (id, fact) in snapshot.Hardware) project.Hardware[id] = fact;
         return project;
     }
 }

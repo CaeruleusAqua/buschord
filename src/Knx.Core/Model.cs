@@ -1,3 +1,5 @@
+using Knx.Catalog;
+
 namespace Knx;
 
 /// <summary>Device in the topology (knxproj: DeviceInstance, see Element-Names der ETS6-XML-Assembly).</summary>
@@ -30,7 +32,19 @@ public sealed class Segment
 {
     public required string Id { get; init; }
     public string? Name { get; set; }
+    /// <summary>Segment number (knxproj: Segment@Number). BusChord keeps the ETS 0-15 range as a byte.</summary>
     public byte Address { get; set; }
+    /// <summary>
+    /// Medium override of this segment (knxproj: Segment@MediumTypeRefId). NULL inherits the line's
+    /// medium; different media within one line need a media coupler.
+    /// </summary>
+    public string? MediumTypeRefId { get; set; }
+    /// <summary>
+    /// Domain address of a PL/RF segment, kept as opaque text so its ETS representation survives
+    /// unchanged. The attribute name follows the ETS object-model property (DomainAddress); the
+    /// analysed sample projects carry no domain address, and unread native XML is preserved anyway.
+    /// </summary>
+    public string? DomainAddress { get; set; }
     public List<DeviceInstance> Devices { get; } = [];
 }
 
@@ -41,6 +55,11 @@ public sealed class Line
     public string? Name { get; set; }
     public byte Address { get; set; }
     public string MediumTypeRefId { get; set; } = "MT-0";
+    /// <summary>
+    /// Domain address of the line, opaque text; PL/RF only. Attribute name follows the ETS
+    /// object-model property (DomainAddress), see <see cref="Segment.DomainAddress"/>.
+    /// </summary>
+    public string? DomainAddress { get; set; }
     public List<DeviceInstance> Devices { get; } = [];
     public List<Segment> Segments { get; } = [];
 }
@@ -108,6 +127,13 @@ public sealed class Project
     public string? Guid { get; set; }
     public MasterDataInfo MasterData { get; set; } = new();
     public List<Installation> Installations { get; } = [];
+
+    /// <summary>
+    /// Hardware planning facts of the project's own manufacturer data (M-*/Hardware.xml), keyed by
+    /// Hardware2Program id and product id. Populated on load; empty when the archive carries no
+    /// hardware parts (then bus-power and coupler checks stay silent instead of guessing).
+    /// </summary>
+    public Dictionary<string, CatalogHardware> Hardware { get; } = new(StringComparer.Ordinal);
 
     /// <summary>Topology devices that no building-tree node references.</summary>
     public IEnumerable<DeviceInstance> UnassignedDevices()

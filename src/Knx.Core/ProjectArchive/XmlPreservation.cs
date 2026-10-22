@@ -59,6 +59,12 @@ internal static class XmlPreservation
     private static void MergeElement(XElement target, XElement before, XElement after,
         ILookup<string, (XElement Raw, XElement Before)> originals)
     {
+        // Segment@Address was BusChord's pre-B6 spelling; ETS uses Segment@Number. Keep an archive
+        // that still carries the old attribute from ending up with two segment numbers.
+        if (after.Name.LocalName == "Segment" && after.Attribute("Number") is not null &&
+            target.Attribute("Address") is not null)
+            target.SetAttributeValue("Address", null);
+
         foreach (var name in before.Attributes().Concat(after.Attributes()).Where(a => !a.IsNamespaceDeclaration).Select(a => a.Name).Distinct())
             if ((string?)before.Attribute(name) != (string?)after.Attribute(name) || target.Attribute(name) is null)
                 target.SetAttributeValue(name, (string?)after.Attribute(name));

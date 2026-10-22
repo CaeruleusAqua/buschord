@@ -653,6 +653,124 @@ Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoad
           + ProjectCheck.Count(malformedFindings, CheckSeverity.Warning)
           + ProjectCheck.Count(malformedFindings, CheckSeverity.Info) == malformedFindings.Count,
         "project check: severity counters cover all findings");
+
+    // ---- B6: bus power, segment couplers and media from the project's own hardware data ----
+    {
+        static DeviceInstance Planned(string id, string address, string hardware) => new()
+        {
+            Id = id,
+            Address = IndividualAddress.Parse(address),
+            Name = id,
+            ProductRefId = hardware + "_P",
+            Hardware2ProgramRefId = hardware,
+        };
+
+        static Knx.Catalog.CatalogHardware Fact(string id, double current, bool supply = false, bool coupler = false,
+            bool choke = false) => new()
+        {
+            HardwareId = id,
+            Name = id,
+            BusCurrent = current,
+            IsPowerSupply = supply,
+            IsCoupler = coupler,
+            IsChoke = choke,
+        };
+
+        // Two segments, a declared power supply, and 10 mA of device current per segment.
+        static Project Planning(double supplyCurrent)
+        {
+            var planning = CleanProject();
+            var line = planning.Installations[0].Areas[0].Lines[0];
+            line.Devices.Clear();
+            line.MediumTypeRefId = "MT-0";
+            line.Devices.Add(Planned("D-SUPPLY", "1.1.6", "H-SUPPLY"));
+            var main = new Segment { Id = "S-0", Address = 0, MediumTypeRefId = "MT-0" };
+            main.Devices.Add(Planned("D-MAIN", "1.1.7", "H-DIM"));
+            line.Segments.Add(main);
+            var sub = new Segment { Id = "S-1", Address = 1, MediumTypeRefId = "MT-0" };
+            sub.Devices.Add(Planned("D-SUB", "1.1.8", "H-DIM"));
+            line.Segments.Add(sub);
+            planning.Hardware["H-SUPPLY"] = Fact("H-SUPPLY", supplyCurrent, supply: true);
+            planning.Hardware["H-DIM"] = Fact("H-DIM", 10);
+            planning.Hardware["H-COUPLER"] = Fact("H-COUPLER", 7, coupler: true);
+            return planning;
+        }
+
+        var sufficient = Planning(640);
+        var sufficientFindings = ProjectCheck.Run(sufficient);
+        Check(!Has(sufficientFindings, "P080", CheckSeverity.Error),
+            "project check: sufficient bus current has no power finding -> " + Describe(sufficientFindings));
+
+        var overloaded = Planning(15);
+        Check(Has(ProjectCheck.Run(overloaded), "P080", CheckSeverity.Error),
+            "project check: over current reports the declared supply");
+
+        var withChoke = Planning(20);
+        withChoke.Hardware["H-CHOKE"] = Fact("H-CHOKE", 100, choke: true);
+        withChoke.Installations[0].Areas[0].Lines[0].Devices.Add(Planned("D-CHOKE", "1.1.12", "H-CHOKE"));
+        Check(!Has(ProjectCheck.Run(withChoke), "P080", CheckSeverity.Error),
+            "project check: a choke's current rating is not consumer demand");
+
+        var withCoupler = Planning(640);
+        withCoupler.Installations[0].Areas[0].Lines[0].Segments[1].Devices
+            .Add(Planned("D-COUPLER", "1.1.9", "H-COUPLER"));
+        Check(!Has(ProjectCheck.Run(withCoupler), "P081", CheckSeverity.Warning),
+            "project check: a coupler in the sub-segment satisfies the coupler check");
+        Check(Has(ProjectCheck.Run(Planning(640)), "P081", CheckSeverity.Warning),
+            "project check: sub-segment without coupler is a warning");
+
+        var media = Planning(640);
+        media.Installations[0].Areas[0].Lines[0].Segments[1].MediumTypeRefId = "MT-2";
+        Check(Has(ProjectCheck.Run(media), "P082", CheckSeverity.Info),
+            "project check: media change in a segment is reported");
+
+        var mediaWithCoupler = Planning(640);
+        var mediaSegment = mediaWithCoupler.Installations[0].Areas[0].Lines[0].Segments[1];
+        mediaSegment.MediumTypeRefId = "MT-2";
+        mediaSegment.Devices.Add(Planned("D-MEDIA-COUPLER", "1.1.11", "H-COUPLER"));
+        Check(!Has(ProjectCheck.Run(mediaWithCoupler), "P082", CheckSeverity.Info),
+            "project check: a media coupler covers the segment media change");
+
+        var unknown = Planning(15);
+        unknown.Installations[0].Areas[0].Lines[0].Segments[0].Devices
+            .Add(Planned("D-UNKNOWN", "1.1.10", "H-UNKNOWN"));
+        Check(!Has(ProjectCheck.Run(unknown), "P080", CheckSeverity.Error),
+            "project check: incomplete hardware data never guesses a power limit");
+
+        var noHardware = Planning(640);
+        noHardware.Hardware.Clear();
+        var noHardwareFindings = ProjectCheck.Run(noHardware);
+        Check(!Has(noHardwareFindings, "P080", CheckSeverity.Error)
+              && !Has(noHardwareFindings, "P081", CheckSeverity.Warning)
+              && !Has(noHardwareFindings, "P082", CheckSeverity.Info),
+            "project check: absent hardware data stays silent -> " + Describe(noHardwareFindings));
+
+        // Hardware facts come from the archive, not the project XML; undo must not lose them.
+        var undoProject = Planning(15);
+        var planningUndo = new UndoStack();
+        planningUndo.Reset(undoProject);
+        undoProject.Installations[0].Areas[0].Lines[0].Name = "Umbenannt";
+        planningUndo.Push(undoProject);
+        var restored = planningUndo.Undo()!;
+        var redone = planningUndo.Redo()!;
+        Check(restored.Hardware.Count == undoProject.Hardware.Count && redone.Hardware.ContainsKey("H-SUPPLY")
+              && Has(ProjectCheck.Run(redone), "P080", CheckSeverity.Error),
+            "project check: hardware facts survive undo and redo");
+
+        // The demo JSON schema has no topology fields; it must refuse such a project, never drop them.
+        var planningJson = WorkbenchJson.CreateDemo();
+        planningJson.Installations[0].Areas[0].Lines[0].Segments.Add(
+            new Segment { Id = "S-JSON", Address = 0, MediumTypeRefId = "MT-0", DomainAddress = "0x1" });
+        try
+        {
+            WorkbenchJson.Export(planningJson);
+            Check(false, "project check: demo JSON refuses planning fields instead of dropping them");
+        }
+        catch (InvalidDataException)
+        {
+            Check(true, "project check: demo JSON refuses planning fields instead of dropping them");
+        }
+    }
 }
 
 // Assignments CSV header (workbench export): one column per exported field, in both UI languages.

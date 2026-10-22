@@ -114,14 +114,18 @@ public static class Knxproj
                         new XAttribute("Id", l.Id),
                         new XAttribute("Address", l.Address),
                         new XAttribute("Name", l.Name ?? ""),
-                        new XAttribute("MediumTypeRefId", l.MediumTypeRefId));
+                        new XAttribute("MediumTypeRefId", l.MediumTypeRefId),
+                        l.DomainAddress is { } lineDomain ? new XAttribute("DomainAddress", lineDomain) : null);
                     foreach (var d in l.Devices) lineEl.Add(DeviceXml(d, ns));
                     foreach (var s in l.Segments)
                     {
+                        // ETS stores the segment number, not an address; the medium is required per segment.
                         var segmentEl = new XElement(ns + XmlNames.Segment,
                             new XAttribute("Id", s.Id),
-                            new XAttribute("Address", s.Address),
-                            new XAttribute("Name", s.Name ?? ""));
+                            new XAttribute("Number", s.Address),
+                            new XAttribute("Name", s.Name ?? ""),
+                            new XAttribute("MediumTypeRefId", s.MediumTypeRefId ?? l.MediumTypeRefId),
+                            s.DomainAddress is { } segmentDomain ? new XAttribute("DomainAddress", segmentDomain) : null);
                         foreach (var d in s.Devices) segmentEl.Add(DeviceXml(d, ns));
                         lineEl.Add(segmentEl);
                     }
@@ -284,6 +288,7 @@ public static class Knxproj
                         Name = (string?)lineEl.Attribute("Name"),
                         MediumTypeRefId = (string?)lineEl.Attribute("MediumTypeRefId") ??
                             (string?)Elements(lineEl, XmlNames.Segment).FirstOrDefault()?.Attribute("MediumTypeRefId") ?? "MT-0",
+                        DomainAddress = (string?)lineEl.Attribute("DomainAddress"),
                     };
                     line.Devices.AddRange(Elements(lineEl, XmlNames.DeviceInstance).Select(d => ReadDevice(d, raw21, area.Address, line.Address)));
                     foreach (var segEl in Elements(lineEl, XmlNames.Segment))
@@ -293,6 +298,8 @@ public static class Knxproj
                             Id = (string?)segEl.Attribute("Id") ?? "S-" + (string?)segEl.Attribute("Address"),
                             Address = byte.Parse((string?)segEl.Attribute("Address") ?? (string?)segEl.Attribute("Number") ?? "0"),
                             Name = (string?)segEl.Attribute("Name"),
+                            MediumTypeRefId = (string?)segEl.Attribute("MediumTypeRefId"),
+                            DomainAddress = (string?)segEl.Attribute("DomainAddress"),
                         };
                         segment.Devices.AddRange(Elements(segEl, XmlNames.DeviceInstance).Select(d => ReadDevice(d, raw21, area.Address, line.Address)));
                         line.Segments.Add(segment);

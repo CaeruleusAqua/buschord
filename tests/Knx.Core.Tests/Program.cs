@@ -765,6 +765,16 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         Strings.Get("ChkP020", "O'Brien", "1.1.1") == "Device 'O'Brien' has the invalid address 1.1.1.",
         Strings.Get("ChkP020", "O'Brien", "1.1.1"));
     Strings.Language = "de";
+    Check("i18n: P080 deutsch",
+        Strings.Get("ChkP080", "20", "15") ==
+        "Die Geräte ziehen 20 mA, die deklarierte Spannungsversorgung liefert nur 15 mA.",
+        Strings.Get("ChkP080", "20", "15"));
+    Strings.Language = "en";
+    Check("i18n: P080 englisch",
+        Strings.Get("ChkP080", "20", "15") ==
+        "The devices draw 20 mA but the declared power supply delivers only 15 mA.",
+        Strings.Get("ChkP080", "20", "15"));
+    Strings.Language = "de";
 }
 
 // --- Lokalisierung: neue Schlüssel vollständig, Platzhalter formatierbar ---
@@ -1539,6 +1549,93 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
     {
         Directory.Delete(revisionDirectory, recursive: true);
     }
+}
+
+// ---- B6: Segmentmedium, Domäne und Koppler-Hardware über knxproj ----
+{
+    var planning = new Project { Id = "P-PLAN", Name = "Planung" };
+    var planInstallation = new Installation { Id = "I-PLAN", Name = "Plan" };
+    var planArea = new Area { Id = "A-PLAN", Address = 1 };
+    var planLine = new Line { Id = "L-PLAN", Address = 1, MediumTypeRefId = "MT-0", DomainAddress = "0x0A0B" };
+    var mainSegment = new Segment { Id = "S-PLAN-0", Address = 0, MediumTypeRefId = "MT-0", DomainAddress = "0x0001" };
+    var subSegment = new Segment { Id = "S-PLAN-1", Address = 1, MediumTypeRefId = "MT-2" };
+    subSegment.Devices.Add(new DeviceInstance
+    {
+        Id = "1.1.2",
+        Address = new IndividualAddress(1, 1, 2),
+        Name = "Funk-Taster",
+        ProductRefId = "M-0083_H-250-17-O0072_P-1",
+        Hardware2ProgramRefId = "M-0083_H-250-17-O0072_HP-1",
+    });
+    planLine.Segments.Add(mainSegment);
+    planLine.Segments.Add(subSegment);
+    planArea.Lines.Add(planLine);
+    planInstallation.Areas.Add(planArea);
+    planning.Installations.Add(planInstallation);
+
+    var planXml = Knxproj.ToXml(planning).Descendants().First(e => e.Name.LocalName == "Segment");
+    Check("B6: Segment schreibt das ETS-Attribut Number", planXml.Attribute("Number")?.Value == "0"
+        && planXml.Attribute("Address") is null);
+    Check("B6: Segment-Medium im XML", planXml.Attribute("MediumTypeRefId")?.Value == "MT-0");
+    Check("B6: Segment-Domäne im XML", planXml.Attribute("DomainAddress")?.Value == "0x0001");
+
+    var planningPath = Path.Combine(Path.GetTempPath(), "knx_selftest", "planning.knxproj");
+    Knxproj.Save(planning, planningPath);
+    var loadedLine = Knxproj.Load(planningPath).Installations[0].Areas[0].Lines[0];
+    Check("B6: Linien-Domäne round-trip", loadedLine.DomainAddress == "0x0A0B", loadedLine.DomainAddress);
+    Check("B6: Segment-Medium round-trip", loadedLine.Segments[0].MediumTypeRefId == "MT-0"
+        && loadedLine.Segments[1].MediumTypeRefId == "MT-2");
+    Check("B6: Segment-Domäne round-trip", loadedLine.Segments[0].DomainAddress == "0x0001");
+    Check("B6: Segmentnummer round-trip", loadedLine.Segments[1].Address == 1);
+
+    // Projects saved by earlier BusChord versions used Segment@Address; the ETS attribute is Number.
+    var legacy = Knxproj.FromXml(System.Xml.Linq.XDocument.Parse("""
+        <KNX xmlns="http://knx.org/xml/project/23"><Project Id="P-LEGACY" Name="Alt"><Installations>
+          <Installation InstallationId="I-1" Name="Alt"><Topology>
+            <Area Id="A-0" Address="0" Name=""><Line Id="L-1" Address="1" Name="" MediumTypeRefId="MT-0">
+              <Segment Id="S-0" Address="1" Name="Alt"/>
+            </Line></Area>
+          </Topology></Installation></Installations></Project></KNX>
+        """));
+    var migrated = Knxproj.ToXml(legacy).Descendants().Single(e => e.Name.LocalName == "Segment");
+    Check("B6: altes Segment@Address wird beim Speichern zu Number",
+        migrated.Attribute("Number")?.Value == "1" && migrated.Attribute("Address") is null,
+        migrated.ToString());
+
+    // Manufacturer hardware data travels in the project archive; the check reads it from there.
+    var hardware = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <KNX xmlns="http://knx.org/xml/project/20"><ManufacturerData><Manufacturer RefId="M-0083">
+          <Hardware Id="M-0083_H-250-17-O0072" Name="KNX RF+ Funk Linienkoppler" BusCurrent="7"
+                   IsCoupler="true" IsRFRetransmitter="true">
+            <Products><Product Id="M-0083_H-250-17-O0072_P-1" Text="RF coupler"/></Products>
+            <Hardware2Programs><Hardware2Program Id="M-0083_H-250-17-O0072_HP-1" MediumTypes="MT-2">
+              <ApplicationProgramRef RefId="M-0083_A-1"/></Hardware2Program></Hardware2Programs>
+          </Hardware>
+          <Hardware Id="M-0083_H-83-1" Name="STV-0640.02" BusCurrent="640" IsPowerSupply="true" IsChoke="true">
+            <Products><Product Id="M-0083_H-83-1_P-1" Text="PSU"/></Products>
+            <Hardware2Programs><Hardware2Program Id="M-0083_H-83-1_HP-1" MediumTypes="MT-0">
+              <ApplicationProgramRef RefId="M-0083_A-2"/></Hardware2Program></Hardware2Programs>
+          </Hardware>
+        </Manufacturer></ManufacturerData></KNX>
+        """;
+    var archivePath = Path.Combine(Path.GetTempPath(), "knx_selftest", "planning-hardware.knxproj");
+    using (var file = File.Create(archivePath))
+    using (var zip = new ZipArchive(file, ZipArchiveMode.Create))
+    {
+        using (var entry = new StreamWriter(zip.CreateEntry("0.xml").Open(), new UTF8Encoding(false)))
+            Knxproj.ToXml(planning).Save(entry);
+        using (var entry = new StreamWriter(zip.CreateEntry("M-0083/Hardware.xml").Open(), new UTF8Encoding(false)))
+            entry.Write(hardware);
+    }
+    var withHardware = Knxproj.Load(archivePath);
+    Check("B6: Koppler-Fakten aus dem Archiv",
+        withHardware.Hardware.TryGetValue("M-0083_H-250-17-O0072_HP-1", out var coupler)
+        && coupler.IsCoupler && coupler.BusCurrent == 7,
+        string.Join(",", withHardware.Hardware.Keys));
+    Check("B6: Spannungsversorgung aus dem Archiv",
+        withHardware.Hardware.TryGetValue("M-0083_H-83-1_P-1", out var supply)
+        && supply.IsPowerSupply && supply.IsChoke && supply.BusCurrent == 640);
 }
 
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER: {string.Join("; ", failures)}");

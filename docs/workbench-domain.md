@@ -110,10 +110,13 @@ Adding a link with unknown native capabilities is refused with an explanation.
   commissioning (certificates, tool keys, FDSK, sequence counters) are unsupported.
 - The reset hook is caller-driven (`ClassifyChange` + `ResetForChange`), not a global
   interception of every project mutation command.
-- Coupler/segment topology fields (`Area.IsBackbone`/`MainLine`, segment
-  `Number`, `MediumTypeId`, `DomainAddress`, `CouplerDevice`) are not modeled.
-  Their native XML attribute names are unverified, so writing them would invent
-  persistence; native XML preservation keeps any existing vendor attributes.
+- Coupler/segment topology is partially modeled: segment `Number` and `MediumTypeRefId`
+  use their observed native names, `DomainAddress` is kept as opaque text, and hardware
+  facts (`BusCurrent`, `IsPowerSupply`, `IsCoupler`, `IsPowerLineRepeater`) come from the
+  project's own `M-*/Hardware.xml`. `Area.IsBackbone`/`MainLine` and `Segment.CouplerDevice`
+  are derived getters in ETS, not stored fields, so they stay unmodeled; a coupler is
+  detected through its hardware flag. Repeater/choke limits are not checked because no
+  master-data constant is evidenced.
 - The numeric RF fast-ack slot limit is not reconstructed. `Slot` is stored and
   rejected only when negative; no limit is invented.
 - Address parking is caller-supplied (`parked` sets). There is no ETS-style

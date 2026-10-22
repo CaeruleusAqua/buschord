@@ -1,3 +1,4 @@
+using System.Globalization;
 using Knx.Catalog;
 
 namespace Knx;
@@ -12,15 +13,16 @@ public sealed record CheckFinding(CheckSeverity Severity, string Code, string Pa
 /// deterministic function of the project model and report-only; the check never mutates or repairs.
 /// <para>
 /// Rules mirror what the ETS project check reports where this model carries the evidence
-/// (analysis/ets/commissioning.md §7, analysis/ets/addresses.md §13). Limits: the model has no bus
-/// current/power-supply, repeater, coupler-capability, battery/broker or router fields, so
-/// PowerConsumptionCheck, RepeaterCheck, SegmentCouplerCheck, RouterTopologyCheck,
-/// BackboneLineIpCheck and BrokerForBatteryPoweredDevicesCheck stay silent instead of guessing; only
-/// the existence of a second segment or an IP line is reported as an explicit <see cref="CheckSeverity.Info"/>
-/// limitation. Identifiers are checked for emptiness and uniqueness, not for the ETS3 name/number
-/// length limits (those need master-data constants). Application-program status (broken, download
-/// information incomplete) needs catalogue data and is only checked by the overload that receives
-/// it; the BusChord workbench metadata carries no such status.
+/// (analysis/ets/commissioning.md §7, analysis/ets/addresses.md §13). Bus power and coupler
+/// presence use the hardware facts of the project's own M-*/Hardware.xml
+/// (<see cref="Project.Hardware"/>: BusCurrent, IsPowerSupply, IsCoupler, observed in shipped
+/// product databases). A line is only judged when every device on it has hardware data and at
+/// least one power supply is declared: ETS does not require the power supply to be a project
+/// device and BusChord does not invent the missing per-line constant, so an undeclared supply
+/// stays silent. Repeater/choke counts, router/backbone topology, segment domain addresses and
+/// the ETS3 name/number length limits are not checked: their limits or semantics are not
+/// evidenced. Application-program status (broken, download information incomplete) needs
+/// catalogue data and is only checked by the overload that receives it.
 /// </para>
 /// </summary>
 public static class ProjectCheck
@@ -46,6 +48,7 @@ public static class ProjectCheck
 
         CheckIdentifiers(project, findings);
         CheckTopology(project, findings);
+        CheckHardware(project, findings);
         CheckDevices(project, findings);
         CheckGroupAddresses(project, findings);
         CheckLinks(project, findings);
@@ -159,6 +162,90 @@ public static class ProjectCheck
             }
         }
     }
+
+    /// <summary>
+    /// Bus power and coupler planning from the project's own Hardware.xml facts.
+    /// <para>
+    /// Bus power is only judged when the line declares at least one power supply and every device
+    /// on it has a known BusCurrent: ETS does not require the power supply to appear as a project
+    /// device, and the per-line constant is not part of the evidence. A missing or unknown value
+    /// therefore stays silent instead of producing a guessed limit.
+    /// </para>
+    /// <para>
+    /// A line with more than one segment needs a coupler in every sub-segment (ETS
+    /// IDS_CHECK_NO_SEGMENT_COUPLER_IN_SUBSEGMENT_PRESENT). The lowest segment number is the main
+    /// segment; a sub-segment is only judged when all its devices have hardware data.
+    /// </para>
+    /// </summary>
+    private static void CheckHardware(Project project, List<CheckFinding> findings)
+    {
+        foreach (var installation in project.Installations)
+            foreach (var area in installation.Areas)
+                foreach (var line in area.Lines)
+                {
+                    CheckBusPower(project, line, $"Linie {area.Address}.{line.Address}", findings);
+                    CheckSegments(project, line, area, findings);
+                }
+    }
+
+    private static void CheckBusPower(Project project, Line line, string path, List<CheckFinding> findings)
+    {
+        var facts = DevicesOf(line).Select(d => HardwareOf(project, d)).ToList();
+        if (facts.Count == 0 || facts.Any(f => f is null)) return;
+        var supplies = facts.Where(f => f!.IsPowerSupply).ToList();
+        if (supplies.Count == 0) return;
+        // Chokes and power supplies are infrastructure; only consumer devices draw from the line.
+        var consumers = facts.Where(f => !f!.IsPowerSupply && !f!.IsChoke).ToList();
+        if (supplies.Any(f => f!.BusCurrent is null) || consumers.Any(f => f!.BusCurrent is null)) return;
+
+        var supply = supplies.Sum(f => f!.BusCurrent!.Value);
+        var demand = consumers.Sum(f => f!.BusCurrent!.Value);
+        if (demand <= supply) return;
+        findings.Add(new(CheckSeverity.Error, "P080", path,
+            Strings.Get("ChkP080", Milliamps(demand), Milliamps(supply))));
+    }
+
+    private static void CheckSegments(Project project, Line line, Area area, List<CheckFinding> findings)
+    {
+        if (line.Segments.Count <= 1) return;
+        var main = line.Segments.OrderBy(s => s.Address).First();
+        foreach (var segment in line.Segments)
+        {
+            var path = $"Segment {area.Address}.{line.Address}.{segment.Address}";
+            // Coupler presence is only decidable when every device in the segment has hardware data.
+            var facts = segment.Devices.Select(d => HardwareOf(project, d)).ToList();
+            var coupled = facts.Count > 0 && facts.All(f => f is not null)
+                ? facts.Any(f => f!.IsCoupler) : (bool?)null;
+            if (coupled == true) continue; // a coupler in the segment covers both checks
+
+            // A media change within the line is factual; ETS requires a media coupler for it.
+            if (segment.MediumTypeRefId is { Length: > 0 } medium && medium != line.MediumTypeRefId)
+                findings.Add(new(CheckSeverity.Info, "P082", path,
+                    Strings.Get("ChkP082", path, medium, line.MediumTypeRefId)));
+
+            // The lowest segment number is the main segment; only sub-segments need their own coupler.
+            if (coupled == false && !ReferenceEquals(segment, main))
+                findings.Add(new(CheckSeverity.Warning, "P081", path, Strings.Get("ChkP081", path)));
+        }
+    }
+
+    private static IEnumerable<DeviceInstance> DevicesOf(Line line) =>
+        line.Devices.Concat(line.Segments.SelectMany(s => s.Devices));
+
+    /// <summary>
+    /// Hardware facts resolve through the Hardware2Program reference first, then the product
+    /// reference; a device whose hardware is not part of the archive has no facts (null).
+    /// </summary>
+    private static CatalogHardware? HardwareOf(Project project, DeviceInstance device)
+    {
+        if (device.Hardware2ProgramRefId is { Length: > 0 } program &&
+            project.Hardware.TryGetValue(program, out var byProgram)) return byProgram;
+        if (device.ProductRefId is { Length: > 0 } product &&
+            project.Hardware.TryGetValue(product, out var byProduct)) return byProduct;
+        return null;
+    }
+
+    private static string Milliamps(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
     private static void CheckDevices(Project project, List<CheckFinding> findings)
     {
