@@ -277,8 +277,12 @@ internal static class Program
             var original = Vm.Project!;
             ClickMenu(WorkbenchStrings.Get("MenuSave"));
             await WaitFor(() => Vm.Status == WorkbenchStrings.Get("SavedWithDrafts"), "regular Save status");
+            var savedAfterSave = Knxproj.Load(ProjectPath);
             Check("regular Save retains draft without persisting it", Pane.HasUnappliedChanges && Row().Value == "42"
-                && ProjectQuery.DeviceList(Knxproj.Load(ProjectPath)).Single().ParameterValues.Count == 0);
+                && ProjectQuery.DeviceList(savedAfterSave).Single().ParameterValues.Count == 0);
+            Check("regular Save records a durable revision",
+                savedAfterSave.Workbench.Revisions.Count > 0
+                && savedAfterSave.Workbench.Revisions[^1].SourcePath == Path.GetFileName(ProjectPath));
             SavePath = Path.Combine(Root, "saved-as.knxproj");
             ClickMenu(WorkbenchStrings.Get("MenuSaveAs"));
             await WaitFor(() => Vm.ProjectPath == SavePath, "Save As path");
