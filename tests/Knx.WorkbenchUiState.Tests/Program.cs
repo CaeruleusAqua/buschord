@@ -5,6 +5,8 @@ using Knx.Portfolio;
 using System.IO.Compression;
 using System.Text;
 
+if (args.Contains("--dialogs")) return DialogChecks.Run(args.Contains("--de") ? "de" : "en");
+
 var checks = 0;
 void Check(string name, bool value)
 {
@@ -469,3 +471,4 @@ try
     Console.WriteLine($"WORKBENCH UI STATE OK ({checks})");
 }
 finally { Directory.Delete(root, recursive: true); }
+return 0;

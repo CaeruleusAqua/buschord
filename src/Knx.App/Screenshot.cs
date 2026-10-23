@@ -48,8 +48,7 @@ internal static class Screenshot
     }
 
     /// <summary>
-    /// --screenshot-selftest: runs the app twice in screenshot mode and checks that a
-    /// non-trivial PNG is produced and that an unknown --screen fails.
+    /// --screenshot-selftest: checks main/programming captures and rejects an unknown screen.
     /// </summary>
     public static int SelfTest()
     {
@@ -64,6 +63,7 @@ internal static class Screenshot
             "Temp", "opencode", "buschord-screenshot-" + Guid.NewGuid().ToString("N"));
         var good = System.IO.Path.Combine(directory, "main.png");
         var bogus = System.IO.Path.Combine(directory, "bogus.png");
+        var programming = System.IO.Path.Combine(directory, "programming.png");
         foreach (var file in new[] { good, bogus })
             if (File.Exists(file)) File.Delete(file);
 
@@ -84,6 +84,10 @@ internal static class Screenshot
         var bogusCode = Run(exe, $"--screenshot={bogus}", "--screen=bogus");
         Check("Unbekannter Screen schlägt fehl", bogusCode != 0, bogusCode.ToString());
         Check("Unbekannter Screen schreibt kein PNG", !File.Exists(bogus));
+
+        var programmingCode = Run(exe, $"--screenshot={programming}", "--screen=demoprogramming");
+        Check("Programming screenshot exits successfully", programmingCode == 0, programmingCode.ToString());
+        Check("Programming screenshot exists", File.Exists(programming));
 
         Console.WriteLine(failures == 0 ? "SCREENSHOT OK" : $"SCREENSHOT {failures} FEHLER");
         return failures == 0 ? 0 : 1;

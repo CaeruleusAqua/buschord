@@ -23,7 +23,7 @@ using Knx.App.Workbench;
 using Knx.Catalog;
 
 // Native WorkbenchWindow and routed UI events; only native file-picker results are substituted.
-internal static class Program
+internal static partial class Program
 {
     private static readonly string Root = Path.Combine(Path.GetTempPath(), "buschord-shell-" + Guid.NewGuid().ToString("N"));
     private static IClassicDesktopStyleApplicationLifetime Lifetime = null!;
@@ -158,6 +158,11 @@ internal static class Program
         Pane = PaneOf(Shell);
         try
         {
+            if (args.FirstOrDefault(a => a.StartsWith("--state-", StringComparison.Ordinal)) is { } state)
+            {
+                await StateRegression(state);
+                return;
+            }
             // Variant-A shell chrome: the native frame stays, only its drawn caption is replaced.
             var topbar = Shell.FindControl<Border>("Topbar")!;
             var chromeMinimize = Shell.FindControl<Button>("ChromeMinimize")!;

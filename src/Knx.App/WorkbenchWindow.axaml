@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="using:Knx.App.Views" xmlns:loc="using:Knx.App.Localization"
         xmlns:chrome="using:Avalonia.Controls.Chrome"
-        x:Class="Knx.App.WorkbenchWindow" Title="BusChord" Width="1440" Height="900"
+        x:Class="Knx.App.WorkbenchWindow" Classes="wb-host" Title="BusChord" Width="1440" Height="900"
         MinWidth="900" MinHeight="480" Background="{DynamicResource WbBackground}" FontFamily="Inter, Segoe UI" FontSize="12"
         Foreground="{DynamicResource WbText}" Icon="/Assets/brand/buschord-house-transparent-tile.ico"
         WindowDecorations="Full" ExtendClientAreaToDecorationsHint="True"
@@ -9,14 +9,6 @@
         WindowDecorationsTheme="{DynamicResource WbWindowDecorationsTheme}">
   <!-- Opt-in V4 resources shared with the native workbench; legacy panels keep their own styles. -->
   <Window.Styles>
-    <!-- Shell controls that do not opt into wb-* keep the V4 tokens instead of the ETS chrome. -->
-    <Style Selector="Button:not(.wb-button)"><Setter Property="MinHeight" Value="30"/><Setter Property="Padding" Value="10,0"/><Setter Property="FontSize" Value="12"/><Setter Property="CornerRadius" Value="5"/><Setter Property="Background" Value="{DynamicResource WbPaper}"/><Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/></Style>
-    <Style Selector="Button:not(.wb-button):pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbHover}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
-    <Style Selector="Button:not(.wb-button):pressed /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
-    <Style Selector="Button.quiet"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/></Style>
-    <!-- WbAccent on WbTint is 4.24:1; the darker selected text keeps the active state legible. -->
-    <Style Selector="Button.active"><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
-    <Style Selector="Button.primary"><Setter Property="Background" Value="{DynamicResource WbAccent}"/><Setter Property="Foreground" Value="{DynamicResource WbOnAccent}"/></Style>
     <!-- Shell window chrome (variant A). The three caption blocks live in the 49 px strip and keep
          the native HTMINBUTTON/HTMAXBUTTON/HTCLOSE behaviour through ElementRole. -->
     <Style Selector="Button.wb-caption">
@@ -149,28 +141,15 @@
     <Style Selector="Grid#TopbarContent Button, Grid#TopbarContent Menu">
       <Setter Property="chrome:WindowDecorationProperties.ElementRole" Value="User"/>
     </Style>
-    <Style Selector="TextBox"><Setter Property="MinHeight" Value="28"/><Setter Property="FontSize" Value="11"/></Style>
-    <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="{DynamicResource WbMuted}"/><Setter Property="FontSize" Value="11"/></Style>
-    <!-- One 10 px semibold caption for every shell table header (object, monitor, programming, scan). -->
-    <Style Selector="TextBlock.wb-th"><Setter Property="FontSize" Value="10"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{DynamicResource WbText}"/></Style>
-    <Style Selector="ListBoxItem"><Setter Property="Padding" Value="0"/><Setter Property="MinHeight" Value="29"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
-    <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbTint}"/><Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
     <Style Selector="Grid.wb-row-active"><Setter Property="Background" Value="{DynamicResource WbSelected}"/></Style>
     <Style Selector="Grid.wb-row-active TextBlock"><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
     <Style Selector="Border.wb-action-footer"><Setter Property="Background" Value="{DynamicResource WbPaper}"/><Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/><Setter Property="BorderThickness" Value="0,1,0,0"/></Style>
     <Style Selector="Button.rail-active"><Setter Property="Background" Value="{DynamicResource WbTint}"/><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
     <Style Selector="TabItem.wb-doc-tab"><Setter Property="MinWidth" Value="130"/><Setter Property="MaxWidth" Value="240"/><Setter Property="Padding" Value="10,0"/></Style>
     <Style Selector="TabItem.wb-tool-tab"><Setter Property="MinHeight" Value="35"/><Setter Property="Padding" Value="12,0"/></Style>
-    <Style Selector="Grid.wb-table-header"><Setter Property="Background" Value="{DynamicResource WbTableHeader}"/></Style>
     <Style Selector="Grid.wb-drop-target"><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
     <Style Selector="Grid.wb-device"><Setter Property="Background" Value="{DynamicResource WbHover}"/></Style>
     <Style Selector="Grid.wb-channel"><Setter Property="Background" Value="{DynamicResource WbPanel}"/></Style>
-    <Style Selector="TextBlock.wb-subtle"><Setter Property="Foreground" Value="{DynamicResource WbSubtle}"/></Style>
-    <Style Selector="TextBlock.wb-muted"><Setter Property="Foreground" Value="{DynamicResource WbMuted}"/></Style>
-    <Style Selector="TextBlock.wb-accent"><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/></Style>
-    <Style Selector="TextBlock.wb-success"><Setter Property="Foreground" Value="{DynamicResource WbSuccess}"/></Style>
-    <Style Selector="TextBlock.wb-error"><Setter Property="Foreground" Value="{DynamicResource WbError}"/></Style>
-    <Style Selector="TextBlock.wb-warning"><Setter Property="Foreground" Value="{DynamicResource WbWarning}"/></Style>
     <!-- Same field label contract as ParameterPane, so demo and native editors share one geometry. -->
     <Style Selector="TextBlock.wb-label"><Setter Property="FontSize" Value="{DynamicResource WbFontSizeControl}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{DynamicResource WbText}"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
   </Window.Styles>

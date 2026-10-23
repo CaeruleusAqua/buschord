@@ -32,6 +32,14 @@ allow src/Knx.Core/ProjectCheck.cs|Linie
 allow src/Knx.Core/ProjectCheck.cs|Bereich {}
 allow src/Knx.Core/ProjectCheck.cs|Linie {}.{}
 
+# Scoped findings match the same canonical ProjectCheck paths; these are identifiers,
+# not translated UI labels (changing them would break scope matching).
+allow src/Knx.App/WorkbenchWindow.axaml.cs|Gruppenadresse {}
+allow src/Knx.App/WorkbenchWindow.axaml.cs|Gerät {}
+allow src/Knx.App/WorkbenchWindow.axaml.cs|Gebäudeknoten {}
+allow src/Knx.App/WorkbenchWindow.axaml.cs|Linie {}.{}
+allow src/Knx.App/WorkbenchWindow.axaml.cs|Linie {}
+
 # --- allowed: acceptance-protocol document template (bilingual de/en table inside
 # src/Knx.Reports/AcceptanceProtocol.cs; document prose, not UI chrome. Move these into the
 # core dictionary once that file is in the feature's scope.) ---
