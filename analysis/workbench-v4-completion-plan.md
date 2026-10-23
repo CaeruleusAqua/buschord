@@ -176,6 +176,13 @@ belegten Ablauf, technische API/Dateiformate, Fehlerfälle, Vertrauensgrad
 
 ## F. Clean-Code-Review (Schritt 11)
 
+Nachlauf 2026-10-23: K1–K6/U1–U6 aus dem erneuten Konzept-/UI-Review sind
+behoben und inklusive nativer Regressionen nachgeprüft (Quellstand `aa41655`);
+siehe `analysis/v4-review-fixes-20261022.md`. Das parallel angeforderte
+zusätzliche App-Review hat weitere, noch nicht behobene Befunde geliefert:
+`analysis/app-additional-review-20261023.md` (darunter zwei statisch ermittelte P1).
+Dieser Nachlauf ist keine vollständige Produkt-/Inbetriebnahmefreigabe.
+
 - [x] Core/Bus: Atomarität, Pfad-/Fehlerbehandlung, Duplikate, toter Code, API-Kompatibilität.
 - [x] App/Workbench: Riesenmethoden, wiederholte UI-Builder/Switches, Event-Lecks, Thread-/Projektwechsel-Zustand.
 - [x] Tests/Doku: nicht-falsifizierbare Checks, fehlende Regressionen, CI-/Doku-Abweichungen.

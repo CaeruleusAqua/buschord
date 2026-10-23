@@ -9,6 +9,11 @@ V4-Theme und strengem Demo-JSON-Austausch. Umsetzung und offene Abnahmepunkte:
 V4 shell integration milestone (not full acceptance):
 [native shell, tests and explicit remaining matrix](analysis/workbench-v4-shell-milestone.md).
 
+V4-Review-Nachlauf (2026-10-23):
+[Konzept-/UI-Befunde und Behebung](analysis/v4-review-fixes-20261022.md).
+Weitere offene Korrektheits-, Design- und Wartbarkeitsbefunde:
+[zusätzliches App-Review](analysis/app-additional-review-20261023.md).
+
 Aktueller begrenzter REA-Abgleich (2026-10-18):
 [Befunde und implementierte Arbeitsabläufe](analysis/parity-implementation.md).
 Die historischen Featurelisten unten sind kein vollständiger Kompatibilitätsnachweis;
