@@ -189,5 +189,17 @@ internal static class V4ToolChecks
         Check("project replacement closes floated tools before disposing sessions", !floatingProgramming.IsVisible && floats.Count == 0);
         main.ViewModel.CreateProject(WorkbenchJson.CreateDemo(), null);
         main.RefreshWorkspace();
+        main.ShowTool("programming");
+        Call(main, "OnFloatTool", null, new RoutedEventArgs());
+        var activeFloat = floats.Single();
+        await Task.Delay(100);
+        var activeSessions = (WorkbenchSessions)typeof(WorkbenchWindow).GetField("_sessions", Private)!.GetValue(main)!;
+        activeSessions.Programming.Enqueue(main.ViewModel.Devices.First().Device.Id);
+        var activeRun = activeSessions.Programming.RunAsync();
+        await (Task)Call(main, "ResetSessionsForReplacementAsync");
+        await activeRun;
+        Check("regular reset closes active floated programming before disposal", !activeFloat.IsVisible && floats.Count == 0);
+        main.ViewModel.CreateProject(WorkbenchJson.CreateDemo(), null);
+        main.RefreshWorkspace();
     }
 }

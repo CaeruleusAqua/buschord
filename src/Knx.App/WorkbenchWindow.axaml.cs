@@ -418,7 +418,6 @@ public partial class WorkbenchWindow : Window
         if (project is null)
         {
             _sessionTimer?.Stop();
-            CloseSessionWindows();
             if (_sessions is not null) { _ = DisposeSessionsAsync(); }
             _sessionIdentity = null;
             ToolHost.Content = null;
@@ -426,7 +425,6 @@ public partial class WorkbenchWindow : Window
             return;
         }
         if (_sessions is not null && ReferenceEquals(_sessionIdentity, ViewModel.ProjectSessionIdentity)) return;
-        CloseSessionWindows();
         _ = DisposeSessionsAsync();
         _sessionIdentity = ViewModel.ProjectSessionIdentity;
         _demoDrafts.Clear();
@@ -464,6 +462,9 @@ public partial class WorkbenchWindow : Window
 
     private async Task DisposeSessionsAsync()
     {
+        // Detach every observer before cancellation publishes the final job state.
+        CloseSessionWindows();
+        ToolHost.Content = null;
         var sessions = _sessions;
         _sessions = null;
         _sessionIdentity = null;
