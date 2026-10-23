@@ -37,6 +37,7 @@ public partial class WorkbenchWindow : Window
     private WorkbenchSessions? _sessions;
     private DispatcherTimer? _sessionTimer;
     private object? _sessionIdentity;
+    private bool _closingSessionWindows;
     private readonly WorkbenchDemoDrafts _demoDrafts = new();
     private bool HasParameterDrafts => _parameters.HasUnappliedChanges || _demoDrafts.HasChanges(ViewModel.Project);
     private object? _catalogProject;
@@ -417,6 +418,7 @@ public partial class WorkbenchWindow : Window
         if (project is null)
         {
             _sessionTimer?.Stop();
+            CloseSessionWindows();
             if (_sessions is not null) { _ = DisposeSessionsAsync(); }
             _sessionIdentity = null;
             ToolHost.Content = null;
@@ -424,6 +426,7 @@ public partial class WorkbenchWindow : Window
             return;
         }
         if (_sessions is not null && ReferenceEquals(_sessionIdentity, ViewModel.ProjectSessionIdentity)) return;
+        CloseSessionWindows();
         _ = DisposeSessionsAsync();
         _sessionIdentity = ViewModel.ProjectSessionIdentity;
         _demoDrafts.Clear();
@@ -447,6 +450,16 @@ public partial class WorkbenchWindow : Window
         // Tool views close over one session instance; never leave them pointing at a disposed one.
         ToolHost.Content = null;
         if (Workspace.ToolsVisible) ShowTool(Workspace.ActiveTool);
+    }
+
+    private void CloseSessionWindows()
+    {
+        _closingSessionWindows = true;
+        try
+        {
+            foreach (var window in _toolWindows.ToArray()) window.Close();
+        }
+        finally { _closingSessionWindows = false; }
     }
 
     private async Task DisposeSessionsAsync()
@@ -1951,7 +1964,7 @@ public partial class WorkbenchWindow : Window
         if (rows.Count == 0) { panel.Children.Add(EmptyState("topology", W("Relations"), W("RelationsEmpty"))); return panel; }
         panel.Children.Add(Label(W("RelationsTitle")));
         panel.Children.Add(Note(W("RelationsNote")));
-        panel.Children.Add(Note($"KO → GA [C,T] · KO ← GA [C,W/U] · {W("ObjectFlags")}"));
+        panel.Children.Add(Note($"KO → GA [C,T / C,R] · KO ← GA [C,W/U] · {W("ObjectFlags")}"));
         var groupIds = tab.Target.Kind == "ga" ? new[] { tab.Target.Id }
             : rows.SelectMany(r => r.Object.Links).Distinct().ToArray();
         var all = WorkbenchProject.ScopeObjects(project, new(IncludeInactive: true));
@@ -1970,7 +1983,7 @@ public partial class WorkbenchWindow : Window
                 var flags = row.Metadata?.Flags;
                 var communicating = row.Metadata?.Active != false && flags?.Contains('C') == true;
                 var sending = row.Metadata?.Connector(id).Send == true;
-                var sends = communicating && flags!.Contains('T') && sending;
+                var sends = communicating && (flags!.Contains('R') || (flags.Contains('T') && sending));
                 var receives = communicating && (flags!.Contains('W') || flags.Contains('U'));
                 var direction = sends && receives ? "↔" : sends ? "→" : receives ? "←" : "·";
                 var line = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
@@ -2040,7 +2053,10 @@ public partial class WorkbenchWindow : Window
         var paths = devices.Select(d => d.Address.ToString()).ToHashSet(StringComparer.Ordinal);
         var ids = devices.Select(d => d.Id).ToHashSet(StringComparer.Ordinal);
         var objects = WorkbenchProject.ScopeObjects(project, new(IncludeInactive: true))
-            .Where(r => ids.Contains(r.Device.Id) && (target.Kind != "ga" || r.Object.Links.Contains(target.Id))).ToList();
+            .Where(r => target.Kind == "ga"
+                ? r.Object.Links.Contains(target.Id) || r.Metadata?.SendingGroupId == target.Id
+                    || r.Metadata?.Connectors.ContainsKey(target.Id) == true
+                : ids.Contains(r.Device.Id)).ToList();
         foreach (var row in objects) paths.Add(row.Key.ToString());
         var groupIds = target.Kind == "ga" ? new HashSet<string> { target.Id }
             : objects.SelectMany(r => r.Object.Links).ToHashSet();
@@ -2063,7 +2079,9 @@ public partial class WorkbenchWindow : Window
                     foreach (var segment in line.Segments) paths.Add($"Segment {area.Address}.{line.Address}.{segment.Address}");
                 }
         // ProjectCheck exposes paths, not object references; compare complete paths, never name substrings.
-        return findings.Where(f => paths.Contains(f.Path) || objects.Any(r => groupIds.Any(g => f.Path == $"{r.Key} → {g}")));
+        return findings.Where(f => paths.Contains(f.Path) || objects.Any(r =>
+            f.Path.StartsWith($"{r.Key} → ", StringComparison.Ordinal)
+            && (target.Kind != "ga" || f.Path == $"{r.Key} → {target.Id}")));
     }
 
     private static void ObserveToolState(Control view, INotifyPropertyChanged source, Action refresh)
@@ -2350,7 +2368,20 @@ public partial class WorkbenchWindow : Window
         toolbar.Children.Add(Note(W("ProgrammingDemoNote")));
         CommitToolbar(panel, toolbar);
         var needNote = Note("");
-        void RefreshNeed() => needNote.Text = W("ProgrammingNeed", ViewModel.Devices.Count(d => sessions.Programming.NeedsProgramming(d.Device.Id)));
+        var projectIdentity = ViewModel.ProjectSessionIdentity;
+        void RefreshNeed()
+        {
+            // Replacement notifications can arrive before the shell has closed old floated views.
+            if (!ReferenceEquals(projectIdentity, ViewModel.ProjectSessionIdentity)) return;
+            var current = device.SelectedItem as DeviceRow;
+            var choices = ViewModel.Devices.ToList();
+            if (device.ItemsSource is not IEnumerable<DeviceRow> shown || !shown.SequenceEqual(choices))
+            {
+                device.ItemsSource = choices;
+                device.SelectedItem = choices.FirstOrDefault(d => d.Device.Id == current?.Device.Id) ?? choices.FirstOrDefault();
+            }
+            needNote.Text = W("ProgrammingNeed", choices.Count(d => sessions.Programming.NeedsProgramming(d.Device.Id)));
+        }
         RefreshNeed();
         ObserveToolState(panel, sessions.Programming, RefreshNeed);
         ObserveToolState(panel, ViewModel, RefreshNeed);
@@ -2882,7 +2913,7 @@ public partial class WorkbenchWindow : Window
         {
             _toolWindows.Remove(window);
             // Closing a fresh tool window is the explicit re-dock action; no live control is reparented.
-            if (!_shuttingDown) ShowTool(Workspace.ActiveTool);
+            if (!_shuttingDown && !_closingSessionWindows) ShowTool(Workspace.ActiveTool);
         };
         window.Show(this);
     }

@@ -6,6 +6,7 @@ using Avalonia.VisualTree;
 using Knx;
 using Knx.App;
 using Knx.App.Localization;
+using Knx.App.Services;
 using Knx.App.Workbench;
 using Knx.Workbench;
 
@@ -27,6 +28,12 @@ internal static class V4ToolChecks
         var group = ProjectQuery.GroupAddresses(project).First();
         main.ShowTool("programming");
         var sessions = (WorkbenchSessions)typeof(WorkbenchWindow).GetField("_sessions", Private)!.GetValue(main)!;
+        var foreignThreadRejected = await Task.Run(() =>
+        {
+            try { _ = sessions.Programming.NeedsProgramming(device.Id); return false; }
+            catch (InvalidOperationException) { return true; }
+        });
+        Check("session access still rejects a background thread", foreignThreadRejected);
         var host = main.FindControl<ContentControl>("ToolHost")!;
         var view = (Control)host.Content!;
         var job = sessions.Programming.Enqueue(device.Id);
@@ -102,6 +109,13 @@ internal static class V4ToolChecks
         Check("relationships show supported sender and receiver directions", Text(relations).Any(t => t.Text?.StartsWith("→ [CT]") == true)
             && Text(relations).Any(t => t.Text?.StartsWith("← [CW]") == true));
         Check("relationship removal remains available", relations.GetLogicalDescendants().OfType<Button>().Any(b => Equals(b.Content, WorkbenchStrings.Get("Remove"))));
+        project.Workbench.Objects[new ObjectKey(device.Id, localObject.Id).ToString()].Flags = "CR";
+        main.RefreshWorkspace();
+        await Task.Delay(100);
+        Check("read responder is a sender without a transmit flag", Text(relations).Any(t => t.Text?.StartsWith("→ [CR]") == true));
+        project.Workbench.Objects[new ObjectKey(device.Id, localObject.Id).ToString()].Flags = "CT";
+        main.RefreshWorkspace();
+        await Task.Delay(100);
         var remoteLine = relations.GetLogicalDescendants().OfType<StackPanel>().First(panel => panel.Children.OfType<Button>()
             .Any(b => b.Content?.ToString()?.StartsWith(other.Address + " ·") == true));
         remoteLine.Children.OfType<Button>().Single(b => Equals(b.Content, WorkbenchStrings.Get("Remove")))
@@ -138,7 +152,41 @@ internal static class V4ToolChecks
         main.ShowTool("problems");
         Check("global problems retains other device findings", ((Control)host.Content!).GetLogicalDescendants().OfType<ListBox>()
             .Single().ItemsSource!.Cast<CheckFinding>().Any(f => f.Path == other.Address.ToString()));
+        localObject.Links.Remove(group.Id);
+        main.OpenTarget(new("device", device.Id), "overview");
+        var scoped = main.FindControl<ContentControl>("ToolPageHost")!.GetLogicalDescendants().OfType<ListBox>()
+            .Single().ItemsSource!.Cast<CheckFinding>().ToArray();
+        Check("local overview retains invalid sending connector findings", scoped.Any(f => f.Code == "P052"
+            && f.Path == $"{new ObjectKey(device.Id, localObject.Id)} → {group.Id}"));
+
         // Start the existing docking checks with a fresh synthetic project/session.
+        main.ViewModel.CreateProject(WorkbenchJson.CreateDemo(), null);
+        main.RefreshWorkspace();
+        main.ShowTool("programming");
+        Call(main, "OnFloatTool", null, new RoutedEventArgs());
+        var floats = (List<Window>)typeof(WorkbenchWindow).GetField("_toolWindows", Private)!.GetValue(main)!;
+        var floatingProgramming = floats.Single();
+        await Task.Delay(100);
+        var removedId = main.ViewModel.Devices.Last().Device.Id;
+        main.ViewModel.Edit("remove fixture device", p =>
+        {
+            foreach (var line in p.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines))
+            {
+                line.Devices.RemoveAll(d => d.Id == removedId);
+                foreach (var segment in line.Segments) segment.Devices.RemoveAll(d => d.Id == removedId);
+            }
+        });
+        await Task.Delay(100);
+        var choices = floatingProgramming.GetVisualDescendants().OfType<ComboBox>().Single();
+        Check("floating programming removes stale device choices", !choices.ItemsSource!.Cast<DeviceRow>().Any(r => r.Device.Id == removedId));
+        main.ViewModel.UndoCommand.Execute(null);
+        await Task.Delay(100);
+        Check("floating programming restores device choices after undo", choices.ItemsSource!.Cast<DeviceRow>().Any(r => r.Device.Id == removedId));
+        var replacement = new Project { Id = "replacement-project", Name = "Replacement" };
+        main.ViewModel.CreateProject(replacement, null);
+        main.RefreshWorkspace();
+        await Task.Delay(100);
+        Check("project replacement closes floated tools before disposing sessions", !floatingProgramming.IsVisible && floats.Count == 0);
         main.ViewModel.CreateProject(WorkbenchJson.CreateDemo(), null);
         main.RefreshWorkspace();
     }

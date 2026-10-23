@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Knx.Workbench;
 
@@ -125,6 +126,13 @@ public abstract class SessionState : ObservableObject
     private readonly SynchronizationContext? _owner = SynchronizationContext.Current;
     protected void VerifyAccess()
     {
+        // Avalonia installs contexts at different dispatcher priorities on the same UI thread.
+        // Their object identities differ; the dispatcher, not that identity, owns UI access.
+        if (_owner is AvaloniaSynchronizationContext)
+        {
+            Dispatcher.UIThread.VerifyAccess();
+            return;
+        }
         if (_owner is not null && SynchronizationContext.Current != _owner)
             throw new InvalidOperationException("Session mutation must run on its owning UI context.");
     }

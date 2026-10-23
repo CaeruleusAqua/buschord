@@ -100,6 +100,10 @@ internal static class Program
             main.ShowTool("monitor");
             await Settle();
 
+            // This scenario injects exact telegram counts; exclude the independent demo clock.
+            ((DispatcherTimer)typeof(WorkbenchWindow).GetField("_sessionTimer", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(main)!).Stop();
+
             var host = main.FindControl<ContentControl>("ToolHost")!;
             var docked = (Control)host.Content!;
             Check("monitor is docked inside the workbench shell", TopLevel.GetTopLevel(docked) == main);
