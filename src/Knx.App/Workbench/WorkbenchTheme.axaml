@@ -63,6 +63,7 @@
           <SolidColorBrush x:Key="WbHover" Color="#f0f4f5" />
           <SolidColorBrush x:Key="WbSelected" Color="#dff0ef" />
           <SolidColorBrush x:Key="WbSelectedText" Color="#176b6e" />
+          <SolidColorBrush x:Key="WbStatusProjectText" Color="#176b6e" />
           <SolidColorBrush x:Key="WbRail" Color="#edf0f4" />
           <SolidColorBrush x:Key="WbTabbar" Color="#f1f3f6" />
           <SolidColorBrush x:Key="WbStatusbar" Color="#f3f5f8" />
@@ -90,6 +91,7 @@
           <SolidColorBrush x:Key="WbHover" Color="#2b3745" />
           <SolidColorBrush x:Key="WbSelected" Color="#25484b" />
           <SolidColorBrush x:Key="WbSelectedText" Color="#a5efea" />
+          <SolidColorBrush x:Key="WbStatusProjectText" Color="#a5efea" />
           <SolidColorBrush x:Key="WbRail" Color="#19212b" />
           <SolidColorBrush x:Key="WbTabbar" Color="#1b232e" />
           <SolidColorBrush x:Key="WbStatusbar" Color="#1b232e" />
@@ -136,6 +138,13 @@
   <!-- WbAccent on WbTint is 4.24:1; darker selected text keeps the active state legible. -->
   <Style Selector="Window.wb-host Button.active"><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
   <Style Selector="Window.wb-host Button.primary"><Setter Property="Background" Value="{DynamicResource WbAccent}"/><Setter Property="Foreground" Value="{DynamicResource WbOnAccent}"/></Style>
+  <Style Selector="Window.wb-host Button.primary TextBlock">
+    <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource FindAncestor, AncestorType=Button}}" />
+  </Style>
+  <Style Selector="Window.wb-host Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter, Window.wb-host Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbAccentHover}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource WbOnAccent}" />
+  </Style>
   <Style Selector="Window.wb-host TextBox"><Setter Property="MinHeight" Value="28"/><Setter Property="FontSize" Value="11"/></Style>
   <Style Selector="Window.wb-host TextBlock.muted"><Setter Property="Foreground" Value="{DynamicResource WbMuted}"/><Setter Property="FontSize" Value="11"/></Style>
   <Style Selector="Window.wb-host ListBoxItem">
@@ -191,6 +200,95 @@
   </Style>
   <Style Selector="TextBlock.wb-success">
     <Setter Property="Foreground" Value="{DynamicResource WbSuccess}" />
+  </Style>
+
+  <!-- In high contrast the selected surface uses the system highlight, including pressed controls. -->
+  <Style Selector="Window.wb-host.wb-high-contrast Button:not(.wb-primary):not(.primary):pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <Style Selector="Window.wb-host.wb-high-contrast Grid.wb-drop-target TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <Style Selector="Window.wb-host.wb-high-contrast Grid.wb-row-active TextBlock, Window.wb-host.wb-high-contrast ListBoxItem:selected TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <Style Selector="Window.wb-host.wb-high-contrast Grid.wb-row-active Button, Window.wb-host.wb-high-contrast Grid.wb-row-active views|ConceptIcon">
+    <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <!-- Every contrast window includes settings and popups; wb-host is not required. -->
+  <Style Selector="Window.wb-high-contrast CheckBox, Window.wb-high-contrast RadioButton, Window.wb-high-contrast ComboBox, Window.wb-high-contrast TextBox, Window.wb-high-contrast NumericUpDown">
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast Button.primary:not(:disabled), Window.wb-high-contrast Button.wb-primary:not(:disabled)">
+    <Setter Property="Background" Value="{DynamicResource WbAccent}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbOnAccent}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast Button.primary:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter, Window.wb-high-contrast Button.wb-primary:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbAccent}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbOnAccent}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast Button.primary:not(:disabled) TextBlock, Window.wb-high-contrast Button.wb-primary:not(:disabled) TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WbOnAccent}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast TextBox, Window.wb-high-contrast ComboBox">
+    <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast TextBox">
+    <Setter Property="CaretBrush" Value="{DynamicResource WbText}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource WbSelected}" />
+    <Setter Property="SelectionForegroundBrush" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast TextBox /template/ Border#PART_BorderElement, Window.wb-high-contrast ComboBox /template/ Border#Background, Window.wb-high-contrast ComboBox /template/ Border#HighlightBackground, Window.wb-high-contrast ComboBox /template/ Border#PopupBorder">
+    <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast TextBox /template/ TextPresenter#PART_TextPresenter">
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast TextBox /template/ TextBlock, Window.wb-high-contrast ComboBox /template/ TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast ComboBox /template/ ContentControl#ContentPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast ComboBox /template/ PathIcon#DropDownGlyph">
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast ListBox">
+    <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast ListBoxItem:not(:selected) /template/ ContentPresenter#PART_ContentPresenter, Window.wb-high-contrast ComboBoxItem:not(:selected) /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast ComboBoxItem:not(:selected) TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter, Window.wb-high-contrast ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbSelected}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast ListBoxItem:selected TextBlock, Window.wb-high-contrast ComboBoxItem:selected TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast CheckBox /template/ ContentPresenter, Window.wb-high-contrast RadioButton /template/ ContentPresenter">
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <!-- Fluent's light-theme unchecked stroke is black; retain the OS contrast pair after a live theme change. -->
+  <Style Selector="Window.wb-high-contrast CheckBox /template/ Border#NormalRectangle">
+    <Setter Property="BorderBrush" Value="{DynamicResource WbText}" />
+    <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast CheckBox:checked /template/ Border#NormalRectangle, Window.wb-high-contrast CheckBox:indeterminate /template/ Border#NormalRectangle">
+    <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
+    <Setter Property="Background" Value="{DynamicResource WbAccent}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast CheckBox /template/ Path#CheckGlyph">
+    <Setter Property="Fill" Value="{DynamicResource WbOnAccent}" />
   </Style>
 
   <Style Selector="Button.wb-button">

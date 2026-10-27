@@ -42,6 +42,7 @@ public sealed class WorkbenchMetadata
             throw new InvalidDataException("Workbench floor metadata contains an empty key or null entry.");
         foreach (var (key, value) in Objects)
         {
+            if (value.StructuralDeclaredNumber is < 0 or > 65535) throw new InvalidDataException($"Object {key} has an invalid declared module number.");
             if (value.Bits is < 1 or > 65535) throw new InvalidDataException($"Object {key} has an invalid bit size.");
             if (value.Dpt is { Length: > 30 }) throw new InvalidDataException($"Object {key} has an invalid DPT.");
             if (value.Flags is { } flags && !System.Text.RegularExpressions.Regex.IsMatch(flags, @"^C[RWTUI]*\z"))
@@ -64,13 +65,38 @@ public sealed record ConnectorMetadata
     [JsonIgnore] public bool IsDefault => !Send && !Acknowledge && Priority is null && Slot is null;
 }
 
-public sealed class ObjectMetadata
+public enum ObjectChannelSource { Unspecified, Derived, Native, Manual }
+
+public sealed class ObjectMetadata : IJsonOnDeserialized
 {
+    private string? _channelId;
+    private ObjectChannelSource _channelSource;
+    private ObjectChannelSource _readChannelSource;
+    private bool _channelSourceRead;
     public string? Dpt { get; set; }
     public int? Bits { get; set; }
     public string? Flags { get; set; }
     public bool Active { get; set; } = true;
-    public string? ChannelId { get; set; }
+    /// <summary>Activity retained while a Repeat instance is absent. Its links and overrides remain stored.</summary>
+    public bool? StructuralPreviousActive { get; set; }
+    /// <summary>Last declared module number, separate from a saved explicit number override.</summary>
+    public int? StructuralDeclaredNumber { get; set; }
+    /// <summary>Effective grouping. Assigning it explicitly records a manual override, including null.</summary>
+    public string? ChannelId { get => _channelId; set { _channelId = value; _channelSource = ObjectChannelSource.Manual; } }
+    public ObjectChannelSource ChannelSource { get => _channelSource; set { _channelSource = _readChannelSource = value; _channelSourceRead = true; } }
+    /// <summary>Last evaluated channel, kept separate so explicit grouping overrides survive edits.</summary>
+    public string? StructuralDeclaredChannelId { get; set; }
+    public string? StructuralDeclaredChannelName { get; set; }
+    internal ObjectChannelSource EffectiveChannelSource => _channelSource == ObjectChannelSource.Unspecified
+        ? LegacyChannelSource() : _channelSource;
+    private ObjectChannelSource LegacyChannelSource() => _channelId is null || _channelId == StructuralDeclaredChannelId
+        ? ObjectChannelSource.Derived : ObjectChannelSource.Manual;
+    internal void SetEvaluatedChannel(string? id, ObjectChannelSource source) { _channelId = id; _channelSource = source; }
+    void IJsonOnDeserialized.OnDeserialized()
+    {
+        // Earlier sidecars did not store the channel source. Reproduce their previous override rule once.
+        _channelSource = _channelSourceRead ? _readChannelSource : LegacyChannelSource();
+    }
     public string? Role { get; set; }
     /// <summary>Legacy single sending address; kept in sync with <see cref="Connectors"/>.</summary>
     public string? SendingGroupId { get; set; }
@@ -86,6 +112,7 @@ public sealed class ObjectMetadata
     /// <summary>Rejects malformed entries and normalizes the single-sending invariant.</summary>
     internal void Validate(string key)
     {
+        if (!Enum.IsDefined(ChannelSource)) throw new InvalidDataException($"Object {key} has an invalid channel source.");
         if (Connectors is null) throw new InvalidDataException($"Object {key} has null connector metadata.");
         foreach (var (groupId, connector) in Connectors)
         {

@@ -1,57 +1,104 @@
 # BusChord
 
-BusChord provides tools for KNX project editing, catalogues and building automation workflows. Available features depend on the selected branch and project.
+[![CI](https://github.com/CaeruleusAqua/buschord/actions/workflows/ci.yml/badge.svg?branch=development)](https://github.com/CaeruleusAqua/buschord/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/CaeruleusAqua/buschord/actions/workflows/codeql.yml/badge.svg?branch=development)](https://github.com/CaeruleusAqua/buschord/actions/workflows/codeql.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512bd4.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 
-## Build
+**An independent KNX engineering workbench.** BusChord opens, edits, checks and
+exports building automation projects, manages manufacturer catalogues and provides
+a headless MCP server for agent workflows. It uses .NET 10 and Avalonia 12.1.4.
 
-Use the .NET SDK required by `global.json`, when present, and the target frameworks declared in the project files. Restore dependencies and build from this directory:
+The Workbench edits projects offline. Monitor, scan and programming sessions use
+labelled simulations. Hardware commissioning has not been accepted. See the
+[current capabilities and limits](docs/status.md) and [overall plan](plans/00-gesamtplan.md).
+
+Use `development` for integrated source. Feature branches contain work awaiting
+review; the badges track `development`.
+The build commands below run the current Workbench preview on `scholle/live-structure`.
+
+![Native Workbench with a synthetic demonstration project](docs/images/workbench.png)
+
+## Capabilities
+
+| Area | Current scope |
+| --- | --- |
+| Project archives | Bounded `.knxproj` schemas /20, /21, /22 and /23, atomic saves, opaque-data retention and AES encryption retention. Protected operations use the built-in profile or a matching local override and require the project password. |
+| Engineering | Topology, buildings, rooms, group addresses, object links, native channels, project checks, reviewed batch/Smart linking and undo/redo. |
+| Manufacturer catalogues | `.knxprod` import, local library, searchable products, cached metadata and lazy application loading. |
+| Parameters | Typed drafts, dynamic texts/visibility, bounded calculations, conditional module/Repeat scopes, review, Apply and undo. Unsupported external plug-ins remain read-only. |
+| Manufacturer catalogues | Explicit local manufacturer-directory refresh, source-specific authorization, bounded download/import, cancellation and preserved existing catalogues on identity conflicts. See [catalogue acquisition](docs/catalog-downloads.md). |
+| Offline byte previews | Explicit Number, Value-enum, IEEE-Single and Time subsets; optional absolute/root-relative buffers and bounded root property buffers with source binding, ownership checks and unresolved image requirements. |
+| Offline image planning | Combined logical memory/property initialization, admitted numeric/Single/Time root writers, source policy and current-working-seed M112/SystemB tables under explicit option assumptions; source bindings and unresolved image requirements. |
+| Migration | Reviewed parameter/object/channel mappings, link decisions, stale-preview checks and atomic undo. |
+| Reports | CSV, HTML labels, mail-merge TSV, project comparison, acceptance protocol and a deterministic handover ZIP. |
+| Native UI | Object-centred tabs, project portfolio, inspector, catalogue and independent tools; keyboard command search, high contrast, light/dark themes and eight UI languages. |
+| MCP | 55 stdio tools, protected open/save, explicit script capability, migration and a bounded Jung SP8 KSP import. |
+| Network | KNXnet/IP discovery, tunnel and routing foundations; device writes and real downloads remain disabled. |
+
+The [status document](docs/status.md) defines exact format, manufacturer, codec,
+script and commissioning boundaries. Supported partial profiles are not a complete
+application image or permission to program a device.
+
+Options → Archive protection can override the built-in archive salt. Local
+overrides are stored in `%APPDATA%\BusChord\archive-protection.json`;
+the MCP server uses the same file. Profile parameters must match the archive.
+Checks use isolated synthetic profiles and do not change personal settings.
+
+## Build and run
+
+Install a serviced [.NET 10 LTS SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
+`global.json` selects SDK 10.0.403 or a newer stable .NET 10 feature band.
 
 ```powershell
-dotnet restore
-dotnet build -c Release
+git clone --branch scholle/live-structure https://github.com/CaeruleusAqua/buschord.git
+cd buschord
+dotnet build BusChord.sln -c Release
+dotnet run --project src/Knx.App -c Release --no-build
 ```
 
-The desktop application and MCP server can be started independently:
+Windows is the primary native-test platform. Linux CI covers portable suites;
+manual desktop acceptance on Linux and macOS remains open.
+
+For agents, see the [MCP guide](mcp.md). Build first and use `--no-build` to keep
+build messages out of the stdio protocol:
 
 ```powershell
-dotnet run --project src/Knx.App -c Release
-dotnet run --project src/Knx.Mcp -c Release
+dotnet run --project src/Knx.Mcp -c Release --no-build
+dotnet run --project src/Knx.Mcp -c Release --no-build -- --list-tools
+dotnet run --project src/Knx.Mcp -c Release --no-build -- --selftest
 ```
-
-Console check projects live under `tests/`; run the checks relevant to a change with `dotnet run --project <project-directory> -c Release`. Desktop checks require a graphical session.
 
 ## Documentation
 
+- [User manual](docs/manual.md)
+- [Capabilities, validation and limits](docs/status.md)
 - [Product catalogues](catalog.md)
-- [MCP server](mcp.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security](SECURITY.md)
-- [Code of conduct](CODE_OF_CONDUCT.md)
-- [Contributor agreement](CLA.md)
+- [MCP setup and tool contract](mcp.md)
+- [Local project backups](docs/project-backup.md)
+- [Workbench data model and sessions](docs/workbench-domain.md)
+- [Contributing and test commands](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Implementation plan](plans/00-gesamtplan.md)
 
-## Limits
+Test projects generate their own fixtures. Optional catalogue inputs and private
+projects stay outside version control. The maintained test matrix is in
+[CONTRIBUTING.md](CONTRIBUTING.md) and the CI workflow.
 
-File formats, catalogues and device-specific behaviour have separate support limits. Preserve original project files and review changes before saving. An offline result does not establish device compatibility or authorize a bus write.
+## Project layout
 
-## Licence and notices
+```text
+src/          Product libraries, native app and MCP server
+tests/        Console and native regression suites
+docs/         User and product documentation
+i18n/         Localization sources
+plans/        Current implementation and acceptance work
+.github/      CI, security checks and contribution templates
+```
 
-BusChord is an independent project. *KNX* and *ETS* are trademarks of the KNX Association;
-they appear here only descriptively, to state which bus protocol and which file formats are
-supported. No KNX Association code, schema file, product database or documentation is
-redistributed with this repository. Product databases downloaded for testing stay outside
-version control and are the property of their manufacturers.
+## License
 
-Build steps, branch model, test commands and PR rules: [CONTRIBUTING.md](CONTRIBUTING.md).
-Everyone participating follows the [Code of Conduct](CODE_OF_CONDUCT.md); report
-vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
-Pull requests require accepting the [Contributor License Agreement](CLA.md)
-(a one-line comment, checked automatically).
-
-Source code: [Apache License 2.0](LICENSE), copyright 2026 BusChord contributors.
-The CLA grants the project the right to relicense future distributed versions;
-published releases stay under the licence they shipped with.
-*KNX* and *ETS* remain trademarks of the KNX Association; see the trademark note above.
-
-Protected archives use the built-in protection profile and the project password.
-A local `archive-protection.json` in the application data folder can override the
-profile; `BUSCHORD_ARCHIVE_PROTECTION` selects an alternative local file.
+BusChord is licensed under [Apache-2.0](LICENSE). Third-party icon notices are
+retained in [the asset documentation](src/Knx.App/Assets/ICONS.md).
+KNX and ETS are trademarks of the KNX Association and are used descriptively.
+BusChord is not affiliated with or endorsed by the KNX Association or any tool vendor.

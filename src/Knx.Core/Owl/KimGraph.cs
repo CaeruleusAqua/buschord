@@ -61,7 +61,7 @@ public sealed class KimGraph
     /// <summary>Instance graph: only the triples produced by <see cref="SemanticExport"/>.</summary>
     public Ontology Instance { get; }
 
-    /// <summary>Reference ontology (the shipped KIM).</summary>
+    /// <summary>Reference ontology for KIM validation.</summary>
     public Ontology Schema { get; }
 
     public DatapointTypes Dpts { get; }

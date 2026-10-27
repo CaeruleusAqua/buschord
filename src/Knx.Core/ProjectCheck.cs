@@ -12,13 +12,14 @@ public sealed record CheckFinding(CheckSeverity Severity, string Code, string Pa
 /// Structural project check over topology, group addresses and links. Every rule is a pure,
 /// deterministic function of the project model and report-only; the check never mutates or repairs.
 /// <para>
-/// Bus power and coupler checks use the project's M-*/Hardware.xml fields
+/// Bus power and coupler presence use the hardware facts of the project's own M-*/Hardware.xml
 /// (<see cref="Project.Hardware"/>: BusCurrent, IsPowerSupply, IsCoupler). A line is only judged
-/// when every device has hardware data and at least one power supply is declared. Missing
-/// supply data produces no bus-power finding. Repeater/choke counts, router/backbone topology,
-/// segment domain addresses and legacy name/number length limits are not checked.
-/// Application-program status (broken, download information incomplete) needs catalogue data
-/// and is only checked by the overload that receives it.
+/// when every device on it has hardware data and at least one power supply is declared.
+/// Power supplies can be absent from the project model; an undeclared supply
+/// stays silent. Repeater/choke counts, router/backbone topology, segment domain addresses and
+/// legacy name/number length limits are not checked. Application-program status (broken,
+/// download information incomplete) needs
+/// catalogue data and is only checked by the overload that receives it.
 /// </para>
 /// </summary>
 public static class ProjectCheck
@@ -249,7 +250,7 @@ public static class ProjectCheck
                 byAddress[device.Address.Raw] = list = [];
             list.Add(device);
 
-            if (device.Address.Device == 0)
+            if (device.Address.Device == 0 && HardwareOf(project, device)?.IsCoupler != true)
                 findings.Add(new(CheckSeverity.Error, "P020", device.Address.ToString(),
                     Strings.Get("ChkP020", device.Name, device.Address)));
             else if (area.Address <= 15 && (line is null || line.Address <= 15) && Misplaced(installation, area, line, device))
@@ -276,7 +277,7 @@ public static class ProjectCheck
     /// <summary>
     /// A device address belongs to the line that hosts the device. A claimed area that the
     /// installation does not model at all is not judged: partial installations may reference
-    /// topology they do not contain.
+    /// topology they do not contain (InstallationType.Partial).
     /// </summary>
     private static bool Misplaced(Installation installation, Area area, Line? line, DeviceInstance device)
         => (device.Address.Area == area.Address || installation.Areas.Any(a => a.Address == device.Address.Area))

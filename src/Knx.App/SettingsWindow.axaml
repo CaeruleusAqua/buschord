@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="using:Knx.App.Localization"
+        xmlns:app="using:Knx.App"
         x:Class="Knx.App.SettingsWindow"
         Title="{loc:Tr OptionsTitle}" Width="720" Height="620" MinWidth="560" MinHeight="480"
         Background="{DynamicResource WbBackground}" Foreground="{DynamicResource WbText}"
@@ -37,14 +38,14 @@
             <TextBlock Text="{loc:Tr OptionsAppearance}" Classes="settings-heading" />
             <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr OptionsTheme}" Classes="settings-label" />
-              <ComboBox Grid.Row="0" Grid.Column="1" x:Name="ThemeBox" Classes="wb-field" Width="240" HorizontalAlignment="Left">
+              <ComboBox Grid.Row="0" Grid.Column="1" x:Name="ThemeBox" Classes="wb-field" Width="240" HorizontalAlignment="Left" AutomationProperties.Name="{loc:Tr OptionsTheme}">
                 <ComboBoxItem Content="{loc:Tr ThemeSystem}" />
                 <ComboBoxItem Content="{loc:Tr ThemeLight}" />
                 <ComboBoxItem Content="{loc:Tr ThemeDark}" />
               </ComboBox>
 
               <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr OptionsLanguage}" Classes="settings-label" />
-              <ComboBox Grid.Row="1" Grid.Column="1" x:Name="LanguageBox" Classes="wb-field" Width="240" HorizontalAlignment="Left" />
+              <ComboBox Grid.Row="1" Grid.Column="1" x:Name="LanguageBox" Classes="wb-field" Width="240" HorizontalAlignment="Left" AutomationProperties.Name="{loc:Tr OptionsLanguage}" />
 
               <CheckBox Grid.Row="2" Grid.Column="1" x:Name="ConfirmDeleteBox"
                         Content="{loc:Tr OptionsConfirmDelete}" />
@@ -70,12 +71,23 @@
             <TextBlock Text="{loc:Tr OptionsBus}" Classes="settings-heading" />
             <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr OptionsInterface}" Classes="settings-label" />
-              <TextBox Grid.Row="0" Grid.Column="1" x:Name="BusInterfaceBox" Classes="wb-field"
+              <TextBox Grid.Row="0" Grid.Column="1" x:Name="BusInterfaceBox" Classes="wb-field" AutomationProperties.Name="{loc:Tr OptionsInterface}"
                        Watermark="{loc:Tr SettingsInterfaceExample}" />
 
               <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr OptionsOwnAddress}" Classes="settings-label" />
-              <TextBox Grid.Row="1" Grid.Column="1" x:Name="TunnelAddressBox" Classes="wb-field" Watermark="1.1.250" />
+              <TextBox Grid.Row="1" Grid.Column="1" x:Name="TunnelAddressBox" Classes="wb-field" Watermark="1.1.250" AutomationProperties.Name="{loc:Tr OptionsOwnAddress}" />
             </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="settings-card">
+          <StackPanel Spacing="10">
+            <TextBlock Text="{loc:Tr OptionsArchiveProtection}" Classes="settings-heading" Margin="0" />
+            <TextBlock Text="{loc:Tr OptionsArchiveProtectionHint}" Classes="wb-muted" TextWrapping="Wrap" />
+            <TextBlock Text="{loc:Tr OptionsArchiveProtectionSalt}" Classes="settings-label" />
+            <app:ArchiveSaltTextBox x:Name="ArchiveSaltBox" Classes="wb-field" PasswordChar="●" MaxLength="4096"
+                                   AutomationProperties.Name="{loc:Tr OptionsArchiveProtectionSalt}"
+                                   AutomationProperties.HelpText="{loc:Tr OptionsArchiveProtectionHint}" />
           </StackPanel>
         </Border>
       </StackPanel>
@@ -83,9 +95,13 @@
 
     <Border Grid.Row="2" Background="{DynamicResource WbPaper}"
             BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0" Padding="24,12">
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-        <Button Content="{loc:Tr BtnCancel}" Click="OnCancel" Classes="wb-button wb-quiet" IsCancel="True" />
-        <Button Content="{loc:Tr BtnSaveSettings}" Classes="wb-button wb-primary" Click="OnSave" />
+      <StackPanel Spacing="8">
+        <TextBlock x:Name="SettingsErrorText" Classes="wb-error" TextWrapping="Wrap" IsVisible="False"
+                   AutomationProperties.LiveSetting="Polite" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+          <Button Content="{loc:Tr BtnCancel}" Click="OnCancel" Classes="wb-button wb-quiet" IsCancel="True" />
+          <Button Content="{loc:Tr BtnSaveSettings}" Classes="wb-button wb-primary" Click="OnSave" />
+        </StackPanel>
       </StackPanel>
     </Border>
   </Grid>

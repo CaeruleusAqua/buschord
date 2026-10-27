@@ -2,7 +2,7 @@ namespace Knx.Xml;
 
 /// <summary>
 /// knxproj element names (namespace http://knx.org/xml/project/23).
-/// Shared names used by native project XML parts.
+/// Shared element names for project archive parsing and serialization.
 /// </summary>
 internal static class XmlNames
 {

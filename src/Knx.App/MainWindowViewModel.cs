@@ -11,7 +11,7 @@ namespace Knx.App.Services;
 /// <summary>Project, editing and bus session state behind the main window.</summary>
 public sealed partial class MainWindowViewModel : ObservableObject
 {
-    private KnxBus? _bus;
+    private readonly KnxBus _bus = new();
     private UndoStack _undo = new();
     private bool _restoringHistory;
     // History restores keep this lifetime; opening/replacing a project starts a new one, even for the same ID.
@@ -30,6 +30,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _catalog.Changed += OnCatalogChanged;
         Settings = AppSettings.Load();
         Recorder = new TelegramRecorder();
+        _bus.TelegramReceived += OnTelegram;
         _status = Strings.Get("StatusReady");
         Stats = new DashboardStats { ProjectName = "" };
         RefreshRecents();
@@ -132,6 +133,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     partial void OnProjectChanged(Project? value)
     {
+        ClearArchiveMaskProfiles();
         if (!_restoringHistory) ProjectSessionIdentity = new();
         StartDismissed = false;
         OnPropertyChanged(nameof(HasProject));
@@ -246,7 +248,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     // ---------- project lifecycle ----------
 
     public void LoadProject(string path, string? password = null)
-        => AdoptProject(Knxproj.Load(path, password), path);
+        => AdoptProject(Knxproj.Load(path, password, Knx.Scripting.IsolatedScriptRuntime.Shared), path);
 
     /// <summary>Publishes an already validated project and resets undo/selection together.</summary>
     public void AdoptProject(Project project, string path)
@@ -300,10 +302,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    public void SaveProject()
+    public void SaveProject(string? password = null)
     {
         if (Project is null || ProjectPath.Length == 0) return;
-        Knxproj.Save(Project, ProjectPath);
+        Knxproj.Save(Project, ProjectPath, password, Knx.Scripting.IsolatedScriptRuntime.Shared);
         // Keep the history, but the current state is now what is on disk.
         _undo.Push(Project);
         _undo.MarkSaved();
@@ -311,10 +313,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Status = Strings.Get("StatusProjectSaved");
     }
 
-    public void SaveProjectAs(string path)
+    public void SaveProjectAs(string path, string? password = null)
     {
         if (Project is null) return;
-        Knxproj.Save(Project, path);
+        Knxproj.Save(Project, path, password, Knx.Scripting.IsolatedScriptRuntime.Shared);
         RememberProject(path);
         ProjectPath = path;
         RefreshRecents();
@@ -480,6 +482,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         var targetLine = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines)
             .FirstOrDefault(l => l.Id == lineId);
         if (targetLine is null) return WorkbenchStrings.Get("TargetLineMissing");
+        var targetArea = ProjectQuery.FindAreaOf(project, targetLine);
+        if (targetArea is null || address.Area != targetArea.Address || address.Line != targetLine.Address)
+            return WorkbenchStrings.Get("InvalidIndividualAddress");
         var sourceLine = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines)
             .FirstOrDefault(l => l.Devices.Contains(device) || l.Segments.Any(s => s.Devices.Contains(device)));
         var sourceSegmentId = sourceLine?.Segments.FirstOrDefault(s => s.Devices.Contains(device))?.Id;
@@ -545,12 +550,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public void RenameGroupAddress(GroupAddressRow row, string name, string? datapointType)
     {
         if (Project is not { } project) return;
+        string? warning = null;
         Edit(Strings.Get("StatusGroupAddressChanged"), p =>
         {
             if (ProjectQuery.FindGroupAddress(p, row.Address) is not { } entry) return;
-            entry.Name = name;
-            entry.DatapointType = datapointType;
+            var result = ProjectOperations.RenameGroupAddress(p, entry, name, datapointType);
+            warning = result.Message;
         });
+        if (warning is not null) Status = warning;
     }
 
     // ---------- devices ----------
@@ -616,22 +623,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
         return Findings;
     }
 
-    public IReadOnlyList<LinkSuggestion> SuggestLinks()
-    {
-        if (Project is null) { Status = Strings.Get("UxNeedsProject"); return []; }
-        var suggestions = SmartLinking.Suggest(Project, DatapointTypeOf, perObject: 1);
-        Status = Strings.Get("StatusSmartLinkSuggestions", suggestions.Count);
-        return suggestions;
-    }
-
-    public int ApplyLinks(IEnumerable<LinkSuggestion> suggestions)
-    {
-        var list = suggestions.ToList();
-        var count = list.Count;
-        Edit(Strings.Get("StatusLinksAdded", count), p => SmartLinking.Apply(list));
-        return count;
-    }
-
     public bool ChangeGroupLink(DeviceInstance device, string objectId, string groupAddressId, bool remove)
     {
         if (Project is not { } project) throw new InvalidOperationException("No project loaded");
@@ -647,20 +638,22 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public IReadOnlyList<ProductReplaceResult> ReplaceProduct(string oldRef, string newRef, string? newProgram, bool dryRun)
     {
-        if (Project is null) return [];
-        var results = ProductReplacer.Replace(Project, oldRef, newRef, newProgram, dryRun);
-        if (!dryRun && results.Count > 0)
+        var input = new ProductMigrationInput(oldRef, newRef, newProgram);
+        if (dryRun)
         {
-            _undo.Push(Project);
-            NotifyEditState();
-            Refresh();
+            _legacyMigration = PreviewProductMigration(input); _legacyMigrationInput = input;
+            return _legacyMigration.Select(p => new ProductReplaceResult(
+                ProjectQuery.DeviceList(Project!).Single(d => d.Id == p.DeviceId), p.OldProductRefId, p.NewProductRefId, p.Objects.Sum(o => o.KeptLinks))).ToArray();
         }
-        return results;
+        if (_legacyMigration is null || _legacyMigrationInput != input)
+            throw new InvalidOperationException("Review the product migration before applying it.");
+        return ApplyProductMigration(_legacyMigration);
     }
 
     /// <summary>DPT of a com object, resolved from the device's KSXML when the project archive is available.</summary>
     private string? DatapointTypeOf(DeviceInstance device, ComObjectInstanceRef comObject)
-        => _comObjectDpt.GetValueOrDefault((device.ProductRefId, comObject.ComObjectId))
+        => Project?.Workbench.Objects.GetValueOrDefault(new Knx.Workbench.ObjectKey(device.Id, comObject.Id).ToString())?.Dpt
+            ?? _comObjectDpt.GetValueOrDefault((device.ProductRefId, comObject.ComObjectId))
             ?? _comObjectDpt.GetValueOrDefault((device.ProductRefId, comObject.Id));
 
     private readonly Dictionary<(string Product, string Object), string> _comObjectDpt = [];
@@ -668,22 +661,56 @@ public sealed partial class MainWindowViewModel : ObservableObject
     // ---------- parameters ----------
 
     public string ParameterWarning { get; private set; } = "";
+    internal bool ParameterEvaluationFailed { get; private set; }
+    internal Action<IReadOnlyDictionary<string, string?>, IEnumerable<ParameterInstance>, string?>? LoadedParameterEvaluation { get; private set; }
+    internal Func<IReadOnlyDictionary<string, string?>, string?, ApplicationSnapshot>? LoadedStructureEvaluation { get; private set; }
+    internal ApplicationSnapshot? LoadedStructureSnapshot { get; private set; }
+    internal string? LoadedStructureDefinition { get; private set; }
 
     public (List<ParameterInstance> Instances, List<ParameterType> Types) LoadParametersFor(DeviceRow device)
     {
         ParameterWarning = "";
+        ParameterEvaluationFailed = false;
+        LoadedParameterEvaluation = null;
+        LoadedStructureEvaluation = null;
+        LoadedStructureSnapshot = null;
+        LoadedStructureDefinition = null;
         var refId = device.Device.Hardware2ProgramRefId ?? device.Device.ProductRefId;
         if (string.IsNullOrWhiteSpace(refId)) return ([], []);
         try
         {
-            var doc = ProjectPath.Length == 0 ? null : Knxproj.LoadApplicationProgram(ProjectPath, refId);
+            var doc = Project is null ? null : Knxproj.LoadApplicationProgram(Project, refId);
             List<ParameterType> types;
             List<ParameterInstance> instances;
             List<ComObject> comObjects;
             if (doc is not null)
             {
-                (types, _, instances, comObjects, _) = Ksxml.Parse(doc);
-                if (doc.Root is { } root) ParameterWarning = string.Join(", ", Ksxml.UnsupportedFeatures(root));
+                var profile = ArchiveMaskProfile(Project!, doc);
+                LoadedStructureDefinition = ParameterDefinitionFingerprint(Project!, doc);
+                var savedValues = device.Device.ParameterValues.ToDictionary(p => p.Key, p => (string?)p.Value);
+                DynamicEvaluation evaluation;
+                if (doc.Descendants().Any(e => e.Name.LocalName is "Repeat" or "Module" or "ComObjectRefRef"))
+                {
+                    var snapshot = ApplicationSnapshot.Evaluate(doc, savedValues, Knx.Scripting.IsolatedScriptRuntime.Shared, profile: profile);
+                    (types, instances, comObjects, evaluation) = (snapshot.Types, snapshot.Instances, snapshot.ComObjects, snapshot.Evaluation);
+                    if (snapshot.IsValid)
+                    {
+                        LoadedStructureSnapshot = snapshot;
+                        LoadedStructureEvaluation = (values, edited) => ApplicationSnapshot.Evaluate(doc, values, Knx.Scripting.IsolatedScriptRuntime.Shared, edited, profile);
+                    }
+                }
+                else (types, _, instances, comObjects, _) = Ksxml.Parse(doc, out evaluation, savedValues, Knx.Scripting.IsolatedScriptRuntime.Shared, profile: profile);
+                LoadedParameterEvaluation = (values, rows, edited) =>
+                {
+                    var state = DynamicParameters.Evaluate(doc.Root!, values, Knx.Scripting.IsolatedScriptRuntime.Shared, edited);
+                    DynamicParameters.Apply(state, rows);
+                    ParameterWarning = string.Join(", ", state.Unsupported);
+                    if (state.InvalidAssignments.Count > 0) ParameterWarning += " Invalid dynamic assignment.";
+                    ParameterEvaluationFailed = state.StructureFailed || !state.ObjectActivityComplete || !state.Converged || state.ScriptFailures > 0 || state.DepthLimitReached || state.InvalidAssignments.Count > 0;
+                };
+                ParameterWarning = string.Join(", ", evaluation.Unsupported);
+                if (evaluation.InvalidAssignments.Count > 0) ParameterWarning += " Invalid dynamic assignment.";
+                ParameterEvaluationFailed = evaluation.StructureFailed || !evaluation.ObjectActivityComplete || !evaluation.Converged || evaluation.ScriptFailures > 0 || evaluation.DepthLimitReached || evaluation.InvalidAssignments.Count > 0;
             }
             else
             {
@@ -698,13 +725,23 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 if (comObject.DatapointType is { Length: > 0 })
                     _comObjectDpt[(device.Device.ProductRefId, comObject.Id)] = comObject.DatapointType;
             foreach (var instance in instances)
-                if (device.Device.ParameterValues.TryGetValue(instance.Id, out var saved)) instance.Value = saved;
+                if ((doc is null || instance.ParameterId is null)
+                    && device.Device.ParameterValues.TryGetValue(instance.Id, out var saved)) instance.Value = saved;
             if (instances.Any(i => string.IsNullOrWhiteSpace(i.Id)) || instances.GroupBy(i => i.Id).Any(g => g.Count() > 1))
                 throw new InvalidDataException("Missing or ambiguous parameter reference ids");
+            if (Project is { } currentProject)
+            {
+                var issues = ApplicationTexts.RefreshObjects(currentProject, device.Device, instances.ToDictionary(i => i.Id, i => i.Value));
+                if (issues.Count > 0) ParameterWarning = string.Join(", ", new[] { ParameterWarning }.Where(w => w.Length > 0).Concat(issues));
+            }
             return (instances.Where(i => i.ParameterTypeId is not null).ToList(), types);
         }
         catch (Exception ex)
         {
+            LoadedParameterEvaluation = null;
+            LoadedStructureEvaluation = null;
+            LoadedStructureSnapshot = null;
+            ParameterEvaluationFailed = true;
             Status = Strings.Get("StatusParameterUnreadable", ex.Message);
             return ([], []);
         }
@@ -713,7 +750,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// Detached copy of one catalogue application program for the editor: types and instances are
     /// copied with the copy constructors and every instance is remapped onto its copied type, so
-    /// the editor can mutate values without touching the shared catalogue model.
+    /// the editor can mutate values without touching the shared catalogue model or serializing
+    /// the entire application program for each editor copy.
     /// </summary>
     private static (List<ParameterType> Types, List<ParameterInstance> Instances) CopyProgramModel(
         CatalogApplicationProgram program)
@@ -757,37 +795,27 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Block reason declared by the application program embedded in the project archive, cached
-    /// per project path and ref id plus archive length/last write, so a device selection does not
-    /// re-read the archive and a replaced project file is re-read.
+    /// Block reason declared by the application's current immutable archive snapshot, cached
+    /// only for the same project and application-data revision.
     /// </summary>
     private CatalogBlockReason ArchiveBlockReason(DeviceInstance device)
     {
         var refId = device.Hardware2ProgramRefId ?? device.ProductRefId;
-        if (ProjectPath.Length == 0 || string.IsNullOrWhiteSpace(refId)) return CatalogBlockReason.None;
-        long length;
-        long ticks;
-        try
+        if (Project is not { } project || string.IsNullOrWhiteSpace(refId)) return CatalogBlockReason.None;
+        var revision = project.ApplicationDataRevision;
+        if (!ReferenceEquals(_archiveBlockProject, project) || _archiveBlockRevision != revision)
         {
-            var info = new FileInfo(ProjectPath);
-            if (!info.Exists) return CatalogBlockReason.None;
-            length = info.Length;
-            ticks = info.LastWriteTimeUtc.Ticks;
+            _archiveBlocks.Clear(); _archiveBlockProject = project; _archiveBlockRevision = revision;
         }
-        catch (Exception)
-        {
-            return CatalogBlockReason.None;
-        }
-        var key = (ProjectPath, refId);
-        if (_archiveBlocks.TryGetValue(key, out var cached) && cached.Length == length && cached.Ticks == ticks)
-            return cached.Reason;
+        if (_archiveBlocks.TryGetValue(refId, out var cached)) return cached;
         var reason = ReadArchiveBlockReason(refId);
-        _archiveBlocks[key] = (length, ticks, reason);
+        if (ReferenceEquals(Project, project) && project.ApplicationDataRevision == revision) _archiveBlocks[refId] = reason;
         return reason;
     }
 
-    private readonly Dictionary<(string Path, string RefId), (long Length, long Ticks, CatalogBlockReason Reason)>
-        _archiveBlocks = [];
+    private Project? _archiveBlockProject;
+    private long _archiveBlockRevision = -1;
+    private readonly Dictionary<string, CatalogBlockReason> _archiveBlocks = [];
 
     /// <summary>
     /// Reads Broken/DownloadInfoIncomplete and plug-in extensions from the archive's
@@ -799,9 +827,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         try
         {
-            var document = Knxproj.LoadApplicationProgram(ProjectPath, refId);
+            var document = Project is null ? null : Knxproj.LoadApplicationProgram(Project, refId);
             var program = document?.Descendants().FirstOrDefault(e => e.Name.LocalName == "ApplicationProgram");
             if (program is null) return CatalogBlockReason.None;
+            if (KnownDcaRequirementsRegistry.RequiresDca((string?)program.Attribute("Id"))) return CatalogBlockReason.DcaUnsupported;
             if (IsTrue(program.Attribute("Broken")?.Value)) return CatalogBlockReason.Broken;
             if (IsTrue(program.Attribute("DownloadInfoIncomplete")?.Value)) return CatalogBlockReason.DownloadInfoIncomplete;
             foreach (var extension in program.Descendants().Where(e => e.Name.LocalName == "Extension"))
@@ -859,30 +888,55 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     public bool ApplyParameterValues(DeviceInstance device, IReadOnlyList<ParameterInstance> instances,
-        IReadOnlyList<ParameterType> types, Dictionary<string, string?> baseline)
+        IReadOnlyList<ParameterType> types, Dictionary<string, string?> baseline,
+        ApplicationSnapshot? structure = null, ApplicationSnapshot? previousStructure = null,
+        IReadOnlyDictionary<string, string>? expectedSavedValues = null, string? expectedDefinition = null)
     {
         if (Project is not { } project || !ProjectQuery.DeviceList(project).Any(d => ReferenceEquals(d, device)))
             throw new InvalidOperationException(Strings.Get("LinkProjectChanged"));
+        if (expectedSavedValues is not null && (expectedSavedValues.Count != device.ParameterValues.Count
+            || expectedSavedValues.Any(p => !device.ParameterValues.TryGetValue(p.Key, out var current) || current != p.Value)))
+            throw new InvalidOperationException(Strings.Get("LinkProjectChanged"));
+        if (expectedDefinition is not null)
+        {
+            var current = Knxproj.LoadApplicationProgram(project, device.Hardware2ProgramRefId ?? device.ProductRefId);
+            if (current is null || ParameterDefinitionFingerprint(project, current) != expectedDefinition)
+                throw new InvalidOperationException(Strings.Get("LinkProjectChanged"));
+        }
         // SEC-4 write boundary: a host that skips ParameterReadOnlyReason cannot persist DCA,
         // broken or download-incomplete values either.
-        var archiveBlock = ArchiveBlockReason(device);
-        if (archiveBlock != CatalogBlockReason.None)
-            throw new InvalidOperationException(CatalogUiText.Reason(archiveBlock));
+        var readOnlyReason = ParameterReadOnlyReason(device);
+        if (readOnlyReason is not null)
+            throw new InvalidOperationException(readOnlyReason);
         if (instances.Select(i => i.Id).Distinct().Count() != instances.Count)
             throw new InvalidDataException("Ambiguous parameter reference ids");
         var changes = instances.Where(i => !baseline.TryGetValue(i.Id, out var before)
             || before != i.Value).ToList();
+        if (changes.Count > 0)
+        {
+            var application = Knxproj.LoadApplicationProgram(project, device.Hardware2ProgramRefId ?? device.ProductRefId);
+            if (application?.Descendants().Any(e => e.Name.LocalName is "Module" or "Repeat" or "ComObjectRefRef") == true
+                && (structure is null || previousStructure is null || expectedDefinition is null || expectedSavedValues is null))
+                throw new InvalidOperationException("Parameter structure changes require a reviewed complete application snapshot.");
+        }
         var map = types.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First());
         foreach (var instance in changes)
         {
             instance.ParameterType ??= instance.ParameterTypeId is { } id ? map.GetValueOrDefault(id) : null;
-            if (!ParameterValidation.TryValidate(instance, instance.Value, out var error))
+            var valid = instance.IsDerivedValue
+                ? ParameterValidation.TryValidate(instance.ParameterType, instance.Value, out var error)
+                : ParameterValidation.TryValidate(instance, instance.Value, out error);
+            if (!valid)
                 throw new ArgumentException($"{instance.Name}: {error}");
         }
+        var commitStructure = structure is not null && previousStructure is not null
+            ? structure.PrepareObjectUpdate(project, device, previousStructure) : null;
         var changed = changes.Any(i => !device.ParameterValues.TryGetValue(i.Id, out var saved) || saved != i.Value);
         if (changed)
         {
             foreach (var instance in changes) device.ParameterValues[instance.Id] = instance.Value!;
+            commitStructure?.Invoke();
+            ApplicationTexts.RefreshObjects(project, device, instances.ToDictionary(i => i.Id, i => i.Value));
             _undo.Push(project);
             NotifyEditState();
             Refresh();
@@ -902,7 +956,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
             Status = Strings.Get("UxNeedsInterface");
             return;
         }
-        _bus ??= new KnxBus();
         DiscoveredDevices.Clear();
         foreach (var device in await _bus.DiscoverAsync(host: Settings.BusInterface)) DiscoveredDevices.Add(device);
         Status = DiscoveredDevices.Count == 0
@@ -919,8 +972,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
             return;
         }
         if (SelectedDeviceOnBus is null) { Status = Strings.Get("StatusNoDeviceSelected"); return; }
-        _bus ??= new KnxBus();
-        _bus.TelegramReceived += OnTelegram;
         var address = IndividualAddress.TryParse(Settings.TunnelAddress, out var ia)
             ? ia
             : new IndividualAddress(1, 1, 250);
@@ -934,7 +985,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         if (_bus is not null)
         {
-            _bus.TelegramReceived -= OnTelegram;
             await _bus.DisposeAsync();
         }
         StateChanged();
@@ -1250,6 +1300,7 @@ public sealed record DeviceRow(DeviceInstance Device)
     public string Name => Device.Name ?? Device.Address.ToString();
     public string AddressText => Device.Address.ToString();
     public IndividualAddress Address => Device.Address;
+    public override string ToString() => $"{AddressText} · {Name}";
 }
 
 public sealed record NameValueRow(string Name, string? Value)

@@ -120,6 +120,21 @@ Adding a link with unknown native capabilities is refused with an explanation.
 
 ## Not implemented
 
-
+- No real bus write or download is wired to `ProgrammingSession`. Every job remains
+  explicit `Demo`; a `Real` programming origin exists only as a reserved model value.
+- Device read-back, image building, partial/differential download and secure
+  commissioning (certificates, tool keys, FDSK, sequence counters) are unsupported.
+- The reset hook is caller-driven (`ClassifyChange` + `ResetForChange`), not a global
+  interception of every project mutation command.
+- Coupler/segment topology is partially modeled: segment `Number` and `MediumTypeRefId`
+  are preserved, `DomainAddress` is kept as opaque text, and hardware facts (`BusCurrent`,
+  `IsPowerSupply`, `IsCoupler`, `IsPowerLineRepeater`) come from the project's own
+  `M-*/Hardware.xml`. A coupler is detected through its hardware flag.
+  `Area.IsBackbone`/`MainLine` and `Segment.CouplerDevice` are not modeled.
+  Repeater/choke limits are not checked.
+- The numeric RF fast-ack slot limit is not validated. `Slot` is stored and
+  rejected only when negative; no limit is invented.
+- Address parking is caller-supplied (`parked` sets). This layer provides no parking
+  command or persisted park list.
 
 Check: `dotnet run --project tests/Knx.Workbench.Tests`.

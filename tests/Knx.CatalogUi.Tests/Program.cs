@@ -3,6 +3,7 @@ using Knx;
 using Knx.App.Services;
 using Knx.Catalog;
 
+InvariantChecks.Run();
 var checks = 0;
 void Check(string name, bool passed)
 {

@@ -318,7 +318,7 @@ public static class CatalogBrowser
 
         var requestedName = string.IsNullOrWhiteSpace(name) ? product.Name : name.Trim();
         var finalName = UniqueName(project, choice, requestedName);
-        var device = CatalogInstaller.CreateDevice(product, program, address, finalName);
+        var device = CatalogInstaller.CreateDevice(project, product, program, address, finalName);
         // Segment placement and room assignment belong to the same undo step as the device.
         vm.Edit($"{product.Name} → {device.Name}", p =>
         {

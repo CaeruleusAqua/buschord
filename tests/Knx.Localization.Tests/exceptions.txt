@@ -12,6 +12,8 @@
 # reported, not failed. See README.md. Run with I18N_GATE_VERBOSE=1 to print every finding.
 
 # --- allowed: smart-linking stop word list (data, not UI text) ---
+# The official source URL is a stable identity, independent of UI language.
+allow src/Knx.Core/Catalog/Downloads/CatalogDownloadSources.cs|https://www.mdt.de/downloads/produktdatenbanken-enthaelt-die-datenbanken-und-die-dcs-apps.html
 allow src/Knx.Core/SmartLinking.cs|der
 allow src/Knx.Core/SmartLinking.cs|die
 allow src/Knx.Core/SmartLinking.cs|das

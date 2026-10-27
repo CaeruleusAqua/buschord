@@ -112,7 +112,8 @@ internal static partial class Program
         var dialog = await Prompt(title);
         Check("prompt " + title, dialog.Title == title);
         if (title == DiscardTitle)
-            Check("draft prompt has only Cancel/Discard", dialog.GetVisualDescendants().OfType<Button>()
+            Check("draft decision actions are only Cancel/Discard", dialog.GetVisualDescendants().OfType<Button>()
+                .Where(b => b.Name != "DialogChromeClose")
                 .Select(b => b.Content).ToHashSet().SetEquals(new object[] { CancelLabel, DiscardLabel }));
         Click(dialog, text);
         await WaitFor(() => !Lifetime.Windows.Contains(dialog), "dialog closes: " + title);
@@ -275,6 +276,76 @@ internal static partial class Program
                 Vm.ProjectPath = pathBeforeSaveAs;
             }
             finally { Environment.SetEnvironmentVariable("BUSCHORD_SETTINGS", SettingsPath); }
+            InstallPicker(Shell);
+            await Reset();
+            var priorProject = Vm.Project!;
+            var priorUndo = Field(Vm, "_undo");
+            var priorSessions = (WorkbenchSessions)Field(Shell, "_sessions");
+            priorSessions.Monitor.Start();
+            priorSessions.Monitor.TickDemo(new(DateTimeOffset.Now, "1.1.1", "1/1/1",
+                "GroupValueWrite", "1.001", "1", SessionOrigin.Demo));
+            var recorded = priorSessions.Monitor.RecordedCount;
+            var registry = new Knx.Portfolio.PortfolioRegistry(Path.Combine(Root, "open-registry.json"));
+            var entry = registry.Add(ProjectPath, "Synthetic portfolio target");
+            typeof(WorkbenchWindow).GetField("_portfolio", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Shell, registry);
+            void ReplacementPreserved(string name) => Check(name,
+                ReferenceEquals(Vm.Project, priorProject) && ReferenceEquals(Field(Vm, "_undo"), priorUndo)
+                && ReferenceEquals(Field(Shell, "_sessions"), priorSessions) && priorSessions.Monitor.IsRunning
+                && priorSessions.Monitor.RecordedCount >= recorded && Pane.HasUnappliedChanges);
+            Pane.Load(null); // Consent also covers drafts hidden by navigation.
+            Environment.SetEnvironmentVariable("BUSCHORD_SETTINGS", Root);
+            try
+            {
+                OpenPath = ProjectPath; // Valid archive: failure is after parsing, in settings persistence.
+                ClickMenu(WorkbenchStrings.Get("MenuOpen"));
+                await Answer(DiscardTitle, DiscardLabel);
+                await Answer(WorkbenchStrings.Get("ProjectLoadFailed"), Strings.Get("BtnClose"));
+                ReplacementPreserved("C2 failed native Open keeps old project, undo, monitor and hidden drafts");
+                var portfolioOpen = (Task<bool>)typeof(WorkbenchWindow)
+                    .GetMethod("OpenPortfolioEntryAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Shell, [entry.Id])!;
+                await Answer(DiscardTitle, DiscardLabel);
+                await Answer(WorkbenchStrings.Get("ProjectLoadFailed"), Strings.Get("BtnClose"));
+                Check("C2 portfolio reports failed adoption", !await portfolioOpen);
+                ReplacementPreserved("C2 failed native portfolio Open preserves old work");
+                SavePath = Path.Combine(Root, "native-new.knxproj");
+                ClickMenu(WorkbenchStrings.Get("MenuNew"));
+                await Answer(DiscardTitle, DiscardLabel);
+                await WaitFor(() => Lifetime.Windows.OfType<NewProjectWindow>().Any(), "new-project wizard");
+                Click(Lifetime.Windows.OfType<NewProjectWindow>().Single(), Strings.Get("BtnCreate"));
+                await Answer(WorkbenchStrings.Get("ProjectCreateFailed"), Strings.Get("BtnClose"));
+                ReplacementPreserved("C2 failed native New preserves old work");
+                Pane.Load(Vm.Devices[0]);
+                Check("C2 failed native Open restores exact draft", Row().Value == "42");
+            }
+            finally { Environment.SetEnvironmentVariable("BUSCHORD_SETTINGS", SettingsPath); }
+            Pane.Load(null);
+            ClickMenu(WorkbenchStrings.Get("MenuOpen"));
+            await Answer(DiscardTitle, DiscardLabel);
+            await WaitFor(() => !ReferenceEquals(Vm.Project, priorProject), "successful replacement");
+            Check("C2 successful replacement clears old hidden drafts and monitor session", !Pane.HasUnappliedChanges
+                && !ReferenceEquals(Field(Shell, "_sessions"), priorSessions) && !priorSessions.Monitor.IsRunning);
+            await Reset();
+            priorProject = Vm.Project!;
+            priorUndo = Field(Vm, "_undo");
+            priorSessions = (WorkbenchSessions)Field(Shell, "_sessions");
+            priorSessions.Monitor.Start();
+            recorded = priorSessions.Monitor.RecordedCount;
+            Pane.Load(null);
+            OpenPath = Path.Combine(Root, "invalid-demo.json");
+            File.WriteAllText(OpenPath, "not JSON");
+            ClickMenu(WorkbenchStrings.Get("ImportDemoJson"));
+            await Answer(DiscardTitle, DiscardLabel);
+            await Answer(WorkbenchStrings.Get("DemoImportFailed"), Strings.Get("BtnClose"));
+            ReplacementPreserved("C2 failed native import preserves old work");
+            ClickMenu(WorkbenchStrings.Get("ResetDemo"));
+            await Answer(WorkbenchStrings.Get("AskDemoResetTitle"), WorkbenchStrings.Get("Reset"));
+            await Answer(DiscardTitle, CancelLabel);
+            ReplacementPreserved("C2 cancelled reset draft consent preserves old work");
+            ClickMenu(WorkbenchStrings.Get("ResetDemo"));
+            await Answer(WorkbenchStrings.Get("AskDemoResetTitle"), WorkbenchStrings.Get("Reset"));
+            await Answer(DiscardTitle, DiscardLabel);
+            Check("C2 successful reset clears hidden native drafts and sessions", !Pane.HasUnappliedChanges
+                && !ReferenceEquals(Vm.Project, priorProject) && !ReferenceEquals(Field(Shell, "_sessions"), priorSessions));
             if (args.Contains("--transaction")) { Console.WriteLine("TRANSACTION OK"); return; }
 
             InstallPicker(Shell);

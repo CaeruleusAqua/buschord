@@ -15,14 +15,24 @@ public sealed class DeviceInstance
     public List<ChannelInstance> Channels { get; } = [];
     /// <summary>Communication objects with their group address links (knxproj: ComObjectInstanceRefs).</summary>
     public List<ComObjectInstanceRef> ComObjectRefs { get; } = [];
-    /// <summary>Per-device overrides persisted in the BusChord XML extension; native ETS parameter XML remains opaque.</summary>
+    /// <summary>Native per-device values with local overrides persisted in the BusChord XML extension.</summary>
     public Dictionary<string, string> ParameterValues { get; } = [];
+    /// <summary>Named native device payloads. Callers must copy buffers when staging edits.</summary>
+    public Dictionary<string, byte[]> BinaryData { get; } = new(StringComparer.Ordinal);
+    /// <summary>True when native binary payload identities cannot be modeled without guessing.</summary>
+    public bool HasOpaqueBinaryData { get; internal set; }
+    internal Dictionary<string, DeviceBinaryDataInfo> BinaryDataInfo { get; } = new(StringComparer.Ordinal);
+    internal bool BinaryDataCopyUnsafe { get; set; }
 }
+
+internal sealed record DeviceBinaryDataInfo(string? Id, string? RefId, bool DoNotCopy, bool HasData);
 
 /// <summary>Channel of a device (knxproj: ChannelInstance).</summary>
 public sealed class ChannelInstance
 {
     public required string Id { get; init; }
+    /// <summary>Native relative application Channel identity, distinct from the project instance Id.</summary>
+    public string? RefId { get; set; }
     public required string Name { get; init; }
     public List<ChannelInstance> Channels { get; } = [];
 }
@@ -115,7 +125,19 @@ public enum InstallationType { Unknown, Regular, Partial }
 public sealed class Project
 {
     public Workbench.WorkbenchMetadata Workbench { get; set; } = new();
-    internal ArchiveState? ArchiveState { get; set; }
+    private ArchiveState? _archiveState;
+    /// <summary>Changes when the immutable manufacturer/archive snapshot is replaced; suitable for host caches.</summary>
+    public long ApplicationDataRevision { get; private set; }
+    internal ArchiveState? ArchiveState
+    {
+        get => _archiveState;
+        set
+        {
+            if (ReferenceEquals(_archiveState, value)) return;
+            _archiveState = value;
+            ApplicationDataRevision++;
+        }
+    }
     internal System.Xml.Linq.XDocument? OriginalXml { get; set; }
     internal System.Xml.Linq.XDocument? BaselineXml { get; set; }
     public required string Id { get; init; }
@@ -132,6 +154,7 @@ public sealed class Project
     /// hardware parts (then bus-power and coupler checks stay silent instead of guessing).
     /// </summary>
     public Dictionary<string, CatalogHardware> Hardware { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<Workbench.ObjectKey, ObjectTextDefinition> ObjectTextDefinitions { get; } = [];
 
     /// <summary>Topology devices that no building-tree node references.</summary>
     public IEnumerable<DeviceInstance> UnassignedDevices()

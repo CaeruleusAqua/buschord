@@ -47,7 +47,7 @@ Check("ping answers with an object", ping["result"] is JsonObject, ping.ToJsonSt
 
 var listed = await Call(3, "tools/list");
 var tools = listed["result"]?["tools"]?.AsArray() ?? new JsonArray();
-Check("tools/list returns 51 tools", tools.Count == 51, tools.Count.ToString());
+Check("tools/list returns 55 tools", tools.Count == 55, tools.Count.ToString());
 Check("every tool has a snake_case name",
     tools.All(t => (string?)t?["name"] is { Length: > 0 } name &&
                    name.All(c => char.IsLower(c) || char.IsDigit(c) || c == '_')));
@@ -301,6 +301,56 @@ Check("unbekanntes Produkt ist ein Tool-Fehler",
     missingProduct["result"]?["isError"]?.GetValue<bool>() == true, missingProduct.ToJsonString());
 
 // ---------------------------------------------------------------- manual links (offline, synthetic catalogue fixture)
+
+await using (var identityServer = new McpServer())
+{
+    async Task<JsonNode> IdentityTool(string name, object arguments)
+    {
+        var request = JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0", id = 900, method = "tools/call",
+            @params = new { name, arguments }
+        });
+        return JsonNode.Parse(await identityServer.HandleAsync(request) ?? "null")!;
+    }
+    await IdentityTool("project_new", new { name = "Identity", style = "three_level", areas = 1, lines = 2 });
+    await IdentityTool("catalog_import", new { path = knxprodPath });
+    await IdentityTool("catalog_import_device", new { product_id = "M-00FA_H-1_P-1", line_area = 0, line_address = 0, address = "0.0.1" });
+    var original = Knx.ProjectQuery.DeviceList(identityServer.Project!).Single();
+    original.Address = new Knx.IndividualAddress(0, 0, 2);
+    var second = await IdentityTool("catalog_import_device", new { product_id = "M-00FA_H-1_P-1", line_area = 0, line_address = 0, address = "0.0.1" });
+    var identityDevices = Knx.ProjectQuery.DeviceList(identityServer.Project!).ToList();
+    Check("catalog MCP insertion keeps stable identities unique after readdressing",
+        second["result"]?["isError"] is null && identityDevices.Count == 2
+        && identityDevices.Select(d => d.Id).Distinct(StringComparer.Ordinal).Count() == 2, second.ToJsonString());
+    var outside = await IdentityTool("catalog_import_device", new { product_id = "M-00FA_H-1_P-1", line_area = 0, line_address = 0, address = "1.1.3" });
+    Check("catalog MCP rejects an address outside the requested line before mutation",
+        outside["result"]?["isError"]?.GetValue<bool>() == true
+        && Knx.ProjectQuery.DeviceList(identityServer.Project!).Count() == 2, outside.ToJsonString());
+    await IdentityTool("group_address_add", new { address = "1/1/1", name = "Size", datapoint_type = "1.001" });
+    var sized = Knx.ProjectQuery.GroupAddresses(identityServer.Project!).Single();
+    identityServer.Project!.Workbench.Groups[sized.Id] = new Knx.Workbench.GroupMetadata { Bits = 1 };
+    await IdentityTool("group_address_update", new { address = "1/1/1", comment = "before DPT edit" });
+    var resized = await IdentityTool("group_address_update", new { address = "1/1/1", datapoint_type = "9.001" });
+    Check("MCP DPT edit updates retained group bit size through the shared operation",
+        resized["result"]?["isError"] is null && identityServer.Project.Workbench.Groups[sized.Id].Bits == 16,
+        resized.ToJsonString());
+    await IdentityTool("undo", new { });
+    Check("MCP DPT edit restores bit size on undo", identityServer.Project!.Workbench.Groups[sized.Id].Bits == 1);
+    var importedName = Knx.ProjectQuery.GroupAddresses(identityServer.Project).Single();
+    importedName.Name = "";
+    var emptyNameEdit = await IdentityTool("group_address_update", new { address = "1/1/1", datapoint_type = "9.001" });
+    Check("MCP DPT-only update accepts and preserves an imported empty name",
+        emptyNameEdit["result"]?["isError"] is null && importedName.Name == ""
+        && identityServer.Project.Workbench.Groups[importedName.Id].Bits == 16);
+    importedName.Name = " Licht ";
+    var paddedNameEdit = await IdentityTool("group_address_update", new { address = "1/1/1", datapoint_type = "1.001" });
+    Check("MCP DPT-only update does not trim an omitted name",
+        paddedNameEdit["result"]?["isError"] is null && importedName.Name == " Licht ");
+    var clearedName = await IdentityTool("group_address_update", new { address = "1/1/1", name = (string?)null });
+    Check("MCP partial update still supports explicit null to clear a name",
+        clearedName["result"]?["isError"] is null && importedName.Name == "");
+}
 
 await Tool(50, "redo");
 var objects = await Tool(51, "communication_objects_list", new { device_address = "0.0.1" });
@@ -828,6 +878,55 @@ Check("project_replace_apply without matches is a no-op without undo entry",
     noMatchReplace.ToJsonString());
 
 // ---------------------------------------------------------------- summary
+await MigrationExportChecks.Run(Check);
+await DcaManifestToolChecks.Run(Check);
+await JungKspToolChecks.Run(Check);
+await MaskProfileToolChecks.Run(Check);
+await ParameterPatchToolChecks.Run(Check);
+await EnumPatchToolChecks.Run(Check);
+await FloatPatchToolChecks.Run(Check);
+await TimePatchToolChecks.Run(Check);
+await ModulePatchToolChecks.Run(Check);
+await ModuleEnumPatchToolChecks.Run(Check);
+await DenseTimePatchToolChecks.Run(Check);
+await Native20ProjectToolChecks.Run(Check);
+await Native22ProjectToolChecks.Run(Check);
+await ResourcePatchToolChecks.Run(Check);
+await PropertyPatchToolChecks.Run(Check);
+await ImageCompositionToolChecks.Run(Check);
+await RootImageBuildToolChecks.Run(Check);
+await RootResolvedImageBuildToolChecks.Run(Check);
+await RootPropertyBuildToolChecks.Run(Check);
+var nativeImageChecks = 0;
+var nativeImageFailures = 0;
+await NativeImageBuildToolChecks.Run((name, ok, detail) =>
+{
+    nativeImageChecks++;
+    if (!ok) nativeImageFailures++;
+    Check(name, ok, detail);
+});
+Console.WriteLine($"NativeImageBuildMcp: {nativeImageChecks} checks, {nativeImageFailures} failures");
+var nativeScalarChecks = 0;
+var nativeScalarFailures = 0;
+await NativeImageScalarToolChecks.Run((name, ok, detail) =>
+{
+    nativeScalarChecks++;
+    if (!ok) nativeScalarFailures++;
+    Check(name, ok, detail);
+});
+Console.WriteLine($"NativeImageScalarMcp: {nativeScalarChecks} checks, {nativeScalarFailures} failures");
+var nativeFoldChecks = 0;
+var nativeFoldFailures = 0;
+await NativeImageFoldToolChecks.Run((name, ok, detail) =>
+{
+    nativeFoldChecks++;
+    if (!ok) nativeFoldFailures++;
+    Check(name, ok, detail);
+});
+Console.WriteLine($"NativeImageFoldMcp: {nativeFoldChecks} checks, {nativeFoldFailures} failures");
+await ApplicationBuildToolChecks.Run(Check);
+await ResolvedProcedureToolChecks.Run(Check);
+await GeneratedTablesToolChecks.Run(Check);
 
 Console.WriteLine();
 if (failures.Count == 0)

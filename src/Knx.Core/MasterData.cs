@@ -21,8 +21,8 @@ public sealed class DatapointType
 }
 
 /// <summary>
-/// Parses KNX master data (knx_master.xml): datapoint types,
-/// manufacturer and product counts. Version of the shipped catalog: see <see cref="Version"/>.
+/// Parses KNX master data (knx_master.xml): datapoint types, manufacturer and product counts.
+/// The file's catalog version is available through <see cref="Version"/>.
 /// </summary>
 public static class MasterData
 {

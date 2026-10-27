@@ -7,15 +7,15 @@ namespace Knx.Bus;
 public static class Dpt
 {
     /// <summary>Decodes a group value payload to a display string.</summary>
-    public static string Decode(string? datapointType, byte[] data) => datapointType switch
+    public static string Decode(string? datapointType, byte[] data) => DptId.Normalize(datapointType) switch
     {
-        "DPST-1-1" => data.Length > 0 && data[0] != 0 ? "On" : "Off",
-        "DPST-1-2" => data.Length > 0 && data[0] != 0 ? "true" : "false",
-        "DPST-1-10" => data.Length > 0 && data[0] != 0 ? "Start" : "Stop",
-        "DPST-1-11" => data.Length > 0 && data[0] != 0 ? "State active" : "State inactive",
-        "DPST-5-1" or "DPST-5-3" => data.Length > 0 ? Math.Round(data[0] / 255.0 * 100).ToString("F0") + "%" : "?",
-        "DPST-9-1" => data.Length >= 2 ? ((short)((data[0] << 8) | data[1]) / 100.0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "?", // 2-byte float, e.g. °C
-        "DPST-9-7" => data.Length >= 2 ? (((data[0] << 8) | data[1]) / 100.0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "?", // humidity %
+        "1.001" => data.Length > 0 && data[0] != 0 ? "On" : "Off",
+        "1.002" => data.Length > 0 && data[0] != 0 ? "true" : "false",
+        "1.010" => data.Length > 0 && data[0] != 0 ? "Start" : "Stop",
+        "1.011" => data.Length > 0 && data[0] != 0 ? "State active" : "State inactive",
+        "5.001" or "5.003" => data.Length > 0 ? Math.Round(data[0] / 255.0 * 100).ToString("F0") + "%" : "?",
+        "9.001" => data.Length >= 2 ? ((short)((data[0] << 8) | data[1]) / 100.0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "?", // 2-byte float, e.g. °C
+        "9.007" => data.Length >= 2 ? (((data[0] << 8) | data[1]) / 100.0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "?", // humidity %
         _ => BitConverter.ToString(data),
     };
 
@@ -24,39 +24,16 @@ public static class Dpt
     /// (<c>DPST-9-1</c>) and the human form (<c>9.001</c>). Unknown types return false
     /// so callers can reject them instead of creating an unlinkable group address.
     /// </summary>
-    public static bool TryBitSize(string? datapointType, out int bits)
-    {
-        bits = 0;
-        if (string.IsNullOrWhiteSpace(datapointType)) return false;
-        var text = datapointType.Trim().ToUpperInvariant();
-        var main = text.StartsWith("DPST-", StringComparison.Ordinal) ? text[5..]
-            : text.StartsWith("DPT-", StringComparison.Ordinal) ? text[4..]
-            : text;
-        main = main.Split('.', '-')[0];
-        bits = main switch
-        {
-            "1" => 1, "2" => 2, "3" => 4,
-            "4" or "5" or "6" => 8,
-            "7" or "8" or "9" => 16,
-            "10" or "11" => 24,
-            "12" or "13" or "14" or "15" => 32,
-            "16" => 112,
-            "17" or "18" or "20" => 8,
-            "19" => 64,
-            "21" or "22" => 16,
-            _ => 0,
-        };
-        return bits > 0;
-    }
+    public static bool TryBitSize(string? datapointType, out int bits) => DptId.TryBitSize(datapointType, out bits);
 
     /// <summary>Encodes a display value into a group value payload.</summary>
-    public static byte[] Encode(string? datapointType, string value) => datapointType switch
+    public static byte[] Encode(string? datapointType, string value) => DptId.Normalize(datapointType) switch
     {
-        "DPST-1-1" or "DPST-1-2" or "DPST-1-10" or "DPST-1-11"
+        "1.001" or "1.002" or "1.010" or "1.011"
             => [IsOn(value) ? (byte)1 : (byte)0],
-        "DPST-5-1" or "DPST-5-3"
+        "5.001" or "5.003"
             => [TryPercent(value, out var p) ? (byte)Math.Round(p / 100.0 * 255) : (byte)0],
-        "DPST-9-1" or "DPST-9-7"
+        "9.001" or "9.007"
             => TryFloat(value, out var f) ? [(byte)(((short)(f * 100) >> 8) & 0xFF), (byte)((short)(f * 100) & 0xFF)] : [0, 0],
         _ => TryHex(value) ?? [],
     };

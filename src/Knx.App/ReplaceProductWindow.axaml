@@ -3,7 +3,7 @@
         xmlns:loc="using:Knx.App.Localization"
         x:Class="Knx.App.ReplaceProductWindow"
         Classes="wb-dialog"
-        Title="{loc:Tr ReplaceProductTitle}" Width="720" Height="560" MinWidth="560" MinHeight="420"
+        Title="{loc:Tr ReplaceProductTitle}" Width="880" Height="740" MinWidth="560" MinHeight="560"
         Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
   <Grid RowDefinitions="Auto,*,Auto">
     <Border Padding="22,20,22,10">
@@ -18,19 +18,35 @@
         <StackPanel Spacing="12">
           <Grid ColumnDefinitions="190,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
             <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr ReplaceOldRef}" Classes="wb-label" />
-            <TextBox Grid.Row="0" Grid.Column="1" x:Name="OldBox" Classes="wb-field"
+            <TextBox Grid.Row="0" Grid.Column="1" x:Name="OldBox" Classes="wb-field" AutomationProperties.Name="{loc:Tr ReplaceOldRef}"
                      Watermark="M-0083_A-008A-25-6CE4" />
             <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr ReplaceNewRef}" Classes="wb-label" />
-            <TextBox Grid.Row="1" Grid.Column="1" x:Name="NewBox" Classes="wb-field"
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="NewBox" Classes="wb-field" AutomationProperties.Name="{loc:Tr ReplaceNewRef}"
                      Watermark="M-0083_A-008A-25-6CE5" />
             <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Tr ReplaceNewProgram}" Classes="wb-label" />
-            <TextBox Grid.Row="2" Grid.Column="1" x:Name="ProgramBox" Classes="wb-field"
+            <TextBox Grid.Row="2" Grid.Column="1" x:Name="ProgramBox" Classes="wb-field" AutomationProperties.Name="{loc:Tr ReplaceNewProgram}"
                      Watermark="M-0083_H-Base_I-0000_A-008A-25-6CE5" />
           </Grid>
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Content="{loc:Tr BtnPreview}" Classes="wb-button" Click="OnPreview" />
-            <TextBlock x:Name="SummaryText" VerticalAlignment="Center" Classes="wb-muted" />
+            <TextBlock x:Name="SummaryText" VerticalAlignment="Center" Classes="wb-muted" TextWrapping="Wrap" MaxWidth="540" />
           </StackPanel>
+          <Expander Header="{loc:Wb MigrationMappings}">
+            <ScrollViewer MaxHeight="240">
+              <StackPanel Spacing="6">
+                <TextBlock Text="{loc:Wb MigrationMapHint}" TextWrapping="Wrap" Classes="wb-muted" />
+                <TextBlock Text="{loc:Wb MigrationParameters}" Classes="wb-label" />
+                <TextBox x:Name="ParameterMapBox" Classes="wb-field" AcceptsReturn="True" MinHeight="60" AutomationProperties.Name="{loc:Wb MigrationParameters}" />
+                <TextBlock Text="{loc:Wb MigrationObjects}" Classes="wb-label" />
+                <TextBox x:Name="ObjectMapBox" Classes="wb-field" AcceptsReturn="True" MinHeight="60" AutomationProperties.Name="{loc:Wb MigrationObjects}" />
+                <TextBlock Text="{loc:Wb MigrationChannels}" Classes="wb-label" />
+                <TextBox x:Name="ChannelMapBox" Classes="wb-field" AcceptsReturn="True" MinHeight="60" AutomationProperties.Name="{loc:Wb MigrationChannels}" />
+              </StackPanel>
+            </ScrollViewer>
+          </Expander>
+          <Expander Header="{loc:Wb MigrationDetails}">
+            <ListBox x:Name="MigrationDetails" MaxHeight="160" Classes="wb-list" />
+          </Expander>
         </StackPanel>
       </Border>
 

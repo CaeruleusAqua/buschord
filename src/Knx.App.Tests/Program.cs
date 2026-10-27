@@ -85,6 +85,21 @@ var topoCsv = ProjectCsvExporter.Topology(project);
 Check("Topology-CSV enthält Header", topoCsv.StartsWith("Area;Line;Segment;Gerät;Adresse"));
 Check("Topology-CSV enthält Aktor", topoCsv.Contains("Aktor"));
 
+var mixed = ProjectWizard.Create(new NewProjectOptions { Name = "Mixed topology" });
+var mixedArea = mixed.Installations[0].Areas[0];
+var mixedLine = mixedArea.Lines[0];
+mixedArea.Devices.Add(new DeviceInstance { Id = "area", Name = "Area device", ProductRefId = "P", Address = new(1, 0, 1) });
+mixedLine.Devices.Add(new DeviceInstance { Id = "line", Name = "Line device", ProductRefId = "P", Address = new(1, 1, 1) });
+var mixedSegment = new Segment { Id = "segment", Address = 2 };
+mixedSegment.Devices.Add(new DeviceInstance { Id = "seg", Name = "Segment device", ProductRefId = "P", Address = new(1, 1, 2) });
+mixedLine.Segments.Add(mixedSegment);
+var mixedRows = ParseCsv(ProjectCsvExporter.Topology(mixed));
+Check("Topology CSV includes all mixed devices with five columns", mixedRows.Count == 4 && mixedRows.All(r => r.Count == 5)
+    && mixedRows.Skip(1).Select(r => r[4]).SequenceEqual(ProjectQuery.DeviceList(mixed).Select(d => d.Address.ToString())));
+Check("Topology CSV leaves absent line and segment empty", mixedRows.Any(r => r.SequenceEqual(new[] { mixedArea.Address.ToString(), "", "", "Area device", "1.0.1" }))
+    && mixedRows.Any(r => r.SequenceEqual(new[] { mixedArea.Address.ToString(), mixedLine.Address.ToString(), "", "Line device", "1.1.1" }))
+    && mixedRows.Any(r => r.SequenceEqual(new[] { mixedArea.Address.ToString(), mixedLine.Address.ToString(), "2", "Segment device", "1.1.2" })));
+
 // CSV-Köpfe folgen der UI-Sprache; Deutsch bleibt die Vorgabe.
 Strings.Language = "en";
 Check("CSV: Gruppenadress-Kopf englisch",
@@ -98,6 +113,37 @@ Check("CSV: Kopf bleibt deutsch ohne Sprachwechsel",
     ProjectCsvExporter.GroupAddresses(project).StartsWith("Adresse;Name;Beschreibung;DatapointType;Puid") &&
     ProjectCsvExporter.Devices(project).StartsWith("Adresse;Name;ProduktRef;Beschreibung;Kommentar") &&
     ProjectCsvExporter.Topology(project).StartsWith("Area;Line;Segment;Gerät;Adresse"));
+
+await using (var local = new LocalTunnelServer(0x22, 0x22, 0))
+{
+    var connectionVm = new MainWindowViewModel();
+    connectionVm.Settings.BusInterface = "127.0.0.1";
+    connectionVm.SelectedDeviceOnBus = local.Device;
+    for (var attempt = 0; attempt < 2; attempt++)
+    {
+        try { await connectionVm.ConnectCommand.ExecuteAsync(null); }
+        catch (IOException) { }
+        catch (InvalidOperationException) { }
+    }
+    try
+    {
+        await connectionVm.ConnectCommand.ExecuteAsync(null);
+        await local.TelegramAsync();
+        var deadline = Environment.TickCount64 + 2000;
+        while (connectionVm.Monitor.Count == 0 && Environment.TickCount64 < deadline) await Task.Delay(10);
+        await Task.Delay(50);
+        Check("VM failed connect retries deliver one monitor callback", connectionVm.Monitor.Count == 1);
+        await connectionVm.DisconnectCommand.ExecuteAsync(null);
+        await connectionVm.ConnectCommand.ExecuteAsync(null);
+        await local.TelegramAsync();
+        deadline = Environment.TickCount64 + 2000;
+        while (connectionVm.Monitor.Count < 2 && Environment.TickCount64 < deadline) await Task.Delay(10);
+        await Task.Delay(50);
+        Check("VM reconnect subscribes exactly once", connectionVm.Monitor.Count == 2);
+    }
+    catch (InvalidOperationException ex) { Check("VM failed connect retries deliver one monitor callback", false, ex.Message); }
+    finally { await connectionVm.DisconnectCommand.ExecuteAsync(null); }
+}
 
 // ---------------------------------------------------------------- CSV-Sicherheit
 
@@ -980,6 +1026,9 @@ var hpStateZip = Path.Combine(Path.GetTempPath(), "knx_handover_" + Guid.NewGuid
 var hpStateResult = HandoverPackage.Write(hpProject, hpStateZip, hpStateOptions);
 Check("Paket: Ergebnis meldet Simulation", hpStateResult.Commissioning == "simulation");
 if (File.Exists(hpStateZip)) File.Delete(hpStateZip);
+
+Native20LifecycleChecks.Run(Check);
+Native22LifecycleChecks.Run(Check);
 
 Console.WriteLine(failures.Count == 0 ? "REPORTS OK" : $"{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);

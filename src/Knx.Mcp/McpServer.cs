@@ -25,7 +25,8 @@ public sealed partial class McpServer : IAsyncDisposable
     private const string InstructionsText =
         "BusChord tooling for building automation projects. Open a project with project_open (existing " +
         ".knxproj) or create one with project_new, then inspect it with project_info and project_dashboard. " +
-        "Mutations (group_address_*, group_link_*, device_*, smart_link_apply, product_replace) only change the in-memory " +
+        "Passwords for protected project_open/project_save calls are never retained; execute_scripts is an explicit per-call capability. " +
+        "Mutations (group_address_*, group_link_*, device_*, smart_link_apply, product_replace, jung_ksp_import_apply) only change the in-memory " +
         "project and can be reverted with undo/redo; call project_save to write the .knxproj. Use " +
         "project_check and smart_link_suggest for analysis, export_csv/export_semantic/export_labels/report_export/" +
         "acceptance_protocol_export/handover_package_export for " +
@@ -224,7 +225,12 @@ public sealed partial class McpServer : IAsyncDisposable
 
     private static void Log(string message) => Console.Error.WriteLine("knx-mcp: " + message);
 
-    public async ValueTask DisposeAsync() => await _bus.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        _migrationReviews.Clear();
+        _jungKspReview = null;
+        await _bus.DisposeAsync();
+    }
 
     /// <summary>Expected tool failure; reported to the client as isError, never as a protocol error.</summary>
     private sealed class ToolException(string message) : Exception(message);

@@ -17,5 +17,8 @@ catalogs/
 catalogue-library/
 artifacts/
 
-# ETS project exports contain customer data; test fixtures are generated in code.
+# Project archives can contain installation data; checks generate their own fixtures.
 *.knxproj
+
+# Machine-local protection settings belong outside the checkout.
+archive-protection*.json

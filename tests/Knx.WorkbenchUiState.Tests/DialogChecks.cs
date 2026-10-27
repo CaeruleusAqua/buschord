@@ -1,5 +1,7 @@
 using System.Reflection;
 using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
@@ -76,6 +78,55 @@ internal static class DialogChecks
         foreach (var theme in new[] { "light", "dark" })
         {
             SettingsWindow.ApplyTheme(theme);
+            var contrast = HighContrastChecks.Run(shell);
+            checks += contrast.Checks; failures += contrast.Failures;
+            var migration = await MigrationDialogChecks.Run(shell);
+            checks += migration.Checks; failures += migration.Failures;
+            var smart = await SmartLinkDialogChecks.Run(shell);
+            checks += smart.Checks; failures += smart.Failures;
+            var batchInspector = await BatchInspectorDialogChecks.Run(shell);
+            checks += batchInspector.Checks; failures += batchInspector.Failures;
+            var renameProject = shell.ViewModel.Project!;
+            var renameLine = renameProject.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).First();
+            var renameSegment = new Segment { Id = "rename-test-segment", Name = "Testsegment" };
+            renameLine.Segments.Add(renameSegment);
+            var renameDevice = ProjectQuery.DeviceList(renameProject).First();
+            var renameGroup = ProjectQuery.GroupAddresses(renameProject).First();
+            foreach (var (method, target, currentName) in new (string, object, string?)[]
+            {
+                ("RenameLineAsync", renameLine, renameLine.Name),
+                ("RenameSegmentAsync", renameSegment, renameSegment.Name),
+                ("RenameDeviceAsync", renameDevice, renameDevice.Name),
+                ("RenameGroupAddressAsync", renameGroup, renameGroup.Name),
+            })
+            {
+                Check(theme + " rename fixture has a name " + method, !string.IsNullOrEmpty(currentName));
+                var renameTask = (Task)Invoke(shell, method, target)!;
+                await Task.Delay(100);
+                var renameDialog = lifetime.Windows.Single(w => w != shell);
+                var nameBox = Controls<TextBox>(renameDialog).Single();
+                Check(theme + " rename starts with current name " + method, nameBox.Text == currentName);
+                Escape(nameBox);
+                await renameTask;
+                Check(theme + " cancel rename preserves model " + method, target switch
+                {
+                    Line value => value.Name == currentName,
+                    Segment value => value.Name == currentName,
+                    DeviceInstance value => value.Name == currentName,
+                    GroupAddressEntry value => value.Name == currentName,
+                    _ => false,
+                });
+            }
+            renameLine.Segments.Remove(renameSegment);
+            await NavigatorFocusChecks.Run(shell, theme, Check);
+            await NavigatorKeyboard(shell, lifetime, theme);
+            await PaletteKeyboard(shell, lifetime, theme);
+            await NewProjectAccessibilityChecks.Run(shell, theme, Check);
+            await ParameterDeviceAccessibilityChecks.Run(shell, theme, Check);
+            await ArchiveProtectionDialogChecks.Run(shell, theme, Check);
+            await DialogChromeChecks.Run(shell, theme, Check);
+            await CatalogDownloadsDialogChecks.Run(shell, theme, Check);
+            await SettingsViewportChecks.Run(shell, lifetime, theme, Check);
             var groupCount = ProjectQuery.GroupAddresses(shell.ViewModel.Project!).Count();
             Invoke(shell, "ShowNewGroupAddressDialog");
             await Task.Delay(150);
@@ -84,6 +135,13 @@ internal static class DialogChecks
             var picker = Controls<ComboBox>(dialog).Single();
             Check(theme + " U2 fields resolve V4 palette", fields.Length == 3 && fields.All(f => f.Classes.Contains("wb-field"))
                 && picker.Classes.Contains("wb-field") && Equals(fields[0].Background, Resource(dialog, "WbPaper")));
+            Check(theme + " U2 group address editors expose localized automation names",
+                fields.Select(f => ControlAutomationPeer.CreatePeerForElement(f)?.GetName())
+                    .SequenceEqual(new[] { W("GroupAddress"), W("NameLabel"), W("DatapointType") })
+                && ControlAutomationPeer.CreatePeerForElement(picker)?.GetName() == W("RoomOptional"));
+            Check(theme + " U2 initial name editor focus has an accessible label",
+                ReferenceEquals(dialog.FocusManager!.GetFocusedElement(), fields[1])
+                && AutomationProperties.GetName(fields[1]) == W("NameLabel"));
             dialog.Height = 260;
             await Task.Delay(150);
             var scroll = Controls<ScrollViewer>(dialog).FirstOrDefault(s => s.Content is StackPanel);
@@ -215,7 +273,7 @@ internal static class DialogChecks
         danger.Close();
         await removal;
 
-        var naming = (Task<string?>)Invoke(shell, "PromptTextAsync", "Synthetic name", W("Create"))!;
+        var naming = (Task<string?>)Invoke(shell, "PromptTextAsync", "Synthetic name", W("Create"), "")!;
         await Task.Delay(100);
         var prompt = lifetime.Windows.Single(w => w != shell);
         var editor = Controls<TextBox>(prompt).Single();
@@ -235,7 +293,7 @@ internal static class DialogChecks
 
         foreach (var (method, arguments) in new (string, object[])[]
         {
-            ("PromptPasswordAsync", ["Synthetic password prompt"]),
+            ("PromptPasswordAsync", ["Synthetic password prompt", false]),
             ("PromptPortfolioNameAsync", [shell, "Synthetic portfolio"])
         })
         {
@@ -250,6 +308,134 @@ internal static class DialogChecks
             Check("U4 " + method + " Escape cancels", result.IsCompleted && result.Result is null);
             if (quick.IsVisible) quick.Close();
             await result;
+        }
+    }
+
+    private static async Task PaletteKeyboard(WorkbenchWindow shell, IClassicDesktopStyleApplicationLifetime lifetime, string theme)
+    {
+        var project = shell.ViewModel.Project!;
+        var device = ProjectQuery.DeviceList(project).First();
+        var oldTabs = shell.Workspace.Tabs.ToHashSet();
+        var oldActive = shell.Workspace.ActiveTab;
+        var before = Knxproj.ToXml(project).ToString();
+        var undo = shell.ViewModel.CanUndo;
+        try
+        {
+            foreach (var origin in new[] { "query", "list", "item", "escape" })
+            {
+                var previous = shell.OpenTarget(new("project", project.Id));
+                var windows = lifetime.Windows.ToHashSet();
+                Invoke(shell, "ShowPalette");
+                await Task.Delay(100);
+                var palette = lifetime.Windows.Single(window => !windows.Contains(window));
+                try
+                {
+                    var query = Controls<TextBox>(palette).Single();
+                    var list = Controls<ListBox>(palette).Single();
+                    query.Text = $"{device.Address} · {device.Name}";
+                    await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                    palette.UpdateLayout(); list.UpdateLayout();
+                    var item = list.GetVisualDescendants().OfType<ListBoxItem>().Single();
+                    var target = origin == "query" ? (Control)query : origin == "list" ? list : item;
+                    target.Focus(NavigationMethod.Tab);
+                    await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                    var focused = palette.FocusManager!.GetFocusedElement();
+                    Check(theme + " palette has one selected result and actual " + origin + " focus",
+                        list.ItemCount == 1 && list.SelectedIndex == 0 && ReferenceEquals(focused, target));
+                    var key = origin == "escape" ? Key.Escape : Key.Enter;
+                    (focused as Interactive)?.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key });
+                    await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                    var releaseTarget = palette.IsVisible ? palette.FocusManager!.GetFocusedElement() : shell.FocusManager!.GetFocusedElement();
+                    (releaseTarget as Interactive)?.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyUpEvent, Key = key });
+                    await Task.Delay(80);
+                    Check(theme + " palette " + origin + " key closes the actual modal with the expected target",
+                        !palette.IsVisible && (origin == "escape" ? ReferenceEquals(shell.Workspace.ActiveTab, previous)
+                            : shell.Workspace.ActiveTab?.Target == new WorkbenchTarget("device", device.Id)));
+                }
+                finally { if (palette.IsVisible) palette.Close(); }
+            }
+            Check(theme + " palette keyboard navigation preserves project and undo",
+                before == Knxproj.ToXml(project).ToString() && undo == shell.ViewModel.CanUndo);
+        }
+        finally
+        {
+            foreach (var tab in shell.Workspace.Tabs.Where(tab => !oldTabs.Contains(tab)).ToArray()) shell.Workspace.Close(tab);
+            shell.Workspace.ActiveTab = oldActive;
+            shell.RefreshWorkspace();
+        }
+    }
+
+    private static async Task NavigatorKeyboard(WorkbenchWindow shell, IClassicDesktopStyleApplicationLifetime lifetime, string theme)
+    {
+        var workspace = shell.Workspace;
+        var oldPerspective = workspace.Perspective;
+        var oldVisible = workspace.NavigatorVisible;
+        var oldQuery = workspace.Navigators["groups"].Query;
+        var oldTab = workspace.ActiveTab;
+        var oldTabs = workspace.Tabs.ToArray();
+        var before = Knxproj.ToXml(shell.ViewModel.Project!).ToString();
+        var undo = shell.ViewModel.CanUndo;
+        var nav = Controls<ListBox>(shell).Single(c => c.Name == "NavTree");
+        var search = Controls<TextBox>(shell).Single(c => c.Name == "NavSearch");
+        try
+        {
+            shell.Navigate("groups");
+            var groups = ProjectQuery.GroupAddresses(shell.ViewModel.Project!).Take(2).ToArray();
+            for (var i = 0; i < groups.Length; i++)
+            {
+                var group = groups[i];
+                search.Text = group.Name;
+                await Task.Delay(100);
+                var row = nav.GetVisualDescendants().OfType<ListBoxItem>().Single(item => item.GetVisualDescendants()
+                    .OfType<Grid>().Any(grid => grid.Tag is WorkbenchNavNode node && ReferenceEquals(node.Model, group)));
+                row.Focus(NavigationMethod.Tab);
+                await Task.Delay(30);
+                var down = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent,
+                    Key = i == 0 ? Key.F10 : Key.Apps, KeyModifiers = i == 0 ? KeyModifiers.Shift : KeyModifiers.None };
+                (shell.FocusManager!.GetFocusedElement() as Interactive)?.RaiseEvent(down);
+                await Task.Delay(30);
+                // The release follows the actual current focus. Opening on Down
+                // sends this Up into the new popup, which closes it immediately.
+                var up = new KeyEventArgs { RoutedEvent = InputElement.KeyUpEvent, Key = down.Key, KeyModifiers = down.KeyModifiers };
+                (shell.FocusManager!.GetFocusedElement() as Interactive)?.RaiseEvent(up);
+                await Task.Delay(80);
+                var menu = row.ContextMenu;
+                Check(theme + " navigator keyboard context opens on current container " + i,
+                    up.Handled && menu is { IsOpen: true, Placement: PlacementMode.Bottom }
+                    && menu.Items.OfType<MenuItem>().Any(item => Equals(item.Header, W("Rename")))
+                    && shell.FocusManager!.GetFocusedElement() is MenuItem);
+                if (menu is null) continue;
+                if (i == 0)
+                {
+                    Escape(menu);
+                    await Task.Delay(80);
+                    Check(theme + " navigator context Escape restores row focus and releases menu",
+                        !menu.IsOpen && row.ContextMenu is null && ReferenceEquals(shell.FocusManager!.GetFocusedElement(), row));
+                }
+                else
+                {
+                    menu.Close();
+                    menu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, W("Rename")))
+                        .RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                    await Task.Delay(80);
+                    var dialog = lifetime.Windows.Single(w => w != shell);
+                    var box = Controls<TextBox>(dialog).Single();
+                    Check(theme + " navigator refiltered target routes Rename to its current group", box.Text == group.Name);
+                    Escape(box);
+                    await Task.Delay(60);
+                }
+            }
+            Check(theme + " keyboard context and cancelled Rename preserve project and history",
+                Knxproj.ToXml(shell.ViewModel.Project!).ToString() == before && shell.ViewModel.CanUndo == undo);
+        }
+        finally
+        {
+            workspace.Navigators["groups"].Query = oldQuery;
+            workspace.Perspective = oldPerspective;
+            workspace.NavigatorVisible = oldVisible;
+            foreach (var tab in workspace.Tabs.Where(t => !oldTabs.Contains(t)).ToArray()) workspace.Close(tab);
+            workspace.ActiveTab = oldTab;
+            shell.RefreshWorkspace();
         }
     }
 }

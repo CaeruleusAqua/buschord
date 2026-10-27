@@ -46,7 +46,7 @@ In scope:
   exceptions, crash dumps, or files.
 - **Archive and catalogue parsing.** Memory exhaustion, uncontrolled recursion,
   path traversal or ZIP-slip on `.knxproj` and `.knxprod`, unsafe temporary file
-  handling, and anything that lets a hostile project file escape its sandbox or
+  handling, and anything that lets a hostile project file escape its output directory or
   execute code.
 - **Privacy.** A report, log, export, or screenshot that leaks installation data
   the user did not ask to export.
@@ -66,7 +66,11 @@ run them against an installation you cannot restore:
 - **Device download** and management sequences.
 - **KNX Data Security / secure tunnelling.** The crypto foundation exists but is
   not wired into the tunnel yet.
-- **DCA / plugin execution** and dynamic parameter evaluation.
+- **Manufacturer parameter execution.** Supported JavaScript runs only through
+  the explicit `Knx.Scripting` worker capability. Its process/interpreter limits
+  are not an OS container or restricted-account guarantee. Unsupported scripting,
+  structural scopes and DCA / plugin execution remain blocked; see
+  [current scope](docs/status.md#manufacturer-and-parameter-profiles).
 
 ## No warranty for live bus actions
 

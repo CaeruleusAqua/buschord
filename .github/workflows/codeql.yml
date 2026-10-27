@@ -1,13 +1,18 @@
-﻿name: CodeQL
+name: CodeQL
 
 on:
   push:
     branches: [development, main]
+  # Feature branches use their PR check, avoiding a second run for the same push.
   pull_request:
     branches: [development, main]
   schedule:
     - cron: "23 4 * * 1"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -19,18 +24,24 @@ jobs:
   analyze:
     name: analyze-csharp
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          dotnet-version: 9.0.x
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
           cache: true
-          cache-dependency-path: "**/*.csproj"
-      - uses: github/codeql-action/init@v4
+          cache-dependency-path: |
+            **/*.csproj
+            global.json
+            Directory.Build.props
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
           languages: csharp
       - name: Restore
-        run: dotnet restore ets6.sln
+        run: dotnet restore BusChord.sln
       - name: Build
-        run: dotnet build ets6.sln -c Release --no-restore --nologo
-      - uses: github/codeql-action/analyze@v4
+        run: dotnet build BusChord.sln -c Release --no-restore --nologo
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4

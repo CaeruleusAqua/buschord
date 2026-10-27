@@ -46,22 +46,22 @@ internal static class V4ToolChecks
         };
         var run = sessions.Programming.RunAsync();
         await Task.Delay(30);
-        Check("running status and intermediate progress update", Text(view).Any(t => t.Text == "RUNNING")
+        Check("running status and intermediate progress update", Text(view).Any(t => t.Text == WorkbenchStrings.Get("ProgrammingStatusRunning"))
             && Text(view).Any(t => t.Text == "37 %"));
         await run;
         await Task.Delay(200);
         Check("completed row updates without recreating tool", ReferenceEquals(host.Content, view)
-            && Text(view).Any(t => t.Text == "DONE") && Text(view).Any(t => t.Text == "100 %"));
+            && Text(view).Any(t => t.Text == WorkbenchStrings.Get("ProgrammingStatusDone")) && Text(view).Any(t => t.Text == "100 %"));
         Check("programming need updates after success", Text(view).Any(t => t.Text ==
             WorkbenchStrings.Get("ProgrammingNeed", ProjectQuery.DeviceList(project).Count() - 1)));
         var failure = sessions.Programming.Enqueue(device.Id);
         typeof(WorkbenchWindow).GetField("_simulateProgrammingFailure", Private)!.SetValue(main, true);
         await sessions.Programming.RunAsync();
         await Task.Delay(100);
-        Check("failed result and error update live", Text(view).Any(t => t.Text == "FAILED") && Text(view).Any(t => t.Text == failure.Error));
+        Check("failed result and error update live", Text(view).Any(t => t.Text == WorkbenchStrings.Get("ProgrammingStatusFailed")) && Text(view).Any(t => t.Text == failure.Error));
         sessions.Programming.Retry(failure);
         await Task.Delay(50);
-        Check("retry resets result and progress live", Text(view).Any(t => t.Text == "QUEUED") && Text(view).Any(t => t.Text == "0 %"));
+        Check("retry resets result and progress live", Text(view).Any(t => t.Text == WorkbenchStrings.Get("ProgrammingStatusQueued")) && Text(view).Any(t => t.Text == "0 %"));
         typeof(WorkbenchWindow).GetField("_simulateProgrammingFailure", Private)!.SetValue(main, false);
         await sessions.Programming.RunAsync();
         var downloaded = sessions.Programming.ExportDownloadedJson();

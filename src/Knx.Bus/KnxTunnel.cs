@@ -101,6 +101,7 @@ public sealed class KnxTunnel : IAsyncDisposable
     {
         if (State != BusConnectionState.Disconnected) throw new InvalidOperationException("already connected");
         State = BusConnectionState.Connecting;
+        _cts.Dispose();
         _cts = new CancellationTokenSource();
         _localEndpoint = _configuredLocalEndpoint ?? ResolveLocalEndpoint();
         _dataEndpoint = _controlEndpoint;

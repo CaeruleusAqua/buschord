@@ -1,6 +1,6 @@
 # BusChord – Benutzerhandbuch
 
-Stand: 2026-10-22, geprüft gegen den Quellstand `72f4971`.
+Stand: 2026-10-28.
 Dieses Handbuch beschreibt die deutsche Oberfläche der nativen Workbench
 (`WorkbenchWindow`). Es nennt nur Wege, die im aktuellen Quellcode existieren;
 nicht belegte Punkte sind ausdrücklich als **nicht verifiziert** markiert.
@@ -11,7 +11,7 @@ Weiterführende Dokumente:
 - [Workbench-Domainvertrag](workbench-domain.md) – Datenmodell, Links, Sitzungen, Grenzen
 - [Lokale Projekt-Backups](project-backup.md) – Ablage, Retention und Wiederherstellung
 - [MCP-Server](../mcp.md) – Agenten- und Skriptbetrieb
-- Router-Discovery-Beleg – was live am Bus geprüft wurde
+- [Netzwerkstatus](status.md) – was live am Bus geprüft wurde
 
 ## 1. Was BusChord ist
 
@@ -88,9 +88,14 @@ angelegt. BusChord schreibt das neue Projekt sofort als natives Archiv.
   Sicherung an (Abschnitt 8.1).
 
 Ladefehler erscheinen als Meldungsfenster „Projekt nicht ladbar“ mit dem technischen
-Grund; die Statuszeile zeigt denselben Text. Ist das Projekt mit einem
-ETS-Projektpasswort geschützt, fragt BusChord nach dem **ETS-Projektpasswort**,
-nicht nach einem ZIP-Passwort. Bei falschem Passwort erscheint der Dialog erneut;
+Grund; die Statuszeile zeigt denselben Text. Geschützte Archive verwenden das
+enthaltene Standardprofil und benötigen das **Projektpasswort**. Unter
+**Optionen → Archivschutz** lässt sich der Salt bei Bedarf überschreiben;
+lokale Profile liegen in `%APPDATA%\BusChord\archive-protection.json`. Weitere Profilparameter sind
+`iterations`, `hashAlgorithm`, `keyLength` und `passwordEncoding`.
+Fehlt diese Datei, gilt das enthaltene Standardprofil. Eine vorhandene ungültige
+Konfiguration wird gemeldet; ein explizit leerer Salt deaktiviert geschützte Vorgänge.
+Bei falschem Passwort erscheint der Dialog erneut;
 Abbrechen lässt das aktuelle Projekt unverändert.
 
 ### 2.4 Die Workbench
@@ -186,11 +191,13 @@ keine umschaltbaren Zustände.
   `%APPDATA%\BusChord\workspaces` und lädt sie wieder. Unlesbare oder veraltete
   Layoutdateien werden ignoriert, ohne den Start zu blockieren.
 - **Ansicht → Optionen …** (oder die Aktionsleiste) öffnet die Einstellungen:
-  Design (System/Hell/Dunkel), Sprache (Deutsch/English/Français/Italiano/Español/Nederlands),
+  Design (System/Hell/Dunkel), Sprache,
   "Vor dem Löschen nachfragen", Bus-Schnittstelle, eigene Tunneladresse und die
   Zuletzt-Liste. Design und Sprache werden beim Speichern sofort übernommen; bereits
   gezeichnete Menüs und Beschriftungen können bis zum Neustart in der alten Sprache
   bleiben. Die Einstellungen liegen in `%APPDATA%\BusChord\settings.json`.
+  Das globale Archivschutzprofil wird separat gespeichert; sein Salt-Feld ist
+  maskiert und gibt seinen Inhalt auch über Accessibility nicht aus.
   Verfügbar sind **Deutsch**, **English**, **Französisch**, **Italienisch**,
   **Spanisch**, **Niederländisch**, **Chinesisch (vereinfacht)** und **Polnisch**.
   Berichtsspezifische Tabellen und MCP-Exporte
@@ -266,7 +273,17 @@ Bekannte Fehlerfälle:
 | Katalog verschachtelt zu tief | Abbruch nach vier Archiv-Ebenen |
 | Bibliothek leer | Hinweis „kein Katalog geladen“ mit Import-Schaltfläche |
 
-### 3.2 Suchen und filtern
+### 3.2 Herstellerkataloge beziehen
+
+Neben dem lokalen Import öffnet **Herstellerkataloge beziehen** die Quellenliste.
+Herstellerverzeichnis und Dateien werden erst auf ausdrückliche Aktion geladen.
+Nach quellspezifischer Freigabe lassen sich ausgewählte oder alle freigegebenen
+Direktquellen herunterladen und automatisch importieren. Fortschritt, Abbruch,
+Duplikate und Konflikte stehen im Ergebnisbericht. Bestehende Kataloge bleiben
+bei Identitätskonflikten erhalten. Ablauf, Quellenbedingungen und lokale Ablage:
+[Herstellerkataloge beziehen](catalog-downloads.md).
+
+### 3.3 Suchen und filtern
 
 - Das Suchfeld durchsucht **Name, Bestellnummer, ID und Beschreibung** des
   Produkts sowie Hersteller, Katalogsnamen, Applikationstext,
@@ -283,7 +300,7 @@ Applikation, Status-Badges (z. B. **Defekt**, **Downloadinfo unvollständig**,
 **DCA / Plug-in**, **Fremdsoftware**), Datapoint-Typen und eine Vorschau der
 Kommunikationsobjekte.
 
-### 3.3 Gerät einfügen
+### 3.4 Gerät einfügen
 
 1. Produkt in der Produktliste wählen.
 2. **Ziel-Linie** wählen; hat die Linie Segmente, zusätzlich das **Ziel-Segment**.
@@ -310,7 +327,7 @@ Mögliche Sperren:
 Ohne Projekt sind Ziel-Linie, Segment, Adresse und Name gesperrt; der Katalog
 bleibt aber durchsuchbar.
 
-### 3.4 DCA- und Plug-in-Geräte
+### 3.5 DCA- und Plug-in-Geräte
 
 Ein Programm mit DCA-/Plug-in-Erweiterung wird im Katalog als **DCA / Plug-in**
 gekennzeichnet. BusChord führt den Plug-in-Code nicht aus:
@@ -417,14 +434,16 @@ Verfügung; Vorschläge sind dort vor dem Übernehmen zu prüfen.
 
 Die Darstellung **Parameter** zeigt die Geräteparameter der Herstellerapplikation
 (KSXML). Bei mehreren Geräten im Tab wählt eine Auswahlliste das Gerät. Der Editor
-ist ein **statischer Parametereditor**:
+verwendet projektbezogene Entwürfe mit einer Strukturvorschau:
 
 - Editierbar sind Zahl, Fließkomma, Text, Aufzählung und Boolean. Alle anderen
   Typen (Datum, Uhrzeit, IP, Farbe, Bild, Rohdaten) sowie nicht unterstützte
   Deklarationen erscheinen als schreibgeschützte Zeilen mit Begründung.
-- **Dynamische Logik** (Choose/When/Assign, Modulinstanzen, Berechnungen) wird
-  erkannt und als Warnung genannt, aber **nicht ausgewertet**. Die angezeigte
-  Zeilenmenge ist daher nicht die zur Laufzeit aktive Parameterliste.
+- Unterstützte Bedingungen, Zuweisungen und Strukturprofile aktualisieren die
+  sichtbaren Parameter und die Vorschau der Kommunikationsobjekte. Die Vorschau
+  zeigt hinzugefügte, entfernte sowie aktivierte oder deaktivierte Objekte.
+  Nicht unterstützte Deklarationen und benötigte Laufzeitfähigkeiten werden
+  ausdrücklich genannt; ein beliebiges Herstellerprogramm wird nicht ausgeführt.
 - Änderungen bleiben zunächst **Entwürfe** und sind an das Gerät gebunden. Die
   Fußzeile nennt offene Entwürfe und Validierungsfehler; **Standardwerte** setzt
   sichtbare editierbare Felder auf den deklarierten Default zurück,
@@ -545,7 +564,7 @@ abgefragt.
   SEARCH/DESCRIPTION, ein Tunnel-CONNECT, genau ein Gruppenwert-Lesen auf `0/0/1`
   mit Tunnelling-ACK und `L_Data.con`, danach ein sauberes DISCONNECT. Es wurden
   keine Gruppenwerte geschrieben und keine Geräte programmiert. Details:
-  Router-Discovery.
+  [Router-Discovery](status.md).
 - **Nicht verifiziert** sind Gruppenwert-Antworten, Descriptor-/Scan-Antworten,
   Secure-Tunnel und längere Sitzungen gegen echte Hardware. `bus_read` existiert,
   sein Wire-Verhalten ist aber nicht gegen eine echte Anlage abgenommen.
@@ -589,17 +608,19 @@ beibehalten.
 
 ### 8.4 Verschlüsselte, fremde und ältere Projekte
 
-- Gelesen werden unverschlüsselte Archive mit `0.xml` oder `P-*.zip` in den
-  Schemata `http://knx.org/xml/project/21` und
-  `http://knx.org/xml/project/23`.
-- **`/21` ist lesbar, aber nicht speicherbar**: BusChord schreibt das `/23`-Layout.
-- **Verschlüsselte ETS6-Archive** werden nach Eingabe des ETS-Projektpassworts
-  gelesen. Das Speichern wird verweigert, weil BusChord die Verschlüsselung nicht
-  wiederherstellen kann; es gibt keinen Entschlüsselungs- oder Rateweg.
+- Unterstützte `/20`-, `/21`-, `/22`- und `/23`-Projekte lassen sich lesen,
+  bearbeiten und speichern. Das unterstützte Root-, ZIP- oder Projektordnerlayout
+  bleibt erhalten; `/20` verwendet direkte Linien, `/21` und `/22` Segmente.
+- **Geschützte Archive** benötigen das Projektpasswort und ein passendes
+  Schutzprofil. Die Speicherung erhält die vorhandene AES-Verschlüsselung.
+  Das eingebaute Standardprofil kann durch die globalen lokalen
+  Archiveinstellungen überschrieben werden; Details stehen unter
+  [Status](status.md#project-and-archive-support).
 - Abgelehnt werden unter anderem ZIP64, Mehrteil-Archive, doppelte
   Eintragsnamen, mehrdeutige Wurzel- und verschachtelte Projekte sowie
-  Übergrößen: 128 MiB Archiv, 4096 Einträge, 64 MiB je Eintrag, 256 MiB
-  entpackt, 16 MiB Projekt-XML, XML-Tiefe 128.
+  Übergrößen. Gesonderte Grenzen gelten für kanonische Applikationsdateien;
+  die aktuellen Größen- und XML-Grenzen stehen im
+  [Status](status.md#project-and-archive-support).
 
 ### 8.5 Undo/Redo und Zuletzt-Liste
 
@@ -780,6 +801,7 @@ In der Workbench verdrahtet:
 | `Strg+Tab` | nächster Arbeitsgegenstands-Tab |
 | `Strg+Z` / `Strg+Shift+Z`, `Strg+Y` | Projekt rückgängig / wiederherstellen |
 | `F1` | Hilfe |
+| `Shift+F10` / Menütaste im Navigator | Kontextmenü des fokussierten Eintrags öffnen; `Escape` gibt den Zeilenfokus zurück |
 | `Escape` | Inspektor oder Dialog schließen |
 | `→` / `←` | Knoten bzw. Tabellenzeile auf-/zuklappen |
 | `Enter` / `Leertaste` | Tab-Darstellung oder Werkzeug aktivieren |
@@ -790,7 +812,57 @@ belegt; belegt ist `Strg+Shift+G`.
 
 ## 11. Grenzen und Sicherheit
 
-
+- **Keine Busaktion aus der Workbench.** Projektänderungen senden nichts. Monitor,
+  Scan und Programmierung sind gekennzeichnete Simulationen, kein realer Download.
+  Echte Busaufrufe gibt es nur als ausdrückliche, lesende MCP-Werkzeuge;
+  `bus_write` ist gesperrt.
+- **Keine echten Downloads oder Adressschreibungen.** Der Schreibpfad ist
+  deaktiviert (`WritesEnabled = false`), `bus_write` wird abgewiesen, ein realer
+  Programmierauftrag hat keinen Executor, und `download_plan` sendet kein
+  Programmiertelegramm. Der Plan ist immer offen, weil Programmiermodus und
+  Vor-Ort-Bestätigungen nicht abfragbar sind.
+- **Keine Firewall- oder Netzwerkänderungen.** BusChord öffnet UDP-Sockets für
+  Discovery/Tunnel; es ändert keine System- oder Routerkonfiguration.
+- **Keine Passwortumgehung.** Verschlüsselte Projekte werden nur mit dem
+  ETS-Projektpasswort gelesen und nie verschlüsselt zurückgeschrieben.
+- **Keine KNX Data Security im Tunnel.** Keyring und Secure-Formate sind eine
+  Grundlage, aber nicht in den Tunnel verdrahtet; die Secure-Übersicht verwaltet
+  keine Schlüssel.
+- **Kein DCA-Host.** DCA/Plug-in-Code wird nicht ausgeführt; Parameter bleiben
+  lesbar, Download ist gesperrt. Die Sperre greift auch über die Applikation im
+  Projektarchiv, wenn der Katalog fehlt.
+- **Ein Projekt, keine parallelen Projekt-Tabs.** Das Portfolio listet mehrere
+  Dateien, öffnet aber immer nur eine; Öffnen ersetzt das aktuelle Projekt.
+- **Deutsch, English, Französisch, Italienisch, Spanisch, Niederländisch,
+  Chinesisch (vereinfacht) und Polnisch.**
+  Berichtsspezifische Tabellen und MCP-Exporte bleiben vorerst Deutsch/Englisch.
+  RTL wird nicht unterstützt.
+- **Feste Anzeigegrenzen.** Der Monitor zeigt die letzten 500 Zeilen; die
+  vollständige Aufzeichnung liegt in einer temporären Datei und wird beim Beenden
+  gelöscht, sofern sie nicht vorher als CSV exportiert wurde. Die Änderungsliste
+  hält 500 Einträge, die Workbench 60 Undo-Schritte, der MCP-Server 100.
+- **Kein Revisions-Menü.** Revisionen werden gelesen und in Bericht/Übergabe
+  ausgegeben, aber weder die Workbench noch der MCP-Server legen neue an
+  (Abschnitt 8.7).
+- **Katalogindex ist abgeleitet.** Der erste Aufbau einer großen Bibliothek kann
+  dauern; der Index unter `%LOCALAPPDATA%` ist kein Ersatz für die `.knxprod` und
+  wird bei Änderungen neu geprüft.
+- **Kein ETS-Roundtrip-Nachweis.** Das Schreiben wurde mit synthetischen Archiven
+  und eigenen Prüfungen getestet, nicht durch Wiederöffnen in ETS abgenommen.
+  Signaturprüfungen in ETS können nach Änderungen fehlschlagen.
+- **Keine vollständige ETS-Parität.** Es fehlen unter anderem vollständige
+  dynamische Herstellerlogik, Plug-ins/DCA-Ausführung, vollständige Geräteimages,
+  Secure-Inbetriebnahme, USB/RDAC/Cloud-Anbindung und mehrere gleichzeitig
+  geöffnete Projekte.
+- **Busadressen sind 4-Bit-begrenzt.** Bereich und Linie 0–15, Gerätenummer
+  1–255; ungültige Eingaben werden abgelehnt statt umgerechnet.
+- **DPT-Prüfung ist keine Gerätekonformität.** Sie prüft Typ, Bitlänge und
+  belegte Secure-Fähigkeit, nicht Produktverträglichkeit oder sichere
+  Inbetriebnahme.
+- **Die Projektprüfung ist strukturell**, keine Inbetriebnahme- oder
+  Gerätediagnose.
+- **„Vor dem Löschen nachfragen“ ist ohne Wirkung**: Die Einstellung wird
+  gespeichert, aber beim Löschen nicht gelesen; BusChord fragt immer nach.
 
 ## 12. MCP und Agentenbetrieb
 

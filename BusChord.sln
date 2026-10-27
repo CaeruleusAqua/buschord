@@ -75,6 +75,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knx.Localization.Tests", "t
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knx.ProjectCompare.Tests", "tests\Knx.ProjectCompare.Tests\Knx.ProjectCompare.Tests.csproj", "{BE97ABDE-628C-4ABA-BC72-105770146E8E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knx.Scripting", "src\Knx.Scripting\Knx.Scripting.csproj", "{2D8B07C7-4110-49DD-8456-85316F1252C0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -85,6 +87,18 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Debug|x64.Build.0 = Debug|Any CPU
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Debug|x86.Build.0 = Debug|Any CPU
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Release|x64.ActiveCfg = Release|Any CPU
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Release|x64.Build.0 = Release|Any CPU
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Release|x86.ActiveCfg = Release|Any CPU
+		{2D8B07C7-4110-49DD-8456-85316F1252C0}.Release|x86.Build.0 = Release|Any CPU
 		{4A5D5AF4-CF9C-42D7-9AE7-C0B7E9B037DA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{4A5D5AF4-CF9C-42D7-9AE7-C0B7E9B037DA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4A5D5AF4-CF9C-42D7-9AE7-C0B7E9B037DA}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -498,6 +512,7 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{2D8B07C7-4110-49DD-8456-85316F1252C0} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{4A5D5AF4-CF9C-42D7-9AE7-C0B7E9B037DA} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{8547D86B-60B2-4A77-BC18-85E748DEAC2E} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{E9A16970-F78B-43CA-A32E-4F2E4C54457F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}

@@ -38,7 +38,7 @@ internal static class Selftest
 
             var listed = await Request(server, 2, "tools/list", null);
             var tools = listed["result"]?["tools"]?.AsArray() ?? new JsonArray();
-            Check("tools/list count", tools.Count == 51, tools.Count.ToString());
+            Check("tools/list count", tools.Count == 55, tools.Count.ToString());
             Check("tools/list schemas",
                 tools.All(tool => (string?)tool?["name"] is { Length: > 0 } &&
                                   (string?)tool?["inputSchema"]?["type"] == "object"));

@@ -65,6 +65,37 @@ Regression("existing incompatible batch member prevents all changes", () =>
     Check(!result.Ok && result.Changed == 0 && history.Steps == 0
         && ProjectQuery.ComObjectRefs(sample).Sum(r => r.Ref.Links.Count) == count, "batch changed despite invalid existing member");
 });
+Regression("C5 core DPT edit updates size and rechecks existing links", () =>
+{
+    var sample = WorkbenchJson.CreateDemo();
+    var ga = ProjectQuery.FindGroupAddressById(sample, "living-switch")!;
+    var linked = new ObjectKey("taster-living", "taster-living-switch");
+    var history = new UndoStack(); history.Reset(sample);
+    var result = ProjectOperations.RenameGroupAddress(sample, ga, ga.Name, "DPST-9-1", history);
+    Check(result.Ok && result.Message is not null, "edit rejected or existing incompatible links not reported");
+    Check(sample.Workbench.Groups[ga.Id].Bits == 16, "stale size");
+    Check(!WorkbenchProject.CheckLink(sample, linked, ga.Id).Ok, "incompatible existing link not detected");
+    Check(history.Steps == 1 && history.Undo()!.Workbench.Groups[ga.Id].Bits == 1, "DPT/size undo not atomic");
+    Check(ProjectQuery.FindGroupAddressById(Knxproj.FromXml(Knxproj.ToXml(sample)), ga.Id)!.DatapointType == "DPST-9-1",
+        "native persistence rewrote the DPT spelling");
+    ProjectOperations.RenameGroupAddress(sample, ga, ga.Name, "999.001");
+    Check(sample.Workbench.Groups[ga.Id].Bits is null, "unknown DPT retained stale size");
+    ProjectOperations.RenameGroupAddress(sample, ga, ga.Name, "1.001");
+    Check(WorkbenchProject.CheckLink(sample, linked, ga.Id).Ok, "restored DPT not linkable");
+    Check(WorkbenchJson.Import(WorkbenchJson.Export(sample)).Workbench.Groups[ga.Id].Bits == 1, "demo JSON compatibility");
+});
+Regression("S4 equivalent full DPTs link without collapsing subtypes", () =>
+{
+    var sample = WorkbenchJson.CreateDemo();
+    var key = new ObjectKey("taster-living", "taster-living-switch");
+    var ga = ProjectQuery.FindGroupAddressById(sample, "living-switch")!;
+    ga.DatapointType = "DPST-1-1";
+    Check(WorkbenchProject.CheckLink(sample, key, ga.Id).Ok, "equivalent spelling rejected");
+    ga.DatapointType = "DPST-1-2";
+    Check(!WorkbenchProject.CheckLink(sample, key, ga.Id).Ok, "different subtype accepted");
+    ga.DatapointType = "DPT-1";
+    Check(!WorkbenchProject.CheckLink(sample, key, ga.Id).Ok, "main-only collapsed to subtype");
+});
 if (reviewFailures.Count > 0) throw new Exception(string.Join(Environment.NewLine, reviewFailures));
 Check(WorkbenchJson.Export(WorkbenchJson.Import(originalJson)) == originalJson, "JSON roundtrip");
 var rows = WorkbenchProject.ScopeObjects(project, new(WorkbenchScopeKind.Room, "living"));
@@ -809,7 +840,8 @@ Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoad
     var copy = copyResult.Value!;
     Check(copyResult.Ok && copy.Address.ToString() == "1.2.1", "operations: demo device copy succeeds with a fresh address");
     Check(copyProject.Workbench.Devices[copy.Id].Application == copyProject.Workbench.Devices[source.Id].Application
-        && WorkbenchProject.Metadata(copyProject, new ObjectKey(copy.Id, "taster-living-switch"))?.ChannelId == "a"
+        && WorkbenchProject.Metadata(copyProject, new ObjectKey(copy.Id, "taster-living-switch"))?.ChannelId == copy.Channels[source.Channels.FindIndex(c => c.Id == "a")].Id
+        && copy.Channels.All(c => source.Channels.All(original => original.Id != c.Id))
         && WorkbenchProject.Metadata(copyProject, new ObjectKey(copy.Id, "taster-living-switch"))?.SendingGroupId == "living-switch",
         "operations: copy keeps device and external channel metadata");
     Check(copy.ComObjectRefs.Single(o => o.Id == "taster-living-switch").Links.Contains("living-switch")
@@ -867,4 +899,5 @@ Check(unrecordedRow.NeedsProgramming && unrecordedRow.MissingFlags == DeviceLoad
         "operations: undo restores the deleted group address with its links");
 }
 
+Check(LinkBulkChecks.Run() == 0, "bulk link validation and mutation checks");
 Console.WriteLine("Workbench checks OK: identity, strict JSON, scope, atomic links, connector metadata/sending invariant, typed validation, address allocation, mode preview, signatures, native extension/archive, undo, project operations and project check.");

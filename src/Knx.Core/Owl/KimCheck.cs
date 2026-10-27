@@ -1,7 +1,7 @@
 namespace Knx.Owl;
 
 /// <summary>
-/// Semantic checks of the project's KIM export against the shipped ontology.
+/// Semantic checks of the project's KIM export against the supplied reference ontology.
 /// Findings use the same <see cref="CheckFinding"/> shape as <see cref="ProjectCheck"/>.
 /// </summary>
 public static class KimCheck

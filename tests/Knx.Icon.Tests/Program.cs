@@ -26,7 +26,7 @@ var app = Application.Current!;
     ("Search", new Rect(120, -840, 720, 720)),
     ("Category", new Rect(120, -880, 760, 800)),
 
-    // Navigation and device icon set.
+    // Expected icon set.
     ("AccountTree", null),
     ("FormatListBulleted", null),
     ("LibraryBooks", null),
@@ -41,7 +41,7 @@ var app = Application.Current!;
     ("Link", null),
     ("Tune", null),
 
-    // Workbench V4 shell affordances.
+    // Workbench shell affordances.
     ("UnfoldMore", null),
     ("OpenInNew", null),
     ("Fullscreen", null),

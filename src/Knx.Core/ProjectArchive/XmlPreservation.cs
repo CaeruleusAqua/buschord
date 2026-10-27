@@ -12,6 +12,9 @@ internal static class XmlPreservation
         IndexOriginals(original.Root!, baseline.Root!, originals);
         MergeElement(result.Root!, baseline.Root!, current.Root!, originals.ToLookup(p => Key(p.Before)));
         OrderInstallationChildren(result.Root!);
+        if (ProjectFormats.IsNative(result.Root!.Name.Namespace))
+            foreach (var device in result.Descendants().Where(e => e.Name.LocalName == "DeviceInstance" && e.Name.Namespace == result.Root.Name.Namespace))
+                OrderKnownChildren(device, ["ParameterInstanceRefs", "ComObjectInstanceRefs", "ChannelInstances", "ModuleInstances", "GroupObjectTree", "AdditionalAddresses", "BinaryData", "IPConfig", "Security", "BusInterfaces", "RfFastAckSlots"]);
         return result;
     }
 
@@ -25,25 +28,29 @@ internal static class XmlPreservation
     private static void OrderInstallationChildren(XElement root)
     {
         foreach (var installation in root.DescendantsAndSelf().Where(e => e.Name.LocalName == "Installation"))
-        {
-            var children = installation.Elements().ToList();
-            var slots = Enumerable.Range(0, children.Count).Where(i => Rank(children[i].Name.LocalName) >= 0).ToList();
-            var ordered = slots.Select(i => children[i]).OrderBy(e => Rank(e.Name.LocalName)).ToList();
-            for (var slot = 0; slot < slots.Count; slot++)
-            {
-                var current = installation.Elements().ElementAt(slots[slot]);
-                if (ReferenceEquals(current, ordered[slot])) continue;
-                ordered[slot].Remove();
-                current.AddBeforeSelf(ordered[slot]);
-            }
-        }
+            OrderKnownChildren(installation, InstallationOrder);
+    }
 
-        static int Rank(string name) => Array.IndexOf(InstallationOrder, name);
+    private static void OrderKnownChildren(XElement parent, IReadOnlyList<string> order)
+    {
+        var children = parent.Elements().ToList();
+        var ranks = order.Select((name, index) => (name, index)).ToDictionary(p => p.name, p => p.index, StringComparer.Ordinal);
+        int Rank(XElement child) => child.Name.Namespace == parent.Name.Namespace ? ranks.GetValueOrDefault(child.Name.LocalName, -1) : -1;
+        var slots = Enumerable.Range(0, children.Count).Where(i => Rank(children[i]) >= 0).ToList();
+        var ordered = slots.Select(i => children[i]).OrderBy(Rank).ToList();
+        for (var slot = 0; slot < slots.Count; slot++)
+        {
+            var current = parent.Elements().ElementAt(slots[slot]);
+            if (ReferenceEquals(current, ordered[slot])) continue;
+            ordered[slot].Remove();
+            current.AddBeforeSelf(ordered[slot]);
+        }
     }
 
     private static void IndexOriginals(XElement raw, XElement before, List<(XElement Raw, XElement Before)> originals)
     {
-        if (before.Attribute("Id") is not null || before.Attribute("RefId") is not null || before.Attribute("InstallationId") is not null)
+        if (before.Name.LocalName != "BinaryData"
+            && (before.Attribute("Id") is not null || before.Attribute("RefId") is not null || before.Attribute("InstallationId") is not null))
             originals.Add((raw, before));
         foreach (var children in before.Elements().GroupBy(e => e.Name))
         {
@@ -54,18 +61,30 @@ internal static class XmlPreservation
     }
 
     private static string Key(XElement element) => element.Name + "|" +
-        (string?)(element.Attribute("Id") ?? element.Attribute("InstallationId") ?? element.Attribute("RefId") ?? element.Attribute("Address"));
+        (string?)(element.Name.LocalName == "BinaryData" && element.Parent?.Name.LocalName == "BinaryData"
+            ? element.Attribute("Name") : element.Attribute("Id") ?? element.Attribute("InstallationId") ?? element.Attribute("RefId") ?? element.Attribute("Address"));
 
     private static void MergeElement(XElement target, XElement before, XElement after,
         ILookup<string, (XElement Raw, XElement Before)> originals)
     {
+        if (after.Name.LocalName == "Data" && after.Parent?.Name.LocalName == "BinaryData"
+            && after.Parent.Parent?.Name.LocalName == "BinaryData"
+            && after.Parent.Parent.Parent?.Name.LocalName == "DeviceInstance" && before.Value != after.Value)
+        {
+            if (target.HasElements) throw new InvalidDataException("Cannot replace opaque binary data content.");
+            target.Nodes().OfType<XText>().Remove();
+            target.AddFirst(new XText(after.Value));
+        }
         // Remove a legacy Address attribute when the segment already has Number.
         if (after.Name.LocalName == "Segment" && after.Attribute("Number") is not null &&
             target.Attribute("Address") is not null)
+        {
             target.SetAttributeValue("Address", null);
+            target.SetAttributeValue("Number", (string?)after.Attribute("Number"));
+        }
 
         foreach (var name in before.Attributes().Concat(after.Attributes()).Where(a => !a.IsNamespaceDeclaration).Select(a => a.Name).Distinct())
-            if ((string?)before.Attribute(name) != (string?)after.Attribute(name) || target.Attribute(name) is null)
+            if ((string?)before.Attribute(name) != (string?)after.Attribute(name))
                 target.SetAttributeValue(name, (string?)after.Attribute(name));
 
         foreach (var name in before.Elements().Concat(after.Elements()).Select(e => e.Name).Distinct())
@@ -79,7 +98,9 @@ internal static class XmlPreservation
                 throw new InvalidDataException($"Cannot safely save ambiguous duplicate XML identities in {name}.");
             if (rawChildren.Count == 0)
             {
-                target.Add(newChildren.Select(CopyAdded));
+                // Reader defaults are modeled in both snapshots but absent from native XML. Do not materialize them on a no-op save.
+                if (oldChildren.Count != newChildren.Count || oldChildren.Zip(newChildren).Any(p => !XNode.DeepEquals(p.First, p.Second)))
+                    target.Add(newChildren.Select(CopyAdded));
                 continue;
             }
             if (rawChildren.Count != oldChildren.Count && oldChildren.Count != 0)
@@ -107,17 +128,14 @@ internal static class XmlPreservation
             }
             // Deleting a modeled object also deletes its payload. Empty collection containers,
             // however, may still own vendor attributes/children and must be retained.
-            foreach (var removed in oldChildren.Where(e => !newByKey.Contains(Key(e)) && IsContainer(e.Name.LocalName)))
+            foreach (var removed in oldChildren.Where(e => !newByKey.Contains(Key(e)) && (IsContainer(e.Name.LocalName)
+                || e.Name.LocalName == "BinaryData" && e.Parent?.Name.LocalName == "DeviceInstance")))
             {
                 var raw = rawByKey[Key(removed)];
                 MergeElement(raw, removed, new XElement(name), originals);
                 replacements.Add(raw);
             }
-            var marker = new XComment("merge-position");
-            rawChildren[0].AddBeforeSelf(marker);
-            foreach (var raw in rawChildren) raw.Remove();
-            marker.AddBeforeSelf(replacements);
-            marker.Remove();
+            ReplaceModeledChildren(rawChildren, replacements);
         }
 
         XElement CopyAdded(XElement child)
@@ -130,6 +148,33 @@ internal static class XmlPreservation
             MergeElement(copy, matches[0].Before, child, originals);
             return copy;
         }
+    }
+
+    private static void ReplaceModeledChildren(IReadOnlyList<XElement> existing, IReadOnlyList<XElement> replacements)
+    {
+        var markers = existing.ToDictionary(e => e, e =>
+        {
+            var marker = new XComment("merge-position");
+            e.AddBeforeSelf(marker); e.Remove(); return marker;
+        });
+        var surviving = existing.Where(replacements.Contains).ToArray();
+        var reordered = !surviving.SequenceEqual(replacements.Where(markers.ContainsKey));
+        XElement? previous = null;
+        for (var i = 0; i < replacements.Count; i++)
+        {
+            var replacement = replacements[i];
+            if (reordered && i < existing.Count) markers[existing[i]].ReplaceWith(replacement);
+            else if (!reordered && markers.TryGetValue(replacement, out var ownSlot)) ownSlot.ReplaceWith(replacement);
+            else
+            {
+                var next = reordered ? null : replacements.Skip(i + 1).FirstOrDefault(markers.ContainsKey);
+                if (next is not null) markers[next].AddBeforeSelf(replacement);
+                else if (previous is not null) previous.AddAfterSelf(replacement);
+                else markers[existing[0]].AddBeforeSelf(replacement);
+            }
+            previous = replacement;
+        }
+        foreach (var marker in markers.Values) if (marker.Parent is not null) marker.Remove();
     }
 
     private static bool IsContainer(string name) => name is "Installations" or "Topology" or "GroupAddresses" or

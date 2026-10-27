@@ -120,7 +120,7 @@
         <ItemsControl.ItemTemplate>
           <DataTemplate>
             <!-- One field column, capped at 540 px; label above its editor. -->
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto" HorizontalAlignment="Left"
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" HorizontalAlignment="Left"
                   Width="{Binding $parent[ScrollViewer].Bounds.Width, Converter={x:Static views:ParameterFieldWidthConverter.Instance}}"
                   Margin="0,0,0,14" IsVisible="{Binding IsVisible}">
               <TextBlock Text="{Binding Name}" Classes="wb-label" />
@@ -139,6 +139,12 @@
                   </MultiBinding>
                 </TextBlock.Text>
               </TextBlock>
+              <Expander Grid.Row="4" Classes="wb-storage-details" Margin="0,6,0,0" HorizontalAlignment="Stretch"
+                        Header="{loc:Wb ParameterStorageDetails}" IsExpanded="{Binding IsStorageExpanded, Mode=TwoWay}" IsVisible="{Binding HasStorage}"
+                        AutomationProperties.Name="{Binding StorageAutomationName}">
+                <TextBlock Text="{Binding StorageText}" TextWrapping="Wrap" Classes="wb-muted"
+                           AutomationProperties.Name="{Binding StorageAutomationName}" />
+              </Expander>
             </Grid>
           </DataTemplate>
         </ItemsControl.ItemTemplate>

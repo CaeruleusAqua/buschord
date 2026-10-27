@@ -146,6 +146,9 @@ internal static class Smoke
         });
         smokeInstallation.MainRanges.Add(smokeRange);
         smokeProject.Installations.Add(smokeInstallation);
+        smokeProject.Workbench.Objects[new Knx.Workbench.ObjectKey(actuator.Id, "CO-1").ToString()] = new()
+        { Dpt = "1.001", Bits = 1, Flags = "CRW", Active = true };
+        smokeProject.Workbench.Groups["GA-1"] = new() { Bits = 1, Secure = false };
 
         var smokePath = Path.Combine(smokeRoot, "smoke_edit.knxproj");
         Knxproj.Save(smokeProject, smokePath);

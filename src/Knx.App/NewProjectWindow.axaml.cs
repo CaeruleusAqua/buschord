@@ -10,6 +10,7 @@ public partial class NewProjectWindow : Window
     public NewProjectWindow()
     {
         InitializeComponent();
+        WorkbenchDialogChrome.Apply(this);
         Opened += (_, _) => NameBox.Focus();
     }
 

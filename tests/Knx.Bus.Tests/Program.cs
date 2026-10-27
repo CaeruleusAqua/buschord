@@ -35,6 +35,43 @@ if (args is ["--routing-live", var localIp, ..])
     return;
 }
 
+// Failed/cancelled facade acquisition must leave a clean, retryable connection.
+await using (var local = new LocalTunnelServer(0x22, null, 0))
+await using (var bus = new KnxBus())
+{
+    var rejected = false;
+    try { await bus.ConnectTunnelAsync(local.Device, new IndividualAddress(1, 1, 250)); }
+    catch (IOException) { rejected = true; }
+    Check("failed tunnel acquisition leaves facade empty", rejected && bus.State == BusConnectionState.Disconnected && bus.DeviceName is null);
+    using var cancel = new CancellationTokenSource();
+    var cancelled = false;
+    try
+    {
+        var connecting = bus.ConnectTunnelAsync(local.Device, new IndividualAddress(1, 1, 250), cancel.Token);
+        await local.IgnoredConnect.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await cancel.CancelAsync();
+        await connecting;
+    }
+    catch (OperationCanceledException) { cancelled = true; }
+    catch (InvalidOperationException) { }
+    Check("cancelled tunnel acquisition leaves facade empty", cancelled && bus.State == BusConnectionState.Disconnected && bus.DeviceName is null);
+    try
+    {
+        var callbacks = 0;
+        var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bus.TelegramReceived += _ => { Interlocked.Increment(ref callbacks); received.TrySetResult(); };
+        await bus.ConnectTunnelAsync(local.Device, new IndividualAddress(1, 1, 250));
+        await local.TelegramAsync();
+        await received.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await local.TelegramAsync(); // same sequence is a retransmit, not a second telegram
+        await Task.Delay(50);
+        Check("failed and cancelled tunnel retries succeed with one callback", bus.State == BusConnectionState.Connected && callbacks == 1);
+        await bus.DisposeAsync();
+        Check("disposed facade clears connection name", bus.DeviceName is null && bus.State == BusConnectionState.Disconnected);
+    }
+    catch (InvalidOperationException ex) { Check("failed and cancelled tunnel retries succeed with one callback", false, ex.Message); }
+}
+
 // ---- 1. KNXnet/IP Frame-Codec (Spezifikations-Bytes) ----
 {
     // SEARCH_REQUEST an Multicast, HPAI any

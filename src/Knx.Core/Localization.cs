@@ -145,7 +145,7 @@ public sealed class Strings : INotifyPropertyChanged
         // ---- panels / tabs ----
         ["TabGroupAddresses"] = ("Gruppenadressen", "Group addresses"),
         ["CommunicationObjects"] = ("Kommunikationsobjekte", "Communication objects"),
-        ["ParameterStaticNotice"] = ("Statischer Parametereditor. Dynamische Sichtbarkeit und Zuweisungen werden nicht ausgewertet. Übernehmen speichert nur im Projekt, ohne Geräteprogrammierung.", "Static parameter editor. Dynamic visibility and assignments are not evaluated. Apply updates the project only; no device programming."),
+        ["ParameterStaticNotice"] = ("Unterstützte Parameterdynamik wird im Entwurf ausgewertet. Übernehmen speichert nur im Projekt, ohne Geräteprogrammierung.", "Supported parameter dynamics are evaluated in the draft. Apply updates the project only; no device programming."),
         ["ParameterSaved"] = ("Parameter im Projekt übernommen. Projekt speichern zum dauerhaften Sichern.", "Parameters applied to project. Save the project to persist them."),
         ["LinkAdd"] = ("Verknüpfen", "Link"),
         ["LinkRemove"] = ("Verknüpfung entfernen", "Unlink"),
@@ -234,6 +234,12 @@ public sealed class Strings : INotifyPropertyChanged
         ["OptionsBus"] = ("Bus", "Bus"),
         ["OptionsInterface"] = ("Schnittstelle", "Interface"),
         ["OptionsOwnAddress"] = ("Eigene Adresse", "Own address"),
+        ["OptionsArchiveProtection"] = ("Projektverschlüsselung", "Project encryption"),
+        ["OptionsArchiveProtectionSalt"] = ("Salt für Projektarchive", "Project archive salt"),
+        ["OptionsArchiveProtectionHint"] = ("Diese Konfiguration gilt für Projektarchive auf diesem Computer.", "This configuration applies to project archives on this computer."),
+        ["OptionsArchiveProtectionLoadError"] = ("Die lokale Archivkonfiguration konnte nicht geladen werden. Prüfen Sie die Konfigurationsdatei, bevor Sie Änderungen speichern.", "The local archive configuration could not be loaded. Check the configuration file before saving changes."),
+        ["OptionsSaveError"] = ("Die Optionen konnten nicht gespeichert werden. Prüfen Sie die lokale Archivkonfiguration und die Schreibberechtigung für die Einstellungsdateien.", "The options could not be saved. Check the local archive configuration and permission to write the settings files."),
+        ["OptionsSaveRecoveryError"] = ("Speichern fehlgeschlagen; die vorherigen Dateien konnten nicht vollständig wiederhergestellt werden. Prüfen Sie beide Einstellungsdateien. Vorhandene Sicherungen bleiben in ihren Ordnern erhalten.", "Saving failed and the previous files could not be fully restored. Check both settings files. Available backups are retained in their folders."),
         ["OptionsRecent"] = ("Zuletzt geöffnete Projekte", "Recently opened projects"),
         ["OptionsNoRecent"] = ("(noch keine Projekte geöffnet)", "(no projects opened yet)"),
         ["BtnSaveSettings"] = ("Speichern", "Save"),
@@ -329,7 +335,7 @@ public sealed class Strings : INotifyPropertyChanged
         ["ColType"] = ("Typ", "Type"),
         ["TitleCompare"] = ("Projektvergleich", "Project compare"),
         ["ParameterTitle"] = ("Geräteparameter", "Device parameters"),
-        ["ParameterNoticeShort"] = ("Statischer Editor", "Static editor"),
+        ["ParameterNoticeShort"] = ("Parameterentwurf", "Parameter draft"),
         ["ParameterNoticeMore"] = ("Dynamische Logik wird nicht ausgewertet.", "Dynamic logic is not evaluated."),
 
         // ---- search / replace pane ----

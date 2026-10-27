@@ -17,7 +17,8 @@ namespace Knx.App;
 /// <summary>
 /// Variant-A window chrome: the native caption is not drawn, the 49 px top strip is the caption
 /// hit region and the three 46 x 49 blocks keep HTMINBUTTON/HTMAXBUTTON/HTCLOSE semantics.
-/// The native frame (resize, snap, DWM) and every dialog decoration stay untouched.
+/// The native frame (resize, snap, DWM) stays intact. App-owned modal windows use
+/// their independent, shared WorkbenchDialogChrome caption.
 /// </summary>
 public partial class WorkbenchWindow
 {
@@ -52,9 +53,7 @@ public partial class WorkbenchWindow
     {
         // Single-flag rollback to the documented variant E: keep the native caption above the
         // existing strip and hide the custom blocks. No other code path changes.
-        NativeTitleBar = Environment.GetCommandLineArgs()
-                .Any(argument => argument.Equals("--native-titlebar", StringComparison.OrdinalIgnoreCase))
-            || Environment.GetEnvironmentVariable("BUSCHORD_NATIVE_TITLEBAR") is "1" or "true";
+        NativeTitleBar = WorkbenchDialogChrome.NativeTitleBarRequested;
         if (NativeTitleBar)
         {
             WindowDecorations = Avalonia.Controls.WindowDecorations.Full;
@@ -271,9 +270,7 @@ public partial class WorkbenchWindow
     {
         if (!OperatingSystem.IsWindows()) return fallback;
         var value = GetSysColor(index);
-        return value == 0
-            ? fallback
-            : Color.FromRgb((byte)(value & 0xFF), (byte)((value >> 8) & 0xFF), (byte)((value >> 16) & 0xFF));
+        return Color.FromRgb((byte)(value & 0xFF), (byte)((value >> 8) & 0xFF), (byte)((value >> 16) & 0xFF));
     }
 
     [DllImport("user32.dll")]

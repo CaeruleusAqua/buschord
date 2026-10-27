@@ -46,11 +46,64 @@ public static class WorkbenchProject
     }
 
     /// <summary>Typed link validation; the string adapter above stays for existing UI callers.</summary>
-    public static LinkValidation CheckLink(Project project, ObjectKey key, string groupId)
+    public static LinkValidation CheckLink(Project project, ObjectKey key, string groupId) =>
+        CheckLinks(project, [new(key, groupId)])[0].Validation;
+
+    /// <summary>
+    /// Checks every pair using one fresh device/object/group index. Results preserve input order,
+    /// contain no mutable model references and never authorize a later mutation. Empty input returns
+    /// an empty preview; AddLinks/AddLinkPairs report NoSelection when asked to mutate an empty batch.
+    /// </summary>
+    public static IReadOnlyList<LinkCheckResult> CheckLinks(Project project, IEnumerable<LinkCheckRequest> requests)
     {
-        var row = ScopeObjects(project, new(IncludeInactive: true)).SingleOrDefault(r => r.Key == key);
-        var ga = ProjectQuery.GroupAddresses(project).SingleOrDefault(g => g.Id == groupId);
-        return CheckLink(project, key, row, ga);
+        ArgumentNullException.ThrowIfNull(project); ArgumentNullException.ThrowIfNull(requests);
+        var selected = requests.ToArray();
+        return new LinkIndex(project).Check(selected);
+    }
+
+    private sealed class LinkIndex
+    {
+        private readonly Project _project;
+        private readonly Dictionary<ObjectKey, ObjectRow?> _rows = [];
+        private readonly Dictionary<string, GroupAddressEntry?> _groups = new(StringComparer.Ordinal);
+        private readonly Dictionary<ObjectKey, HashSet<string>> _links = [];
+        internal LinkIndex(Project project)
+        {
+            _project = project;
+            var devices = ProjectQuery.DeviceList(project).ToArray();
+            var ambiguousDevices = devices.GroupBy(d => d.Id, StringComparer.Ordinal).Where(g => g.Count() != 1).Select(g => g.Key).ToHashSet(StringComparer.Ordinal);
+            foreach (var device in devices)
+            {
+                if (string.IsNullOrEmpty(device.Id)) continue;
+                foreach (var obj in device.ComObjectRefs)
+                {
+                    if (string.IsNullOrEmpty(obj.Id)) continue;
+                    var key = new ObjectKey(device.Id, obj.Id);
+                    var row = ambiguousDevices.Contains(device.Id) ? null : new ObjectRow(key, device, obj, Metadata(project, key), null, null, false);
+                    if (!_rows.TryAdd(key, row)) _rows[key] = null;
+                }
+            }
+            foreach (var group in ProjectQuery.GroupAddresses(project))
+                if (!string.IsNullOrEmpty(group.Id) && !_groups.TryAdd(group.Id, group)) _groups[group.Id] = null;
+        }
+        internal IReadOnlyList<LinkCheckResult> Check(IEnumerable<LinkCheckRequest> requests)
+        {
+            var results = new List<LinkCheckResult>();
+            foreach (var request in requests)
+            {
+                var row = _rows.GetValueOrDefault(request.Key);
+                var group = string.IsNullOrEmpty(request.GroupId) ? null : _groups.GetValueOrDefault(request.GroupId);
+                var linked = false;
+                if (row is not null && group is not null)
+                {
+                    if (!_links.TryGetValue(request.Key, out var links)) _links.Add(request.Key, links = row.Object.Links.ToHashSet(StringComparer.Ordinal));
+                    linked = links.Contains(request.GroupId);
+                }
+                results.Add(new(request.Key, request.GroupId, CheckLink(_project, request.Key, row, group), linked));
+            }
+            return Array.AsReadOnly(results.ToArray());
+        }
+        internal ComObjectInstanceRef Object(ObjectKey key) => _rows[key]!.Object;
     }
 
     private static LinkValidation CheckLink(Project project, ObjectKey key, ObjectRow? row, GroupAddressEntry? ga)
@@ -64,8 +117,10 @@ public static class WorkbenchProject
             return new(LinkValidationReason.UnknownCapability,
                 "DPT, size or security capability is unknown; native compatibility cannot be inferred.");
         if (m.Bits != g.Bits) return new(LinkValidationReason.BitSize, "Bit lengths differ.");
-        if (m.Dpt != ga.DatapointType)
-            return MainType(m.Dpt) is { } objectType && MainType(ga.DatapointType) is { } groupType && objectType != groupType
+        if (DptId.Normalize(m.Dpt) is not { } objectDpt || DptId.Normalize(ga.DatapointType) is not { } groupDpt)
+            return new(LinkValidationReason.UnknownCapability, "DPT is unknown; native compatibility cannot be inferred.");
+        if (objectDpt != groupDpt)
+            return objectDpt.Split('.')[0] != groupDpt.Split('.')[0]
                 ? new(LinkValidationReason.LongMainType, "Long main types differ.")
                 : new(LinkValidationReason.DatapointType, "Full DPTs differ.");
         if (g.Secure == true && project.Workbench.Devices.GetValueOrDefault(key.DeviceId)?.SecureCapable != true)
@@ -74,16 +129,7 @@ public static class WorkbenchProject
         return LinkValidation.Valid;
     }
 
-    // DPT main type of "1.001", "DPT-14" or "DPST-9-1"; null when the text carries no number.
-    private static int? MainType(string dpt)
-    {
-        var text = dpt.StartsWith("DPST-", StringComparison.OrdinalIgnoreCase) ? dpt[5..]
-            : dpt.StartsWith("DPT-", StringComparison.OrdinalIgnoreCase) ? dpt[4..] : dpt;
-        var digits = new string(text.TakeWhile(char.IsDigit).ToArray());
-        return int.TryParse(digits, out var value) ? value : null;
-    }
-
-                                                                                                                 
+    /// <summary>Priority is the KNX four-level value; an upper RF fast-ack slot limit is not modeled.</summary>
     public static LinkValidation ValidateConnector(ConnectorMetadata connector)
     {
         if (connector.Priority is < 0 or > 3)
@@ -95,21 +141,45 @@ public static class WorkbenchProject
 
     public static MutationResult AddLinks(Project project, IEnumerable<ObjectKey> keys, string groupId, UndoStack? undo = null)
     {
-        var selected = keys.Distinct().ToList();
-        var rows = ScopeObjects(project, new(IncludeInactive: true)).ToDictionary(r => r.Key);
-        var ga = ProjectQuery.GroupAddresses(project).SingleOrDefault(g => g.Id == groupId);
-        var errors = selected.Select(k =>
+        ArgumentNullException.ThrowIfNull(keys);
+        return AddLinkPairs(project, keys.Select(key => new LinkCheckRequest(key, groupId)), undo);
+    }
+
+    /// <summary>
+    /// Adds multiple exact object/group pairs atomically. Builds a new private index on every call;
+    /// no preview can bypass current identity, activity, DPT, bit-size or security validation.
+    /// Like GroupLinks.Link, an existing link is a no-op and connector/sending metadata is untouched.
+    /// </summary>
+    public static MutationResult AddLinkPairs(Project project, IEnumerable<LinkCheckRequest> requests, UndoStack? undo = null)
+    {
+        ArgumentNullException.ThrowIfNull(project); ArgumentNullException.ThrowIfNull(requests);
+        var selected = requests.Distinct().ToArray();
+        if (selected.Length == 0) return new(false, 0, [new(default, "No communication objects selected.", LinkValidationReason.NoSelection)], []);
+        var index = new LinkIndex(project);
+        var checks = index.Check(selected);
+        var errors = checks.Where(c => !c.Validation.Ok).Select(c => new LinkError(c.Key, c.Validation.Message, c.Validation.Reason)).ToArray();
+        if (errors.Length > 0) return new(false, 0, errors, []);
+        var added = new List<(List<string> Links, int Position)>(checks.Count);
+        try
         {
-            var validation = CheckLink(project, k, rows.GetValueOrDefault(k), ga);
-            return validation.Ok ? null : new LinkError(k, validation.Message, validation.Reason);
-        }).OfType<LinkError>().ToList();
-        if (selected.Count == 0) errors.Add(new(default, "No communication objects selected.", LinkValidationReason.NoSelection));
-        if (errors.Count > 0) return new(false, 0, errors, []);
-        var changed = 0;
-        foreach (var key in selected)
-            if (GroupLinks.Link(project, rows[key].Device, key.ObjectRefId, groupId)) changed++;
-        if (changed > 0) undo?.Push(project);
-        return new(true, changed, [], []);
+            foreach (var check in checks)
+                if (!check.AlreadyLinked)
+                {
+                    var links = index.Object(check.Key).Links;
+                    var position = links.Count;
+                    links.Add(check.GroupId); added.Add((links, position));
+                }
+            if (added.Count > 0) undo?.Push(project);
+            return new(true, added.Count, [], []);
+        }
+        catch
+        {
+            // Undo.Push serializes before changing history. Unsupported native layouts can
+            // fail that serialization; undo only the appends made here, retaining list identity,
+            // existing duplicates and ordering even when several pairs share one object.
+            for (var i = added.Count - 1; i >= 0; i--) added[i].Links.RemoveAt(added[i].Position);
+            throw;
+        }
     }
 
     /// <summary>Reads the effective per-link connector facts; null when the link does not exist.</summary>
@@ -179,17 +249,11 @@ public static class WorkbenchProject
             undo?.Push(project);
             return new(true, 1, [], []);
         }
+        var wasSending = row.Metadata?.SendingGroupId == groupId;
         GroupLinks.Unlink(project, row.Device, key.ObjectRefId, groupId);
         var warnings = new List<string>();
-        if (row.Metadata is { } metadata)
-        {
-            metadata.Connectors.Remove(groupId);
-            if (metadata.SendingGroupId == groupId)
-            {
-                metadata.SendingGroupId = null;
-                if (row.Object.Links.Count > 0) warnings.Add("Sending group address removed; explicitly select a remaining link. No replacement was chosen.");
-            }
-        }
+        if (wasSending && row.Object.Links.Count > 0)
+            warnings.Add("Sending group address removed; explicitly select a remaining link. No replacement was chosen.");
         undo?.Push(project);
         return new(true, 1, [], warnings);
     }
@@ -225,9 +289,14 @@ public static class WorkbenchProject
         var groups = ProjectQuery.GroupAddresses(project).ToDictionary(g => g.Id);
         var config = new
         {
+            // Version 2 adds native segment-medium and domain facts. Hashes from the previous
+            // projection must remain stale even when these newly tracked values are all absent.
+            Version = 2,
             Address = device.Address.ToString(), Line = located.Line?.Address, Area = located.Area.Address,
             Segment = located.Segment?.Address,
-            Medium = located.Line?.MediumTypeRefId, device.ProductRefId, device.Hardware2ProgramRefId,
+            Medium = located.Line?.MediumTypeRefId, SegmentMedium = located.Segment?.MediumTypeRefId,
+            LineDomainAddress = located.Line?.DomainAddress, SegmentDomainAddress = located.Segment?.DomainAddress,
+            device.ProductRefId, device.Hardware2ProgramRefId,
             Application = project.Workbench.Devices.GetValueOrDefault(deviceId)?.Application,
             Secure = project.Workbench.Devices.GetValueOrDefault(deviceId)?.SecureCapable,
             Params = device.ParameterValues.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray(),

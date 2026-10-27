@@ -1,13 +1,19 @@
 # Contributing to BusChord
 
 Thanks for helping. BusChord is an independent KNX engineering tool:
-.NET 9 core libraries, an Avalonia desktop app, and a headless MCP server. Keep
+.NET 10 core libraries, an Avalonia desktop app, and a headless MCP server. Keep
 changes focused, keep the diff readable, and treat the bus as production hardware.
 
 ## Building
 
-You need the [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0).
+You need a serviced [.NET 10 LTS SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 Nothing else: all NuGet packages restore with the SDK.
+`global.json` selects SDK 10.0.403 or a newer stable .NET 10 feature band.
+`Directory.Build.props` sets `net10.0` for every application, library and check.
+CI and CodeQL install the latest serviced .NET 10 SDK. The migration and local
+validation are recorded in [the product status](docs/status.md#validation).
+With a side-by-side SDK outside `PATH`, use its full executable path, for example
+`& "$env:USERPROFILE\.dotnet\dotnet.exe" build BusChord.sln -c Release`.
 
 ```powershell
 dotnet build
@@ -15,7 +21,7 @@ dotnet run --project src/Knx.App          # desktop app
 dotnet run --project src/Knx.Mcp          # MCP server on stdio
 ```
 
-The solution file is `ets6.sln`. Windows is the primary development platform;
+The solution file is `BusChord.sln`. Windows is the primary development platform;
 the core libraries are plain .NET and should stay portable.
 
 ## Tests
@@ -60,7 +66,7 @@ dotnet run --project src/Knx.Mcp -- --selftest
 ```
 
 `dotnet run --project tests/Knx.ProjectCompare.Tests` covers the compare and
-revision engine locally; it is not part of the CI matrix. Native-window and app
+revision engine locally and in the CI matrix. Native-window and app
 checks require a graphical Windows desktop:
 
 ```powershell
@@ -71,6 +77,12 @@ dotnet run --project src/Knx.App -- --screenshot-selftest
 dotnet run --project tests/Knx.ParameterUi.Tests -- --native
 dotnet run --project tests/Knx.Docking.Tests
 dotnet run --project tests/Knx.Shell.Tests
+
+dotnet run --project tests/Knx.WorkbenchUiState.Tests -- --dialogs
+
+dotnet run --project tests/Knx.WorkbenchUiState.Tests -- --dialogs --de
+
+dotnet run --project tests/Knx.WorkbenchUiState.Tests -- --projection-refresh
 ```
 
 `Knx.Docking.Tests` exercises floating and redocking tool windows,
@@ -80,17 +92,41 @@ suites cover domain contracts, sessions, theme, UI state and performance, and
 German boundaries. `src/Knx.App.Tests` covers the report/export pipeline
 (including the acceptance protocol and handover package).
 
-`tests/Knx.Catalog.Tests` needs real `.knxprod` files; point it at a local folder
-with `KNX_CATALOG_SAMPLES=<folder>` or skip it.
+The opt-in native measurement mode is separate from CI timing assertions:
+`dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release -- --performance`.
+It records 12,000 synthetic communication objects, a running simulated monitor,
+layout/render progress and p50/p95/maximum in an external JSON file. See the
+[measurement method and limitations](docs/status.md#validation);
+it does not establish a universal latency budget or manual accessibility acceptance.
+
+Use `--performance-budget` on the same project for the separate exact-reference
+budget and `budget.json`; [reference conditions and thresholds](docs/status.md#native-ui-and-accessibility)
+must match. Exit 0 requires valid fresh evidence and every timing/memory boundary
+to pass; a measurement-only pass is insufficient. `--performance-budget-checks`
+runs the pure policy checks without opening a native window and is also included
+in the normal suite. Native timing acceptance remains open after the first
+reference run's five p95 violations; retain failing reports when investigating.
+
+`tests/Knx.Catalog.Tests` runs its synthetic checks without manufacturer files.
+Set `KNX_CATALOG_SAMPLES=<folder>` to add optional local `.knxprod` checks;
+manufacturer files must stay outside version control.
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` restores and builds `ets6.sln`, then runs the suites
+`.github/workflows/ci.yml` restores and builds `BusChord.sln`, then runs the suites
 above on Ubuntu (`test-linux`) and Windows (`test-windows`). Docking, Shell,
 `ParameterUi --native`, `--smoke`, the Workbench self-checks and
 `--screenshot-selftest` run only on Windows. `cla.yml` enforces the CLA and
 `codeql.yml` runs the security scan. A pull request is not ready while any of
 these checks is red.
+The aggregate `ci` check also fails if a required job is skipped or cancelled.
+The hosted `main` and `development` branches require `ci`, `CLA Assistant` and
+`CodeQL`, with each check bound to its GitHub app. Single-maintainer pull requests
+do not require an additional approval; checks and resolved conversations still apply.
+CI and CodeQL run on pull requests and pushes to `development` or `main`.
+Feature branches use PR checks or a manual dispatch, avoiding duplicate push/PR runs.
+Both workflows cancel superseded runs on the same ref; action versions are pinned
+to upstream commit SHAs and Dependabot maintains their update pull requests.
 
 Expectations:
 
@@ -98,6 +134,11 @@ Expectations:
 - Bug fixes get a check that fails before the fix.
 - Tests never talk to a live bus, never write to a device, and never need
   manufacturer files checked into the repository.
+
+`Knx.ParameterUi.Tests` includes the full fixed-root working-set and shared-context
+table regressions. Keep their independent byte literals, raw-input freshness,
+atomic failures and the existing subset/table/source-only contracts intact;
+`Knx.Mcp.Tests` checks the corresponding explicit options and output limits.
 
 ## Branches and pull requests
 
@@ -156,8 +197,8 @@ Keep the folder out of commits and out of screenshots.
 - Public API changes in `Knx.Core` or `Knx.Bus` deserve a comment in the PR
   explaining the compatibility impact.
 - User-visible text goes through the existing `Strings`/`WorkbenchStrings` keys
-  with a German and an English value. There is no third language and no RTL
-  support yet; do not add hardcoded German outside the checked sources.
+  and the supported locale dictionaries. Keep all eight UI languages complete.
+  RTL is not supported yet; do not add hardcoded German outside the checked sources.
 - Comments in English, and only where the code is not obvious.
 
 ## Reporting security issues

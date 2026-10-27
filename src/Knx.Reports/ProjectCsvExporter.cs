@@ -25,17 +25,7 @@ public static class ProjectCsvExporter
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine(Strings.Get("CsvDeviceHeader"));
-        foreach (var inst in project.Installations)
-            foreach (var area in inst.Areas)
-            {
-                foreach (var d in area.Devices) AppendDevice(sb, d);
-                foreach (var line in area.Lines)
-                {
-                    foreach (var d in line.Devices) AppendDevice(sb, d);
-                    foreach (var seg in line.Segments)
-                        foreach (var d in seg.Devices) AppendDevice(sb, d);
-                }
-            }
+        foreach (var d in ProjectQuery.DeviceList(project)) AppendDevice(sb, d);
         return sb.ToString();
     }
 
@@ -46,21 +36,9 @@ public static class ProjectCsvExporter
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine(Strings.Get("CsvTopologyHeader"));
-        foreach (var inst in project.Installations)
-            foreach (var area in inst.Areas)
-                foreach (var line in area.Lines)
-                {
-                    if (line.Segments.Count == 0)
-                    {
-                        foreach (var d in line.Devices)
-                            sb.AppendLine(Csv.Row(';', area.Address.ToString(), line.Address.ToString(), "",
-                                d.Name, d.Address.ToString()));
-                    }
-                    foreach (var seg in line.Segments)
-                        foreach (var d in seg.Devices)
-                            sb.AppendLine(Csv.Row(';', area.Address.ToString(), line.Address.ToString(),
-                                seg.Address.ToString(), d.Name, d.Address.ToString()));
-                }
+        foreach (var d in ProjectQuery.Devices(project))
+            sb.AppendLine(Csv.Row(';', d.Area.Address.ToString(), d.Line?.Address.ToString() ?? "",
+                d.Segment?.Address.ToString() ?? "", d.Device.Name, d.Device.Address.ToString()));
         return sb.ToString();
     }
 

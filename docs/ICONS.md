@@ -6,9 +6,7 @@ The workbench and its shared panes use the **Concept** line set.
 - Rendering: `src/Knx.App/Views/ConceptIcon.cs` — draws the geometry in its
   24-unit `viewBox` with a 1.7 px `currentColor` stroke, round caps/joins and a
   default size of 17 px. The icon inherits `Foreground`.
-- The geometry follows the KNX Workbench V4 concept bundle (`src/app.js`,
-  `paths` object). That bundle is a reference input, not part of this repository;
-  the Axaml file is the canonical copy.
+- The Axaml resources are the canonical geometry definitions.
 - Material Symbols remain in `src/Knx.App/Assets/Icons.axaml` and
   `src/Knx.App/Views/Icon.cs`, but no workbench, pane or dialog view uses them any
   more. New surfaces use `ConceptIcon`.

@@ -67,6 +67,7 @@ public partial class App : Application
         var settings = AppSettings.Load();
         SettingsWindow.ApplyTheme(ForcedTheme ?? settings.Theme);
         Strings.Language = ForcedLanguage ?? settings.Language;
+        WorkbenchHighContrast.Attach(this);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

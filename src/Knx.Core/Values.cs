@@ -66,14 +66,20 @@ public readonly struct GroupAddress : IEquatable<GroupAddress>
     public ushort Raw { get; }
 
     public static GroupAddress ThreeLevel(byte main, byte middle, byte sub)
-        => new((ushort)((main << 11) | (middle << 8) | sub));
+    {
+        if (main > 31) throw new ArgumentOutOfRangeException(nameof(main));
+        if (middle > 7) throw new ArgumentOutOfRangeException(nameof(middle));
+        return new((ushort)((main << 11) | (middle << 8) | sub));
+    }
 
     public static GroupAddress Parse(string value)
     {
         var p = value.Split('/');
-        if (p.Length is 3 && byte.TryParse(p[0], out var m) && byte.TryParse(p[1], out var mi) && byte.TryParse(p[2], out var s))
+        if (p.Length is 3 && byte.TryParse(p[0], out var m) && m <= 31
+            && byte.TryParse(p[1], out var mi) && mi <= 7 && byte.TryParse(p[2], out var s))
             return ThreeLevel(m, mi, s);
-        if (p.Length is 2 && ushort.TryParse(p[0], out var a) && ushort.TryParse(p[1], out var b))
+        if (p.Length is 2 && ushort.TryParse(p[0], out var a) && a <= 31
+            && ushort.TryParse(p[1], out var b) && b <= 2047)
             return new((ushort)((a << 11) | b));
         throw new FormatException($"'{value}' ist keine gültige Gruppenadresse.");
     }

@@ -21,6 +21,14 @@ public sealed class DynamicParameterState
 public sealed class DynamicEvaluation
 {
     internal DynamicEvaluation() { }
+    internal XElement? ExpandedRoot { get; set; }
+    public bool StructureFailed { get; internal set; }
+    public IReadOnlySet<string> StructuralParameters { get; internal set; } = new HashSet<string>();
+    public IReadOnlySet<string> KnownObjectReferences { get; internal set; } = new HashSet<string>();
+    public IReadOnlySet<string> ActiveObjectReferences { get; internal set; } = new HashSet<string>();
+    /// <summary>Unique channel of each active object placement; null means independent or ambiguous.</summary>
+    public IReadOnlyDictionary<string, string?> ObjectChannels { get; internal set; } = new Dictionary<string, string?>();
+    public bool ObjectActivityComplete { get; internal set; } = true;
 
     /// <summary>State per declared ParameterRef Id. Empty when the program declares none.</summary>
     public IReadOnlyDictionary<string, DynamicParameterState> Parameters { get; internal set; } =
@@ -31,6 +39,9 @@ public sealed class DynamicEvaluation
 
     /// <summary>Subset of <see cref="KnownBlocks"/> instantiated by the selected branches.</summary>
     public IReadOnlySet<string> VisibleBlocks { get; internal set; } = new HashSet<string>(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, string> Renames { get; internal set; } = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> ResolvedNames { get; internal set; } = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> ParameterSections { get; internal set; } = new Dictionary<string, string>();
 
     /// <summary>Constructs the evaluator saw and did not implement (deterministic, sorted, deduplicated).</summary>
     public IReadOnlyList<string> Unsupported { get; internal set; } = [];
@@ -54,6 +65,8 @@ public sealed class DynamicEvaluation
     public int SelectedBranches { get; internal set; }
     public int UnmatchedChooses { get; internal set; }
     public int Assignments { get; internal set; }
+    public int ScriptExecutions { get; internal set; }
+    public int ScriptFailures { get; internal set; }
 }
 
 /// <summary>
@@ -68,8 +81,9 @@ public sealed class DynamicEvaluation
 /// Evaluation is deterministic: passes run in document order, each pass starts from the declared
 /// values, and assignments are repeated until the value map is stable. A pass limit and a nesting
 /// limit make cycles and pathological input finite and visible in <see cref="DynamicEvaluation.Unsupported"/>.
-/// No script is executed: ParameterCalculation JavaScript, Module/ModuleDef instantiation, Repeat,
-/// Button and load procedures are rejected and reported.
+/// Scripts require an explicit runtime capability; the core never loads an interpreter itself.
+/// Literal module hierarchies and bounded unconditional Repeat/global allocator snapshots are
+/// expanded for inspection. Other module structures, Button and load procedures are reported.
 ///
 /// Re-evaluation after a UI edit: pass only the caller-known user edits and apply the result again.
 /// Never seed from effective row values, because they already contain earlier assignment results.
@@ -92,8 +106,17 @@ public static class DynamicParameters
     /// Unknown keys are ignored. Each pass starts from the declarations plus these edits.
     /// </summary>
     public static DynamicEvaluation Evaluate(XElement root,
-        IReadOnlyDictionary<string, string?>? userValues = null)
+        IReadOnlyDictionary<string, string?>? userValues = null, IParameterScriptRuntime? scripts = null, string? editedReference = null,
+        bool editableStructure = false)
+        => EvaluateExpanded(StructureExpansion.Expand(root, userValues, scripts, editedReference), userValues, scripts, editedReference, editableStructure);
+
+    internal static DynamicEvaluation EvaluateExpanded(XElement root,
+        IReadOnlyDictionary<string, string?>? userValues = null, IParameterScriptRuntime? scripts = null, string? editedReference = null,
+        bool editableStructure = false)
     {
+        var structureFailed = root.Annotation<StructureExpansion.Failure>() is not null
+            || root.DescendantsAndSelf().Any(e => e.Name.LocalName is "Module" or "Repeat" && !InsideModuleDef(e));
+        var failedControls = structureFailed ? ModuleStructure.ProtectedReferences(root) : new HashSet<string>();
         var declared = ReadDeclaredValues(root, out var unresolved);
         var initial = new Dictionary<string, string?>(declared, StringComparer.Ordinal);
         if (userValues is not null)
@@ -110,17 +133,21 @@ public static class DynamicParameters
             .ToHashSet(StringComparer.Ordinal);
         var tracksVisibility = dynamicRoots.SelectMany(e => e.DescendantsAndSelf())
             .Any(e => e.Name.LocalName == "ParameterRefRef");
+        var renameTargets = root.DescendantsAndSelf().Where(e => e.Name.LocalName is "Parameter" or "ParameterRef" or "ParameterBlock")
+            .Attributes("Id").Select(a => a.Value).ToHashSet(StringComparer.Ordinal);
 
         var state = new Dictionary<string, string?>(initial, StringComparer.Ordinal);
-        var pass = new Pass(new Dictionary<string, string?>(initial, StringComparer.Ordinal), declared, state);
+        var calculations = new ParameterCalculations(root, scripts, editedReference);
+        var pass = new Pass(new Dictionary<string, string?>(initial, StringComparer.Ordinal), declared, state, renameTargets);
         var converged = false;
         var passes = 0;
         while (passes < MaxPasses)
         {
             passes++;
             var working = new Dictionary<string, string?>(initial, StringComparer.Ordinal);
-            pass = new Pass(working, declared, state);
+            pass = new Pass(working, declared, state, renameTargets);
             Walk(dynamicRoots.SelectMany(e => e.Elements()), pass, 0);
+            calculations.Apply(working, pass.Read, pass.Assigned, pass.Unsupported, pass.Blocked);
             if (SameValues(working, state))
             {
                 converged = true;
@@ -131,9 +158,14 @@ public static class DynamicParameters
         }
 
         var unsupported = new HashSet<string>(pass.Unsupported, StringComparer.Ordinal);
+        if (root.Annotation<StructureExpansion.Failure>() is { } structureError) unsupported.Add(structureError.Message);
+        var declaredObjects = root.DescendantsAndSelf().Where(e => e.Name.LocalName == "ComObject" && !InsideModuleDef(e))
+            .Attributes("Id").Select(a => a.Value).ToHashSet(StringComparer.Ordinal);
+        var objects = root.DescendantsAndSelf().Where(e => e.Name.LocalName == "ComObjectRef" && !InsideModuleDef(e)
+                && declaredObjects.Contains((string?)e.Attribute("RefId") ?? ""))
+            .Attributes("Id").Select(a => a.Value).ToHashSet(StringComparer.Ordinal);
+        foreach (var id in pass.Objects.Where(id => !objects.Contains(id))) unsupported.Add("Unknown object reference: " + id);
         foreach (var reference in unresolved) unsupported.Add("Unresolved parameter reference: " + reference);
-        if (root.DescendantsAndSelf().Any(e => e.Name.LocalName == "ParameterCalculation"))
-            unsupported.Add("Parameter calculations (JavaScript) are not executed.");
         if (root.DescendantsAndSelf().Any(e => e.Name.LocalName == "ModuleDef"))
             unsupported.Add("Module definitions are not instantiated.");
         if (!converged)
@@ -149,15 +181,31 @@ public static class DynamicParameters
                 DeclaredValue = declaredValue,
                 Value = state.GetValueOrDefault(id),
                 IsVisible = visible,
-                IsEnabled = visible,
+                IsEnabled = visible && !pass.Blocked.Contains(id)
+                    && !failedControls.Contains(id)
+                    && (root.Annotation<ModuleStructure.Controls>()?.References.Contains(id) != true
+                        || editableStructure && root.Annotation<ModuleStructure.Controls>()!.DirectReferences.Contains(id)),
             };
         }
+        var names = ApplicationTexts.Names(root, state, declared, pass.Renames, unsupported);
+        var blockNames = knownBlocks.ToDictionary(id => id, id => names.GetValueOrDefault(id) ?? "");
 
         return new DynamicEvaluation
         {
+            ExpandedRoot = root,
+            StructureFailed = structureFailed,
+            StructuralParameters = root.Annotation<ModuleStructure.Controls>()?.DirectReferences ?? new HashSet<string>(),
+            KnownObjectReferences = objects,
+            ActiveObjectReferences = pass.Objects,
+            ObjectChannels = new System.Collections.ObjectModel.ReadOnlyDictionary<string, string?>(pass.ObjectChannels),
+            ObjectActivityComplete = !pass.ObjectActivityUnsupported && pass.Objects.All(objects.Contains),
             Parameters = parameters,
             KnownBlocks = knownBlocks,
             VisibleBlocks = tracksVisibility ? pass.Blocks : knownBlocks,
+            Renames = pass.Renames,
+            ResolvedNames = names,
+            ParameterSections = pass.ParameterBlocks.Where(p => blockNames.TryGetValue(p.Value, out var title) && title.Length > 0)
+                .ToDictionary(p => p.Key, p => blockNames[p.Value]),
             Unsupported = unsupported.Order(StringComparer.Ordinal).ToList(),
             AssignedParameters = new HashSet<string>(pass.Assigned, StringComparer.Ordinal),
             TracksVisibility = tracksVisibility,
@@ -168,6 +216,8 @@ public static class DynamicParameters
             SelectedBranches = pass.Selected,
             UnmatchedChooses = pass.Unmatched,
             Assignments = pass.Assignments,
+            ScriptExecutions = calculations.Executions,
+            ScriptFailures = calculations.Failures,
         };
     }
 
@@ -182,6 +232,12 @@ public static class DynamicParameters
     {
         var invalid = new List<string>();
         foreach (var instance in instances)
+        {
+            instance.IsDerivedValue = evaluation.AssignedParameters.Contains(instance.Id);
+            instance.DeclaredName ??= instance.Name;
+            instance.Name = evaluation.ResolvedNames.GetValueOrDefault(instance.Id)
+                ?? (instance.ParameterId is { } parameterId ? evaluation.ResolvedNames.GetValueOrDefault(parameterId) : null) ?? instance.DeclaredName;
+            instance.SectionTitle = evaluation.ParameterSections.GetValueOrDefault(instance.Id);
             if (evaluation.Parameters.TryGetValue(instance.Id, out var state))
             {
                 var value = state.Value;
@@ -189,26 +245,32 @@ public static class DynamicParameters
                     !ParameterValidation.TryValidate(instance.ParameterType, value, out _))
                 {
                     value = state.DeclaredValue;
+                    instance.IsDerivedValue = false;
                     invalid.Add(instance.Id);
                 }
                 instance.Value = value;
                 instance.IsVisible = instance.IsStaticallyVisible && state.IsVisible;
                 instance.IsEnabled = instance.IsStaticallyEnabled && state.IsEnabled;
             }
+        }
         evaluation.InvalidAssignments = invalid.Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal).ToList();
 
         if (blocks is null) return;
         foreach (var block in blocks)
+        {
+            block.DeclaredName ??= block.Name ?? "";
+            block.Name = evaluation.ResolvedNames.GetValueOrDefault(block.Id) ?? block.DeclaredName;
             if (evaluation.KnownBlocks.Contains(block.Id))
             {
                 block.IsVisible = evaluation.VisibleBlocks.Contains(block.Id);
                 block.IsEnabled = block.IsVisible;
             }
+        }
     }
 
     /// <summary>Declared value per ParameterRef Id, mirroring <see cref="Ksxml.Parse"/> precedence.</summary>
-    private static Dictionary<string, string?> ReadDeclaredValues(XElement root, out List<string> unresolved)
+    internal static Dictionary<string, string?> ReadDeclaredValues(XElement root, out List<string> unresolved)
     {
         var parameters = new Dictionary<string, XElement>(StringComparer.Ordinal);
         foreach (var parameter in root.DescendantsAndSelf()
@@ -248,7 +310,7 @@ public static class DynamicParameters
     }
 
     private sealed class Pass(Dictionary<string, string?> values, Dictionary<string, string?> declared,
-        Dictionary<string, string?> previous)
+        Dictionary<string, string?> previous, IReadOnlySet<string> renameTargets)
     {
         public Dictionary<string, string?> Values { get; } = values;
         public Dictionary<string, string?> Declared { get; } = declared;
@@ -256,7 +318,16 @@ public static class DynamicParameters
         public HashSet<string> Assigned { get; } = new(StringComparer.Ordinal);
         public HashSet<string> Visited { get; } = new(StringComparer.Ordinal);
         public HashSet<string> Blocks { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> Objects { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, string?> ObjectChannels { get; } = new(StringComparer.Ordinal);
+        public Stack<string?> ChannelStack { get; } = new();
+        public bool ObjectActivityUnsupported;
         public HashSet<string> Unsupported { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> Blocked { get; } = new(StringComparer.Ordinal);
+        public IReadOnlySet<string> RenameTargets { get; } = renameTargets;
+        public Dictionary<string, string> Renames { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, string> ParameterBlocks { get; } = new(StringComparer.Ordinal);
+        public Stack<string> BlockStack { get; } = new();
         public int Chooses;
 
         /// <summary>Assignment applied earlier in this pass wins; otherwise use the previous pass.</summary>
@@ -282,6 +353,7 @@ public static class DynamicParameters
                 pass.DepthLimit = true;
                 pass.Unsupported.Add($"Dynamic nesting exceeds {MaxDepth} levels.");
             }
+            pass.ObjectActivityUnsupported = true;
             return;
         }
 
@@ -292,6 +364,7 @@ public static class DynamicParameters
                 if (refId is null) pass.Unsupported.Add("ParameterRefRef without RefId.");
                 else if (!pass.Declared.ContainsKey(refId)) pass.Unsupported.Add("Unknown parameter reference: " + refId);
                 else pass.Visited.Add(refId);
+                if (refId is not null && pass.BlockStack.TryPeek(out var block)) pass.ParameterBlocks[refId] = block;
                 return;
             case "choose":
                 Choose(element, pass, depth);
@@ -300,22 +373,46 @@ public static class DynamicParameters
                 Assign(element, pass);
                 return;
             case "ParameterBlock":
-                if ((string?)element.Attribute("Id") is { } blockId) pass.Blocks.Add(blockId);
-                Walk(element.Elements(), pass, depth + 1);
+                var blockId = (string?)element.Attribute("Id");
+                if (blockId is not null) { pass.Blocks.Add(blockId); pass.BlockStack.Push(blockId); }
+                try { Walk(element.Elements(), pass, depth + 1); }
+                finally { if (blockId is not null) pass.BlockStack.Pop(); }
                 return;
-            case "Dynamic" or "Channel" or "ChannelIndependentBlock":
+            case "Rename" or "ParameterBlockRename":
+                if ((string?)element.Attribute("RefId") is { } target && pass.RenameTargets.Contains(target)
+                    && (string?)element.Attribute("Text") is { } text) pass.Renames[target] = text;
+                else pass.Unsupported.Add("Unresolved or unsupported Rename target.");
+                return;
+            case "Channel" or "ChannelIndependentBlock":
+                pass.ChannelStack.Push(element.Name.LocalName == "Channel" ? (string?)element.Attribute("Id") : null);
+                try { Walk(element.Elements(), pass, depth + 1); }
+                finally { pass.ChannelStack.Pop(); }
+                return;
+            case "Dynamic":
                 Walk(element.Elements(), pass, depth + 1);
                 return;
             case "when":
                 pass.Unsupported.Add("when outside choose.");
+                if (element.Descendants().Any(e => e.Name.LocalName == "ComObjectRefRef")) pass.ObjectActivityUnsupported = true;
                 return;
-            case "ParameterSeparator" or "ComObjectRefRef" or "Rows" or "Columns" or "Row" or "Column":
+            case "ComObjectRefRef":
+                if ((string?)element.Attribute("RefId") is { } objectId)
+                {
+                    pass.Objects.Add(objectId);
+                    var channel = pass.ChannelStack.TryPeek(out var currentChannel) ? currentChannel : null;
+                    if (!pass.ObjectChannels.TryAdd(objectId, channel) && pass.ObjectChannels[objectId] != channel)
+                        pass.ObjectChannels[objectId] = null;
+                }
+                else { pass.Unsupported.Add("ComObjectRefRef without RefId."); pass.ObjectActivityUnsupported = true; }
                 return;
-            case "ParameterCalculation" or "Module" or "ModuleDef" or "Repeat" or "Button"
-                or "Rename" or "ParameterBlockRename":
+            case "ParameterSeparator" or "Rows" or "Columns" or "Row" or "Column":
+                return;
+            case "ParameterCalculation" or "Module" or "ModuleDef" or "Repeat" or "Button":
+                if (element.Descendants().Any(e => e.Name.LocalName == "ComObjectRefRef")) pass.ObjectActivityUnsupported = true;
                 pass.Unsupported.Add("Unsupported dynamic construct: " + element.Name.LocalName);
                 return;
             default:
+                if (element.Descendants().Any(e => e.Name.LocalName == "ComObjectRefRef")) pass.ObjectActivityUnsupported = true;
                 pass.Unsupported.Add(element.Name.LocalName.StartsWith("LdCtrl", StringComparison.Ordinal)
                     ? "Unsupported load procedure: " + element.Name.LocalName
                     : "Unsupported dynamic construct: " + element.Name.LocalName);
@@ -330,11 +427,13 @@ public static class DynamicParameters
         if (paramRefId is null)
         {
             pass.Unsupported.Add("choose without ParamRefId.");
+            if (choose.Descendants().Any(e => e.Name.LocalName == "ComObjectRefRef")) pass.ObjectActivityUnsupported = true;
             return;
         }
         if (!pass.Declared.ContainsKey(paramRefId))
         {
             pass.Unsupported.Add("choose references unknown parameter: " + paramRefId);
+            if (choose.Descendants().Any(e => e.Name.LocalName == "ComObjectRefRef")) pass.ObjectActivityUnsupported = true;
             return;
         }
         var current = pass.Read(paramRefId);
@@ -353,10 +452,15 @@ public static class DynamicParameters
             if (test is null)
             {
                 pass.Unsupported.Add("when without test or default.");
+                if (choose.Descendants().Any(e => e.Name.LocalName == "ComObjectRefRef")) pass.ObjectActivityUnsupported = true;
                 continue;
             }
             var matched = Matches(test, current, out var unsupported);
-            if (unsupported is not null) pass.Unsupported.Add(unsupported);
+            if (unsupported is not null)
+            {
+                pass.Unsupported.Add(unsupported);
+                if (choose.Descendants().Any(e => e.Name.LocalName == "ComObjectRefRef")) pass.ObjectActivityUnsupported = true;
+            }
             if (matched)
             {
                 selected = branch;
@@ -371,6 +475,23 @@ public static class DynamicParameters
             pass.Selected++;
             Walk(selected.Elements(), pass, depth + 1);
         }
+    }
+
+    /// <summary>The same condition grammar used by parameter and structural evaluation.</summary>
+    internal static XElement? SelectStructureBranch(XElement choose, IReadOnlyDictionary<string, string?> values)
+    {
+        var id = (string?)choose.Attribute("ParamRefId") ?? throw new InvalidDataException("Structural choose has no parameter reference.");
+        if (!values.TryGetValue(id, out var value)) throw new InvalidDataException("Structural choose references an unknown parameter.");
+        XElement? fallback = null;
+        foreach (var branch in choose.Elements().Where(e => e.Name.LocalName == "when"))
+        {
+            if (bool.TryParse((string?)branch.Attribute("default"), out var isDefault) && isDefault) { fallback ??= branch; continue; }
+            var test = (string?)branch.Attribute("test") ?? throw new InvalidDataException("Structural when has no test.");
+            var matched = Matches(test, value, out var unsupported);
+            if (unsupported is not null) throw new InvalidDataException(unsupported);
+            if (matched) return branch;
+        }
+        return fallback;
     }
 
     private static void Assign(XElement assign, Pass pass)

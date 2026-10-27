@@ -15,6 +15,7 @@ public partial class CompareWindow : Window
     public CompareWindow()
     {
         InitializeComponent();
+        WorkbenchDialogChrome.Apply(this);
         // A ListBox itself is not focusable; focus the first row after layout, with the
         // list as a keyboard fallback when the report is empty.
         DiffGrid.Focusable = true;

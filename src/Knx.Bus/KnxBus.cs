@@ -33,12 +33,22 @@ public sealed class KnxBus : IAsyncDisposable
         CancellationToken ct = default)
     {
         if (_transport is not null) throw new InvalidOperationException("already connected");
-        _transport = UdpTransport.Broadcast();
+        var transport = UdpTransport.Broadcast();
+        var tunnel = new KnxTunnel(transport, device.ControlEndpoint, individualAddress);
+        try
+        {
+            tunnel.TelegramReceived += t => TelegramReceived?.Invoke(t);
+            await tunnel.ConnectAsync(ct);
+        }
+        catch
+        {
+            await tunnel.DisposeAsync();
+            throw;
+        }
+        _transport = transport;
+        _tunnel = tunnel;
         DeviceName = device.Name;
-        _tunnel = new KnxTunnel(_transport, device.ControlEndpoint, individualAddress);
-        _tunnel.TelegramReceived += t => TelegramReceived?.Invoke(t);
-        _tunnel.Disconnected += () => StateChanged?.Invoke(BusConnectionState.Disconnected);
-        await _tunnel.ConnectAsync(ct);
+        tunnel.Disconnected += () => StateChanged?.Invoke(BusConnectionState.Disconnected);
         StateChanged?.Invoke(BusConnectionState.Connected);
     }
 
@@ -123,6 +133,7 @@ public sealed class KnxBus : IAsyncDisposable
         _tunnel = null;
         _routing = null;
         _transport = null;
+        DeviceName = null;
         StateChanged?.Invoke(BusConnectionState.Disconnected);
     }
 }

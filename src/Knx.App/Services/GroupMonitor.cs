@@ -284,10 +284,10 @@ public sealed class GroupMonitor
     }
 
     /// <summary>Unit the DPT implies; empty for dimensionless types and unknown DPTs.</summary>
-    public static string UnitFor(string? datapointType) => datapointType switch
+    public static string UnitFor(string? datapointType) => DptId.Normalize(datapointType) switch
     {
-        "DPST-5-1" or "DPST-5-3" or "DPST-9-7" => "%",
-        "DPST-9-1" => "°C",
+        "5.001" or "5.003" or "9.007" => "%",
+        "9.001" => "°C",
         _ => "",
     };
 

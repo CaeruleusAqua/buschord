@@ -9,8 +9,7 @@ internal sealed record ProgramSource(string? Entry, string? FilePath);
 /// <summary>
 /// Electrical and topology facts of one hardware item from a manufacturer's Hardware.xml
 /// (prod: Hardware). <see cref="BusCurrent"/> is the bus current in mA; on a power supply it is
-/// the current the unit delivers. The attribute names are those shipped in real product databases
-/// (MDT: BusCurrent="10", BusCurrent="640" IsPowerSupply="true", IsCoupler="true").
+/// the current the unit delivers. Power-supply and coupler flags are kept separately.
 /// </summary>
 public sealed record CatalogHardware
 {
@@ -27,9 +26,10 @@ public sealed record CatalogHardware
 }
 
 /// <summary>
-/// Reads supported hardware fields from Hardware.xml for bus-power and coupler checks.
-/// Other attributes remain in the XML untouched. A device resolves through either its
-/// Hardware2Program id or its product id, so both are keys of the result.
+/// Reads hardware facts for bus power and coupler planning from Hardware.xml parts.
+/// Only supported attributes are interpreted; every other attribute
+/// stays in the XML untouched. A device resolves through either its Hardware2Program id or its
+/// product id, so both are keys of the result.
 /// </summary>
 public static class CatalogHardwareFacts
 {
@@ -67,7 +67,10 @@ public static class CatalogHardwareFacts
             foreach (var program in programs)
                 facts.TryAdd((string)program.Attribute("Id")!, Fact(Mediums(program.Attribute("MediumTypes")?.Value)));
             foreach (var product in products)
-                facts.TryAdd((string)product.Attribute("Id")!, Fact(allMediums));
+                facts.TryAdd((string)product.Attribute("Id")!, Fact(allMediums) with
+                {
+                    Name = (string?)product.Attribute("Text") is { Length: > 0 } text ? text : (string?)hardware.Attribute("Name") ?? "",
+                });
         }
     }
 
@@ -230,7 +233,7 @@ public sealed class CatalogApplicationProgram
     /// A DCA/plug-in is required for this program's parameter UI, download or data handling.
     /// Its values are read-only here; BusChord does not execute the plug-in.
     /// </summary>
-    public bool RequiresDca => _extensions.Any(IsDcaExtension);
+    public bool RequiresDca => _extensions.Any(IsDcaExtension) || KnownDcaRequirementsRegistry.RequiresDca(Id);
     /// <summary>Parameters can be displayed and edited without executing a plug-in.</summary>
     public bool IsStaticallyEditable => !RequiresDca;
     /// <summary>Broken or incomplete applications must not be edited/downloaded.</summary>
