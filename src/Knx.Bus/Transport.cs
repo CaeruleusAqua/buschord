@@ -10,16 +10,38 @@ public interface IUdpTransport : IDisposable
     Task<UdpReceiveResult> ReceiveAsync(CancellationToken ct = default);
 }
 
-public sealed class UdpTransport : IUdpTransport
+/// <summary>
+/// A transport that can join an IPv4 multicast group. Routing needs this; a plain
+/// <see cref="IUdpTransport"/> must be rejected instead of pretending to be connected.
+/// </summary>
+public interface IMulticastUdpTransport : IUdpTransport
+{
+    void JoinMulticastGroup(IPAddress group, IPAddress? localAddress = null);
+    void LeaveMulticastGroup(IPAddress group);
+}
+
+public sealed class UdpTransport : IUdpTransport, IMulticastUdpTransport
 {
     private readonly UdpClient _client;
+    private readonly HashSet<IPAddress> _joinedGroups = new();
 
     public UdpTransport(int localPort) : this(IPAddress.Any, localPort) { }
 
     /// <summary>Binds to a specific local address so multicast/broadcast leaves that interface.</summary>
-    public UdpTransport(IPAddress bindAddress, int localPort)
+    public UdpTransport(IPAddress bindAddress, int localPort, bool reuseAddress = false)
     {
-        _client = new UdpClient(new IPEndPoint(bindAddress, localPort));
+        if (reuseAddress)
+        {
+            // KNXnet/IP routing listens on 3671 alongside other listeners; a shared bind
+            // is what makes a passive listener possible on Windows.
+            _client = new UdpClient(bindAddress.AddressFamily);
+            _client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            _client.Client.Bind(new IPEndPoint(bindAddress, localPort));
+        }
+        else
+        {
+            _client = new UdpClient(new IPEndPoint(bindAddress, localPort));
+        }
         _client.EnableBroadcast = true;
         _client.MulticastLoopback = false;
     }
@@ -47,6 +69,27 @@ public sealed class UdpTransport : IUdpTransport
         catch (System.Net.Sockets.SocketException)
         {
             return IPAddress.Any;
+        }
+    }
+
+    /// <summary>Joins a multicast group, optionally on one interface (needed on multi-homed hosts).</summary>
+    public void JoinMulticastGroup(IPAddress group, IPAddress? localAddress = null)
+    {
+        if (localAddress is null || localAddress.Equals(IPAddress.Any)) _client.JoinMulticastGroup(group);
+        else _client.JoinMulticastGroup(group, localAddress);
+        _joinedGroups.Add(group);
+    }
+
+    public void LeaveMulticastGroup(IPAddress group)
+    {
+        if (!_joinedGroups.Remove(group)) return;
+        try
+        {
+            _client.DropMulticastGroup(group);
+        }
+        catch (SocketException)
+        {
+            // The socket is already gone; leaving an unreachable group has no further effect.
         }
     }
 

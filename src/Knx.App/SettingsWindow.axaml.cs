@@ -18,19 +18,22 @@ public partial class SettingsWindow : Window
         _settings = settings;
         InitializeComponent();
         ThemeBox.SelectedIndex = settings.Theme switch { "Light" => 1, "Dark" => 2, _ => 0 };
-        LanguageBox.SelectedIndex = settings.Language == "en" ? 1 : 0;
+        LanguageBox.ItemsSource = Strings.Options;
+        LanguageBox.SelectedItem = Strings.Options.FirstOrDefault(option =>
+            option.Code == Strings.Normalize(settings.Language)) ?? Strings.Options[0];
         ConfirmDeleteBox.IsChecked = settings.ConfirmDelete;
         BusInterfaceBox.Text = settings.BusInterface;
         TunnelAddressBox.Text = settings.TunnelAddress;
-        RecentList.ItemsSource = settings.RecentProjects.Count == 0
-            ? new[] { Strings.Get("OptionsNoRecent") }
-            : settings.RecentProjects.ToArray();
+        RecentList.ItemsSource = settings.RecentProjects.ToArray();
+        RecentList.IsVisible = settings.RecentProjects.Count > 0;
+        RecentEmpty.IsVisible = settings.RecentProjects.Count == 0;
+        Opened += (_, _) => ThemeBox.Focus();
     }
 
     private void OnSave(object? sender, RoutedEventArgs e)
     {
         _settings.Theme = ThemeBox.SelectedIndex switch { 1 => "Light", 2 => "Dark", _ => "System" };
-        _settings.Language = LanguageBox.SelectedIndex == 1 ? "en" : "de";
+        _settings.Language = (LanguageBox.SelectedItem as Strings.LanguageOption)?.Code ?? "de";
         _settings.ConfirmDelete = ConfirmDeleteBox.IsChecked == true;
         _settings.BusInterface = string.IsNullOrWhiteSpace(BusInterfaceBox.Text) ? null : BusInterfaceBox.Text;
         if (!string.IsNullOrWhiteSpace(TunnelAddressBox.Text))

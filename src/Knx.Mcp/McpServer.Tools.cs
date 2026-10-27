@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -7,6 +8,7 @@ using Knx.Bus;
 using Knx.Catalog;
 using Knx.ProjectCompare;
 using Knx.Reports;
+using Knx.Workbench;
 
 namespace Knx.Mcp;
 
@@ -225,12 +227,49 @@ public sealed partial class McpServer
                 BoolProp("include_link_matrix", "Include the link matrix summary per main range (default true)."),
                 BoolProp("include_findings", "Include the project check findings (default true).")),
             Sync(ReportExport)),
+        new("acceptance_protocol_export",
+            "Write a printable KNX acceptance/test protocol (HTML or CSV) for the open project: project facts " +
+            "with document version, document hash and master-data signature status, topology and device list, " +
+            "group addresses with datapoint types, function matrix, per-device test rows with on-site check boxes " +
+            "and fill-in measured-value/remark columns, open items with a blank defect list and a sign-off block. " +
+            "Read-only: no bus access, no project change, no download. The check columns start open (not tested) " +
+            "and the download status stays 'no download recorded' unless a device programming state file " +
+            "(states_path, workbench export) proves a demo or real load.",
+            Schema(
+                StrProp("path", "Output .html or .csv file path.", true),
+                EnumProp("format", "Document format.", ["html", "csv"]),
+                EnumProp("language", "Document language.", ["de", "en"]),
+                StrProp("title", "Protocol title; defaults to the project name."),
+                StrProp("states_path", "Optional device programming state JSON (workbench export) used for the download status."),
+                StrProp("technician", "Technician name printed in the sign-off block."),
+                StrProp("building_owner", "Building owner name printed in the sign-off block."),
+                IntProp("defect_lines", "Blank defect-list rows (0..50, default 5).")),
+            Sync(AcceptanceProtocolExport)),
+        new("handover_package_export",
+            "Write one deterministic handover package (ZIP) for the open project or a given .knxproj: " +
+            "printable project report, group address/device/topology CSV, function matrix, room book from " +
+            "the native Locations tree, link summary, labels, semantic Turtle, acceptance protocol, " +
+            "parameter/signature evidence, operating/maintenance/contact/data-protection template pages, " +
+            "revision list, README and a SHA-256 manifest. Read-only: writes only the .zip, never the project.",
+            Schema(
+                StrProp("path", "Optional .knxproj to package; defaults to the open project. The file is only read."),
+                StrProp("output", "Output .zip path; must not be the project file.", true),
+                EnumProp("language", "Package language.", ["de", "en"]),
+                StrProp("title", "Package/report title; defaults to the project name."),
+                StrProp("technician", "Technician name for the protocol and contact page."),
+                StrProp("building_owner", "Building owner name for the protocol and contact page."),
+                StrProp("generated_at", "Fixed ISO-8601 timestamp for byte-identical regeneration."),
+                StrProp("states_path", "Optional device programming state JSON (workbench export); foreign project ids are rejected.")),
+            Sync(HandoverPackageExport)),
         new("project_compare",
-            "Compare two .knxproj files and report added, removed and changed installations, devices and " +
-            "group addresses.",
+            "Compare two .knxproj files and report added, removed and changed installations, lines, " +
+            "segments, devices and group addresses. When either file carries durable revisions, the " +
+            "comparison also reports the latest revisions and their content/signature state; pass " +
+            "generated_at for a byte-identical rendered report.",
             Schema(
                 StrProp("left_path", "Left/baseline .knxproj path.", true),
-                StrProp("right_path", "Right/updated .knxproj path.", true)),
+                StrProp("right_path", "Right/updated .knxproj path.", true),
+                StrProp("generated_at", "Fixed ISO-8601 timestamp for reproducible revision renders.")),
             Sync(ProjectCompareTool)),
 
         new("undo",
@@ -251,12 +290,13 @@ public sealed partial class McpServer
             BusDiscover),
         new("bus_connect",
             "Open a KNXnet/IP connection. mode=tunnel (default) searches for gateways and connects the first " +
-            "one matching 'device' (name fragment or individual address); mode=routing joins the multicast " +
-            "group without a device. Required before bus_read/bus_write.",
+            "one matching 'device' (name fragment or individual address); mode=routing joins 224.0.23.12 on " +
+            "the KNX segment interface (bind routing port 3671). Required before bus_read.",
             Schema(
                 EnumProp("mode", "Connection type.", ["tunnel", "routing"]),
                 StrProp("device", "Gateway name fragment or individual address; defaults to the first gateway found."),
                 StrProp("own_address", "Individual address used by the tunnel, default 1.1.250."),
+                StrProp("interface", "Local IPv4 address of the NIC on the KNX segment (routing mode only)."),
                 IntProp("timeout_ms", "Gateway search duration in ms (100..10000, default 1500).")),
             BusConnect),
         new("bus_disconnect",
@@ -264,15 +304,16 @@ public sealed partial class McpServer
             Schema(),
             BusDisconnect),
         new("bus_read",
-            "Send a group value read and wait up to 3 s for the matching group telegram. Requires a connected " +
-            "tunnel and reports an error instead of hanging when the bus is unavailable.",
+            "Send a group value read and wait up to timeout_ms for a GroupValueResponse from a real device " +
+            "for the requested group address. Our own L_Data.con echo is ignored. Requires a connected tunnel.",
             Schema(
                 StrProp("group_address", "Group address, e.g. 1/1/1.", true),
-                StrProp("datapoint_type", "Datapoint type for decoding; defaults to the project type.")),
+                StrProp("datapoint_type", "Datapoint type for decoding; defaults to the project type."),
+                IntProp("timeout_ms", "Response timeout in ms (100..10000, default 3000).")),
             BusRead),
         new("bus_write",
-            "Encode value for the datapoint type and send a group value write. The datapoint type defaults to " +
-            "the project's type for that group address.",
+            "Refused: this build is read-only. Group value writes are disabled by policy until the write " +
+            "frame encoding and the safe programming sequence are verified on real hardware.",
             Schema(
                 StrProp("group_address", "Group address, e.g. 1/1/1.", true),
                 StrProp("value", "Value in display form (On/Off, 50%, 21.5) or hex payload.", true),
@@ -287,7 +328,7 @@ public sealed partial class McpServer
             "addresses and read each device descriptor (mask version). Opens its own short-lived tunnelling " +
             "connection, so bus_connect is not required, and writes nothing to the bus. target restricts the " +
             "scan to one line 'area.line'. Compared with the open project it reports duplicate, missing and " +
-            "unexpected addresses. Live frame behaviour is unverified on real hardware.",
+            "unexpected addresses.",
             Schema(
                 StrProp("target", "Optional line filter 'area.line', e.g. 1.1; omit to scan the whole bus."),
                 StrProp("gateway", "Gateway name fragment or IP; defaults to the first gateway found."),
@@ -296,7 +337,7 @@ public sealed partial class McpServer
             BusScanTool),
         new("bus_device_info",
             "Read the device descriptor of one individual address (mask version and descriptor type) over a " +
-            "short-lived read-only tunnel. Sends only DeviceDescriptorRead; unverified on real hardware.",
+            "short-lived read-only tunnel. Sends only a well-formed DeviceDescriptorRead (descriptor type 0).",
             Schema(
                 StrProp("address", "Individual address, e.g. 1.1.5.", true),
                 StrProp("gateway", "Gateway name fragment or IP; defaults to the first gateway found."),
@@ -309,6 +350,19 @@ public sealed partial class McpServer
             "connection delivered telegrams; works offline and returns zeros without a connection.",
             Schema(IntProp("window_ms", "Trailing window in ms (100..3600000, default 60000).")),
             Sync(BusStatisticsTool)),
+        new("download_plan",
+            "Read-only preflight and dry run for a future device download: reports the gate checks " +
+            "(descriptor/mask, programming mode, confirmed address/line, program match, parameter/link " +
+            "completeness, confirmations), the computed image chunks, the printable dry run and the " +
+            "attempt-log status. Sends no programming frame and never downloads; with 'gateway' it reads " +
+            "the descriptor over a short-lived read-only tunnel (like bus_device_info). " +
+            "Real downloads stay disabled (writesEnabled false).",
+            Schema(
+                StrProp("device_address", "Individual address of a project device, e.g. 1.1.5.", true),
+                StrProp("gateway", "Optional gateway to read the descriptor from; omit for a purely offline plan."),
+                IntProp("timeout_ms", "Gateway search duration in ms (100..10000, default 1500)."),
+                IntProp("response_timeout_ms", "Descriptor response timeout in ms (100..5000, default 1000).")),
+            DownloadPlanTool),
         new("catalog_library",
             "List the product catalogues (.knxprod) in the local library with manufacturer, product " +
             "count and any files that failed to parse.",
@@ -791,6 +845,150 @@ public sealed partial class McpServer
         };
     }
 
+    private object AcceptanceProtocolExport(JsonElement args)
+    {
+        var project = Current;
+        var format = (Str(args, "format") ?? "html").ToLowerInvariant();
+        if (format is not ("html" or "csv"))
+            throw new ToolException($"unknown format '{format}' (expected html or csv)");
+        var language = Str(args, "language")?.ToLowerInvariant();
+        if (language is not null && language is not ("de" or "en"))
+            throw new ToolException($"unknown language '{language}' (expected de or en)");
+        var path = WritePath(Required(args, "path"));
+
+        IReadOnlyDictionary<string, DeviceProgrammingState>? states = null;
+        if (Str(args, "states_path") is { Length: > 0 } statesPath)
+        {
+            var full = Path.GetFullPath(statesPath);
+            if (!File.Exists(full)) throw new ToolException($"device programming state file not found: {full}");
+            try
+            {
+                states = DeviceProgrammingStates.Parse(File.ReadAllText(full), project.Id);
+            }
+            catch (Exception ex) when (ex is FormatException or IOException or UnauthorizedAccessException)
+            {
+                throw new ToolException($"device programming state file rejected: {ex.Message}");
+            }
+        }
+
+        var options = new AcceptanceProtocolOptions
+        {
+            Title = Str(args, "title"),
+            Language = language ?? Strings.Language,
+            Technician = Str(args, "technician"),
+            BuildingOwner = Str(args, "building_owner"),
+            DefectLines = Math.Clamp(Int(args, "defect_lines") ?? 5, 0, 50),
+            ProgrammingStates = states,
+        };
+        var file = format == "html"
+            ? AcceptanceProtocol.Write(project, path, options)
+            : AcceptanceProtocol.WriteCsv(project, path, options);
+        var summary = AcceptanceProtocol.Summarize(project, options);
+
+        return new
+        {
+            path = file.Path,
+            format,
+            bytes = file.Bytes,
+            language = options.Language == "en" ? "en" : "de",
+            devices = summary.Devices,
+            openItems = summary.OpenItems,
+            commissioning = summary.Commissioning switch
+            {
+                AcceptanceCommissioningMode.Real => "real",
+                AcceptanceCommissioningMode.Simulation => "simulation",
+                _ => "not_recorded",
+            },
+            documentHash = summary.DocumentHash,
+        };
+    }
+
+    private object HandoverPackageExport(JsonElement args)
+    {
+        var output = Path.GetFullPath(Required(args, "output"));
+        if (Directory.Exists(output))
+            throw new ToolException("output must be a file path, not a directory");
+        RequireExtension(output, ".zip", "output");
+
+        var language = Str(args, "language")?.ToLowerInvariant();
+        if (language is not null && language is not ("de" or "en"))
+            throw new ToolException($"unknown language '{language}' (expected de or en)");
+
+        DateTimeOffset? generatedAt = null;
+        if (Str(args, "generated_at") is { Length: > 0 } generatedText)
+        {
+            if (!DateTimeOffset.TryParse(generatedText, CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var parsed))
+                throw new ToolException($"'generated_at' is not an ISO-8601 timestamp: {generatedText}");
+            generatedAt = parsed;
+        }
+
+        Project project;
+        string? source = null;
+        if (Str(args, "path") is { Length: > 0 } projectPath)
+        {
+            source = Path.GetFullPath(projectPath);
+            RequireExtension(source, ".knxproj", "path");
+            if (!File.Exists(source)) throw new ToolException($"project file not found: {source}");
+            project = Knxproj.Load(source);
+        }
+        else
+        {
+            project = Current;
+            source = _projectPath;
+        }
+
+        if (source is not null && SamePath(output, source))
+            throw new ToolException("output must not overwrite the project file");
+
+        IReadOnlyDictionary<string, DeviceProgrammingState>? states = null;
+        if (Str(args, "states_path") is { Length: > 0 } statesPath)
+        {
+            var full = Path.GetFullPath(statesPath);
+            RequireExtension(full, ".json", "states_path");
+            if (!File.Exists(full)) throw new ToolException($"device programming state file not found: {full}");
+            if (SamePath(output, full))
+                throw new ToolException("output must not overwrite the programming state file");
+            try
+            {
+                states = DeviceProgrammingStates.Parse(File.ReadAllText(full), project.Id);
+            }
+            catch (Exception ex) when (ex is FormatException or IOException or UnauthorizedAccessException)
+            {
+                throw new ToolException($"device programming state file rejected: {ex.Message}");
+            }
+        }
+
+        var result = HandoverPackage.Write(project, output, new HandoverPackageOptions
+        {
+            Title = Str(args, "title"),
+            Language = language ?? Strings.Language,
+            GeneratedAt = generatedAt,
+            Technician = Str(args, "technician"),
+            BuildingOwner = Str(args, "building_owner"),
+            ProgrammingStates = states,
+        });
+
+        return new
+        {
+            path = result.Path,
+            bytes = result.Bytes,
+            root = result.RootFolder,
+            project = project.Name,
+            files = result.Files.Count,
+            manifestHash = result.ManifestSha256,
+            revision = result.Revision,
+            signature = result.Signature,
+            commissioning = result.Commissioning,
+            contents = result.Files.Select(file => new
+            {
+                name = file.Name,
+                bytes = file.Bytes,
+                sha256 = file.Sha256,
+            }).ToList(),
+        };
+    }
+
     private object ProjectCompareTool(JsonElement args)
     {
         var leftPath = Path.GetFullPath(Required(args, "left_path"));
@@ -798,20 +996,38 @@ public sealed partial class McpServer
         if (!File.Exists(leftPath)) throw new ToolException($"project file not found: {leftPath}");
         if (!File.Exists(rightPath)) throw new ToolException($"project file not found: {rightPath}");
 
-        var report = ProjectComparer.Compare(Knxproj.Load(leftPath), Knxproj.Load(rightPath));
+        DateTimeOffset? generatedAt = null;
+        if (Str(args, "generated_at") is { Length: > 0 } generatedText)
+        {
+            if (!DateTimeOffset.TryParse(generatedText, CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var parsed))
+                throw new ToolException($"'generated_at' is not an ISO-8601 timestamp: {generatedText}");
+            generatedAt = parsed;
+        }
+
+        var report = ProjectComparer.CompareRevisions(Knxproj.Load(leftPath), Knxproj.Load(rightPath), generatedAt);
+        var renderedReport = report.HasRevisions ? DifferenceReportRenderer.RenderText(report) : null;
         const int limit = 500;
         return new
         {
             leftProject = report.LeftProjectName,
             rightProject = report.RightProjectName,
             generatedAt = report.GeneratedAt,
+            revisionAware = report.HasRevisions,
+            leftRevision = RevisionSummary(report.LeftRevision),
+            rightRevision = RevisionSummary(report.RightRevision),
+            revisionContent = report.HasRevisions
+                ? report.ContentUnchanged ? "unchanged" : "changed" : null,
+            revisionSignature = report.HasRevisions
+                ? report.SignatureUnchanged ? "unchanged" : "changed" : null,
+            reportText = renderedReport,
             added = report.AddedCount,
             removed = report.RemovedCount,
             changed = report.ChangedCount,
             unchanged = report.UnchangedCount,
             total = report.Items.Count,
             truncated = report.Items.Count > limit,
-            items = report.Items.Take(limit).Select(item => new
+            items = report.OrderedItems().Take(limit).Select(item => new
             {
                 path = item.Path,
                 objectType = item.ObjectType,
@@ -823,6 +1039,23 @@ public sealed partial class McpServer
             }).ToList(),
         };
     }
+
+    /// <summary>
+    /// Revision metadata for the compare payload. The source path stays out on purpose: it is
+    /// only a base name in the model, but shared compare output should not name customer files.
+    /// </summary>
+    private static object? RevisionSummary(ProjectRevision? revision) => revision is null ? null : new
+    {
+        revision.Id,
+        revision.Number,
+        revision.Timestamp,
+        revision.ContentHash,
+        algorithm = revision.HashAlgorithm,
+        sourceHash = revision.SourceHash,
+        revision.Description,
+        signature = revision.SignatureStatus.ToString(),
+        signatureHash = revision.SignatureHash,
+    };
 
     // ---------------------------------------------------------------- undo / redo
 
@@ -887,6 +1120,13 @@ public sealed partial class McpServer
 
         var mode = (Str(args, "mode") ?? "tunnel").ToLowerInvariant();
         var ownAddress = Str(args, "own_address") ?? "1.1.250";
+        var interfaceText = Str(args, "interface");
+        IPAddress? localAddress = null;
+        if (interfaceText is not null)
+        {
+            if (!IPAddress.TryParse(interfaceText, out localAddress))
+                throw new ToolException($"'{interfaceText}' is not a local IPv4 address");
+        }
         var timeoutMs = Math.Clamp(Int(args, "timeout_ms") ?? 1500, 100, 10000);
         if (!IndividualAddress.TryParse(ownAddress, out var individualAddress))
             throw new ToolException($"'{ownAddress}' is not a valid individual address (x.y.z)");
@@ -895,7 +1135,7 @@ public sealed partial class McpServer
         {
             if (mode == "routing")
             {
-                await _bus.ConnectRoutingAsync();
+                await _bus.ConnectRoutingAsync(localAddress);
             }
             else if (mode == "tunnel")
             {
@@ -941,6 +1181,7 @@ public sealed partial class McpServer
             mode,
             device = _bus.DeviceName,
             ownAddress,
+            @interface = localAddress?.ToString(),
             state = _bus.State.ToString().ToLowerInvariant(),
         };
     }
@@ -960,62 +1201,41 @@ public sealed partial class McpServer
         RequireConnected();
         var address = ParseAddress(Required(args, "group_address"));
         var datapointType = Str(args, "datapoint_type") ?? ProjectDatapointType(address);
+        var timeoutMs = Math.Clamp(Int(args, "timeout_ms") ?? 3000, 100, 10000);
 
-        var completion = new TaskCompletionSource<BusTelegram>(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnTelegram(BusTelegram telegram)
-        {
-            if (telegram.Telegram.IsGroupAddress && telegram.Telegram.Destination.Raw == address.Raw)
-                completion.TrySetResult(telegram);
-        }
-
-        _bus.TelegramReceived += OnTelegram;
+        BusTelegram? received;
         try
         {
-            await _bus.GroupValueReadAsync(address);
-            var received = await completion.Task.WaitAsync(TimeSpan.FromSeconds(3));
-            return new
-            {
-                groupAddress = address.ToString(),
-                datapointType,
-                value = Dpt.Decode(datapointType, received.Telegram.Data),
-                payload = Convert.ToHexString(received.Telegram.Data),
-                source = received.Source,
-                apci = received.Telegram.Apci.ToString(),
-                timestamp = received.Timestamp,
-            };
+            received = await _bus.ReadGroupValueAsync(address, TimeSpan.FromMilliseconds(timeoutMs));
         }
-        catch (TimeoutException)
+        catch (Exception ex) when (ex is not ToolException)
         {
-            throw new ToolException($"no response for {address} within 3000 ms");
+            throw new ToolException($"group read failed: {ex.Message}");
         }
-        finally
-        {
-            _bus.TelegramReceived -= OnTelegram;
-        }
-    }
 
-    private async Task<object> BusWrite(JsonElement args)
-    {
-        RequireConnected();
-        var address = ParseAddress(Required(args, "group_address"));
-        var value = Required(args, "value");
-        var datapointType = Str(args, "datapoint_type") ?? ProjectDatapointType(address);
-        var payload = Dpt.Encode(datapointType, value);
-        if (payload.Length == 0)
+        if (received is null)
             throw new ToolException(
-                $"value '{value}' cannot be encoded for datapoint type '{datapointType ?? "unknown"}'; " +
-                "pass the raw payload as hex");
+                $"no GroupValueResponse for {address} within {timeoutMs} ms; " +
+                "our own L_Data.con confirmation is not a response");
 
-        await _bus.GroupValueWriteAsync(address, payload);
         return new
         {
-            sent = true,
             groupAddress = address.ToString(),
             datapointType,
-            value,
-            payload = Convert.ToHexString(payload),
+            value = Dpt.Decode(datapointType, received.Telegram.Data),
+            payload = Convert.ToHexString(received.Telegram.Data),
+            source = received.Telegram.Source.ToString(),
+            transport = received.Source,
+            apci = received.Telegram.Apci.ToString(),
+            hopCount = received.Telegram.HopCount,
+            timestamp = received.Timestamp,
         };
     }
+
+    private Task<object> BusWrite(JsonElement args)
+        => throw new ToolException(
+            "bus_write is disabled: this build is read-only. Group value writes are blocked by policy " +
+            "until the wire encoding and the safe programming sequence are verified on real hardware.");
 
     private object BusStatus(JsonElement args) => new    {
         connected = _bus.State == BusConnectionState.Connected,
@@ -1129,6 +1349,100 @@ public sealed partial class McpServer
                 : "No KNXnet/IP connection is active, so no telegrams are counted yet.",
         };
     }
+
+    private async Task<object> DownloadPlanTool(JsonElement args)
+    {
+        var project = Current;
+        var address = ParseIndividualAddress(Required(args, "device_address"));
+        var located = ProjectQuery.LocateDevice(project, address)
+            ?? throw new ToolException($"device {address} not found in the project");
+
+        // A descriptor read is the only live step and it is read-only; without 'gateway' the plan
+        // stays offline and reports the missing descriptor as a blocker.
+        DeviceDescriptor? descriptor = null;
+        if (Str(args, "gateway") is { Length: > 0 } gateway)
+        {
+            var timeoutMs = Math.Clamp(Int(args, "timeout_ms") ?? 1500, 100, 10000);
+            var responseTimeoutMs = Math.Clamp(Int(args, "response_timeout_ms") ?? 1000, 100, 5000);
+            var options = new ScanOptions { ResponseTimeout = TimeSpan.FromMilliseconds(responseTimeoutMs) };
+            BusScan scan;
+            try
+            {
+                scan = await BusDiagnostics.WithSessionAsync(gateway, timeoutMs,
+                    session => Diagnostics.ScanAsync(session, [address], options));
+            }
+            catch (Exception ex) when (ex is not ToolException)
+            {
+                throw new ToolException($"descriptor read failed: {ex.Message}");
+            }
+            descriptor = scan.Devices[0].Descriptor;
+        }
+
+        var programRef = located.Device.Hardware2ProgramRefId is { Length: > 0 } reference ? reference : null;
+        var plan = DownloadPreflight.Plan(new DownloadPreflightRequest
+        {
+            DeviceAddress = address,
+            Descriptor = descriptor,
+            // This build cannot query programming mode read-only, and no agent can confirm on site.
+            ProgrammingMode = false,
+            AddressConfirmed = false,
+            DryRunConfirmed = false,
+            ExpectedArea = located.Area.Address,
+            ExpectedLine = located.Line?.Address,
+            ExpectedApplicationId = programRef,
+        });
+
+        return new
+        {
+            readOnly = true,
+            writesEnabled = KnxBus.WritesEnabled,
+            realDownloadAvailable = false,
+            device = new
+            {
+                address = address.ToString(),
+                name = located.Device.Name,
+                area = located.Area.Address,
+                line = located.Line?.Address,
+                productRefId = located.Device.ProductRefId,
+                programRefId = programRef,
+            },
+            descriptor = descriptor is null ? null : new
+            {
+                type = descriptor.Type,
+                maskVersion = descriptor.MaskVersion is { } mask ? $"0x{mask:X4}" : null,
+                mask = descriptor.MaskName,
+                description = descriptor.Describe(),
+            },
+            confirmations = new { programmingMode = false, address = false, dryRun = false },
+            plan = new
+            {
+                ready = plan.Ready,
+                target = plan.DeviceAddress.ToString(),
+                program = plan.ProgramName,
+                imageHash = plan.ImageHash,
+                imageBytes = plan.ImageLength,
+                startAddress = $"0x{plan.StartAddress:X4}",
+                maskVersion = plan.MaskVersion is { } planMask ? $"0x{planMask:X4}" : null,
+                chunks = plan.Chunks.Select(c => new { address = $"0x{c.Address:X4}", bytes = c.Length }).ToList(),
+                blockers = plan.Blockers.Select(DownloadCheckJson).ToList(),
+                warnings = plan.Warnings.Select(DownloadCheckJson).ToList(),
+                dryRun = plan.Describe(),
+            },
+            attemptLog = new
+            {
+                writtenFor = "every DownloadSession.RunAsync (real or refused)",
+                entries = 0,
+                note = "no download ran: the real write path is disabled by policy",
+            },
+        };
+    }
+
+    private static object DownloadCheckJson(DownloadCheck check) => new
+    {
+        code = JsonNamingPolicy.SnakeCaseLower.ConvertName(check.Code.ToString()),
+        severity = check.Severity.ToString().ToLowerInvariant(),
+        message = check.Message,
+    };
 
     private static object Statistics(BusStatisticsSnapshot snapshot) => new
     {
@@ -1504,6 +1818,18 @@ public sealed partial class McpServer
         EnsureDirectory(full);
         return full;
     }
+
+    /// <summary>Handover tool guard: an input/output path must name the expected file type.</summary>
+    private static void RequireExtension(string path, string extension, string argument)
+    {
+        if (!path.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            throw new ToolException($"{argument} must point to a {extension} file");
+    }
+
+    /// <summary>Handover tool guard: never let an output overwrite an input file.</summary>
+    private static bool SamePath(string left, string right)
+        => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     private static void EnsureDirectory(string path)
     {

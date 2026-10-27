@@ -31,6 +31,10 @@ internal static class Smoke
         var vm = new MainWindowViewModel();
         Check("MainWindowViewModel erzeugt", vm.Status == "Bereit");
 
+        // Docked panels carry the view model themselves; the workbench shell only hosts fresh views.
+        var staged = new Avalonia.Controls.Border { DataContext = vm };
+        Check("Dock-Panel hat das ViewModel als DataContext", ReferenceEquals(staged.DataContext, vm));
+
         // 2. Mini-Projekt erzeugen + speichern + laden
         var project = new Project { Id = "P-1", Name = "Smoke" };
         var inst = new Installation { Id = "I-1", Name = "Haus" };

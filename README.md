@@ -27,6 +27,7 @@ Console check projects live under `tests/`; run the checks relevant to a change 
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
+- [Contributor agreement](CLA.md)
 
 ## Limits
 
@@ -40,7 +41,15 @@ supported. No KNX Association code, schema file, product database or documentati
 redistributed with this repository. Product databases downloaded for testing stay outside
 version control and are the property of their manufacturers.
 
+Build steps, branch model, test commands and PR rules: [CONTRIBUTING.md](CONTRIBUTING.md).
+Everyone participating follows the [Code of Conduct](CODE_OF_CONDUCT.md); report
+vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+Pull requests require accepting the [Contributor License Agreement](CLA.md)
+(a one-line comment, checked automatically).
+
 Source code: [Apache License 2.0](LICENSE), copyright 2026 BusChord contributors.
+The CLA grants the project the right to relicense future distributed versions;
+published releases stay under the licence they shipped with.
 *KNX* and *ETS* remain trademarks of the KNX Association; see the trademark note above.
 
 Protected archives use the built-in protection profile and the project password.

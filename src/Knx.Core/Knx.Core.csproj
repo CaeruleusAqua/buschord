@@ -5,4 +5,8 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Knx</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Workbench\demo-project.json" LogicalName="Knx.Workbench.demo-project.json" />
+    <EmbeddedResource Include="..\..\i18n\core\*.json" LogicalName="BusChord.i18n.core.%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

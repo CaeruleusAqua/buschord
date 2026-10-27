@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Xml.Linq;
 using IOPath = System.IO.Path;
@@ -15,19 +16,40 @@ namespace Knx.Catalog;
 /// ApplicationPrograms/ApplicationProgram, Languages/Language(@Identifier)/TranslationUnit/
 /// TranslationElement(@RefId)/Translation(@AttributeName,@Text)}. Namespaces and unknown
 /// elements are ignored, so unverified parts may still parse.
+///
+/// Catalogue listing and search need only program metadata (name, numbers, flags, COM objects,
+/// datapoint types). That metadata is read without building the KSXML parameter model; the full
+/// model is read lazily on <see cref="FindProgram"/> / <see cref="FindProgramFor"/> for the
+/// parameter editor, from the same archive part.
 /// </summary>
-public sealed class KnxProductCatalog
+public sealed partial class KnxProductCatalog
 {
-    private readonly Dictionary<string, Dictionary<string, Dictionary<string, string>>> _translations =
-        new(StringComparer.Ordinal);
+    /// <summary>Maximum nesting of catalogue sections; deeper input is rejected, not recursed.</summary>
+    public const int MaximumSectionDepth = 64;
+
+    /// <summary>Maximum uncompressed XML of one archive entry before it is rejected.</summary>
+    public const long MaximumXmlEntryBytes = 256L * 1024 * 1024;
+
+    /// <summary>Maximum uncompressed size of an inner archive extracted from a vendor ZIP.</summary>
+    public const long MaximumNestedArchiveBytes = 1024L * 1024 * 1024;
+
+    private const int MaximumArchiveDepth = 4;
+
     private readonly Dictionary<string, List<string>> _hardware2Programs = new(StringComparer.Ordinal);
+    // Catalogue items resolve their product once per section; keep both lookups O(1) instead of
+    // scanning the full product/program lists for every declaration.
+    private readonly Dictionary<string, CatalogProduct> _productsById = new(StringComparer.Ordinal);
+    // Metadata is appended by the background index build while search reads it: concurrent map.
+    private readonly ConcurrentDictionary<string, CatalogApplicationProgram> _programsById = new(StringComparer.Ordinal);
 
     // Split archives (the layout every shipped .knxprod we have seen uses) keep the
-    // application programs in separate parts; they are loaded on demand by program id.
+    // application programs in separate parts; part names are known without parsing them.
     private readonly Dictionary<string, string> _partByName = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _loadedParts = new(StringComparer.Ordinal);
     // Manufacturer display names live in knx_master.xml, not in the catalogue parts.
     private readonly Dictionary<string, string> _manufacturerNames = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _loadedParts = new(StringComparer.Ordinal);
+    private readonly object _modelGate = new();
+    private readonly object _enrichGate = new();
     private string? _archivePath;
 
     private KnxProductCatalog(string path) => Path = path;
@@ -45,18 +67,44 @@ public sealed class KnxProductCatalog
     /// <summary>Image entries of the archive (or sibling image files), names only.</summary>
     public List<string> Images { get; } = [];
 
-    public static KnxProductCatalog Open(string path) => Open(path, 0);
+    /// <summary>Program metadata (names, COM objects, DPT, gating flags) covers every application.</summary>
+    public bool MetadataComplete { get; internal set; }
 
-    private static KnxProductCatalog Open(string path, int depth)
+    /// <summary>
+    /// Application-program parts this catalogue still has to read; zero once its program metadata
+    /// is complete (and for catalogues that keep everything in one XML part).
+    /// </summary>
+    public int ProgramPartCount => _partByName.Count;
+
+    /// <summary>Number of applications whose full KSXML parameter model has been materialised.</summary>
+    public int LoadedProgramModels { get; private set; }
+
+    /// <summary>Archives with a stable layout can persist their metadata; nested wrappers cannot.</summary>
+    internal bool Indexable { get; set; } = true;
+
+    /// <summary>Inner archive extracted from a vendor ZIP wrapper, when the catalogue is nested.</summary>
+    internal string? BackingArchivePath =>
+        _archivePath is not null && !string.Equals(_archivePath, Path, StringComparison.OrdinalIgnoreCase)
+            ? _archivePath
+            : null;
+
+    /// <summary>Fallback location for extracted vendor ZIP wrappers (machine-local, derived data).</summary>
+    private static string DefaultArchiveCache => IOPath.Combine(CatalogIndexStore.DefaultDirectory, "archives");
+
+    public static KnxProductCatalog Open(string path) => Open(path, 0, null);
+
+    internal static KnxProductCatalog Open(string path, string? cacheDirectory) => Open(path, 0, cacheDirectory);
+
+    private static KnxProductCatalog Open(string path, int depth, string? cacheDirectory)
     {
-        if (depth > 4) throw new InvalidDataException("Catalogue archive nesting exceeds four levels.");
+        if (depth > MaximumArchiveDepth) throw new InvalidDataException("Catalogue archive nesting exceeds four levels.");
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("catalogue path is empty", nameof(path));
 
         var full = IOPath.GetFullPath(path);
         if (Directory.Exists(full))
         {
             var mono = IOPath.Combine(full, "knxprod.xml");
-            if (File.Exists(mono)) return Open(mono);
+            if (File.Exists(mono)) return Open(mono, depth, cacheDirectory);
             if (Directory.EnumerateFiles(full, "Catalog.xml", SearchOption.AllDirectories).Any())
                 return OpenSplitDirectory(full);
             full = FindCatalogFile(full);
@@ -65,65 +113,54 @@ public sealed class KnxProductCatalog
 
         var catalog = new KnxProductCatalog(full);
         var images = new List<string>();
-        var attachedPrograms = new List<XDocument>();
-        XDocument document;
 
         if (full.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) || LooksLikeXml(full))
         {
-            document = XDocument.Load(full);
+            var document = LoadXmlFile(full);
             var folder = IOPath.GetDirectoryName(full);
             if (folder is not null && Directory.Exists(folder))
                 images.AddRange(Directory.EnumerateFiles(folder).Where(IsImage).Select(f => IOPath.GetFileName(f)));
-        }
-        else
-        {
-            using var zip = ZipFile.OpenRead(full);
-            var main = PickMainEntry(zip);
-            if (main is null) return OpenSplitArchive(full, zip, depth, ReadMasterNames(zip));
-            foreach (var (id, name) in ReadMasterNames(zip)) catalog._manufacturerNames[id] = name;
-            using (var stream = main.Open()) document = XDocument.Load(stream);
-            images.AddRange(zip.Entries.Where(e => IsImage(e.FullName)).Select(e => e.FullName));
-            foreach (var entry in zip.Entries)
-            {
-                // Older archives keep device XMLs as separate parts; tolerate them being absent or broken.
-                if (entry == main || !entry.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) continue;
-                if (!entry.FullName.Contains("_A-", StringComparison.OrdinalIgnoreCase)) continue;
-                try
-                {
-                    using var stream = entry.Open();
-                    var part = XDocument.Load(stream);
-                    if (part.Root?.Name.LocalName == "ApplicationProgram") attachedPrograms.Add(part);
-                }
-                catch (System.Xml.XmlException)
-                {
-                    // Ignore a broken embedded part; the catalogue itself stays usable.
-                }
-            }
+            catalog.Parse(document, new CatalogSource(full, null));
+            catalog.Images.AddRange(images);
+            catalog.MetadataComplete = true;
+            return catalog;
         }
 
-        catalog.Parse(document);
-        catalog.Images.AddRange(images);
-        foreach (var part in attachedPrograms)
+        using var zip = ZipFile.OpenRead(full);
+        // One master read; the split decision comes from the entry names, not from scanning it.
+        var masterNames = ReadMasterNames(zip);
+        if (HasSplitBase(zip)) return OpenSplitArchive(full, zip, depth, masterNames, cacheDirectory);
+
+        var main = PickMainEntry(zip);
+        if (main is null) return OpenSplitArchive(full, zip, depth, masterNames, cacheDirectory);
+        catalog._archivePath = full;
+        foreach (var (id, name) in masterNames) catalog._manufacturerNames[id] = name;
+
+        XDocument mainDocument;
+        using (var stream = OpenXmlEntry(main)) mainDocument = LoadXml(stream);
+        images.AddRange(zip.Entries.Where(e => IsImage(e.FullName)).Select(e => e.FullName));
+
+        // Older archives keep device XMLs as separate parts; keep them lazy like split archives.
+        foreach (var entry in zip.Entries)
         {
-            try
-            {
-                catalog.Parse(part);
-            }
-            catch (InvalidDataException)
-            {
-                // A part without a Manufacturer element is not an application program.
-            }
+            if (entry == main || !entry.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) continue;
+            var stem = IOPath.GetFileNameWithoutExtension(entry.Name);
+            if (stem.Contains("_A-", StringComparison.OrdinalIgnoreCase)) catalog._partByName[stem] = entry.FullName;
         }
+
+        catalog.Parse(mainDocument, new CatalogSource(null, main.FullName));
+        catalog.Images.AddRange(images);
+        catalog.MetadataComplete = catalog._partByName.Count == 0;
         return catalog;
     }
 
     /// <summary>
     /// Split layout as shipped by manufacturers: knx_master.xml plus per-manufacturer
-    /// Catalog.xml, Hardware.xml and one XML per application program. Only hardware and
-    /// catalogue metadata are read eagerly; programs load on first lookup by id.
+    /// Catalog.xml, Hardware.xml and one XML per application program. Hardware and catalogue
+    /// metadata are read eagerly; program metadata and parameter models load on demand.
     /// </summary>
     private static KnxProductCatalog OpenSplitArchive(string path, ZipArchive zip, int depth,
-        Dictionary<string, string> masterNames)
+        Dictionary<string, string> masterNames, string? cacheDirectory)
     {
         var catalog = new KnxProductCatalog(path) { _archivePath = path };
         foreach (var (id, name) in masterNames) catalog._manufacturerNames[id] = name;
@@ -139,7 +176,7 @@ public sealed class KnxProductCatalog
             var nested = zip.Entries.FirstOrDefault(e =>
                 e.Name.EndsWith(".knxprod", StringComparison.OrdinalIgnoreCase) ||
                 e.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
-            if (nested is not null) return OpenNested(path, nested, depth);
+            if (nested is not null) return OpenNested(path, nested, depth, cacheDirectory);
 
             throw new InvalidDataException(
                 $"'{path}' is not a KNX product catalogue (no knxprod.xml, Catalog.xml or Hardware.xml).");
@@ -150,8 +187,8 @@ public sealed class KnxProductCatalog
             if (entry is null) continue;
             try
             {
-                using var stream = entry.Open();
-                catalog.Parse(XDocument.Load(stream));
+                using var stream = OpenXmlEntry(entry);
+                catalog.Parse(LoadXml(stream), new CatalogSource(null, entry.FullName));
             }
             catch (System.Xml.XmlException)
             {
@@ -166,11 +203,18 @@ public sealed class KnxProductCatalog
         }
 
         catalog.Images.AddRange(zip.Entries.Where(e => IsImage(e.FullName)).Select(e => e.FullName));
+        catalog.MetadataComplete = catalog._partByName.Count == 0;
         return catalog;
     }
 
-    /// <summary>Unwraps a vendor ZIP that contains the actual .knxprod (nested archive).</summary>
-    private static KnxProductCatalog OpenNested(string outerPath, ZipArchiveEntry nested, int depth)
+    /// <summary>
+    /// Unwraps a vendor ZIP that contains the actual .knxprod (nested archive). The inner archive
+    /// is kept in the machine-local cache, so its parts and parameter models stay lazy and the
+    /// derived metadata index works across restarts. If the cache is unavailable the programs are
+    /// materialised before the temporary archive disappears (the previous behaviour).
+    /// </summary>
+    private static KnxProductCatalog OpenNested(string outerPath, ZipArchiveEntry nested, int depth,
+        string? cacheDirectory)
     {
         var extension = IOPath.GetExtension(nested.Name);
         if (string.IsNullOrEmpty(extension)) extension = ".knxprod";
@@ -179,23 +223,82 @@ public sealed class KnxProductCatalog
 
         try
         {
-            using (var input = nested.Open())
+            if (nested.Length > MaximumNestedArchiveBytes || nested.CompressedLength > MaximumNestedArchiveBytes)
+                throw new InvalidDataException(
+                    $"nested archive '{nested.FullName}' exceeds the supported size.");
+            using (var input = new BoundedReadStream(nested.Open(), MaximumNestedArchiveBytes, nested.FullName))
             using (var output = File.Create(temp))
                 input.CopyTo(output);
-            var catalog = Open(temp, depth + 1);
-            // Materialize lazy parts before removing their temporary backing archive.
-            foreach (var id in catalog._partByName.Keys.ToList()) catalog.FindProgramById(id);
+            var catalog = Open(temp, depth + 1, cacheDirectory);
+            var backing = PersistInnerArchive(outerPath, nested, temp, cacheDirectory);
+            if (backing is not null)
+            {
+                catalog._archivePath = backing;
+                catalog.Path = outerPath;
+                return catalog;
+            }
+
+            // Fallback: the temporary archive disappears below, materialise every program.
+            catalog.LoadProgramMetadata();
+            foreach (var program in catalog.Programs.ToList()) catalog.EnsureFullModel(program);
             catalog._partByName.Clear();
             catalog._archivePath = null;
+            catalog.Indexable = false;
             catalog.Path = outerPath;
             return catalog;
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }
 
+    /// <summary>Copies the inner archive into the cache, keyed by the outer wrapper identity.</summary>
+    private static string? PersistInnerArchive(string outerPath, ZipArchiveEntry nested, string temp,
+        string? cacheDirectory)
+    {
+        string? staging = null;
+        try
+        {
+            var directory = cacheDirectory is null
+                ? DefaultArchiveCache
+                : IOPath.Combine(cacheDirectory, "archives");
+            System.IO.Directory.CreateDirectory(directory);
+            var outer = new FileInfo(outerPath);
+            var identity = string.Join('|', outer.FullName, outer.Length, outer.LastWriteTimeUtc.Ticks,
+                nested.FullName, nested.Length, CatalogIndexStore.SchemaVersion);
+            var hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity)))
+                .ToLowerInvariant();
+            var target = IOPath.Combine(directory, hash + ".knxprod");
+            if (File.Exists(target)) return target;
+
+            staging = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            File.Copy(temp, staging);
+            File.Move(staging, target, overwrite: true);
+            staging = null;
+            return target;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+        finally
+        {
+            if (staging is not null)
+                try { File.Delete(staging); } catch (Exception) { }
+        }
+    }
+
     internal void Relocate(string path)
     {
-        if (_archivePath is not null) _archivePath = path;
+        var oldPath = Path;
+        // A nested catalogue reads its parts from the extracted inner archive, not from Path.
+        if (_archivePath is not null &&
+            string.Equals(_archivePath, oldPath, StringComparison.OrdinalIgnoreCase))
+            _archivePath = path;
+        // Loose XML catalogues parse their programs from the file itself.
+        foreach (var program in Programs)
+            if (program.Source is { FilePath: { } file } source &&
+                string.Equals(file, oldPath, StringComparison.OrdinalIgnoreCase))
+                program.Source = source with { FilePath = path };
         Path = path;
     }
 
@@ -216,7 +319,7 @@ public sealed class KnxProductCatalog
             if (file is null) continue;
             try
             {
-                catalog.Parse(XDocument.Load(file));
+                catalog.Parse(LoadXmlFile(file), new CatalogSource(file, null));
             }
             catch (System.Xml.XmlException)
             {
@@ -229,39 +332,109 @@ public sealed class KnxProductCatalog
             if (stem.Contains("_A-", StringComparison.OrdinalIgnoreCase)) catalog._partByName[stem] = file;
         }
 
-        catalog.Images.AddRange(files.Where(IsImage).Select(IOPath.GetFileName));
+        catalog.Images.AddRange(files.Where(IsImage).Select(file => IOPath.GetFileName(file)!));
+        catalog.MetadataComplete = catalog._partByName.Count == 0;
         return catalog;
     }
 
-    /// <summary>Loads one application-program part of a split archive (no-op when already loaded).</summary>
-    private void LoadPart(string location)
+    /// <summary>
+    /// Reads program metadata (name, numbers, flags, COM objects, datapoint types) for every
+    /// application part that has not been read yet. Does not build any KSXML parameter model.
+    /// </summary>
+    /// <returns>Number of XML parts that were read.</returns>
+    public int LoadProgramMetadata(CancellationToken cancellationToken = default, IProgress<int>? progress = null)
+    {
+        if (MetadataComplete) return 0;
+        lock (_enrichGate)
+        {
+            if (MetadataComplete) return 0;
+            var parts = _partByName.ToArray();
+            var read = 0;
+            var done = 0;
+            var complete = true;
+            // One container handle for the whole batch: opening per part would re-read the archive
+            // directory of a manufacturer archive for every one of its hundreds of parts.
+            using var archive = OpenArchiveForParts();
+            foreach (var (id, location) in parts)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (_loadedParts.Add(id))
+                {
+                    if (LoadPartMetadata(location, archive)) read++;
+                    else
+                    {
+                        _loadedParts.Remove(id);
+                        complete = false;
+                    }
+                }
+                progress?.Report(++done);
+            }
+            MetadataComplete = complete;
+            return read;
+        }
+    }
+
+    /// <summary>Shared read handle for a batch of parts; null when they live outside an archive.</summary>
+    private ZipArchive? OpenArchiveForParts()
+    {
+        if (_archivePath is not { } path || !File.Exists(path)) return null;
+        try
+        {
+            return ZipFile.OpenRead(path);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Loads metadata of one application-program part (never the parameter model).</summary>
+    private bool LoadPartMetadata(string location, ZipArchive? archive = null)
     {
         try
         {
             XDocument document;
             if (_archivePath is null)
             {
-                document = XDocument.Load(location);
+                document = LoadXmlFile(location);
+            }
+            else if (archive is not null)
+            {
+                var entry = archive.GetEntry(location);
+                if (entry is null) return false;
+                using var stream = OpenXmlEntry(entry);
+                document = LoadXml(stream);
             }
             else
             {
                 using var zip = ZipFile.OpenRead(_archivePath);
                 var entry = zip.GetEntry(location);
-                if (entry is null) return;
-                using var stream = entry.Open();
-                document = XDocument.Load(stream);
+                if (entry is null) return false;
+                using var stream = OpenXmlEntry(entry);
+                document = LoadXml(stream);
             }
-            Parse(document);
+            var manufacturer = document.Descendants().FirstOrDefault(e => e.Name.LocalName == "Manufacturer");
+            if (manufacturer is null) return false;
+            var source = _archivePath is null ? new CatalogSource(location, null) : new CatalogSource(null, location);
+            AddProgramMetadata(manufacturer, ReadTranslations(manufacturer), source);
+            return true;
         }
         catch (System.Xml.XmlException)
         {
+            return false;
         }
         catch (IOException)
         {
+            return false;
         }
     }
 
-    public CatalogProduct? FindProduct(string productId) =>        Products.FirstOrDefault(p => string.Equals(p.Id, productId, StringComparison.Ordinal));
+    public CatalogProduct? FindProduct(string productId) =>
+        _productsById.GetValueOrDefault(productId);
 
     /// <summary>Finds a program by its own id or by a Hardware2Program id that references it.</summary>
     public CatalogApplicationProgram? FindProgram(string programRefId)
@@ -288,18 +461,128 @@ public sealed class KnxProductCatalog
         return FindProgram(product.Id);
     }
 
+    /// <summary>
+    /// Resolves the product's program from metadata only: no part is parsed, no KSXML model is
+    /// built. Returns null while a split archive's program metadata is not indexed yet.
+    /// </summary>
+    public CatalogApplicationProgram? FindProgramSummaryFor(CatalogProduct product)
+    {
+        foreach (var entryRef in product.EntryRefIds)
+            if (SummaryFromReference(entryRef) is { } byEntry) return byEntry;
+        foreach (var programId in product.ProgramRefIds)
+            if (SummaryFromReference(programId) is { } byHardware) return byHardware;
+        return SummaryFromReference(product.Id);
+    }
+
+    private CatalogApplicationProgram? SummaryFromReference(string referenceId)
+    {
+        if (_programsById.TryGetValue(referenceId, out var direct)) return direct;
+        if (!_hardware2Programs.TryGetValue(referenceId, out var refs)) return null;
+        foreach (var reference in refs)
+            if (_programsById.TryGetValue(reference, out var program)) return program;
+        return null;
+    }
+
+    /// <summary>Full parameter model; application programs of split archives load on first use.</summary>
     private CatalogApplicationProgram? FindProgramById(string id)
     {
-        var found = Programs.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.Ordinal));
-        if (found is not null) return found;
+        if (_programsById.TryGetValue(id, out var found))
+        {
+            EnsureFullModel(found);
+            return found;
+        }
 
         // Split archives: pull the part that holds this program, once.
         if (!_partByName.TryGetValue(id, out var location) || !_loadedParts.Add(id)) return null;
-        LoadPart(location);
-        return Programs.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.Ordinal));
+        LoadPartMetadata(location);
+        if (!_programsById.TryGetValue(id, out found)) return null;
+        EnsureFullModel(found);
+        return found;
     }
 
-    private void Parse(XDocument document)
+    /// <summary>Builds the KSXML model of one application, once; safe for concurrent callers.</summary>
+    private void EnsureFullModel(CatalogApplicationProgram program)
+    {
+        if (program.ModelLoaded) return;
+        lock (_modelGate)
+        {
+            if (program.ModelLoaded) return;
+            try
+            {
+                if (program.Source is { } source && LoadProgramElement(program, source) is var (element, translations)
+                    && element is not null)
+                    FillProgramModel(program, element, translations);
+            }
+            catch (System.Xml.XmlException)
+            {
+            }
+            catch (IOException)
+            {
+            }
+            program.ModelLoaded = true;
+            LoadedProgramModels++;
+        }
+    }
+
+    /// <summary>Reads the program subtree and its translation unit from the archive part.</summary>
+    private (XElement? Element, Dictionary<string, Dictionary<string, Dictionary<string, string>>> Translations)
+        LoadProgramElement(CatalogApplicationProgram program, ProgramSource source)
+    {
+        XDocument document;
+        if (source.Entry is { } entry)
+        {
+            if (_archivePath is null || !File.Exists(_archivePath)) return (null, EmptyTranslations);
+            using var zip = ZipFile.OpenRead(_archivePath);
+            var part = zip.GetEntry(entry);
+            if (part is null) return (null, EmptyTranslations);
+            using var stream = OpenXmlEntry(part);
+            document = LoadXml(stream);
+        }
+        else if (source.FilePath is { } file && File.Exists(file))
+        {
+            document = LoadXmlFile(file);
+        }
+        else return (null, EmptyTranslations);
+
+        var manufacturer = document.Descendants().FirstOrDefault(e => e.Name.LocalName == "Manufacturer");
+        var translations = manufacturer is null ? EmptyTranslations : ReadTranslations(manufacturer);
+        var element = document.Descendants().FirstOrDefault(e =>
+            e.Name.LocalName == "ApplicationProgram" && Attr(e, "Id") == program.Id);
+        return (element, translations);
+    }
+
+    private static readonly Dictionary<string, Dictionary<string, Dictionary<string, string>>> EmptyTranslations =
+        new(StringComparer.Ordinal);
+
+    private void FillProgramModel(CatalogApplicationProgram program, XElement element,
+        Dictionary<string, Dictionary<string, Dictionary<string, string>>> translations)
+    {
+        // We own the loaded document: detach instead of cloning the 30 MB subtree.
+        if (element.Parent is not null) element.Remove();
+        foreach (var declaration in element.DescendantsAndSelf())
+        {
+            var declarationId = Attr(declaration, "Id");
+            if (declarationId is null) continue;
+            foreach (var attribute in new[] { "Text", "SuffixText", "Description" })
+            {
+                var text = Text(translations, declarationId, attribute, Attr(declaration, attribute));
+                if (text.Length > 0) declaration.SetAttributeValue(attribute, text);
+            }
+        }
+        var parsed = Ksxml.Parse(new XDocument(element));
+        program.ParameterTypes.AddRange(parsed.Types);
+        program.ParameterBlocks.AddRange(parsed.Blocks);
+        program.ParameterInstances.AddRange(parsed.Instances);
+        program.ParameterReferences.AddRange(Ksxml.ParseParameterReferences(element));
+        program.UnsupportedFeatures.AddRange(Ksxml.UnsupportedFeatures(element));
+        // Plug-in declarations are not persisted in the metadata cache; read them again for the
+        // parameter editor (additive, so metadata read earlier stays valid).
+        ReadExtensions(program, element);
+        ReadParameterPlugins(program, element);
+    }
+
+    /// <summary>Parsed metadata of one document; parameters stay in XML until requested.</summary>
+    private void Parse(XDocument document, CatalogSource source)
     {
         var root = document.Root ?? throw new InvalidDataException("empty catalogue XML");
         var manufacturers = root.DescendantsAndSelf().Where(e => e.Name.LocalName == "Manufacturer").ToList();
@@ -308,18 +591,19 @@ public sealed class KnxProductCatalog
 
         foreach (var manufacturer in manufacturers)
         {
-            _translations.Clear();
-            ReadTranslations(manufacturer);
+            var translations = ReadTranslations(manufacturer);
             var id = Attr(manufacturer, "RefId") ?? Attr(manufacturer, "Id") ?? "";
-            var name = Text(id, "Name", Attr(manufacturer, "Name"));
+            var name = Text(translations, id, "Name", Attr(manufacturer, "Name"));
             if (string.IsNullOrWhiteSpace(name) || name == id)
                 name = _manufacturerNames.GetValueOrDefault(id) ?? name;
             Manufacturer ??= new CatalogManufacturer(id, string.IsNullOrWhiteSpace(name) ? id : name);
-            ReadHardware(manufacturer);
-            ReadCatalog(manufacturer);
-            AddPrograms(manufacturer);
+            ReadHardware(manufacturer, translations);
+            ReadCatalog(manufacturer, translations);
+            AddProgramMetadata(manufacturer, translations, source);
         }
-        _translations.Clear();
+
+        foreach (var product in Products)
+            product.SearchText = CatalogSearchText.Product(product, this);
     }
 
     /// <summary>Manufacturer display names from knx_master.xml (optional part of the archive).</summary>
@@ -330,7 +614,7 @@ public sealed class KnxProductCatalog
         if (entry is null) return new Dictionary<string, string>(StringComparer.Ordinal);
         try
         {
-            using var stream = entry.Open();
+            using var stream = OpenXmlEntry(entry);
             return ParseMasterNames(stream);
         }
         catch (System.Xml.XmlException)
@@ -345,7 +629,7 @@ public sealed class KnxProductCatalog
         if (file is null) return new Dictionary<string, string>(StringComparer.Ordinal);
         try
         {
-            using var stream = File.OpenRead(file);
+            using var stream = OpenXmlFile(file);
             return ParseMasterNames(stream);
         }
         catch (System.Xml.XmlException)
@@ -372,34 +656,46 @@ public sealed class KnxProductCatalog
         return names;
     }
 
-    private void ReadTranslations(XElement manufacturer)
+    /// <summary>
+    /// Reads one language table in a single pass: the enclosing Language, TranslationUnit and
+    /// TranslationElement are found by walking the ancestors once per translation.
+    /// </summary>
+    private static Dictionary<string, Dictionary<string, Dictionary<string, string>>> ReadTranslations(
+        XElement manufacturer)
     {
+        var result = new Dictionary<string, Dictionary<string, Dictionary<string, string>>>(StringComparer.Ordinal);
+        var defaultLanguage = Attr(manufacturer, "DefaultLanguage") ?? "en-US";
+
         foreach (var translation in manufacturer.Descendants().Where(e => e.Name.LocalName == "Translation"))
         {
-            var language = Attr(translation, "Language")
-                ?? translation.Ancestors().FirstOrDefault(a => a.Name.LocalName == "Language")
-                    ?.Attribute("Identifier")?.Value
-                ?? Attr(manufacturer, "DefaultLanguage")
-                ?? "en-US";
-            var refId = translation.Ancestors().FirstOrDefault(a => a.Name.LocalName == "TranslationElement")
-                    ?.Attribute("RefId")?.Value
-                ?? translation.Ancestors().FirstOrDefault(a => a.Name.LocalName == "TranslationUnit")
-                    ?.Attribute("RefId")?.Value
-                ?? Attr(translation, "RefId")
-                ?? "";
+            string? elementRef = null, unitRef = null, languageIdentifier = null;
+            for (var ancestor = translation.Parent; ancestor is not null; ancestor = ancestor.Parent)
+            {
+                switch (ancestor.Name.LocalName)
+                {
+                    case "TranslationElement": elementRef ??= Attr(ancestor, "RefId"); break;
+                    case "TranslationUnit": unitRef ??= Attr(ancestor, "RefId"); break;
+                    case "Language": languageIdentifier ??= Attr(ancestor, "Identifier"); break;
+                }
+                if (languageIdentifier is not null && elementRef is not null) break;
+            }
+            var language = Attr(translation, "Language") ?? languageIdentifier ?? defaultLanguage;
+            var refId = elementRef ?? unitRef ?? Attr(translation, "RefId") ?? "";
             var attribute = Attr(translation, "AttributeName") ?? "Text";
             var text = Attr(translation, "Text") ?? translation.Value;
             if (language.Length == 0 || refId.Length == 0 || string.IsNullOrWhiteSpace(text)) continue;
 
-            if (!_translations.TryGetValue(language, out var byRef))
-                _translations[language] = byRef = new(StringComparer.Ordinal);
+            if (!result.TryGetValue(language, out var byRef))
+                result[language] = byRef = new(StringComparer.Ordinal);
             if (!byRef.TryGetValue(refId, out var byAttribute))
                 byRef[refId] = byAttribute = new(StringComparer.Ordinal);
             byAttribute[attribute] = text;
         }
+        return result;
     }
 
-    private void ReadHardware(XElement manufacturer)
+    private void ReadHardware(XElement manufacturer,
+        Dictionary<string, Dictionary<string, Dictionary<string, string>>> translations)
     {
         foreach (var hardware in manufacturer.Descendants()
                      .Where(e => e.Name.LocalName == "Hardware" && Attr(e, "Id") is not null))
@@ -428,10 +724,10 @@ public sealed class KnxProductCatalog
                 var product = new CatalogProduct
                 {
                     Id = id,
-                    Name = Text(id, "Text", Attr(element, "Text")),
+                    Name = Text(translations, id, "Text", Attr(element, "Text")),
                     OrderNumber = Attr(element, "OrderNumber"),
                     HardwareRefId = hardwareId,
-                    Description = Text(id, "VisibleDescription", Attr(element, "VisibleDescription")),
+                    Description = Text(translations, id, "VisibleDescription", Attr(element, "VisibleDescription")),
                 };
                 foreach (var programId in programIds)
                     if (!product.ProgramRefIds.Contains(programId)) product.ProgramRefIds.Add(programId);
@@ -439,24 +735,30 @@ public sealed class KnxProductCatalog
                     if (linkId.Length > 0 && !product.Hardware2ProgramIds.Contains(linkId))
                         product.Hardware2ProgramIds.Add(linkId);
                 Products.Add(product);
+                _productsById.TryAdd(product.Id, product);
             }
         }
     }
 
-    private void ReadCatalog(XElement manufacturer)
+    private void ReadCatalog(XElement manufacturer,
+        Dictionary<string, Dictionary<string, Dictionary<string, string>>> translations)
     {
         var roots = manufacturer.Descendants()
             .Where(e => e.Name.LocalName == "CatalogSection" && e.Parent?.Name.LocalName != "CatalogSection");
-        foreach (var section in roots) CatalogSections.Add(ReadSection(section, ""));
+        foreach (var section in roots) CatalogSections.Add(ReadSection(section, "", translations, 0));
     }
 
-    private CatalogSection ReadSection(XElement element, string parentPath)
+    private CatalogSection ReadSection(XElement element, string parentPath,
+        Dictionary<string, Dictionary<string, Dictionary<string, string>>> translations, int depth)
     {
+        if (depth > MaximumSectionDepth)
+            throw new InvalidDataException(
+                $"catalogue section nesting exceeds {MaximumSectionDepth} levels.");
         var id = Attr(element, "Id") ?? "";
         var section = new CatalogSection
         {
             Id = id,
-            Name = Text(id, "Name", Attr(element, "Name")),
+            Name = Text(translations, id, "Name", Attr(element, "Name")),
             Number = Int(element, "Number"),
         };
         var path = parentPath.Length == 0 ? section.Name : parentPath + "/" + section.Name;
@@ -465,25 +767,26 @@ public sealed class KnxProductCatalog
             switch (child.Name.LocalName)
             {
                 case "CatalogSection":
-                    section.Sections.Add(ReadSection(child, path));
+                    section.Sections.Add(ReadSection(child, path, translations, depth + 1));
                     break;
                 case "CatalogItem":
-                    section.Items.Add(ReadItem(child, path));
+                    section.Items.Add(ReadItem(child, path, translations));
                     break;
             }
         }
         return section;
     }
 
-    private CatalogItem ReadItem(XElement element, string path)
+    private CatalogItem ReadItem(XElement element, string path,
+        Dictionary<string, Dictionary<string, Dictionary<string, string>>> translations)
     {
         var id = Attr(element, "Id") ?? "";
         var item = new CatalogItem
         {
             Id = id,
-            Name = Text(id, "Name", Attr(element, "Name")),
+            Name = Text(translations, id, "Name", Attr(element, "Name")),
             ProductRefId = Attr(element, "ProductRefId"),
-            Description = Text(id, "VisibleDescription", Attr(element, "VisibleDescription")),
+            Description = Text(translations, id, "VisibleDescription", Attr(element, "VisibleDescription")),
             Hardware2ProgramRefId = Attr(element, "Hardware2ProgramRefId"),
         };
         if (item.ProductRefId is { } productId && FindProduct(productId) is { } product)
@@ -496,58 +799,55 @@ public sealed class KnxProductCatalog
         return item;
     }
 
-    private void AddPrograms(XElement scope)
+    /// <summary>Reads program metadata only; the KSXML model stays in the XML until requested.</summary>
+    private void AddProgramMetadata(XElement scope,
+        Dictionary<string, Dictionary<string, Dictionary<string, string>>> translations, CatalogSource source)
     {
         foreach (var element in scope.DescendantsAndSelf()
                      .Where(e => e.Name.LocalName == "ApplicationProgram" && Attr(e, "Id") is not null))
         {
             var id = Attr(element, "Id")!;
-            if (Programs.Any(p => p.Id == id)) continue;
+            if (_programsById.ContainsKey(id)) continue;
 
             var program = new CatalogApplicationProgram
             {
                 Id = id,
-                Name = Text(id, "Name", Attr(element, "Name")),
+                Name = Text(translations, id, "Name", Attr(element, "Name")),
                 ApplicationNumber = Attr(element, "ApplicationNumber"),
                 ApplicationVersion = Attr(element, "ApplicationVersion"),
+                SchemaVersion = Attr(element, "SchemaVersion") ?? Attr(element, "CreatedFromLegacySchemaVersion"),
+                Broken = IsTrue(Attr(element, "Broken")),
+                RegistrationStatus = Attr(element, "RegistrationStatus"),
+                MinEtsVersion = Attr(element, "MinEtsVersion"),
+                MaskVersion = Attr(element, "MaskVersion") ?? Attr(element, "ManagementModel"),
+                DownloadInfoIncomplete = IsTrue(Attr(element, "DownloadInfoIncomplete")),
+                Source = new ProgramSource(source.Entry, source.FilePath),
             };
-            var translated = new XElement(element);
-            foreach (var declaration in translated.DescendantsAndSelf())
-            {
-                var declarationId = Attr(declaration, "Id");
-                if (declarationId is null) continue;
-                foreach (var attribute in new[] { "Text", "SuffixText", "Description" })
-                {
-                    var text = Text(declarationId, attribute, Attr(declaration, attribute));
-                    if (text.Length > 0) declaration.SetAttributeValue(attribute, text);
-                }
-            }
-            var parsed = Ksxml.Parse(new XDocument(translated));
-            program.ParameterTypes.AddRange(parsed.Types);
-            program.ParameterBlocks.AddRange(parsed.Blocks);
-            program.ParameterInstances.AddRange(parsed.Instances);
-            program.ParameterReferences.AddRange(Ksxml.ParseParameterReferences(translated));
-            program.UnsupportedFeatures.AddRange(Ksxml.UnsupportedFeatures(translated));
             ReadExtensions(program, element);
             ReadParameterPlugins(program, element);
 
             foreach (var comObject in element.Descendants().Where(e => e.Name.LocalName == "ComObject"))
             {
                 var comObjectId = Attr(comObject, "Id") ?? "";
-                var text = Text(comObjectId, "Text", Attr(comObject, "Text"));
-                var functionText = Text(comObjectId, "FunctionText", Attr(comObject, "FunctionText"));
+                var text = Text(translations, comObjectId, "Text", Attr(comObject, "Text"));
+                var functionText = Text(translations, comObjectId, "FunctionText", Attr(comObject, "FunctionText"));
                 program.ComObjects.Add(new ComObject
                 {
                     Id = comObjectId,
                     Name = text.Length > 0 ? text : Attr(comObject, "Name") ?? comObjectId,
                     Number = Int(comObject, "Number"),
-                    SizeInBit = int.TryParse(Attr(comObject, "SizeInBit"), out var size) ? size : Ksxml.ParseObjectSize(Attr(comObject, "ObjectSize")),
+                    SizeInBit = int.TryParse(Attr(comObject, "SizeInBit"), out var size)
+                        ? size
+                        : Ksxml.ParseObjectSize(Attr(comObject, "ObjectSize")),
                     DatapointType = Attr(comObject, "DatapointType"),
                 });
                 program.ComObjectDisplay[comObjectId] = (text, functionText);
             }
 
+            program.SearchText = CatalogSearchText.Program(program);
+            program.NormalizedDatapointTypes = CatalogSearchText.DatapointTypes(program.ComObjects);
             Programs.Add(program);
+            _programsById[program.Id] = program;
         }
     }
 
@@ -589,10 +889,11 @@ public sealed class KnxProductCatalog
     private static bool IsTrue(string? value) =>
         value is "1" || bool.TryParse(value, out var flag) && flag;
 
-    private string Text(string refId, string attribute, string? fallback)
+    private static string Text(Dictionary<string, Dictionary<string, Dictionary<string, string>>> translations,
+        string refId, string attribute, string? fallback)
     {
         Dictionary<string, string>? byLanguage = null;
-        foreach (var (language, byRef) in _translations)
+        foreach (var (language, byRef) in translations)
         {
             if (!byRef.TryGetValue(refId, out var byAttribute)) continue;
             if (!byAttribute.TryGetValue(attribute, out var text) || string.IsNullOrWhiteSpace(text)) continue;
@@ -605,6 +906,45 @@ public sealed class KnxProductCatalog
 
     private static int Int(XElement element, string name) =>
         int.TryParse(Attr(element, name), out var value) ? value : 0;
+
+    /// <summary>Opens one archive XML entry, rejecting oversized declared or actual content.</summary>
+    private static Stream OpenXmlEntry(ZipArchiveEntry entry)
+    {
+        if (entry.Length > MaximumXmlEntryBytes || entry.CompressedLength > MaximumXmlEntryBytes)
+            throw new InvalidDataException(
+                $"catalogue XML part '{entry.FullName}' exceeds the supported size.");
+        return new BoundedReadStream(entry.Open(), MaximumXmlEntryBytes, entry.FullName);
+    }
+
+    private static Stream OpenXmlFile(string file)
+    {
+        var length = new FileInfo(file).Length;
+        if (length > MaximumXmlEntryBytes)
+            throw new InvalidDataException($"catalogue XML '{IOPath.GetFileName(file)}' exceeds the supported size.");
+        return new BoundedReadStream(
+            new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.SequentialScan),
+            MaximumXmlEntryBytes, file);
+    }
+
+    private static XDocument LoadXmlFile(string file)
+    {
+        using var stream = OpenXmlFile(file);
+        return LoadXml(stream);
+    }
+
+    /// <summary>Single XML entry point: no DTD, bounded entity expansion and bounded document size.</summary>
+    private static XDocument LoadXml(Stream stream)
+    {
+        using var reader = System.Xml.XmlReader.Create(stream, new System.Xml.XmlReaderSettings
+        {
+            IgnoreWhitespace = true,
+            DtdProcessing = System.Xml.DtdProcessing.Prohibit,
+            XmlResolver = null,
+            MaxCharactersFromEntities = 1_000_000,
+            MaxCharactersInDocument = MaximumXmlEntryBytes,
+        });
+        return XDocument.Load(reader);
+    }
 
     private static bool LooksLikeXml(string file)
     {
@@ -646,6 +986,10 @@ public sealed class KnxProductCatalog
             ?? throw new InvalidDataException($"no knxprod.xml or *.knxprod in '{directory}'.");
     }
 
+    private static bool HasSplitBase(ZipArchive zip) => zip.Entries.Any(e =>
+        e.Name.Equals("Hardware.xml", StringComparison.OrdinalIgnoreCase) ||
+        e.Name.Equals("Catalog.xml", StringComparison.OrdinalIgnoreCase));
+
     private static ZipArchiveEntry? PickMainEntry(ZipArchive zip)
     {
         var xml = zip.Entries.Where(e => e.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).ToList();
@@ -656,6 +1000,9 @@ public sealed class KnxProductCatalog
         // content, which excludes knx_master.xml and single application-program parts.
         foreach (var candidate in xml
                      .Where(e => !e.FullName.Contains('/') && !e.FullName.Contains('\\'))
+                     .Where(e => !e.Name.Equals("knx_master.xml", StringComparison.OrdinalIgnoreCase))
+                     .Where(e => !IOPath.GetFileNameWithoutExtension(e.Name)
+                         .Contains("_A-", StringComparison.OrdinalIgnoreCase))
                      .OrderByDescending(e => e.Length))
             if (ContainsCatalogueContent(candidate)) return candidate;
 
@@ -667,9 +1014,9 @@ public sealed class KnxProductCatalog
     {
         try
         {
-            using var stream = entry.Open();
+            using var stream = OpenXmlEntry(entry);
             using var reader = System.Xml.XmlReader.Create(stream,
-                new System.Xml.XmlReaderSettings { IgnoreWhitespace = true });
+                new System.Xml.XmlReaderSettings { IgnoreWhitespace = true, DtdProcessing = System.Xml.DtdProcessing.Prohibit });
             var sawManufacturer = false;
             while (reader.Read())
             {
@@ -679,6 +1026,9 @@ public sealed class KnxProductCatalog
                     case "Manufacturer":
                         sawManufacturer = true;
                         break;
+                    case "ApplicationPrograms" or "ApplicationProgram":
+                        // A lone device part: no catalogue/hardware content follows.
+                        return false;
                     case "Catalog" or "CatalogSection" or "Hardware":
                         return sawManufacturer;
                 }
@@ -689,5 +1039,53 @@ public sealed class KnxProductCatalog
         {
             return false;
         }
+    }
+}
+
+/// <summary>Document location that owns application programs (archive entry or loose XML file).</summary>
+internal readonly record struct CatalogSource(string? FilePath, string? Entry);
+
+/// <summary>Reads a stream but fails as soon as it produces more than a fixed number of bytes.</summary>
+internal sealed class BoundedReadStream(Stream inner, long limit, string what) : Stream
+{
+    private long _read;
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position
+    {
+        get => _read;
+        set => throw new NotSupportedException();
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) => Track(inner.Read(buffer, offset, count));
+    public override int Read(Span<byte> buffer) => Track(inner.Read(buffer));
+
+    public override int ReadByte()
+    {
+        var value = inner.ReadByte();
+        if (value >= 0) Track(1);
+        return value;
+    }
+
+    private int Track(int read)
+    {
+        _read += read;
+        if (_read > limit)
+            throw new InvalidDataException($"'{what}' exceeds the supported size of {limit} bytes.");
+        return read;
+    }
+
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) inner.Dispose();
+        base.Dispose(disposing);
     }
 }

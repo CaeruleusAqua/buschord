@@ -1,7 +1,9 @@
 using System.Text;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.Platform.Storage;
+using Knx.App.Services;
 using Knx.ProjectCompare;
 
 namespace Knx.App;
@@ -13,39 +15,47 @@ public partial class CompareWindow : Window
     public CompareWindow()
     {
         InitializeComponent();
+        // A ListBox itself is not focusable; focus the first row after layout, with the
+        // list as a keyboard fallback when the report is empty.
+        DiffGrid.Focusable = true;
+        Opened += (_, _) => Dispatcher.UIThread.Post(() =>
+        {
+            if (DiffGrid.ContainerFromIndex(0) is Control row) row.Focus();
+            else DiffGrid.Focus();
+        });
     }
 
     public void Load(DifferenceReport report)
     {
         _report = report;
-        SummaryText.Text = $"{report.AddedCount} hinzugefügt · {report.RemovedCount} entfernt · {report.ChangedCount} geändert";
+        SummaryText.Text = Strings.Get("CompareSummary",
+            report.AddedCount, report.RemovedCount, report.ChangedCount);
         ProjectsText.Text = $"{report.LeftProjectName}  ↔  {report.RightProjectName}   ({report.GeneratedAt:dd.MM.yyyy HH:mm})";
-        // ListBox-basierte Diff-Anzeige (kein DataGrid-Paket nötig)
-        DiffGrid.ItemsSource = report.Items;
+        // ListBox-basierte Diff-Anzeige (kein DataGrid-Paket nötig); die Enum-Werte
+        // werden für Anzeige und CSV in die aktive Sprache übersetzt.
+        DiffGrid.ItemsSource = report.Items
+            .Select(item => new DiffRow(item.Path, ComparisonCsv.ObjectTypeText(item.ObjectType), item.ObjectName,
+                ComparisonCsv.ModificationText(item.Modification), item.NewValue))
+            .ToList();
     }
+
+    private sealed record DiffRow(string Path, string ObjectType, string ObjectName,
+        string Modification, string? NewValue);
 
     private async void OnExportCsv(object? sender, RoutedEventArgs e)
     {
         if (_report is null) return;
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            SuggestedFileName = "projektvergleich.csv",
+            SuggestedFileName = Strings.Get("CompareCsvFileName") + ".csv",
             DefaultExtension = "csv",
         });
         if (file is null) return;
 
-        var sb = new StringBuilder();
-        sb.AppendLine("Pfad;Typ;Objekt;Änderung;Alt;Neu");
-        foreach (var item in _report.Items)
-            sb.AppendLine($"{item.Path};{item.ObjectType};{Esc(item.ObjectName)};{item.Modification};{Esc(item.OldValue)};{Esc(item.NewValue)}");
-
         await using var stream = await file.OpenWriteAsync();
         await using var writer = new StreamWriter(stream, Encoding.UTF8);
-        await writer.WriteAsync(sb.ToString());
+        await writer.WriteAsync(ComparisonCsv.Render(_report));
     }
-
-    private static string Esc(string? v)
-        => v is null ? "" : v.Contains(';') ? $"\"{v.Replace("\"", "\"\"")}\"" : v;
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 }

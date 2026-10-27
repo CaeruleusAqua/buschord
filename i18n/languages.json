@@ -1,0 +1,42 @@
+[
+  {
+    "code": "de",
+    "name": "Deutsch",
+    "status": "reference"
+  },
+  {
+    "code": "en",
+    "name": "English",
+    "status": "supported"
+  },
+  {
+    "code": "fr",
+    "name": "Français",
+    "status": "supported"
+  },
+  {
+    "code": "it",
+    "name": "Italiano",
+    "status": "supported"
+  },
+  {
+    "code": "es",
+    "name": "Español",
+    "status": "supported"
+  },
+  {
+    "code": "nl",
+    "name": "Nederlands",
+    "status": "supported"
+  },
+  {
+    "code": "zh-CN",
+    "name": "简体中文",
+    "status": "supported"
+  },
+  {
+    "code": "pl",
+    "name": "Polski",
+    "status": "supported"
+  }
+]

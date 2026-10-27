@@ -14,7 +14,8 @@ try
     Check(EncryptedArchive.DeriveZipPassword("test") == "OXufh2evLYaT1hZcwtgvmPlL939TWUaapiNXEH3WUiY=", "KDF vector 'test'");
     Check(EncryptedArchive.DeriveZipPassword("Penn\u00A5w1se \uD83E\uDD21") == "GwCCmGRS/RX/5eMoXdJf022hBMI/IZdDOeO1PXiU/4M=", "KDF vector non-ASCII/emoji");
 
-    // Generated /21 archive with authenticated entries.
+    // 2. Synthetic ETS6-shaped project (schema /21, WinZip AES-256 AE-1), password "test".
+    //    Generated here so no ETS, manufacturer, customer or credential data is tracked.
     var fixture = Path.Combine(directory, "synthetic-ets6.knxproj");
     var fixtureBytes = PlainZip(new()
     {
@@ -36,7 +37,9 @@ try
         "/21 device numbers assembled to individual addresses");
     Check(addresses.Count == 3 && string.Join(",", addresses.Select(a => a.Address.Raw)) == "256,257,258", "/21 numeric group addresses");
     Check(project.Installations[0].Locations.Roots.Single().Name == "Synthetic building", "/21 building tree");
-    Check(devices[1].ComObjectRefs.Count == 8 && devices[1].ComObjectRefs[0].Links.Single() == "GA-1", "/21 device links");
+    Check(devices[1].ComObjectRefs.Count == 8
+        && devices[1].ComObjectRefs[0].Links.Single() == addresses[0].Id,
+        "/21 device links resolve to canonical group-address ids");
 
     // /21 also loads as a plain archive (same XML, no encryption).
     var decrypted21 = EncryptedArchive.ReadAll(Unzip(fixtureBytes)["P-0001.zip"], "test");
@@ -51,6 +54,8 @@ try
 
     // 3. Password errors are distinguishable and user-readable.
     ExpectMessage(() => Knxproj.Load(fixture), "requires the project password", "missing password");
+    try { Knxproj.Load(fixture); }
+    catch (Exception ex) { Check(Knxproj.IsPasswordError(ex), "password error classification"); }
     ExpectMessage(() => Knxproj.Load(fixture, "not-the-password"), "Wrong project password", "wrong password");
     // 4. Encrypted projects cannot be saved back (no silent plaintext downgrade).
     var saveTarget = Path.Combine(directory, "copy.knxproj");
@@ -58,7 +63,7 @@ try
     Check(!File.Exists(saveTarget), "refused save creates no destination");
     Check(File.ReadAllBytes(fixture).SequenceEqual(fixtureBytes), "fixture unchanged");
 
-    // Tampered authentication fails with the password message.
+    // 5. Tampered authentication code of the synthetic fixture fails with the password message.
     var outer = Unzip(fixtureBytes);
     var inner = outer["P-0001.zip"];
     var innerOffset = LocalOffset(inner, "0.xml");
@@ -127,6 +132,8 @@ void ExpectMessage(Action action, string fragment, string name)
 static string MinimalXml(string name) =>
     "<KNX xmlns=\"http://knx.org/xml/project/23\"><Project Id=\"P-1\" Name=\"" + name + "\"><Installations/></Project></KNX>";
 
+// Synthetic /21 project: 2 areas, 3 devices on 1.1.0/1.1.5/1.1.6, 3 group
+// addresses, 8 communication objects on the second device. No security data.
 static string Synthetic21Project() => """
 <?xml version="1.0" encoding="utf-8"?>
 <KNX xmlns="http://knx.org/xml/project/21">
@@ -200,8 +207,6 @@ static string Synthetic21Information() => """
   </Project>
 </KNX>
 """;
-
-
 
 static IEnumerable<GroupRange> FlattenRanges(GroupRange range) =>
     new[] { range }.Concat(range.Ranges.SelectMany(FlattenRanges));

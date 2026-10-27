@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Knx;
+using Knx.App.Localization;
 using Knx.Bus;
 using Knx.Catalog;
 
@@ -11,15 +12,41 @@ namespace Knx.App.Services;
 public sealed partial class MainWindowViewModel : ObservableObject
 {
     private KnxBus? _bus;
-    private readonly UndoStack _undo = new();
+    private UndoStack _undo = new();
+    private bool _restoringHistory;
+    // History restores keep this lifetime; opening/replacing a project starts a new one, even for the same ID.
+    internal object ProjectSessionIdentity { get; private set; } = new();
+    internal Func<bool>? HistoryBlocked { get; set; }
+    private readonly CatalogLibrary _catalog;
+    private readonly Dictionary<string, CatalogApplicationProgram> _catalogPrograms = [];
+    private bool _awaitingCatalog;
 
-    public MainWindowViewModel()
+    public MainWindowViewModel() : this(CatalogLibrary.Shared) { }
+
+    /// <summary>Tests pass their own library; the app shares one parse across panes and windows.</summary>
+    public MainWindowViewModel(CatalogLibrary catalog)
     {
+        _catalog = catalog;
+        _catalog.Changed += OnCatalogChanged;
         Settings = AppSettings.Load();
         Recorder = new TelegramRecorder();
         _status = Strings.Get("StatusReady");
         Stats = new DashboardStats { ProjectName = "" };
         RefreshRecents();
+    }
+
+    /// <summary>Raised off the UI thread when the catalogue snapshot finally arrived.</summary>
+    public event EventHandler? CatalogLoaded;
+
+    /// <summary>Raised after an edit/undo/redo with a human-readable description.</summary>
+    public event EventHandler<string>? ProjectEdited;
+
+    /// <summary>True while a parameter lookup waits for the first catalogue snapshot.</summary>
+    public bool IsAwaitingCatalog => _awaitingCatalog;
+
+    private void OnCatalogChanged(object? sender, EventArgs e)
+    {
+        if (_awaitingCatalog) CatalogLoaded?.Invoke(this, EventArgs.Empty);
     }
 
     // ---------- project ----------
@@ -33,8 +60,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private string _projectPath = "";
 
     public string Title => Project is null
-        ? "BusChord – kein Projekt"
-        : $"BusChord – {Project.Name}{(_undo.Steps > 0 ? " *" : "")}";
+        ? Strings.Get("TitleNoProject")
+        : $"BusChord – {Project.Name}{(_undo.IsDirty ? " *" : "")}";
+
+    /// <summary>True when the project differs from the last state written to disk.</summary>
+    public bool IsDirty => _undo.IsDirty;
 
     /// <summary>True while a project is loaded; gates commands that need project data.</summary>
     public bool HasProject => Project is not null;
@@ -102,6 +132,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     partial void OnProjectChanged(Project? value)
     {
+        if (!_restoringHistory) ProjectSessionIdentity = new();
         StartDismissed = false;
         OnPropertyChanged(nameof(HasProject));
         OnPropertyChanged(nameof(ProjectLabel));
@@ -143,7 +174,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private string _busName = "";
 
     [ObservableProperty]
-    private string _status = "Bereit";
+    private string _status = "";
 
     [ObservableProperty]
     private DeviceRow? _selectedDevice;
@@ -214,54 +245,83 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     // ---------- project lifecycle ----------
 
-    public void LoadProject(string path)
+    public void LoadProject(string path, string? password = null)
+        => AdoptProject(Knxproj.Load(path, password), path);
+
+    /// <summary>Publishes an already validated project and resets undo/selection together.</summary>
+    public void AdoptProject(Project project, string path)
     {
-        Project = Knxproj.Load(path);
+        var undo = new UndoStack();
+        undo.Reset(project);
+        RememberProject(path);
+        ProjectSessionIdentity = new();
+        Project = project;
         ClearSelection();
         ProjectPath = path;
-        _undo.Reset(Project);
-        Settings.TouchProject(path);
-        Settings.Save();
+        _undo = undo;
         RefreshRecents();
         Refresh();
-        Status = $"Projekt geladen: {Project.Name}";
+        Status = WorkbenchStrings.Get("ProjectLoaded", Project.Name);
     }
 
     public void CreateProject(Project project, string? path)
     {
-        Project = project;
-        ClearSelection();
-        ProjectPath = path ?? "";
-        _undo.Reset(project);
+        var undo = new UndoStack();
+        undo.Reset(project);
         if (path is not null)
         {
             Knxproj.Save(project, path);
+            RememberProject(path);
+        }
+        ProjectSessionIdentity = new();
+        Project = project;
+        ClearSelection();
+        ProjectPath = path ?? "";
+        _undo = undo;
+        if (path is not null) RefreshRecents();
+        Refresh();
+        Status = WorkbenchStrings.Get("ProjectCreated", project.Name);
+    }
+
+    private void RememberProject(string path)
+    {
+        var last = Settings.LastProject;
+        var recent = Settings.RecentProjects.ToList();
+        try
+        {
             Settings.TouchProject(path);
             Settings.Save();
-            RefreshRecents();
         }
-        Refresh();
-        Status = $"Neues Projekt '{project.Name}' angelegt";
+        catch
+        {
+            Settings.LastProject = last;
+            Settings.RecentProjects = recent;
+            throw;
+        }
     }
 
     public void SaveProject()
     {
         if (Project is null || ProjectPath.Length == 0) return;
         Knxproj.Save(Project, ProjectPath);
+        // Keep the history, but the current state is now what is on disk.
         _undo.Push(Project);
+        _undo.MarkSaved();
         NotifyEditState();
-        Status = "Projekt gespeichert";
+        Status = Strings.Get("StatusProjectSaved");
     }
 
     public void SaveProjectAs(string path)
     {
         if (Project is null) return;
         Knxproj.Save(Project, path);
+        RememberProject(path);
         ProjectPath = path;
-        Settings.TouchProject(path);
-        Settings.Save();
         RefreshRecents();
-        Status = "Projekt gespeichert";
+        _undo.Push(Project);
+        _undo.MarkSaved();
+        NotifyEditState();
+        Status = Strings.Get("StatusProjectSaved");
     }
 
     // ---------- editing with undo ----------
@@ -283,32 +343,65 @@ public sealed partial class MainWindowViewModel : ObservableObject
         NotifyEditState();
         Refresh();
         Status = description;
+        ProjectEdited?.Invoke(this, description);
+    }
+
+    /// <summary>Runs a validated project operation and records undo only when it succeeded.</summary>
+    public bool ApplyProjectOperation(string description, Func<Project, ProjectEditResult> operation)
+    {
+        if (Project is not { } project) { Status = Strings.Get("UxNeedsProject"); return false; }
+        var result = operation(project);
+        if (!result.Ok)
+        {
+            Status = result.Message ?? result.Status.ToString();
+            return false;
+        }
+        _undo.Push(project);
+        NotifyEditState();
+        Refresh();
+        Status = description;
+        ProjectEdited?.Invoke(this, description);
+        return true;
     }
 
     [RelayCommand]
     private void Undo()
     {
+        if (HistoryBlocked?.Invoke() == true) return;
         if (_undo.Undo() is not { } restored) return;
-        Project = restored;
+        RestoreHistory(restored);
         NotifyEditState();
         Refresh();
-        Status = "Rückgängig";
+        var description = Strings.Get("MenuEditUndo");
+        Status = description;
+        ProjectEdited?.Invoke(this, description);
     }
 
     [RelayCommand]
     private void Redo()
     {
+        if (HistoryBlocked?.Invoke() == true) return;
         if (_undo.Redo() is not { } restored) return;
-        Project = restored;
+        RestoreHistory(restored);
         NotifyEditState();
         Refresh();
-        Status = "Wiederhergestellt";
+        var description = Strings.Get("MenuEditRedo");
+        Status = description;
+        ProjectEdited?.Invoke(this, description);
+    }
+
+    private void RestoreHistory(Project project)
+    {
+        _restoringHistory = true;
+        try { Project = project; }
+        finally { _restoringHistory = false; }
     }
 
     private void NotifyEditState()
     {
         OnPropertyChanged(nameof(CanUndo));
         OnPropertyChanged(nameof(CanRedo));
+        OnPropertyChanged(nameof(IsDirty));
         OnPropertyChanged(nameof(Title));
     }
 
@@ -320,24 +413,121 @@ public sealed partial class MainWindowViewModel : ObservableObject
         var installation = project.Installations.FirstOrDefault();
         if (installation is null) { Status = Strings.Get("UxNeedsProject"); return; }
 
-        Edit("Gruppenadresse angelegt", p =>
+        Edit(Strings.Get("StatusGroupAddressAdded"), p =>
         {
             var address = ProjectQuery.NextFreeGroupAddress(p, 1, 1);
             var range = EnsureRangeFor(p, installation, address);
+            var id = NextGroupAddressId(p);
             range.Addresses.Add(new GroupAddressEntry
             {
-                Id = NextGroupAddressId(p),
+                Id = id,
                 Name = "Neue Gruppenadresse",
                 Address = address,
+                DatapointType = "DPST-1-1",
             });
+            p.Workbench.Groups[id] = new Knx.Workbench.GroupMetadata { Bits = 1, Secure = false };
         });
+    }
+
+    public bool CreateGroupAddress(GroupAddress address, string name, string? datapointType, string? effectRoomId = null)
+    {
+        if (Project is not { } project) { Status = Strings.Get("UxNeedsProject"); return false; }
+        var installation = project.Installations.FirstOrDefault();
+        if (installation is null) { Status = Strings.Get("UxNeedsProject"); return false; }
+        if (address.Raw == 0 || ProjectQuery.FindGroupAddress(project, address) is not null)
+        {
+            Status = WorkbenchStrings.Get("GroupAddressInUse", address.ToString());
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            Status = WorkbenchStrings.Get("GroupAddressNeedsName");
+            return false;
+        }
+        var dpt = string.IsNullOrWhiteSpace(datapointType) ? null : datapointType.Trim();
+        if (dpt is null || !Dpt.TryBitSize(dpt, out var bits))
+        {
+            Status = WorkbenchStrings.Get("GroupAddressNeedsDpt");
+            return false;
+        }
+        var id = "";
+        Edit(WorkbenchStrings.Get("GroupAddressCreated", address.ToString()), p =>
+        {
+            var range = EnsureRangeFor(p, installation, address);
+            id = NextGroupAddressId(p);
+            range.Addresses.Add(new GroupAddressEntry
+            {
+                Id = id, Name = name.Trim(), Address = address,
+                DatapointType = string.IsNullOrWhiteSpace(datapointType) ? null : datapointType.Trim(),
+            });
+            p.Workbench.Groups[id] = new Knx.Workbench.GroupMetadata
+            {
+                Bits = bits, Secure = false, EffectRoomId = effectRoomId,
+            };
+        });
+        Status = WorkbenchStrings.Get("GroupAddressCreated", address.ToString());
+        return id.Length > 0;
+    }
+
+    /// <summary>Validated device edit: name, address, line and room in one undo step.</summary>
+    public string? UpdateDeviceDetails(DeviceInstance device, string name, string addressText, string? lineId, string? roomId)
+    {
+        if (Project is not { } project) return Strings.Get("UxNeedsProject");
+        if (string.IsNullOrWhiteSpace(name)) return WorkbenchStrings.Get("DeviceNeedsName");
+        if (!IndividualAddress.TryParse(addressText.Trim(), out var address)) return WorkbenchStrings.Get("InvalidIndividualAddress");
+        if (ProjectQuery.DeviceList(project).Any(d => !ReferenceEquals(d, device) && d.Address == address))
+            return WorkbenchStrings.Get("AddressInUse", address.ToString());
+        var targetLine = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines)
+            .FirstOrDefault(l => l.Id == lineId);
+        if (targetLine is null) return WorkbenchStrings.Get("TargetLineMissing");
+        var sourceLine = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines)
+            .FirstOrDefault(l => l.Devices.Contains(device) || l.Segments.Any(s => s.Devices.Contains(device)));
+        var sourceSegmentId = sourceLine?.Segments.FirstOrDefault(s => s.Devices.Contains(device))?.Id;
+        var keepSegment = sourceLine is not null && sourceLine.Id == targetLine.Id && sourceSegmentId is not null;
+        var targetRoom = roomId is null ? null
+            : project.Installations.SelectMany(i => i.Locations.AllNodes)
+                .FirstOrDefault(n => n.Id == roomId && n.Kind == SpaceKind.Room);
+        if (roomId is not null && targetRoom is null) return WorkbenchStrings.Get("TargetRoomMissing");
+        var targetInstallation = targetRoom is null ? null
+            : project.Installations.FirstOrDefault(i => i.Locations.AllNodes.Any(n => n.Id == targetRoom.Id));
+        if (targetInstallation is not null
+            && !targetInstallation.Areas.SelectMany(a => a.Lines).Any(l => l.Id == targetLine.Id))
+            return WorkbenchStrings.Get("RoomLineInstallationMismatch");
+        Edit(Strings.Get("StatusDeviceEdited", device.Address.ToString()), p =>
+        {
+            foreach (var installation in p.Installations)
+            {
+                foreach (var area in installation.Areas)
+                {
+                    area.Devices.RemoveAll(d => ReferenceEquals(d, device) || d.Id == device.Id);
+                    foreach (var line in area.Lines)
+                    {
+                        line.Devices.RemoveAll(d => ReferenceEquals(d, device) || d.Id == device.Id);
+                        foreach (var segment in line.Segments)
+                            segment.Devices.RemoveAll(d => ReferenceEquals(d, device) || d.Id == device.Id);
+                    }
+                }
+                foreach (var node in installation.Locations.AllNodes)
+                    node.DeviceRefs.RemoveAll(id => id == device.Id);
+                if (targetRoom is not null && targetInstallation is not null && ReferenceEquals(installation, targetInstallation))
+                    installation.Locations.Find(targetRoom.Id)?.AssignDevice(device);
+            }
+            var destinationLine = p.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).First(l => l.Id == targetLine.Id);
+            if (keepSegment && destinationLine.Segments.FirstOrDefault(s => s.Id == sourceSegmentId) is { } targetSegment)
+                targetSegment.Devices.Add(device);
+            else
+                destinationLine.Devices.Add(device);
+            device.Address = address;
+            device.Name = name.Trim();
+        });
+        return null;
     }
 
     public void DeleteGroupAddress(GroupAddressRow row)
     {
         if (Project is not { } project) return;
         var id = ProjectQuery.FindGroupAddress(project, row.Address)?.Id;
-        Edit($"Gruppenadresse {row.AddressText} gelöscht", p =>
+        Edit(Strings.Get("StatusGroupAddressDeleted", row.AddressText), p =>
         {
             foreach (var range in p.Installations.SelectMany(i => ProjectQuery.AllRanges(i)))
             {
@@ -355,7 +545,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public void RenameGroupAddress(GroupAddressRow row, string name, string? datapointType)
     {
         if (Project is not { } project) return;
-        Edit("Gruppenadresse geändert", p =>
+        Edit(Strings.Get("StatusGroupAddressChanged"), p =>
         {
             if (ProjectQuery.FindGroupAddress(p, row.Address) is not { } entry) return;
             entry.Name = name;
@@ -370,7 +560,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (Project is not { } project) return;
         var installation = project.Installations.FirstOrDefault();
         if (installation is null) return;
-        Edit("Gerät angelegt", p =>
+        Edit(Strings.Get("StatusDeviceAdded"), p =>
         {
             var address = ProjectQuery.NextFreeDeviceAddress(p, ProjectQuery.FindAreaOf(p, line)?.Address ?? 0, line.Address);
             var device = new DeviceInstance
@@ -387,14 +577,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public void DeleteDevice(DeviceRow row)
     {
         if (Project is not { } project) return;
-        Edit($"Gerät {row.AddressText} gelöscht", p => ProjectQuery.RemoveDevice(p, row.Device));
+        Edit(Strings.Get("StatusDeviceDeleted", row.AddressText), p => ProjectQuery.RemoveDevice(p, row.Device));
     }
 
     /// <summary>Drag &amp; drop: moves a device into another line/segment.</summary>
     public void MoveDevice(DeviceInstance device, Line target)
     {
         if (Project is not { } project) return;
-        Edit($"Gerät {device.Address} verschoben", p =>
+        Edit(Strings.Get("StatusDeviceMoved", device.Address.ToString()), p =>
         {
             ProjectQuery.RemoveDevice(p, device);
             ProjectQuery.AddToLine(target, device);
@@ -404,7 +594,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public void MoveDevice(DeviceInstance device, Segment target)
     {
         if (Project is not { } project) return;
-        Edit($"Gerät {device.Address} verschoben", p =>
+        Edit(Strings.Get("StatusDeviceMoved", device.Address.ToString()), p =>
         {
             ProjectQuery.RemoveDevice(p, device);
             target.Devices.Add(device);
@@ -420,8 +610,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (Project is null) { Status = Strings.Get("UxNeedsProject"); return []; }
         foreach (var finding in ProjectCheck.Run(Project)) Findings.Add(finding);
         Status = Findings.Count == 0
-            ? "Projektprüfung: keine Befunde"
-            : $"Projektprüfung: {Findings.Count} Befunde";
+            ? WorkbenchStrings.Get("CheckClean")
+            : WorkbenchStrings.Get("CheckFindings", Findings.Count);
         OnPropertyChanged(nameof(HasFindings));
         return Findings;
     }
@@ -430,7 +620,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         if (Project is null) { Status = Strings.Get("UxNeedsProject"); return []; }
         var suggestions = SmartLinking.Suggest(Project, DatapointTypeOf, perObject: 1);
-        Status = $"Intelligente Verknüpfung: {suggestions.Count} Vorschläge";
+        Status = Strings.Get("StatusSmartLinkSuggestions", suggestions.Count);
         return suggestions;
     }
 
@@ -438,7 +628,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         var list = suggestions.ToList();
         var count = list.Count;
-        Edit($"{count} Verknüpfung(en) angelegt", p => SmartLinking.Apply(list));
+        Edit(Strings.Get("StatusLinksAdded", count), p => SmartLinking.Apply(list));
         return count;
     }
 
@@ -497,16 +687,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
             }
             else
             {
-                CatalogApplicationProgram? program = null;
-                foreach (var catalog in new CatalogStore().LoadAll())
-                {
-                    var product = catalog.Products.FirstOrDefault(p => p.Id == device.Device.ProductRefId);
-                    if (product is not null) program = catalog.FindProgramFor(product);
-                    if (program is not null) break;
-                }
+                var program = CatalogProgram(device.Device);
                 if (program is null) return ([], []);
-                types = program.ParameterTypes;
-                instances = program.ParameterInstances;
+                // Editors own their mutable values and definitions; never overlay the shared catalogue.
+                (types, instances) = CopyProgramModel(program);
                 comObjects = program.ComObjects;
                 ParameterWarning = string.Join(", ", program.UnsupportedFeatures);
             }
@@ -521,9 +705,157 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Status = $"Parameter nicht lesbar: {ex.Message}";
+            Status = Strings.Get("StatusParameterUnreadable", ex.Message);
             return ([], []);
         }
+    }
+
+    /// <summary>
+    /// Detached copy of one catalogue application program for the editor: types and instances are
+    /// copied with the copy constructors and every instance is remapped onto its copied type, so
+    /// the editor can mutate values without touching the shared catalogue model.
+    /// </summary>
+    private static (List<ParameterType> Types, List<ParameterInstance> Instances) CopyProgramModel(
+        CatalogApplicationProgram program)
+    {
+        var types = new List<ParameterType>(program.ParameterTypes.Count);
+        var copies = new Dictionary<ParameterType, ParameterType>(program.ParameterTypes.Count);
+        foreach (var type in program.ParameterTypes)
+        {
+            var copy = new ParameterType(type);
+            copies[type] = copy;
+            types.Add(copy);
+        }
+        var instances = new List<ParameterInstance>(program.ParameterInstances.Count);
+        foreach (var instance in program.ParameterInstances)
+        {
+            var copy = new ParameterInstance(instance);
+            copy.ParameterType = instance.ParameterType switch
+            {
+                { } shared when copies.TryGetValue(shared, out var mapped) => mapped,
+                { } standalone => new ParameterType(standalone),
+                _ => null,
+            };
+            instances.Add(copy);
+        }
+        return (types, instances);
+    }
+
+    /// <summary>
+    /// Localized reason why the device's application forbids local parameter editing, or null when
+    /// editing is allowed. The catalogue application is the primary source; when it declares no
+    /// block (cold library, missing catalogue) the application program embedded in the project
+    /// archive is checked too, so a DCA/broken program never becomes editable through the gap.
+    /// The caller re-evaluates it on <see cref="CatalogLoaded"/>.
+    /// </summary>
+    public string? ParameterReadOnlyReason(DeviceInstance device)
+    {
+        var program = CatalogProgram(device);
+        var reason = CatalogBrowser.Blocked(program, CatalogUse.EditParameters);
+        if (reason == CatalogBlockReason.None) reason = ArchiveBlockReason(device);
+        return reason == CatalogBlockReason.None ? null : CatalogUiText.Reason(reason);
+    }
+
+    /// <summary>
+    /// Block reason declared by the application program embedded in the project archive, cached
+    /// per project path and ref id plus archive length/last write, so a device selection does not
+    /// re-read the archive and a replaced project file is re-read.
+    /// </summary>
+    private CatalogBlockReason ArchiveBlockReason(DeviceInstance device)
+    {
+        var refId = device.Hardware2ProgramRefId ?? device.ProductRefId;
+        if (ProjectPath.Length == 0 || string.IsNullOrWhiteSpace(refId)) return CatalogBlockReason.None;
+        long length;
+        long ticks;
+        try
+        {
+            var info = new FileInfo(ProjectPath);
+            if (!info.Exists) return CatalogBlockReason.None;
+            length = info.Length;
+            ticks = info.LastWriteTimeUtc.Ticks;
+        }
+        catch (Exception)
+        {
+            return CatalogBlockReason.None;
+        }
+        var key = (ProjectPath, refId);
+        if (_archiveBlocks.TryGetValue(key, out var cached) && cached.Length == length && cached.Ticks == ticks)
+            return cached.Reason;
+        var reason = ReadArchiveBlockReason(refId);
+        _archiveBlocks[key] = (length, ticks, reason);
+        return reason;
+    }
+
+    private readonly Dictionary<(string Path, string RefId), (long Length, long Ticks, CatalogBlockReason Reason)>
+        _archiveBlocks = [];
+
+    /// <summary>
+    /// Reads Broken/DownloadInfoIncomplete and plug-in extensions from the archive's
+    /// application program, mirroring the catalogue predicate (<c>KnxProductCatalog</c> metadata
+    /// plus <c>CatalogApplicationProgram.RequiresDca</c>). Unreadable archives stay unblocked here;
+    /// <see cref="LoadParametersFor"/> reports them.
+    /// </summary>
+    private CatalogBlockReason ReadArchiveBlockReason(string refId)
+    {
+        try
+        {
+            var document = Knxproj.LoadApplicationProgram(ProjectPath, refId);
+            var program = document?.Descendants().FirstOrDefault(e => e.Name.LocalName == "ApplicationProgram");
+            if (program is null) return CatalogBlockReason.None;
+            if (IsTrue(program.Attribute("Broken")?.Value)) return CatalogBlockReason.Broken;
+            if (IsTrue(program.Attribute("DownloadInfoIncomplete")?.Value)) return CatalogBlockReason.DownloadInfoIncomplete;
+            foreach (var extension in program.Descendants().Where(e => e.Name.LocalName == "Extension"))
+                if (extension.Attributes().Any(a => IsDcaName(a.Name.LocalName) && !string.IsNullOrWhiteSpace(a.Value))
+                    || extension.Elements().Any(e => IsDcaName(e.Name.LocalName)))
+                    return CatalogBlockReason.DcaUnsupported;
+            return CatalogBlockReason.None;
+        }
+        catch (Exception)
+        {
+            return CatalogBlockReason.None;
+        }
+    }
+
+    // Keep these names aligned with CatalogApplicationProgram.IsDcaExtension.
+    private static bool IsDcaName(string name) =>
+        name is "EtsUiPlugin" or "EtsDownloadPlugin" or "EtsDataHandler" or "EtsDataHandlerCapabilities";
+
+    private static bool IsTrue(string? value) => value is "1" || bool.TryParse(value, out var flag) && flag;
+
+    /// <summary>
+    /// Resolves the device's application program from the shared catalogue snapshot. With a cold
+    /// library the background parse starts once and this returns null immediately: the pane shows
+    /// its empty state and <see cref="CatalogLoaded"/> reloads it when the snapshot is published.
+    /// </summary>
+    private CatalogApplicationProgram? CatalogProgram(DeviceInstance device)
+    {
+        if (_catalogPrograms.TryGetValue(device.ProductRefId, out var cached)) return cached;
+        if (_catalog.Current is not { } snapshot)
+        {
+            if (!_awaitingCatalog)
+            {
+                _awaitingCatalog = true;
+                _ = _catalog.GetAsync();
+            }
+            Status = Strings.Get("CatalogLoading");
+            return null;
+        }
+        if (_awaitingCatalog)
+        {
+            _awaitingCatalog = false;
+            if (Status == Strings.Get("CatalogLoading")) Status = Strings.Get("StatusReady");
+        }
+        foreach (var catalog in snapshot.Catalogs)
+        {
+            var product = catalog.Products.FirstOrDefault(p =>
+                string.Equals(p.Id, device.ProductRefId, StringComparison.Ordinal));
+            if (product is null || catalog.FindProgramFor(product) is not { } program) continue;
+            // Resolved once per product ref; a re-imported catalogue keeps the first
+            // program until restart. Restart is when the cache is rebuilt anyway.
+            _catalogPrograms[device.ProductRefId] = program;
+            return program;
+        }
+        return null;
     }
 
     public bool ApplyParameterValues(DeviceInstance device, IReadOnlyList<ParameterInstance> instances,
@@ -531,6 +863,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         if (Project is not { } project || !ProjectQuery.DeviceList(project).Any(d => ReferenceEquals(d, device)))
             throw new InvalidOperationException(Strings.Get("LinkProjectChanged"));
+        // SEC-4 write boundary: a host that skips ParameterReadOnlyReason cannot persist DCA,
+        // broken or download-incomplete values either.
+        var archiveBlock = ArchiveBlockReason(device);
+        if (archiveBlock != CatalogBlockReason.None)
+            throw new InvalidOperationException(CatalogUiText.Reason(archiveBlock));
         if (instances.Select(i => i.Id).Distinct().Count() != instances.Count)
             throw new InvalidDataException("Ambiguous parameter reference ids");
         var changes = instances.Where(i => !baseline.TryGetValue(i.Id, out var before)
@@ -568,7 +905,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _bus ??= new KnxBus();
         DiscoveredDevices.Clear();
         foreach (var device in await _bus.DiscoverAsync(host: Settings.BusInterface)) DiscoveredDevices.Add(device);
-        Status = DiscoveredDevices.Count == 0 ? "keine Geräte gefunden" : $"{DiscoveredDevices.Count} Geräte gefunden";
+        Status = DiscoveredDevices.Count == 0
+            ? Strings.Get("StatusNoDevicesFound")
+            : Strings.Get("StatusDevicesFound", DiscoveredDevices.Count);
     }
 
     [RelayCommand]
@@ -579,7 +918,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             Status = Strings.Get("UxNeedsInterface");
             return;
         }
-        if (SelectedDeviceOnBus is null) { Status = "kein Gerät ausgewählt"; return; }
+        if (SelectedDeviceOnBus is null) { Status = Strings.Get("StatusNoDeviceSelected"); return; }
         _bus ??= new KnxBus();
         _bus.TelegramReceived += OnTelegram;
         var address = IndividualAddress.TryParse(Settings.TunnelAddress, out var ia)
@@ -587,7 +926,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             : new IndividualAddress(1, 1, 250);
         await _bus.ConnectTunnelAsync(SelectedDeviceOnBus, address);
         StateChanged();
-        Status = $"Verbunden mit {SelectedDeviceOnBus.Name}";
+        Status = Strings.Get("StatusConnectedToDevice", SelectedDeviceOnBus.Name);
     }
 
     [RelayCommand]
@@ -599,7 +938,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             await _bus.DisposeAsync();
         }
         StateChanged();
-        Status = "Getrennt";
+        Status = Strings.Get("StatusDisconnected");
     }
 
     [RelayCommand]
@@ -608,16 +947,23 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (_bus is null || !CanSend) return;
         var row = SelectedGroupAddress!;
         await _bus.GroupValueWriteAsync(row.Address, Dpt.Encode(row.DatapointType, SendValue));
-        Status = $"gesendet {row.AddressText} = {SendValue}";
+        Status = Strings.Get("StatusSentValue", row.AddressText, SendValue);
     }
 
     public async Task DownloadAsync(string imagePath)
     {
         if (_bus is null || !CanDownload) return;
         var row = SelectedDevice!;
-        var progress = new Progress<DownloadProgress>(p => Status = $"Download {p.Stage} {p.Percent}% – {p.Message}");
-        var result = await _bus.DownloadAsync(SelectedDeviceOnBus!, row.Address, new FileProgram(imagePath), progress);
-        Status = result.Success ? "Download OK" : $"Download fehlgeschlagen: {result.Message}";
+        var progress = new Progress<DownloadProgress>(p => Status = $"Download {p.Stage} {p.Percent}% - {p.Message}");
+        try
+        {
+            var result = await _bus.DownloadAsync(SelectedDeviceOnBus!, row.Address, new FileProgram(imagePath), progress);
+            Status = result.Success ? "Download OK" : Strings.Get("StatusDownloadFailed", result.Message);
+        }
+        catch (NotSupportedException ex)
+        {
+            Status = ex.Message;
+        }
     }
 
     private void OnTelegram(BusTelegram telegram)
@@ -644,14 +990,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Recorder.Start();
         Recorded.Clear();
         IsRecording = true;
-        Status = "Aufzeichnung gestartet";
+        Status = Strings.Get("StatusRecordingStarted");
     }
 
     public void StopRecording()
     {
         Recorder.Stop();
         IsRecording = false;
-        Status = $"Aufzeichnung beendet: {Recorder.Count} Telegramme";
+        Status = Strings.Get("StatusRecordingStopped", Recorder.Count);
     }
 
     // ---------- refresh ----------
@@ -687,23 +1033,27 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         foreach (var installation in project.Installations)
         {
-            var installationNode = new TreeNode($"Installation {installation.Name}".Trim(), null, "⌂", installation)
+            var installationNode = new TreeNode(
+                Strings.Get("TreeNodeInstallation", installation.Name ?? "").Trim(), null, "⌂", installation)
             {
                 IsExpanded = true,
             };
             foreach (var area in installation.Areas)
             {
-                var areaNode = new TreeNode($"Bereich {area.Address}", area.Name, "▣", area) { IsExpanded = true };
+                var areaNode = new TreeNode(Strings.Get("TreeNodeArea", area.Address), area.Name, "▣", area)
+                    { IsExpanded = true };
                 foreach (var device in area.Devices)
                     areaNode.Children.Add(DeviceNode(device));
                 foreach (var line in area.Lines)
                 {
-                    var lineNode = new TreeNode($"Linie {area.Address}.{line.Address}", line.Name, "≡", line) { IsExpanded = true };
+                    var lineNode = new TreeNode(Strings.Get("TreeNodeLine", $"{area.Address}.{line.Address}"),
+                        line.Name, "≡", line) { IsExpanded = true };
                     foreach (var device in line.Devices)
                         lineNode.Children.Add(DeviceNode(device));
                     foreach (var segment in line.Segments)
                     {
-                        var segmentNode = new TreeNode($"Segment {segment.Address}", segment.Name, "▢", segment);
+                        var segmentNode = new TreeNode(Strings.Get("TreeNodeSegment", segment.Address),
+                            segment.Name, "▢", segment);
                         foreach (var device in segment.Devices)
                             segmentNode.Children.Add(DeviceNode(device));
                         lineNode.Children.Add(segmentNode);
@@ -740,29 +1090,30 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (SelectedDevice is { } device)
         {
             EditName = device.Name;
-            Details.Add(new("Adresse", device.AddressText));
-            Details.Add(new("Name", device.Name));
-            Details.Add(new("Beschreibung", device.Device.Description ?? ""));
-            Details.Add(new("Produkt", device.Device.ProductRefId));
-            Details.Add(new("Applikation", device.Device.Hardware2ProgramRefId ?? ""));
-            Details.Add(new("Kommunikationsobjekte", device.Device.ComObjectRefs.Count.ToString()));
-            Details.Add(new("Verknüpfungen", device.Device.ComObjectRefs.Sum(r => r.Links.Count).ToString()));
+            Details.Add(new(Strings.Get("ColAddress"), device.AddressText));
+            Details.Add(new(Strings.Get("ColName"), device.Name));
+            Details.Add(new(Strings.Get("ColMessage"), device.Device.Description ?? ""));
+            Details.Add(new(Strings.Get("PropertyProduct"), device.Device.ProductRefId));
+            Details.Add(new(Strings.Get("CatalogProgram"), device.Device.Hardware2ProgramRefId ?? ""));
+            Details.Add(new(Strings.Get("CommunicationObjects"), device.Device.ComObjectRefs.Count.ToString()));
+            Details.Add(new(Strings.Get("PropertyLinks"),
+                device.Device.ComObjectRefs.Sum(r => r.Links.Count).ToString()));
             return;
         }
         if (SelectedGroupAddress is { } row)
         {
             EditName = row.Name;
             EditDatapointType = row.DatapointType ?? "";
-            Details.Add(new("Adresse", row.AddressText));
-            Details.Add(new("Name", row.Name));
-            Details.Add(new("Datapoint-Typ", row.DatapointType ?? ""));
+            Details.Add(new(Strings.Get("ColAddress"), row.AddressText));
+            Details.Add(new(Strings.Get("ColName"), row.Name));
+            Details.Add(new(Strings.Get("LblDatapointType"), row.DatapointType ?? ""));
             var entry = Project is { } p ? ProjectQuery.FindGroupAddress(p, row.Address) : null;
-            Details.Add(new("Beschreibung", entry?.Description ?? ""));
-            Details.Add(new("Kommentar", entry?.Comment ?? ""));
+            Details.Add(new(Strings.Get("ColMessage"), entry?.Description ?? ""));
+            Details.Add(new(Strings.Get("NewProjectComment"), entry?.Comment ?? ""));
             var links = entry is null || Project is null
                 ? 0
                 : ProjectQuery.ComObjectRefs(Project).Count(r => r.Ref.Links.Contains(entry.Id));
-            Details.Add(new("Verknüpfte Objekte", links.ToString()));
+            Details.Add(new(Strings.Get("PropertyLinkedObjects"), links.ToString()));
         }
     }
 
@@ -791,7 +1142,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         if (SelectedGroupAddress is { } row)
             RenameGroupAddress(row, EditName, string.IsNullOrWhiteSpace(EditDatapointType) ? null : EditDatapointType);
         else if (SelectedDevice is { } device && device.Name != EditName && EditName.Trim().Length > 0)
-            Edit($"Gerät {device.AddressText} umbenannt", p =>
+            Edit(Strings.Get("StatusDeviceRenamed", device.AddressText), p =>
             {
                 if (ProjectQuery.FindDevice(p, device.Address) is { } target) target.Name = EditName;
             });
@@ -799,7 +1150,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public async Task ReadGroupValueAsync(GroupAddressRow row)
     {
-        if (_bus is null) throw new InvalidOperationException("keine Busverbindung");
+        if (_bus is null) throw new InvalidOperationException(Strings.Get("MsgNeedConnection"));
         await _bus.GroupValueReadAsync(row.Address);
     }
 
@@ -808,7 +1159,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Recorded.Clear();
         foreach (var entry in entries) Recorded.Add(entry);
         RecordedCount = entries.Count;
-        Status = $"{entries.Count} Telegramme geladen";
+        Status = Strings.Get("StatusTelegramsLoaded", entries.Count);
     }
 
     private void StateChanged()

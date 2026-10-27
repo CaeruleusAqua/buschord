@@ -12,7 +12,26 @@ public sealed class BusTelegram
 {
     public required Telegram Telegram { get; init; }
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.Now;
+
+    /// <summary>Transport that delivered the telegram ("tunnel", "routing"); never a bus address.</summary>
     public required string Source { get; init; }
+}
+
+/// <summary>
+/// Matches the answer to a group value read: a GroupValueResponse for the requested group
+/// address from a real device, never our own confirmation echo or an empty source.
+/// </summary>
+public static class GroupValueReadResponse
+{
+    public static bool Matches(BusTelegram telegram, Knx.GroupAddress address, IndividualAddress ownAddress)
+    {
+        var inner = telegram.Telegram;
+        return inner.IsGroupAddress
+               && inner.Apci == Apci.GroupValueResponse
+               && inner.Destination.Raw == address.Raw
+               && inner.Source != ownAddress
+               && inner.Source != IndividualAddress.Zero;
+    }
 }
 
 /// <summary>
@@ -69,6 +88,12 @@ public sealed class KnxTunnel : IAsyncDisposable
     public IPEndPoint DataEndpoint => _dataEndpoint;
 
     public event Action<BusTelegram>? TelegramReceived;
+
+    /// <summary>
+    /// L_Data.con confirmations (echoes of frames we sent). Kept out of
+    /// <see cref="TelegramReceived"/> so a monitor shows bus traffic, not our own echo.
+    /// </summary>
+    public event Action<BusTelegram>? ConfirmationReceived;
     public event Action<string>? LogLine;
     public event Action? Disconnected;
 
@@ -123,13 +148,15 @@ public sealed class KnxTunnel : IAsyncDisposable
         _heartbeatLoop = Task.Run(() => HeartbeatLoopAsync(_cts.Token));
     }
 
-    public Task GroupValueWriteAsync(Knx.GroupAddress address, byte[] data, CancellationToken ct = default)
+    public Task GroupValueWriteAsync(Knx.GroupAddress address, byte[] data, int? dataBits = null,
+        CancellationToken ct = default)
         => SendTelegramAsync(new Telegram
         {
             Source = AssignedAddress,
             Destination = new IndividualAddress(address.Raw),
             IsGroupAddress = true,
             Apci = Apci.GroupValueWrite,
+            DataBits = dataBits,
             Data = data,
         }, ct);
 
@@ -144,7 +171,37 @@ public sealed class KnxTunnel : IAsyncDisposable
         }, ct);
 
     public async Task SendTelegramAsync(Telegram telegram, CancellationToken ct = default)
-        => await SendCemiAsync(Cemi.LDataRequest(telegram), ct);
+        => await SendCemiAsync(Cemi.LDataRequest(telegram.WithSource(AssignedAddress)), ct);
+
+    /// <summary>
+    /// Sends one group value read and waits for the matching GroupValueResponse from a device.
+    /// Returns null on timeout; the tunnel's own L_Data.con echo never satisfies the wait.
+    /// </summary>
+    public async Task<BusTelegram?> ReadGroupValueAsync(Knx.GroupAddress address, TimeSpan timeout,
+        CancellationToken ct = default)
+    {
+        var completion = new TaskCompletionSource<BusTelegram>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnTelegram(BusTelegram telegram)
+        {
+            if (GroupValueReadResponse.Matches(telegram, address, AssignedAddress))
+                completion.TrySetResult(telegram);
+        }
+
+        TelegramReceived += OnTelegram;
+        try
+        {
+            await GroupValueReadAsync(address, ct);
+            return await completion.Task.WaitAsync(timeout, ct);
+        }
+        catch (TimeoutException)
+        {
+            return null;
+        }
+        finally
+        {
+            TelegramReceived -= OnTelegram;
+        }
+    }
 
     /// <summary>Sends a telegram and awaits the matching response APCI from the device.</summary>
     public async Task<Telegram?> RequestAsync(byte[] cemi, Apci expectedResponse, IndividualAddress device,
@@ -388,8 +445,27 @@ public sealed class KnxTunnel : IAsyncDisposable
         if (cemi.Length == 0) return;
         try
         {
-            var telegram = Cemi.ParseLData(cemi);
-            TelegramReceived?.Invoke(new BusTelegram { Telegram = telegram, Source = "tunnel" });
+            switch (cemi[0])
+            {
+                case (byte)CemiMessageCode.LDataInd:
+                    TelegramReceived?.Invoke(new BusTelegram
+                    {
+                        Telegram = Cemi.ParseLData(cemi),
+                        Source = "tunnel",
+                    });
+                    return;
+                case (byte)CemiMessageCode.LDataCon:
+                    // Our own frame was confirmed on the bus; a monitor must not show it as traffic.
+                    ConfirmationReceived?.Invoke(new BusTelegram
+                    {
+                        Telegram = Cemi.ParseLData(cemi),
+                        Source = "tunnel",
+                    });
+                    return;
+                default:
+                    Log($"ignored cEMI 0x{cemi[0]:X2}: {Convert.ToHexString(cemi)}");
+                    return;
+            }
         }
         catch (Exception ex)
         {

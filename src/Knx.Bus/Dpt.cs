@@ -19,6 +19,36 @@ public static class Dpt
         _ => BitConverter.ToString(data),
     };
 
+    /// <summary>
+    /// Bit length of the common DPT main types. Accepts both the project id
+    /// (<c>DPST-9-1</c>) and the human form (<c>9.001</c>). Unknown types return false
+    /// so callers can reject them instead of creating an unlinkable group address.
+    /// </summary>
+    public static bool TryBitSize(string? datapointType, out int bits)
+    {
+        bits = 0;
+        if (string.IsNullOrWhiteSpace(datapointType)) return false;
+        var text = datapointType.Trim().ToUpperInvariant();
+        var main = text.StartsWith("DPST-", StringComparison.Ordinal) ? text[5..]
+            : text.StartsWith("DPT-", StringComparison.Ordinal) ? text[4..]
+            : text;
+        main = main.Split('.', '-')[0];
+        bits = main switch
+        {
+            "1" => 1, "2" => 2, "3" => 4,
+            "4" or "5" or "6" => 8,
+            "7" or "8" or "9" => 16,
+            "10" or "11" => 24,
+            "12" or "13" or "14" or "15" => 32,
+            "16" => 112,
+            "17" or "18" or "20" => 8,
+            "19" => 64,
+            "21" or "22" => 16,
+            _ => 0,
+        };
+        return bits > 0;
+    }
+
     /// <summary>Encodes a display value into a group value payload.</summary>
     public static byte[] Encode(string? datapointType, string value) => datapointType switch
     {

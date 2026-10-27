@@ -1,127 +1,291 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="using:Knx.App.Localization"
-             x:Class="Knx.App.Views.CatalogPane">
+             xmlns:views="using:Knx.App.Views"
+             x:Class="Knx.App.Views.CatalogPane"
+             Classes="wb-root" Background="{DynamicResource WbPaper}">
+  <!-- Opt-in V4 styling: shared by the workbench and standalone catalogue views. -->
   <UserControl.Styles>
-    <Style Selector="Button.primary">
-      <Setter Property="Background" Value="{DynamicResource EtsAccent}" />
-      <Setter Property="Foreground" Value="{DynamicResource EtsPanel}" />
+    <Style Selector="TextBlock.catalog-section">
+      <Setter Property="FontSize" Value="12" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Padding" Value="12,6" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <Style Selector="Button.primary:disabled /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource EtsButtonBackground}" />
-      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsMuted}" />
+    <Style Selector="TextBlock.catalog-caption">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <Style Selector="Button.secondary">
-      <Setter Property="Padding" Value="8,3" />
-      <Setter Property="FontSize" Value="11.5" />
+    <Style Selector="TextBlock.catalog-meta">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.catalog-meta.wb-error">
+      <Setter Property="Foreground" Value="{DynamicResource WbError}" />
+    </Style>
+
+    <Style Selector="ListBox.catalog-list">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.catalog-list ListBoxItem">
+      <Setter Property="MinHeight" Value="{DynamicResource WbRowHeight}" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="FontSize" Value="{DynamicResource WbFontSizeSmall}" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    </Style>
+    <Style Selector="ListBox.catalog-list ListBoxItem:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbHover}" />
+    </Style>
+    <Style Selector="ListBox.catalog-list ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbSelected}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}" />
+    </Style>
+    <Style Selector="ListBox.catalog-list ListBoxItem:selected TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
+    </Style>
+    <Style Selector="ListBox.catalog-list ListBoxItem:focus-visible /template/ ContentPresenter">
+      <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
+      <Setter Property="BorderThickness" Value="2" />
+    </Style>
+
+    <Style Selector="StackPanel.catalog-details TextBlock">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    </Style>
+    <Style Selector="StackPanel.catalog-details TextBlock.muted">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
+    </Style>
+    <Style Selector="StackPanel.catalog-details TextBlock.catalog-com">
+      <Setter Property="FontFamily" Value="{DynamicResource WbMonoFontFamily}" />
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    </Style>
+
+    <Style Selector="Border.catalog-badge">
+      <Setter Property="Background" Value="{DynamicResource WbTint}" />
+      <Setter Property="CornerRadius" Value="{DynamicResource WbSmallRadius}" />
+      <Setter Property="Padding" Value="6,1" />
+    </Style>
+    <Style Selector="Border.catalog-badge TextBlock">
+      <Setter Property="FontSize" Value="10" />
     </Style>
   </UserControl.Styles>
 
-  <DockPanel Margin="12">
-    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*" Margin="0,0,0,8">
-      <Button Grid.Column="0" Classes="secondary" Content="{loc:Tr CatalogImport}" Click="OnImport" />
-      <Button Grid.Column="1" Classes="secondary" Content="{loc:Tr CatalogReload}" Click="OnReload" Margin="6,0,0,0" />
-      <TextBlock Grid.Column="2" x:Name="ErrorText" Classes="muted" VerticalAlignment="Center"
-                 Margin="10,0,0,0" TextTrimming="CharacterEllipsis" IsVisible="False" />
-    </Grid>
-
-    <StackPanel x:Name="LoadingState" DockPanel.Dock="Top" Orientation="Horizontal" Spacing="10"
-                Margin="0,0,0,8" IsVisible="False">
-      <ProgressBar IsIndeterminate="True" Width="140" VerticalAlignment="Center" />
-      <TextBlock x:Name="LoadingText" Classes="muted" VerticalAlignment="Center" />
-    </StackPanel>
-
-    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
-                Spacing="8" Margin="0,8,0,0">
-      <Button x:Name="CloseButton" Content="{loc:Tr BtnClose}" Click="OnClose" />
-    </StackPanel>
-
-    <Grid ColumnDefinitions="220,*,300">
-      <Border Grid.Column="0" Classes="panel">
-        <DockPanel>
-          <TextBlock x:Name="LibraryHeader" DockPanel.Dock="Top" Classes="panelHeader" />
-          <Grid>
-            <ListBox x:Name="CatalogList" SelectionChanged="OnCatalogChanged">
-              <ListBox.ItemTemplate>
-                <DataTemplate>
-                  <StackPanel Margin="6,3">
-                    <TextBlock Text="{Binding Manufacturer.Name}" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding Name}" Classes="muted" />
-                    <TextBlock Text="{Binding Products.Count}" Classes="muted" FontSize="10" />
-                  </StackPanel>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
-            <StackPanel x:Name="LibraryEmpty" IsVisible="False" Spacing="8" Margin="10" VerticalAlignment="Center">
-              <TextBlock Text="{loc:Tr CatalogNoCatalog}" Classes="muted" TextWrapping="Wrap" />
-              <Button Content="{loc:Tr CatalogImport}" Click="OnImport" HorizontalAlignment="Left" />
-            </StackPanel>
+  <DockPanel>
+    <!-- One toolbar for actions, filtering and transient state. -->
+    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,0,1"
+            Padding="0,0,0,10" Margin="0,0,0,10">
+      <StackPanel Spacing="8">
+        <Grid ColumnDefinitions="*,Auto">
+          <Grid ColumnDefinitions="*,200">
+            <Grid>
+              <TextBox x:Name="SearchBox" Classes="wb-field" Padding="30,3,8,3"
+                       PlaceholderText="{loc:Tr CatalogSearch}" TextChanged="OnFilterChanged" />
+              <views:ConceptIcon Symbol="search" Width="14" Height="14" Margin="9,0,0,0"
+                          HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False"
+                          Foreground="{DynamicResource WbMuted}" />
+            </Grid>
+            <ComboBox x:Name="SectionBox" Grid.Column="1" Classes="wb-field" Margin="8,0,0,0"
+                      HorizontalAlignment="Stretch" SelectionChanged="OnSectionChanged" />
           </Grid>
-        </DockPanel>
-      </Border>
-
-      <Border Grid.Column="1" Classes="panel" Margin="8,0">
-        <DockPanel>
-          <TextBlock x:Name="ProductsHeader" DockPanel.Dock="Top" Classes="panelHeader" />
-          <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="6">
-            <TextBox x:Name="SearchBox" Watermark="{loc:Tr CatalogSearch}" TextChanged="OnFilterChanged" />
-            <ComboBox x:Name="SectionBox" HorizontalAlignment="Stretch" SelectionChanged="OnSectionChanged" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="12,0,0,0"
+                      VerticalAlignment="Center">
+            <Button x:Name="ImportButton" Classes="wb-button" Content="{loc:Tr CatalogImport}"
+                    ToolTip.Tip="{loc:Tr CatalogFileTypes}" Click="OnImport" />
+            <Button x:Name="ReloadButton" Classes="wb-button" Content="{loc:Tr CatalogReload}"
+                    ToolTip.Tip="{loc:Tr CatalogTitle}" Click="OnReload" />
+            <Button x:Name="CloseButton" Classes="wb-button wb-quiet"
+                    Content="{loc:Tr BtnClose}" Click="OnClose" />
           </StackPanel>
-          <Grid DockPanel.Dock="Top" ColumnDefinitions="*,100,50" Background="{DynamicResource EtsHeaderRow}">
-            <TextBlock Grid.Column="0" Classes="columnHeader" Text="{loc:Tr ColName}" />
-            <TextBlock Grid.Column="1" Classes="columnHeader" Text="{loc:Tr CatalogOrderNumber}" />
-            <TextBlock Grid.Column="2" Classes="columnHeader" Text="{loc:Tr CatalogProgramCount}" />
-          </Grid>
+        </Grid>
+
+        <TextBlock x:Name="ErrorText" Classes="wb-error" FontSize="11" TextTrimming="CharacterEllipsis"
+                   IsVisible="False" />
+
+        <!-- Summary of the last catalogue import: products/programs plus gating flags. -->
+        <TextBlock x:Name="ImportReport" Classes="catalog-meta" TextWrapping="Wrap" IsVisible="False" />
+
+        <StackPanel x:Name="LoadingState" Orientation="Horizontal" Spacing="10" IsVisible="False">
+          <ProgressBar IsIndeterminate="True" Width="120" Height="3" VerticalAlignment="Center"
+                       Foreground="{DynamicResource WbAccent}" Background="{DynamicResource WbHover}" />
+          <TextBlock x:Name="LoadingText" Classes="wb-muted" VerticalAlignment="Center" />
+          <Button x:Name="CancelButton" Classes="wb-button wb-compact wb-quiet"
+                  Content="{loc:Tr BtnCancel}" Click="OnCancelLoad" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Grid x:Name="CatalogRoot" ColumnDefinitions="200,*,290">
+      <!-- Library -->
+      <Border Grid.Column="0" Background="{DynamicResource WbPanel}"
+              BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,1,0">
+        <DockPanel>
+          <Border DockPanel.Dock="Top" Height="40" Padding="12,0"
+                  BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,0,1">
+            <TextBlock x:Name="LibraryHeader" Classes="catalog-section" />
+          </Border>
+          <Border DockPanel.Dock="Bottom" Padding="10,8"
+                  BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0">
+            <Button x:Name="RemoveCatalogButton" Classes="wb-button wb-compact wb-quiet"
+                    HorizontalAlignment="Stretch" IsEnabled="False" Click="OnRemoveCatalog" />
+          </Border>
           <Grid>
-            <ListBox x:Name="ProductList" SelectionChanged="OnProductChanged">
+            <ListBox x:Name="CatalogList" Classes="catalog-list" SelectionChanged="OnCatalogChanged"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
               <ListBox.ItemTemplate>
                 <DataTemplate>
-                  <Grid ColumnDefinitions="*,100,50" Margin="6,1">
-                    <TextBlock Grid.Column="0" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Grid.Column="1" Text="{Binding OrderNumber}" Classes="mono" />
-                    <TextBlock Grid.Column="2" Text="{Binding ProgramRefIds.Count}" Classes="muted" />
+                  <Grid ColumnDefinitions="*,Auto" Height="32" Margin="12,0">
+                    <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                      <TextBlock.Text>
+                        <MultiBinding StringFormat="{}{0} · {1}">
+                          <Binding Path="Name" />
+                          <Binding Path="Manufacturer.Name" />
+                        </MultiBinding>
+                      </TextBlock.Text>
+                    </TextBlock>
+                    <TextBlock Grid.Column="1" Classes="catalog-meta" Margin="6,0,0,0"
+                               Text="{Binding Products.Count}" />
                   </Grid>
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>
-            <StackPanel x:Name="ProductsEmpty" IsVisible="False" Spacing="8" Margin="12"
+
+            <StackPanel x:Name="LibraryEmpty" IsVisible="False" Spacing="8" Margin="16"
                         VerticalAlignment="Center" HorizontalAlignment="Center">
-              <TextBlock x:Name="ProductsEmptyText" Classes="muted" TextWrapping="Wrap" TextAlignment="Center" />
-              <Button x:Name="ClearSearchButton" Content="{loc:Tr CatalogNoResults}" Click="OnClearSearch"
+              <views:ConceptIcon Symbol="catalog" Width="22" Height="22" HorizontalAlignment="Center"
+                          Foreground="{DynamicResource WbMuted}" />
+              <TextBlock Text="{loc:Tr CatalogNoCatalog}" Classes="wb-muted"
+                         TextWrapping="Wrap" TextAlignment="Center" />
+              <Button Classes="wb-button wb-compact" Content="{loc:Tr CatalogImport}" Click="OnImport"
                       HorizontalAlignment="Center" />
             </StackPanel>
           </Grid>
         </DockPanel>
       </Border>
 
-      <Border Grid.Column="2" Classes="panel">
+      <!-- Products -->
+      <Border Grid.Column="1" Background="{DynamicResource WbPaper}">
         <DockPanel>
-          <TextBlock x:Name="UxInsert" DockPanel.Dock="Top" Classes="panelHeader" Text="{loc:Tr UxInsert}" />
-          <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="8">
-            <TextBlock x:Name="UxNeedsProject" Classes="muted" Text="{loc:Tr UxNeedsProject}"
-                       TextWrapping="Wrap" IsVisible="False" />
-            <TextBlock Classes="muted" Text="{loc:Tr CatalogTargetLine}" />
-            <ComboBox x:Name="LineBox" HorizontalAlignment="Stretch" SelectionChanged="OnLineChanged">
-              <ComboBox.ItemTemplate>
-                <DataTemplate><TextBlock Text="{Binding Text}" /></DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-            <TextBlock Classes="muted" Text="{loc:Tr ColAddress}" />
-            <TextBox x:Name="AddressBox" Watermark="1.1.1" TextChanged="OnAddressChanged" />
-            <TextBlock Classes="muted" Text="{loc:Tr ColName}" />
-            <TextBox x:Name="NameBox" />
-            <TextBlock x:Name="InsertStatus" TextTrimming="CharacterEllipsis" />
-            <Button x:Name="InsertButton" Classes="primary" Content="{loc:Tr UxInsert}"
-                    Click="OnInsert" HorizontalAlignment="Stretch" />
-          </StackPanel>
-          <ScrollViewer>
-            <StackPanel Margin="8" Spacing="4">
-              <TextBlock x:Name="UxProduct" FontWeight="SemiBold" TextWrapping="Wrap" />
-              <StackPanel x:Name="Details" Spacing="6" />
+          <Border DockPanel.Dock="Top" Height="40" Padding="12,0"
+                  BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,0,1">
+            <TextBlock x:Name="ProductsHeader" Classes="catalog-section" />
+          </Border>
+
+          <Border DockPanel.Dock="Top" Height="31" Background="{DynamicResource WbTableHeader}"
+                  BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,90,45" Margin="10,0">
+              <TextBlock Classes="catalog-caption" Text="{loc:Tr ColName}" />
+              <TextBlock Grid.Column="1" Classes="catalog-caption" Text="{loc:Tr CatalogOrderNumber}" />
+              <TextBlock Grid.Column="2" Classes="catalog-caption" Text="{loc:Tr CatalogProgramCount}" />
+            </Grid>
+          </Border>
+
+          <Grid>
+            <ListBox x:Name="ProductList" Classes="catalog-list" SelectionChanged="OnProductChanged"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="*,90,45" Height="32" Margin="10,0">
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding Name}" />
+                    <TextBlock Grid.Column="1" Text="{Binding OrderNumber}" Classes="wb-mono"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,6,0"
+                               ToolTip.Tip="{Binding OrderNumber}" />
+                    <TextBlock Grid.Column="2" Text="{Binding ProgramRefIds.Count}" Classes="catalog-meta" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+
+            <StackPanel x:Name="ProductsEmpty" IsVisible="False" Spacing="8" Margin="16"
+                        VerticalAlignment="Center" HorizontalAlignment="Center">
+              <views:ConceptIcon Symbol="search" Width="22" Height="22" HorizontalAlignment="Center"
+                          Foreground="{DynamicResource WbMuted}" />
+              <TextBlock x:Name="ProductsEmptyText" Classes="wb-muted" TextWrapping="Wrap"
+                         TextAlignment="Center" MaxWidth="320" />
+              <Button x:Name="ClearSearchButton" Classes="wb-button wb-compact"
+                      Content="{loc:Tr CatalogNoResults}" Click="OnClearSearch" HorizontalAlignment="Center" />
             </StackPanel>
-          </ScrollViewer>
+          </Grid>
+        </DockPanel>
+      </Border>
+
+      <!-- Selection and insert target -->
+      <Border Grid.Column="2" Background="{DynamicResource WbPanel}"
+              BorderBrush="{DynamicResource WbLine}" BorderThickness="1,0,0,0">
+        <DockPanel>
+          <Border DockPanel.Dock="Top" Height="40" Padding="14,0"
+                  BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,0,1">
+            <TextBlock x:Name="UxInsert" Classes="catalog-section" Text="{loc:Tr UxInsert}" />
+          </Border>
+
+          <Border DockPanel.Dock="Bottom" Background="{DynamicResource WbPaper}"
+                  BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0" Padding="14,10">
+            <StackPanel Spacing="8">
+              <TextBlock x:Name="UxNeedsProject" Classes="wb-warning" FontSize="11"
+                         Text="{loc:Tr UxNeedsProject}" TextWrapping="Wrap" IsVisible="False" />
+              <TextBlock x:Name="RoomContext" Classes="catalog-meta" TextWrapping="Wrap" />
+              <StackPanel Spacing="4">
+                <TextBlock Classes="catalog-caption" Text="{loc:Tr CatalogTargetLine}" />
+                <ComboBox x:Name="LineBox" Classes="wb-field" HorizontalAlignment="Stretch"
+                          SelectionChanged="OnLineChanged"
+                          ToolTip.Tip="{Binding SelectedItem.Text, RelativeSource={RelativeSource Self}}">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate><TextBlock Text="{Binding Text}" /></DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+              <StackPanel x:Name="SegmentTarget" Spacing="4">
+                <TextBlock x:Name="SegmentCaption" Classes="catalog-caption" />
+                <ComboBox x:Name="SegmentBox" Classes="wb-field" HorizontalAlignment="Stretch"
+                          SelectionChanged="OnSegmentChanged"
+                          ToolTip.Tip="{Binding SelectedItem.Text, RelativeSource={RelativeSource Self}}">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate><TextBlock Text="{Binding Text}" /></DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+              <StackPanel Spacing="4">
+                <TextBlock Classes="catalog-caption" Text="{loc:Tr ColAddress}" />
+                <TextBox x:Name="AddressBox" Classes="wb-field" PlaceholderText="1.1.1"
+                         TextChanged="OnAddressChanged" />
+              </StackPanel>
+              <StackPanel Spacing="4">
+                <TextBlock Classes="catalog-caption" Text="{loc:Tr ColName}" />
+                <TextBox x:Name="NameBox" Classes="wb-field" />
+              </StackPanel>
+              <Grid ColumnDefinitions="*,Auto" Margin="0,2,0,0">
+                <TextBlock x:Name="InsertStatus" FontSize="11" TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center" Margin="0,0,8,0" />
+                <Button x:Name="InsertButton" Grid.Column="1" Classes="wb-button wb-primary"
+                        Content="{loc:Tr UxInsert}" Click="OnInsert" HorizontalAlignment="Right" />
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <Grid>
+            <ScrollViewer>
+              <StackPanel Margin="14,12" Spacing="10">
+                <TextBlock x:Name="UxProduct" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <StackPanel x:Name="Details" Classes="catalog-details" Spacing="6" />
+              </StackPanel>
+            </ScrollViewer>
+            <StackPanel x:Name="DetailsEmpty" Spacing="8" Margin="16"
+                        VerticalAlignment="Center" HorizontalAlignment="Center">
+              <views:ConceptIcon Symbol="catalog" Width="22" Height="22" HorizontalAlignment="Center"
+                          Foreground="{DynamicResource WbMuted}" />
+              <TextBlock Text="{loc:Tr CatalogNeedProduct}" Classes="wb-muted"
+                         TextWrapping="Wrap" TextAlignment="Center" />
+            </StackPanel>
+          </Grid>
         </DockPanel>
       </Border>
     </Grid>

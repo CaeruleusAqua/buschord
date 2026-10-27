@@ -251,11 +251,8 @@ public sealed class GroupMonitor
 
     public void SaveCsv(string path) => File.WriteAllText(path, ToCsv(), new UTF8Encoding(false));
 
-    /// <summary>Quotes one CSV field only when it needs quoting (RFC 4180).</summary>
-    public static string CsvField(string value)
-        => value.IndexOfAny([',', '"', '\r', '\n']) < 0
-            ? value
-            : "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    /// <summary>Quotes one field per RFC 4180 and neutralises spreadsheet formulas.</summary>
+    public static string CsvField(string value, char separator = ',') => Csv.Field(value, separator);
 
     /// <summary>Write, read or response, derived from the APCI service name.</summary>
     public static MonitorKind KindOf(Apci apci)
@@ -353,7 +350,7 @@ public sealed class GroupMonitor
             {
                 if (isGroup)
                 {
-                    var raw = (ushort)(frame.Destination.Raw & 0x7FFF);
+                    var raw = frame.Destination.Raw;
                     var address = raw == 0 ? null : ProjectQuery.FindGroupAddress(project, new GroupAddress(raw));
                     datapointType = address?.DatapointType;
                     name = address?.Name ?? "";
@@ -376,8 +373,7 @@ public sealed class GroupMonitor
     /// <summary>Group address text without throwing on a reserved raw value such as 0.</summary>
     public static string GroupText(ushort raw)
     {
-        var value = (ushort)(raw & 0x7FFF);
-        return value == 0 ? "0/0/0" : new GroupAddress(value).ToString();
+        return raw == 0 ? "0/0/0" : new GroupAddress(raw).ToString();
     }
 
     private static void AppendRow(StringBuilder builder, params string[] fields)

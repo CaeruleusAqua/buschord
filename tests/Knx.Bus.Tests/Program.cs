@@ -18,11 +18,20 @@ void Check(string name, bool ok, string? detail = null)
     if (!ok) failures.Add(name + (detail is null ? "" : ": " + detail));
 }
 
-// Read-only live probe: dotnet run --project tests/Knx.Bus.Tests -- --live 192.0.2.10
-// Connects a tunnel, sends exactly one GroupValueRead, disconnects. No bus writes.
+// Read-only live probes (never send a bus write):
+//   --live <gateway-ip> [listen-seconds]         tunnel, passive listen, one GroupValueRead, disconnect
+//   --routing-live <local-ip> [listen-seconds]   join the routing group, passive listen, leave
 if (args is ["--live", var liveHost, ..])
 {
-    Environment.Exit(await LiveProbeAsync(liveHost));
+    var seconds = args.Length > 2 && int.TryParse(args[2], out var parsed) ? parsed : 8;
+    Environment.Exit(await LiveProbeAsync(liveHost, seconds));
+    return;
+}
+
+if (args is ["--routing-live", var localIp, ..])
+{
+    var seconds = args.Length > 2 && int.TryParse(args[2], out var parsed) ? parsed : 15;
+    Environment.Exit(await RoutingLiveAsync(localIp, seconds));
     return;
 }
 
@@ -120,86 +129,150 @@ if (args is ["--live", var liveHost, ..])
     catch (FormatException) { Check("ACK rejects header length 3", true); }
 }
 
-// ---- 3. cEMI L_Data: GroupValueWrite 0/11 mit 1 Byte ----
+// ---- 3. cEMI L_Data: frame fixtures ----
 {
-    var cemi = Cemi.LDataRequest(new Telegram
+    // Frame fixtures for E6/E7 forwarding:
+    // ctrl2 bit 7 is the group flag, bits 6..4 the hop count, APCI lives in octets 7-8.
+    var hop4Byte = Convert.FromHexString("2900BCC013033303020080A8");
+    var hop5Bit = Convert.FromHexString("2900BCD010063015010081");
+    var hop4Word = Convert.FromHexString("2900BCC01303330B0300801CC2");
+    var hop6Bit = Convert.FromHexString("2900BCE010063015010081");
+
+    var b4 = Cemi.ParseLData(hop4Byte);
+    Check("capture hop 4: group flag + hop count", b4.IsGroupAddress && b4.HopCount == 4,
+        $"group={b4.IsGroupAddress} hop={b4.HopCount}");
+    Check("capture hop 4: source and group destination",
+        b4.Source == new IndividualAddress(0x1303) && Cemi.DestinationGroup(b4) == new GroupAddress(0x3303));
+    Check("capture hop 4: GroupValueWrite with one data octet",
+        b4.Apci == Apci.GroupValueWrite && b4.Data is [0xA8] && b4.DataBits is null,
+        $"{b4.Apci} {Convert.ToHexString(b4.Data)}");
+
+    var b5 = Cemi.ParseLData(hop5Bit);
+    Check("capture hop 5: group flag + hop count", b5.IsGroupAddress && b5.HopCount == 5,
+        $"group={b5.IsGroupAddress} hop={b5.HopCount}");
+    Check("capture hop 5: GroupValueWrite with inline 1-bit value",
+        b5.Apci == Apci.GroupValueWrite && b5.Data is [0x01] && b5.DataBits is 6,
+        $"{b5.Apci} {Convert.ToHexString(b5.Data)} bits={b5.DataBits}");
+    Check("capture hop 5: destination 6/0/21", Cemi.DestinationGroup(b5) == GroupAddress.ThreeLevel(6, 0, 21));
+
+    var w4 = Cemi.ParseLData(hop4Word);
+    Check("capture hop 4: GroupValueWrite with two data octets",
+        w4.Apci == Apci.GroupValueWrite && w4.Data is [0x1C, 0xC2], Convert.ToHexString(w4.Data));
+    var b6 = Cemi.ParseLData(hop6Bit);
+    Check("capture hop 6: group flag + hop count", b6.IsGroupAddress && b6.HopCount == 6 && b6.Data is [0x01]);
+
+    // Individual-addressed frames carry the same hop count with the group flag cleared.
+    var ind4 = Cemi.ParseLData(Convert.FromHexString("2900BC4010033015010081"));
+    var ind5 = Cemi.ParseLData(Convert.FromHexString("2900BC5010033015010081"));
+    Check("individual hop 4: no group flag, hop 4",
+        !ind4.IsGroupAddress && ind4.HopCount == 4 && ind4.Apci == Apci.GroupValueWrite);
+    Check("individual hop 5: no group flag, hop 5", !ind5.IsGroupAddress && ind5.HopCount == 5);
+
+    static Telegram Copy(Telegram t) => new()
     {
-        Source = new IndividualAddress(0x0011), // 0.17
-        Destination = new IndividualAddress(0x000B), // 0/11
-        IsGroupAddress = true,
-        Apci = Apci.GroupValueWrite,
-        Data = [0x01],
-    });
-    var expected = new byte[]
-    {
-        0x11, 0x00,                   // L_Data.req, additional info length
-        0xBC, 0xE0,                   // ctrl1, ctrl2 (group, hop 6)
-        0x00, 0x11, 0x00, 0x0B,       // src 0.17, dst 0/11
-        0x02, 0x20,                   // npci: APDU len 2, apci nibble 2 = GroupValueWrite
-        0x01,                         // data
+        Source = t.Source, Destination = t.Destination, IsGroupAddress = t.IsGroupAddress,
+        HopCount = t.HopCount, Apci = t.Apci, DataBits = t.DataBits, Data = t.Data,
     };
-    Check("cEMI group write bytes", cemi.SequenceEqual(expected), Convert.ToHexString(cemi));
+    Check("capture hop 4 re-encodes byte-identically",
+        Cemi.LDataRequest(Copy(b4)).AsSpan(2).SequenceEqual(hop4Byte.AsSpan(2)),
+        Convert.ToHexString(Cemi.LDataRequest(Copy(b4))));
+    Check("capture hop 5 re-encodes byte-identically",
+        Cemi.LDataRequest(Copy(b5)).AsSpan(2).SequenceEqual(hop5Bit.AsSpan(2)),
+        Convert.ToHexString(Cemi.LDataRequest(Copy(b5))));
+    Check("capture two-octet write re-encodes byte-identically",
+        Cemi.LDataRequest(Copy(w4)).AsSpan(2).SequenceEqual(hop4Word.AsSpan(2)));
 
-    var parsed = Cemi.ParseLData(cemi);
-    Check("cEMI parse: source", parsed.Source == new IndividualAddress(0x0011));
-    Check("cEMI parse: dst", Cemi.DestinationGroup(parsed) == new Knx.GroupAddress(0x000B));
-    Check("cEMI parse: apci", parsed.Apci == Apci.GroupValueWrite);
-    Check("cEMI parse: data", parsed.Data is [0x01]);
-    Check("cEMI parse: group flag", parsed.IsGroupAddress);
-}
-
-// GroupValueRead (keine Daten): 11 00 BC E0 00 11 00 0B 01 00
-{
-    var cemi = Cemi.LDataRequest(new Telegram
+    // The outbound read fixture has all APCI bits set to zero.
+    var read = Cemi.LDataRequest(new Telegram
     {
-        Source = new IndividualAddress(0x0011),
-        Destination = new IndividualAddress(0x000B),
+        Source = new IndividualAddress(0x11FA),
+        Destination = new IndividualAddress(0x3303),
         IsGroupAddress = true,
         Apci = Apci.GroupValueRead,
         Data = [],
     });
-    Check("cEMI group read bytes",
-        cemi is [0x11, 0x00, 0xBC, 0xE0, 0x00, 0x11, 0x00, 0x0B, 0x01, 0x00],
-        Convert.ToHexString(cemi));
-}
+    // The APDU is two octets (octet 7 + octet 8); a read carries zeroes in both.
+    Check("group read frame matches the wire",
+        read is [0x11, 0x00, 0xBC, 0xE0, 0x11, 0xFA, 0x33, 0x03, 0x01, 0x00, 0x00], Convert.ToHexString(read));
 
-// IndividualAddress_Write (individual, ctrl2 = 0xD0)
-{
-    var cemi = Cemi.LDataRequest(new Telegram
+    // 1-bit values stay inline in octet 8; whole octets follow it.
+    var bit = Cemi.LDataRequest(new Telegram
     {
-        Source = new IndividualAddress(0x0FFF),
-        Destination = new IndividualAddress(0x1101),
-        IsGroupAddress = false,
-        Apci = Apci.IndividualAddressWrite,
-        Data = [0x11, 0x01],
+        Source = new IndividualAddress(0x11FA), Destination = new IndividualAddress(0x3303),
+        IsGroupAddress = true, Apci = Apci.GroupValueWrite, DataBits = 1, Data = [0x01],
     });
-    Check("cEMI individual write ctrl2", cemi[3] == 0xD0);
-    var parsed = Cemi.ParseLData(cemi);
-    Check("cEMI individual write round-trip", parsed.Apci == Apci.IndividualAddressWrite
-        && parsed.Destination == new IndividualAddress(0x1101) && !parsed.IsGroupAddress);
+    Check("group write 1-bit frame", bit is [0x11, 0x00, 0xBC, 0xE0, 0x11, 0xFA, 0x33, 0x03, 0x01, 0x00, 0x81],
+        Convert.ToHexString(bit));
+    var octet = Cemi.LDataRequest(new Telegram
+    {
+        Source = new IndividualAddress(0x11FA), Destination = new IndividualAddress(0x3303),
+        IsGroupAddress = true, Apci = Apci.GroupValueWrite, Data = [0xA8],
+    });
+    Check("group write 1-octet frame", octet is [0x11, 0x00, 0xBC, 0xE0, 0x11, 0xFA, 0x33, 0x03, 0x02, 0x00, 0x80, 0xA8],
+        Convert.ToHexString(octet));
+    var octetBack = Cemi.ParseLData(octet);
+    Check("group write round-trip", octetBack.Apci == Apci.GroupValueWrite && octetBack.Data is [0xA8]);
+    try
+    {
+        Cemi.LDataRequest(new Telegram
+        {
+            Source = new IndividualAddress(0x11FA), Destination = new IndividualAddress(0x3303),
+            IsGroupAddress = true, Apci = Apci.GroupValueWrite, DataBits = 1, Data = [0x02],
+        });
+        Check("value wider than its declared bits is rejected", false);
+    }
+    catch (ArgumentOutOfRangeException) { Check("value wider than its declared bits is rejected", true); }
+
+    // Extended length field: lengths above a standard APDU round-trip, nothing is silently cut.
+    var longData = Enumerable.Range(0, 15).Select(i => (byte)i).ToArray();
+    var extended = Cemi.LDataRequest(new Telegram
+    {
+        Source = new IndividualAddress(0x11FA), Destination = new IndividualAddress(0x3303),
+        IsGroupAddress = true, Apci = Apci.GroupValueWrite, Data = longData,
+    });
+    Check("extended frame length flag", (extended[8] & 0xC0) == 0x40, Convert.ToHexString(extended[..12]));
+    Check("extended frame round-trip", Cemi.ParseLData(extended).Data.SequenceEqual(longData));
 }
 
 // ---- 4. Management-Frames ----
 {
+    // Descriptor type is the 4-bit management parameter in APDU octet 8, not an appended data octet.
     var desc = Management.DeviceDescriptorRead(new IndividualAddress(1, 1, 16));
     var descT = Cemi.ParseLData(desc);
+    Check("descriptor read: wire frame",
+        desc is [0x11, 0x00, 0xBC, 0x60, 0x00, 0x00, 0x11, 0x10, 0x01, 0x03, 0x00], Convert.ToHexString(desc));
     Check("descriptor read", descT.Apci == Apci.DeviceDescriptorRead
-        && descT.Data is [0x00] && descT.Destination == new IndividualAddress(1, 1, 16));
+        && descT.Data is [0x00] && descT.Destination == new IndividualAddress(1, 1, 16)
+        && !descT.IsGroupAddress && descT.HopCount == 6);
+    var desc2 = Management.DeviceDescriptorRead(new IndividualAddress(1, 1, 16), 2);
+    Check("descriptor type 2 is the APCI parameter",
+        desc2 is [0x11, 0x00, 0xBC, 0x60, 0x00, 0x00, 0x11, 0x10, 0x01, 0x03, 0x02],
+        Convert.ToHexString(desc2));
+    Check("descriptor type 2 parses back", Cemi.ParseLData(desc2).Data is [0x02]);
+    try { Management.DeviceDescriptorRead(new IndividualAddress(1, 1, 16), 4); Check("descriptor type 4 rejected", false); }
+    catch (ArgumentOutOfRangeException) { Check("descriptor type 4 rejected", true); }
 
     var iaWrite = Management.IndividualAddressWrite(new IndividualAddress(1, 2, 3));
     var iaParsed = Cemi.ParseLData(iaWrite);
     Check("IA write", iaParsed.Apci == Apci.IndividualAddressWrite
-        && iaParsed.Data is [0x12, 0x03] && iaParsed.Destination == new IndividualAddress(1, 2, 3));
+        && iaParsed.Data is [0x12, 0x03] && iaParsed.Destination == new IndividualAddress(1, 2, 3)
+        && iaWrite[3] == 0x60, Convert.ToHexString(iaWrite));
 
     var restart = Management.Restart(new IndividualAddress(1, 1, 16), erase: false);
     Check("restart frame", Cemi.ParseLData(restart).Apci == Apci.Restart
         && Cemi.ParseLData(restart).Data is [0x00, 0x00]);
 
     var memWrite = Management.MemoryWrite(new IndividualAddress(1, 1, 16), 0x0123, [0xDE, 0xAD, 0xBE, 0xEF]);
-    Check("memory write erweitert", memWrite is [0x11, 0x00, 0xBC, 0xD0, 0x00, 0x00, 0x11, 0x10, 0x46, 0xA0, 0x01, 0x23, 0xDE, 0xAD, 0xBE, 0xEF],
+    Check("memory write frame", memWrite is [0x11, 0x00, 0xBC, 0x60, 0x00, 0x00, 0x11, 0x10, 0x07, 0x02, 0x80, 0x01, 0x23, 0xDE, 0xAD, 0xBE, 0xEF],
         Convert.ToHexString(memWrite));
     Check("memory write parse", Cemi.ParseLData(memWrite).Apci == Apci.MemoryWrite
-        && Cemi.ParseLData(memWrite).Destination == new IndividualAddress(1, 1, 16));
+        && Cemi.ParseLData(memWrite).Destination == new IndividualAddress(1, 1, 16)
+        && Cemi.ParseLData(memWrite).Data is [0x01, 0x23, 0xDE, 0xAD, 0xBE, 0xEF]);
+
+    var memRead = Management.MemoryRead(new IndividualAddress(1, 1, 16), 0x0123, 4);
+    Check("memory read frame", memRead is [0x11, 0x00, 0xBC, 0x60, 0x00, 0x00, 0x11, 0x10, 0x04, 0x02, 0x00, 0x01, 0x23, 0x04],
+        Convert.ToHexString(memRead));
+    Check("memory read parses back", Cemi.ParseLData(memRead) is { Apci: Apci.MemoryRead, Data: [0x01, 0x23, 0x04] });
 }
 
 // ---- 5. DPT-Codec ----
@@ -211,6 +284,11 @@ if (args is ["--live", var liveHost, ..])
     Check("DPST-5-1 decode", Dpt.Decode("DPST-5-1", [0x80]) == "50%", Dpt.Decode("DPST-5-1", [0x80]));
     Check("DPST-5-1 encode", Dpt.Encode("DPST-5-1", "50") is [0x80], Convert.ToHexString(Dpt.Encode("DPST-5-1", "50")));
     Check("raw hex", Dpt.Decode(null, [0xAB, 0xCD]) == "AB-CD");
+    Check("DPT bit sizes cover project and human ids", Dpt.TryBitSize("DPST-1-1", out var b1) && b1 == 1
+        && Dpt.TryBitSize("9.001", out var b9) && b9 == 16
+        && Dpt.TryBitSize("DPT-1-1", out var bd) && bd == 1
+        && Dpt.TryBitSize("DPST-5-1", out var b5) && b5 == 8
+        && !Dpt.TryBitSize("not-a-dpt", out _) && !Dpt.TryBitSize(null, out _));
 }
 
 // ---- 6. Discovery-Parser (SEARCH_RESPONSE) ----
@@ -277,6 +355,30 @@ if (args is ["--live", var liveHost, ..])
 // ---- 7. Handshake, ACK- und Sequenz-Zustandsmaschine gegen strengen Loopback-Fake ----
 var (ok, detail) = await RunLoopbackAsync();
 Check("tunnel connect + ack + download + disconnect", ok, detail);
+var gatedBus = new KnxBus();
+try
+{
+    await gatedBus.DownloadAsync(new KnxDevice
+    {
+        ControlEndpoint = new IPEndPoint(IPAddress.Loopback, 3671), Name = "gated", Serial = [1, 2, 3, 4, 5, 6],
+        MulticastAddress = "224.0.23.12", MacAddress = "00:00:00:00:00:00", FriendlyName = "gated",
+        KnxAddress = "1.1.16", SupportedFamilies = [1]
+    }, new IndividualAddress(1, 1, 16), new TestProgram("gated", new byte[] { 1 }, 0x60, 1), new Progress<DownloadProgress>());
+    Check("real download is safety-gated", false);
+}
+catch (NotSupportedException ex)
+{
+    Check("real download is safety-gated", true);
+    Check("real download names the preflight gate", ex.Message.Contains("DownloadPreflight"), ex.Message);
+}
+try
+{
+    await gatedBus.GroupValueWriteAsync(new GroupAddress(0x0001), [0x01], 1);
+    Check("group writes are read-only policy-gated", false);
+}
+catch (NotSupportedException) { Check("group writes are read-only policy-gated", true); }
+Check("write gate is disabled by default", !KnxBus.WritesEnabled);
+await gatedBus.DisposeAsync();
 var (rejectOk, rejectDetail) = await MalformedConnectRejectedAsync();
 Check("fake rejects malformed CONNECT_REQUEST", rejectOk, rejectDetail);
 var (retryOk, retryDetail) = await AckRetryAsync();
@@ -289,6 +391,134 @@ var (heartbeatOk, heartbeatDetail) = await HeartbeatAsync();
 Check("heartbeat CONNECTIONSTATE_REQUEST", heartbeatOk, heartbeatDetail);
 var (serverCloseOk, serverCloseDetail) = await ServerDisconnectAsync();
 Check("server DISCONNECT_REQUEST answered without our request", serverCloseOk, serverCloseDetail);
+var (confirmationOk, confirmationDetail) = await BusWireChecks.ConfirmationFilterAsync();
+Check("L_Data.con stays out of the telegram feed", confirmationOk, confirmationDetail);
+var (readAnswerOk, readAnswerDetail) = await BusWireChecks.ReadGroupValueAsync(echoOnly: false);
+Check("read waits for GroupValueResponse from the device", readAnswerOk, readAnswerDetail);
+var (readTimeoutOk, readTimeoutDetail) = await BusWireChecks.ReadGroupValueAsync(echoOnly: true);
+Check("confirmation echo alone does not satisfy a read", readTimeoutOk, readTimeoutDetail);
+var (routingOk, routingDetail) = await BusWireChecks.RoutingJoinAsync();
+Check("routing joins, decodes and leaves the multicast group", routingOk, routingDetail);
+
+// ---- 7b. Download-Preflight: Dry-Run-Plan und Verweigerung ohne ein einziges Frame ----
+{
+    var target = new IndividualAddress(1, 1, 16);
+    var program = new TestProgram("Test-App", new byte[] { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22 }, 0x0060, 2);
+    var knownMask = DeviceDescriptor.Parse(0x00, [0x07, 0xB0]);
+
+    DownloadPreflightRequest Ready() => new()
+    {
+        DeviceAddress = target,
+        Program = program,
+        Descriptor = knownMask,
+        ProgrammingMode = true,
+        AddressConfirmed = true,
+        DryRunConfirmed = true,
+        ExpectedArea = 1,
+        ExpectedLine = 1,
+    };
+
+    var plan = DownloadPreflight.Plan(Ready());
+    Check("preflight: ready dry-run plan", plan.Ready, string.Join("; ", plan.Blockers.Select(b => b.Message)));
+    Check("preflight: chunks cover the image deterministically",
+        plan.Chunks.Count == 4
+        && plan.Chunks[0] is { Address: 0x0060, Length: 2 }
+        && plan.Chunks[3] is { Address: 0x0066, Length: 2 },
+        string.Join(", ", plan.Chunks.Select(c => $"0x{c.Address:X4}/{c.Length}")));
+    Check("preflight: every chunk fits one memory-write frame",
+        plan.Chunks.All(c => c.Length is >= 1 and <= 12));
+    Check("preflight: image hash is the SHA-256 of the image",
+        plan.ImageHash == Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(program.Image)));
+    Check("preflight: mask check names the management model",
+        plan.MaskVersion == 0x07B0 && plan.Checks.Any(c => c.Code == DownloadCheckCode.MaskKnown));
+    var dryRun = plan.Describe();
+    Check("preflight: dry run names target, mask and addresses",
+        dryRun.Contains("1.1.16") && dryRun.Contains("0x07B0") && dryRun.Contains("0x0060"),
+        dryRun.Split('\n')[0]);
+
+    // The planned chunks encode to exactly the management frames a download would send.
+    var firstChunkFrame = Management.MemoryWrite(target, plan.Chunks[0].Address, program.Image[..2]);
+    Check("preflight: first planned chunk encodes to the memory-write frame",
+        firstChunkFrame is [0x11, 0x00, 0xBC, 0x60, 0x00, 0x00, 0x11, 0x10, 0x05, 0x02, 0x80, 0x00, 0x60, 0xAA, 0xBB],
+        Convert.ToHexString(firstChunkFrame));
+    Check("preflight: planned chunk round-trips through the codec",
+        Cemi.ParseLData(firstChunkFrame) is { Apci: Apci.MemoryWrite, Destination: var chunkDestination, Data: [0x00, 0x60, 0xAA, 0xBB] }
+        && chunkDestination == target);
+    var lastChunk = plan.Chunks[^1];
+    var lastChunkFrame = Management.MemoryWrite(target, lastChunk.Address, program.Image[^lastChunk.Length..]);
+    Check("preflight: last planned chunk address is start + offset",
+        lastChunkFrame is [0x11, 0x00, 0xBC, 0x60, 0x00, 0x00, 0x11, 0x10, 0x05, 0x02, 0x80, 0x00, 0x66, 0x11, 0x22],
+        Convert.ToHexString(lastChunkFrame));
+
+    var unknownMask = DownloadPreflight.Plan(Ready() with { Descriptor = DeviceDescriptor.Parse(0x00, [0x12, 0x34]) });
+    Check("preflight: unsupported mask blocks",
+        !unknownMask.Ready && unknownMask.Blockers.Any(b => b.Code == DownloadCheckCode.MaskUnknown),
+        string.Join("; ", unknownMask.Blockers.Select(b => b.Message)));
+    var noDescriptor = DownloadPreflight.Plan(Ready() with { Descriptor = null });
+    Check("preflight: missing descriptor blocks",
+        !noDescriptor.Ready && noDescriptor.Blockers.Any(b => b.Code == DownloadCheckCode.DescriptorMissing));
+    var wrongLine = DownloadPreflight.Plan(Ready() with { ExpectedLine = 2 });
+    Check("preflight: wrong line blocks",
+        !wrongLine.Ready && wrongLine.Blockers.Any(b => b.Code == DownloadCheckCode.AddressLineMismatch));
+    var unconfirmedAddress = DownloadPreflight.Plan(Ready() with { AddressConfirmed = false });
+    Check("preflight: unconfirmed address blocks",
+        !unconfirmedAddress.Ready && unconfirmedAddress.Blockers.Any(b => b.Code == DownloadCheckCode.AddressNotConfirmed));
+    var noProgrammingMode = DownloadPreflight.Plan(Ready() with { ProgrammingMode = false });
+    Check("preflight: missing programming mode blocks",
+        !noProgrammingMode.Ready && noProgrammingMode.Blockers.Any(b => b.Code == DownloadCheckCode.ProgrammingModeMissing));
+    var incomplete = DownloadPreflight.Plan(Ready() with
+    {
+        MissingParameters = ["Kanal A: Helligkeit"],
+        MissingLinks = ["Objekt 1 -> 1/1/1"],
+    });
+    Check("preflight: incomplete parameters and links block",
+        !incomplete.Ready
+        && incomplete.Blockers.Any(b => b.Code == DownloadCheckCode.ParametersIncomplete)
+        && incomplete.Blockers.Any(b => b.Code == DownloadCheckCode.LinksIncomplete));
+    var noProgram = DownloadPreflight.Plan(Ready() with { Program = null });
+    Check("preflight: missing program image blocks",
+        !noProgram.Ready && noProgram.Blockers.Any(b => b.Code == DownloadCheckCode.ProgramMissing));
+    var oversizedChunk = DownloadPreflight.Plan(Ready() with { Program = new TestProgram("bad", [1, 2], 0x0060, 13) });
+    Check("preflight: chunk size above the memory-write limit blocks",
+        !oversizedChunk.Ready && oversizedChunk.Blockers.Any(b => b.Code == DownloadCheckCode.ChunkSizeInvalid));
+    var rangeOverflow = DownloadPreflight.Plan(Ready() with { Program = new TestProgram("bad", [1, 2], 0xFFFF, 2) });
+    Check("preflight: image beyond the address space blocks",
+        !rangeOverflow.Ready && rangeOverflow.Blockers.Any(b => b.Code == DownloadCheckCode.ImageRangeInvalid));
+    var programMismatch = DownloadPreflight.Plan(Ready() with
+    {
+        ExpectedApplicationId = "M-1_A-1", ApplicationId = "M-1_A-2",
+    });
+    Check("preflight: program mismatch blocks",
+        !programMismatch.Ready && programMismatch.Blockers.Any(b => b.Code == DownloadCheckCode.ProgramMismatch));
+    var dryRunUnconfirmed = DownloadPreflight.Plan(Ready() with { DryRunConfirmed = false });
+    Check("preflight: unconfirmed dry run blocks",
+        !dryRunUnconfirmed.Ready && dryRunUnconfirmed.Blockers.Any(b => b.Code == DownloadCheckCode.DryRunNotConfirmed));
+    var deviceZero = DownloadPreflight.Plan(Ready() with { DeviceAddress = new IndividualAddress(1, 1, 0) });
+    Check("preflight: address x.y.0 blocks",
+        !deviceZero.Ready && deviceZero.Blockers.Any(b => b.Code == DownloadCheckCode.AddressInvalid));
+
+    // Refusals happen before the first frame: the tunnel is never connected, so any send would throw.
+    var log = new DownloadAttemptLog();
+    var refusalTunnel = new KnxTunnel(new LoopbackPair().Client, new IPEndPoint(IPAddress.Loopback, 3671),
+        new IndividualAddress(15, 15, 250));
+    var refusalSession = new DownloadSession(refusalTunnel, target, program, "test-fake", log);
+    var refused = await refusalSession.RunAsync(noDescriptor);
+    Check("preflight: session refuses a non-ready plan before sending",
+        !refused.Success && refused.Message.Contains("refused by preflight"), refused.Message);
+    Check("preflight: refusal writes one attempt-log entry",
+        log.Count == 1 && !log.Entries[0].Success && log.Entries[0].FailureCause is not null
+        && log.Entries[0].Device == "1.1.16" && log.Entries[0].Interface == "test-fake",
+        log.Count.ToString());
+    var otherPlan = DownloadPreflight.Plan(Ready() with { DeviceAddress = new IndividualAddress(1, 1, 17) });
+    var wrongTarget = await refusalSession.RunAsync(otherPlan);
+    Check("preflight: session refuses a plan for another device before sending",
+        !wrongTarget.Success && wrongTarget.Message.Contains("refused") && log.Count == 2, wrongTarget.Message);
+    var otherImage = DownloadPreflight.Plan(Ready() with { Program = new TestProgram("other", [0x01], 0x0060, 1) });
+    var wrongImage = await refusalSession.RunAsync(otherImage);
+    Check("preflight: session refuses a plan for another image before sending",
+        !wrongImage.Success && wrongImage.Message.Contains("different image") && log.Count == 3, wrongImage.Message);
+    await refusalTunnel.DisposeAsync();
+}
 
 // ---- 8. KNX Data Secure: Schlüsselableitung, Keyring, S-A_Data, Secure Wrapper ----
 var dac = Convert.FromHexString("000102030405060708090A0B0C0D0E0F");
@@ -514,6 +744,99 @@ var keysOtherDac = SecureKeys.DeriveKeys("geheim", dacOther);
         .NextSequenceNumber() == SecureKey.MaxSequenceNumber);
 }
 
+// ---- 15. CSV-Export: RFC 4180 und Formel-Neutralisierung ----
+{
+    var csvProject = new Project { Id = "P-CSV", Name = "CSV" };
+    var csvInst = new Installation { Id = "I-CSV" };
+    var csvArea = new Area { Id = "A-CSV", Address = 1, Name = "=1+1" };
+    var csvLine = new Line { Id = "L-CSV", Address = 1, Name = "+SUM(1,1)" };
+    csvLine.Devices.Add(new DeviceInstance
+    {
+        Id = "D-CSV",
+        Address = new IndividualAddress(1, 1, 1),
+        Name = "@cmd;x",
+        ProductRefId = "M-1",
+    });
+    csvArea.Lines.Add(csvLine);
+    csvInst.Areas.Add(csvArea);
+    var csvRange = new GroupRange { Id = "GR-CSV", RangeStart = 1, RangeEnd = 15 };
+    csvRange.Addresses.Add(new GroupAddressEntry
+    {
+        Id = "GA-CSV",
+        Name = "=1+1;\"quote\"",
+        Address = GroupAddress.ThreeLevel(1, 1, 1),
+        DatapointType = "+SUM(1,1)",
+    });
+    csvInst.MainRanges.Add(csvRange);
+    csvProject.Installations.Add(csvInst);
+
+    var recorder = new TelegramRecorder();
+    recorder.Start();
+    recorder.Add(new BusTelegram
+    {
+        Timestamp = new DateTimeOffset(2024, 1, 2, 3, 4, 5, TimeSpan.Zero),
+        Source = "1.1.1",
+        Telegram = new Telegram
+        {
+            Source = new IndividualAddress(1, 1, 1),
+            Destination = new IndividualAddress(GroupAddress.ThreeLevel(1, 1, 1).Raw),
+            IsGroupAddress = true,
+            Apci = Apci.GroupValueWrite,
+            Data = [1],
+        },
+    });
+
+    static List<string> Cells(string line)
+    {
+        var cells = new List<string>();
+        var field = new StringBuilder();
+        var quoted = false;
+        for (var i = 0; i < line.Length; i++)
+        {
+            var c = line[i];
+            if (quoted)
+            {
+                if (c == '"' && i + 1 < line.Length && line[i + 1] == '"') { field.Append('"'); i++; }
+                else if (c == '"') quoted = false;
+                else field.Append(c);
+            }
+            else if (c == '"') quoted = true;
+            else if (c == ';') { cells.Add(field.ToString()); field.Clear(); }
+            else field.Append(c);
+        }
+        cells.Add(field.ToString());
+        return cells;
+    }
+
+    var etsCsv = recorder.ToEtsCsv(csvProject);
+    Check("CSV: ETS-Kopf unverändert", etsCsv.StartsWith(
+        "Time;Service;Flags;Prio;Source Address;Source Name;Destination Address;" +
+        "Destination Name;Hop Count;Type;DPT;Iack;Info"));
+    var etsRow = etsCsv.Split('\n', StringSplitOptions.RemoveEmptyEntries).Skip(1).Select(Cells).Single();
+    Check("CSV: ETS-Zeile behält 13 Spalten", etsRow.Count == 13, etsRow.Count.ToString());
+    Check("CSV: Quellname neutralisiert und zitiert", etsRow[5] == "'@cmd;x", etsRow[5]);
+    Check("CSV: Zielname neutralisiert und zitiert", etsRow[7] == "'=1+1;\"quote\"", etsRow[7]);
+    Check("CSV: DPT neutralisiert", etsRow[10] == "'+SUM(1,1)", etsRow[10]);
+
+    var csvPath = Path.Combine(Path.GetTempPath(), "knx-bus-csv-" + Guid.NewGuid().ToString("N") + ".csv");
+    try
+    {
+        recorder.SaveCsv(csvPath);
+        var bytes = File.ReadAllBytes(csvPath);
+        Check("CSV: Aufzeichnung ist UTF-8 mit BOM", bytes is [0xEF, 0xBB, 0xBF, ..]);
+        var lines = File.ReadAllLines(csvPath);
+        Check("CSV: Aufzeichnungs-Kopf unverändert", lines[0] == "Zeitstempel;Quelle;Ziel;Gruppe;APCI;Daten");
+        Check("CSV: Aufzeichnung behält 6 Spalten", lines[1].Split(';').Length == 6);
+        var reread = TelegramRecorder.LoadCsv(csvPath);
+        Check("CSV: Aufzeichnung lädt unverändert zurück",
+            reread.Count == 1 && reread[0].Data == "01" && reread[0].Destination == "1/1/1");
+    }
+    finally
+    {
+        File.Delete(csvPath);
+    }
+}
+
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 
@@ -543,15 +866,34 @@ async Task<(bool Ok, string Detail)> RunLoopbackAsync()
         Check("loopback: group write with sequence 0", tg.Apci == Apci.GroupValueWrite && tg.Data is [0x01]
             && requests.Count == 1 && requests[0][2] == 0, Convert.ToHexString(requests.FirstOrDefault() ?? []));
 
-        // 3. Download mit 4 Chunks (2 Bytes/Chunk)
+        // 3. Download mit 4 Chunks (2 Bytes/Chunk), nur mit bereitstehendem Preflight-Plan.
         IApplicationProgram program = new TestProgram("Test-App", new byte[] { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22 }, 0x0060, 2);
-        var session = new DownloadSession(tunnel, new IndividualAddress(1, 1, 16), program);
+        var plan = DownloadPreflight.Plan(new DownloadPreflightRequest
+        {
+            DeviceAddress = new IndividualAddress(1, 1, 16),
+            Program = program,
+            Descriptor = DeviceDescriptor.Parse(0x00, [0x07, 0xB0]),
+            ProgrammingMode = true,
+            AddressConfirmed = true,
+            DryRunConfirmed = true,
+            ExpectedArea = 1,
+            ExpectedLine = 1,
+        });
+        var attemptLog = new DownloadAttemptLog();
+        var blockedSession = new DownloadSession(tunnel, new IndividualAddress(1, 1, 16), program, "loopback-fake");
+        var blocked = await blockedSession.RunAsync(plan);
+        Check("preflight: session refuses real writes without explicit opt-in",
+            !blocked.Success && blocked.Message.Contains("opt-in", StringComparison.Ordinal));
+        var session = new DownloadSession(tunnel, new IndividualAddress(1, 1, 16), program, "loopback-fake",
+            attemptLog, allowWrites: true);
         var stages = new List<DownloadStage>();
         session.Progress += p => Console.WriteLine($"[dl] {p.Stage} {p.Percent}% {p.Message}");
-        var result = await session.RunAsync();
+        var result = await session.RunAsync(plan);
 
         var written = fake.Memory.Count;
-        var downloaded = result.Success && written == program.Image.Length;
+        var attemptLogged = attemptLog.Count == 1 && attemptLog.Entries[0].Success
+            && attemptLog.Entries[0].Interface == "loopback-fake" && attemptLog.Entries[0].ImageHash is not null;
+        var downloaded = result.Success && written == program.Image.Length && attemptLogged;
 
         // 4. DISCONNECT_REQUEST: channel + 0 + HPAI, Antwort wird abgewartet.
         await tunnel.CloseAsync();
@@ -562,8 +904,8 @@ async Task<(bool Ok, string Detail)> RunLoopbackAsync()
             disconnect is null ? "kein DISCONNECT_REQUEST" : Convert.ToHexString(disconnect));
 
         var summary = downloaded
-            ? $"{stages.Count} Fortschritts-Events, {written} Bytes verifiziert"
-            : result.Message + $" (geschrieben={written})";
+            ? $"{stages.Count} Fortschritts-Events, {written} Bytes verifiziert, {attemptLog.Count} Log-Eintrag"
+            : result.Message + $" (geschrieben={written}, attemptLog={attemptLogged})";
         return (downloaded && handshake && closed && fake.Violations.Count == 0, summary);
     }
     finally
@@ -669,7 +1011,7 @@ async Task<(bool Ok, string Detail)> IncomingSequenceAsync()
     {
         var telegrams = 0;
         tunnel.TelegramReceived += _ => Interlocked.Increment(ref telegrams);
-        var cemi = Cemi.LDataRequest(new Telegram
+        var cemi = Indication(new Telegram
         {
             Source = new IndividualAddress(1, 1, 16),
             Destination = new IndividualAddress(GroupAddress.ThreeLevel(1, 1, 2).Raw),
@@ -749,11 +1091,19 @@ static async Task<bool> WaitUntilAsync(Func<bool> condition, int timeoutMs = 200
     return condition();
 }
 
+/// <summary>A frame a device/gateway sends: same body as L_Data.req, message code L_Data.ind.</summary>
+static byte[] Indication(Telegram telegram)
+{
+    var frame = Cemi.LDataRequest(telegram);
+    frame[0] = (byte)CemiMessageCode.LDataInd;
+    return frame;
+}
+
 /// <summary>
-/// Read-only live check against a real KNXnet/IP interface: CONNECT, one GroupValueRead,
+/// Read-only live check against a real KNXnet/IP interface: passive listen, one GroupValueRead,
 /// DISCONNECT. Never writes group values, never downloads or reprograms anything.
 /// </summary>
-async Task<int> LiveProbeAsync(string host)
+async Task<int> LiveProbeAsync(string host, int listenSeconds)
 {
     if (!IPAddress.TryParse(host, out var address))
     {
@@ -766,6 +1116,17 @@ async Task<int> LiveProbeAsync(string host)
     await using var tunnel = new KnxTunnel(transport, endpoint, new IndividualAddress(15, 15, 250));
     tunnel.LogLine += line => Console.WriteLine("[wire] " + line);
 
+    var telegrams = 0;
+    var confirmations = 0;
+    tunnel.TelegramReceived += t =>
+    {
+        Interlocked.Increment(ref telegrams);
+        Console.WriteLine($"[bus] {t.Telegram.Source} -> {t.Telegram.Destination} " +
+                          $"group={t.Telegram.IsGroupAddress} hop={t.Telegram.HopCount} " +
+                          $"apci={t.Telegram.Apci} data={Convert.ToHexString(t.Telegram.Data)}");
+    };
+    tunnel.ConfirmationReceived += t => Interlocked.Increment(ref confirmations);
+
     try
     {
         await tunnel.ConnectAsync();
@@ -775,20 +1136,21 @@ async Task<int> LiveProbeAsync(string host)
         Console.WriteLine($"CONNECT fehlgeschlagen: {ex.GetType().Name}: {ex.Message}");
         return 1;
     }
+    Console.WriteLine($"verbunden: Kanal {tunnel.Channel}, Adresse {tunnel.AssignedAddress}; " +
+                      $"passives Zuhören {listenSeconds} s");
 
-    var response = new TaskCompletionSource<Telegram>(TaskCreationOptions.RunContinuationsAsynchronously);
-    tunnel.TelegramReceived += t =>
-    {
-        if (t.Telegram.Apci == Apci.GroupValueResponse) response.TrySetResult(t.Telegram);
-    };
+    await Task.Delay(TimeSpan.FromSeconds(listenSeconds));
+    Console.WriteLine($"Zuhören beendet: {telegrams} Telegramm(e), {confirmations} L_Data.con");
+
     try
     {
         // 0/0/1 as a read-only probe address (a read never changes a group value).
-        await tunnel.GroupValueReadAsync(new Knx.GroupAddress(GroupAddress.ThreeLevel(0, 0, 1).Raw));
-        var answered = await Task.WhenAny(response.Task, Task.Delay(3000)) == response.Task;
-        Console.WriteLine(answered
-            ? $"GroupValueResponse von {response.Task.Result.Source}: {Convert.ToHexString(response.Task.Result.Data)}"
-            : "keine GroupValueResponse innerhalb 3 s");
+        var addressGa = new Knx.GroupAddress(GroupAddress.ThreeLevel(0, 0, 1).Raw);
+        var response = await tunnel.ReadGroupValueAsync(addressGa, TimeSpan.FromSeconds(3));
+        Console.WriteLine(response is null
+            ? "keine GroupValueResponse innerhalb 3 s"
+            : $"GroupValueResponse von {response.Telegram.Source} nach dem Read: " +
+              $"{Convert.ToHexString(response.Telegram.Data)} (hop {response.Telegram.HopCount})");
     }
     catch (Exception ex)
     {
@@ -798,6 +1160,48 @@ async Task<int> LiveProbeAsync(string host)
     await tunnel.CloseAsync();
     Console.WriteLine($"Endzustand: {tunnel.State}");
     return tunnel.State == BusConnectionState.Disconnected ? 0 : 1;
+}
+
+/// <summary>
+/// Passive routing listen: join 224.0.23.12 on the given local interface, decode incoming
+/// frames, leave again. Sends nothing on the bus.
+/// </summary>
+async Task<int> RoutingLiveAsync(string localIp, int seconds)
+{
+    if (!IPAddress.TryParse(localIp, out var localAddress))
+    {
+        Console.WriteLine($"'{localIp}' ist keine lokale IP-Adresse");
+        return 2;
+    }
+    using var transport = new UdpTransport(localAddress, Discovery.MulticastPort, reuseAddress: true);
+    await using var routing = new KnxRouting(transport, localAddress);
+    routing.LogLine += line => Console.WriteLine("[routing] " + line);
+    var telegrams = 0;
+    routing.TelegramReceived += t =>
+    {
+        Interlocked.Increment(ref telegrams);
+        Console.WriteLine($"[bus] {t.Telegram.Source} -> {t.Telegram.Destination} " +
+                          $"group={t.Telegram.IsGroupAddress} hop={t.Telegram.HopCount} " +
+                          $"apci={t.Telegram.Apci} data={Convert.ToHexString(t.Telegram.Data)}");
+    };
+
+    try
+    {
+        await routing.OpenAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"routing open fehlgeschlagen: {ex.GetType().Name}: {ex.Message}");
+        return 1;
+    }
+    Console.WriteLine($"routing: {Discovery.MulticastIp}:{Discovery.MulticastPort} auf {localAddress}, " +
+                      $"passives Zuhören {seconds} s");
+    await Task.Delay(TimeSpan.FromSeconds(seconds));
+    Console.WriteLine($"Zuhören beendet: {telegrams} Telegramm(e)");
+
+    await routing.CloseAsync();
+    Console.WriteLine($"Endzustand: {routing.State}");
+    return routing.State == BusConnectionState.Disconnected ? 0 : 1;
 }
 
 /// <summary>Paired in-memory transport for tests: what one endpoint writes, the other reads.</summary>
@@ -1047,10 +1451,17 @@ internal sealed class FakeKnxDevice
             Data = data,
         };
 
+        static byte[] Indication(Telegram telegram)
+        {
+            var frame = Cemi.LDataRequest(telegram);
+            frame[0] = (byte)CemiMessageCode.LDataInd; // what a gateway forwards to the client
+            return frame;
+        }
+
         switch (t.Apci)
         {
             case Apci.DeviceDescriptorRead:
-                return Cemi.LDataRequest(Response(t, Apci.DeviceDescriptorResponse, [0x00, 0x40, 0x01, 0x01]));
+                return Indication(Response(t, Apci.DeviceDescriptorResponse, [0x00, 0x07, 0xB0]));
             case Apci.MemoryResponse:
             case Apci.MemoryRead:
             {
@@ -1059,17 +1470,17 @@ internal sealed class FakeKnxDevice
                 var data = new byte[count + 2];
                 data[0] = (byte)(addr >> 8); data[1] = (byte)addr;
                 for (int i = 0; i < count; i++) data[2 + i] = Memory.TryGetValue(addr + i, out var b) ? b : (byte)0;
-                return Cemi.LDataRequest(Response(t, Apci.MemoryResponse, data));
+                return Indication(Response(t, Apci.MemoryResponse, data));
             }
             case Apci.MemoryWrite:
             {
                 var addr = (ushort)((t.Data[0] << 8) | t.Data[1]);
                 var payload = t.Data.Skip(2).ToArray();
                 for (int i = 0; i < payload.Length; i++) Memory[addr + i] = payload[i];
-                return Cemi.LDataRequest(Response(t, Apci.MemoryResponse, [0x00, 0x00]));
+                return Indication(Response(t, Apci.MemoryResponse, [0x00, 0x00]));
             }
             case Apci.Restart:
-                return Cemi.LDataRequest(Response(t, Apci.MemoryResponse, [0x00, 0x00]));
+                return Indication(Response(t, Apci.MemoryResponse, [0x00, 0x00]));
         }
         return null;
     }

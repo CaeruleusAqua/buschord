@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.IO.Compression;
 using IOPath = System.IO.Path;
 using System.Security.Cryptography;
 
@@ -6,18 +8,59 @@ namespace Knx.Catalog;
 /// <summary>One file that could not be parsed; LoadAll keeps going and reports it here.</summary>
 public sealed record CatalogLoadError(string File, string Message);
 
-/// <summary>Progress of <see cref="CatalogStore.LoadAll"/> in library files.</summary>
-public sealed record CatalogLoadProgress(int Loaded, int Total, string File);
+/// <summary>
+/// Progress of <see cref="CatalogStore.LoadAll"/> in library files, plus the application-program
+/// parts of the file currently being read (both zero while a file has no separate parts).
+/// </summary>
+public sealed record CatalogLoadProgress(int Loaded, int Total, string File, int Part = 0, int Parts = 0);
+
+/// <summary>Summary of one catalogue import, including gating facts.</summary>
+public sealed record CatalogImportReport(string File, string CatalogName, int Products, int Sections, int Programs,
+    bool HasBrokenProgram, bool HasDcaProgram, bool HasExternalSoftware)
+{
+    /// <summary>
+    /// The container carries a *.signature entry. Presence is surfaced only; the signature is
+    /// never verified here.
+    /// </summary>
+    public bool HasSignatureFile { get; init; }
+
+    /// <summary>The import replaced an existing library entry with the same identity.</summary>
+    public bool ReplacedExisting { get; init; }
+}
+
+/// <summary>What the last <see cref="CatalogStore.LoadAll"/> read from cache and from XML.</summary>
+public sealed record CatalogIndexStatistics(int Files, int IndexHits, int IndexMisses, int XmlCatalogFiles,
+    int XmlProgramParts, int Errors, TimeSpan Elapsed);
 
 /// <summary>
 /// Local catalogue library in %APPDATA%\BusChord\catalogs (or an explicit directory):
-/// import copies a .knxprod into the library, LoadAll parses every entry, Remove deletes one.
+/// import copies a .knxprod into the library, LoadAll reads it through the metadata index
+/// in %LOCALAPPDATA%\BusChord\cache, Remove deletes one.
 /// </summary>
 public sealed class CatalogStore
 {
-    public CatalogStore(string? directory = null) => Directory = directory ?? DefaultDirectory;
+    private readonly CatalogIndexStore _index;
+
+    public CatalogStore(string? directory = null, string? indexDirectory = null)
+    {
+        Directory = directory ?? DefaultDirectory;
+        // An explicit library (tests, portable setups) keeps its derived cache beside it; the
+        // roaming default library uses the machine-local cache as designed.
+        _index = new CatalogIndexStore(indexDirectory ?? (directory is null
+            ? CatalogIndexStore.DefaultDirectory
+            : IOPath.Combine(Directory, ".catalog-index")));
+    }
 
     public string Directory { get; }
+
+    /// <summary>Metadata cache used for this library.</summary>
+    public CatalogIndexStore Index => _index;
+
+    /// <summary>Summary of the last <see cref="Import"/>; null before the first import.</summary>
+    public CatalogImportReport? LastImportReport { get; private set; }
+
+    /// <summary>Cache/XML work of the last <see cref="LoadAll"/>; null before the first load.</summary>
+    public CatalogIndexStatistics? LastIndexStatistics { get; private set; }
 
     public static string DefaultDirectory =>
         IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -28,53 +71,248 @@ public sealed class CatalogStore
 
     /// <summary>
     /// Copies a catalogue into the library, keyed by its content digest, and returns the parsed copy.
+    /// The metadata cache is written in the same step; split-archive program metadata is filled by
+    /// the next <see cref="LoadAll"/> in the background.
     /// </summary>
     public KnxProductCatalog Import(string path)
     {
-        var catalog = KnxProductCatalog.Open(path);
+        var catalog = KnxProductCatalog.Open(path, _index.Directory);
         System.IO.Directory.CreateDirectory(Directory);
         var target = IOPath.Combine(Directory, LibraryFileName(catalog));
+        var replaced = false;
         if (!string.Equals(IOPath.GetFullPath(catalog.Path), IOPath.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
-            File.Copy(catalog.Path, target, overwrite: true);
+        {
+            // Copy beside the target, then replace it in one move: a failed import never
+            // destroys the previously imported catalogue.
+            replaced = File.Exists(target);
+            var temp = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.Copy(catalog.Path, temp, overwrite: false);
+                if (new FileInfo(temp).Length != new FileInfo(catalog.Path).Length)
+                    throw new IOException("catalogue copy is incomplete");
+                File.Move(temp, target, overwrite: true);
+                temp = null;
+            }
+            finally
+            {
+                if (temp is not null)
+                    try { File.Delete(temp); } catch (Exception) { }
+            }
+        }
         catalog.Relocate(target);
+        LastImportReport = new(target, catalog.Name, catalog.Products.Count, catalog.CatalogSections.Count,
+            catalog.Programs.Count, catalog.Programs.Any(p => p.Broken || p.DownloadInfoIncomplete),
+            catalog.Programs.Any(p => p.RequiresDca), catalog.Programs.Any(p => p.RequiresExternalSoftware))
+        {
+            HasSignatureFile = HasSignatureEntry(catalog),
+            ReplacedExisting = replaced,
+        };
+        _index.Save(catalog);
         return catalog;
+    }
+
+    /// <summary>
+    /// True when the container (or, for a nested vendor ZIP, the extracted inner archive) carries
+    /// a *.signature entry. The entry is only surfaced, never parsed or verified.
+    /// </summary>
+    private static bool HasSignatureEntry(KnxProductCatalog catalog)
+    {
+        foreach (var path in new[] { catalog.BackingArchivePath, catalog.Path })
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) continue;
+            try
+            {
+                using var zip = ZipFile.OpenRead(path);
+                if (zip.Entries.Any(entry => entry.Name.EndsWith(".signature", StringComparison.OrdinalIgnoreCase)))
+                    return true;
+            }
+            catch (Exception)
+            {
+                // Loose XML catalogues are no archives; there is nothing to check.
+            }
+        }
+        return false;
     }
 
     /// <summary>Parses every catalogue in the library; broken files land in <see cref="LoadErrors"/>.</summary>
     /// <param name="progress">Optional per-file progress, reported on the calling thread.</param>
-    public List<KnxProductCatalog> LoadAll(IProgress<CatalogLoadProgress>? progress = null)
+    public List<KnxProductCatalog> LoadAll(IProgress<CatalogLoadProgress>? progress = null) =>
+        LoadAll(progress, null, CancellationToken.None);
+
+    /// <summary>
+    /// Reads every catalogue through the metadata cache (or parses XML on a miss). A catalogue is
+    /// reported through <paramref name="catalogReady"/> as soon as its product metadata is usable,
+    /// and again after its program metadata was indexed, so callers can publish progressive
+    /// snapshots. XML work runs on a bounded pool, so a few very large archives no longer block
+    /// the rest of the library, and each file reports its program parts while they are read.
+    /// Cancellation leaves no half-written cache entry behind.
+    /// </summary>
+    public List<KnxProductCatalog> LoadAll(IProgress<CatalogLoadProgress>? progress,
+        Action<KnxProductCatalog>? catalogReady, CancellationToken cancellationToken = default)
     {
         LoadErrors.Clear();
         var catalogs = new List<KnxProductCatalog>();
-        if (!System.IO.Directory.Exists(Directory)) return catalogs;
+        if (!System.IO.Directory.Exists(Directory))
+        {
+            LastIndexStatistics = new CatalogIndexStatistics(0, 0, 0, 0, 0, 0, TimeSpan.Zero);
+            return catalogs;
+        }
 
         var files = System.IO.Directory.EnumerateFiles(Directory)
             .Where(IsCatalogFile).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
-        for (var index = 0; index < files.Count; index++)
+        var results = new KnxProductCatalog?[files.Count];
+        var errors = new List<CatalogLoadError>();
+        var failed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var errorGate = new object();
+        var publishGate = new object();
+        var loaded = 0;
+        var hits = 0;
+        var misses = 0;
+        var xmlFiles = 0;
+        var xmlParts = 0;
+        var watch = Stopwatch.StartNew();
+
+        void Ready(KnxProductCatalog catalog)
+        {
+            if (catalogReady is null) return;
+            // Parallel index reads may publish out of order; the library sorts its snapshot.
+            lock (publishGate) catalogReady(catalog);
+        }
+
+        void Report(string file) =>
+            progress?.Report(new CatalogLoadProgress(Interlocked.Increment(ref loaded), files.Count, file));
+
+        // Sub-file progress: the file keeps its place in the file counter while its parts advance.
+        void ReportPart(string file, int part, int parts) => progress?.Report(
+            new CatalogLoadProgress(Volatile.Read(ref loaded), files.Count, file, part, parts));
+
+        void Fail(string file, Exception ex)
+        {
+            lock (errorGate)
+            {
+                errors.Add(new CatalogLoadError(file, ex.Message));
+                failed.Add(file);
+            }
+        }
+
+        bool Failed(string file)
+        {
+            lock (errorGate) return failed.Contains(file);
+        }
+
+        // Phase 1: warm metadata, bounded parallel. A hit reads JSON only, never catalogue XML.
+        Parallel.For(0, files.Count, new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8),
+            CancellationToken = cancellationToken,
+        }, index =>
         {
             var file = files[index];
             try
             {
-                catalogs.Add(KnxProductCatalog.Open(file));
+                if (!_index.TryLoad(file, out var cached) || cached is null) return;
+                Interlocked.Increment(ref hits);
+                results[index] = cached;
+                Ready(cached);
+                // Complete indexes are done; incomplete ones are enriched below.
+                if (cached.MetadataComplete) Report(file);
             }
             catch (Exception ex)
             {
-                LoadErrors.Add(new CatalogLoadError(file, ex.Message));
+                Fail(file, ex);
+                Report(file);
             }
-            progress?.Report(new CatalogLoadProgress(index + 1, files.Count, file));
-        }
+        });
+
+        // Phase 2: XML work for misses and for caches written before program metadata existed.
+        // Files are independent; a handful of huge archives overlap instead of blocking the run.
+        Parallel.For(0, files.Count, new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 4, 2, 4),
+            CancellationToken = cancellationToken,
+        }, index =>
+        {
+            var file = files[index];
+            if (results[index] is { } cached)
+            {
+                if (cached.MetadataComplete) return;
+                try
+                {
+                    var parts = cached.ProgramPartCount;
+                    var read = cached.LoadProgramMetadata(cancellationToken,
+                        new PartProgress(file, parts, ReportPart));
+                    Interlocked.Add(ref xmlParts, read);
+                    _index.Save(cached);
+                    if (read > 0) Ready(cached);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Fail(file, ex);
+                }
+                Report(file);
+                return;
+            }
+            if (Failed(file)) return;
+
+            try
+            {
+                Interlocked.Increment(ref misses);
+                var catalog = KnxProductCatalog.Open(file, _index.Directory);
+                Interlocked.Increment(ref xmlFiles);
+                results[index] = catalog;
+                Ready(catalog);
+                if (!catalog.MetadataComplete)
+                {
+                    var parts = catalog.ProgramPartCount;
+                    var read = catalog.LoadProgramMetadata(cancellationToken,
+                        new PartProgress(file, parts, ReportPart));
+                    Interlocked.Add(ref xmlParts, read);
+                    if (read > 0) Ready(catalog);
+                }
+                _index.Save(catalog);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Fail(file, ex);
+            }
+            Report(file);
+        });
+
+        watch.Stop();
+        LoadErrors.AddRange(errors.OrderBy(error => error.File, StringComparer.OrdinalIgnoreCase));
+        catalogs.AddRange(results.OfType<KnxProductCatalog>()
+            .OrderBy(catalog => catalog.Path, StringComparer.OrdinalIgnoreCase));
+        LastIndexStatistics = new CatalogIndexStatistics(files.Count, hits, misses, xmlFiles, xmlParts,
+            LoadErrors.Count, watch.Elapsed);
         return catalogs;
     }
 
-    /// <summary>Deletes one catalogue file from the library.</summary>
+    /// <summary>Forwards the part counter of one file to the library progress sink.</summary>
+    private sealed class PartProgress(string file, int parts, Action<string, int, int> report) : IProgress<int>
+    {
+        public void Report(int value) => report(file, value, parts);
+    }
+
+    /// <summary>Deletes one catalogue file from the library and its cache; refuses anything outside it.</summary>
     public bool Remove(string catalogPath)
     {
         var full = IOPath.GetFullPath(catalogPath);
-        if (!string.Equals(IOPath.GetDirectoryName(full), IOPath.GetFullPath(Directory).TrimEnd(IOPath.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(IOPath.GetDirectoryName(full),
+                IOPath.TrimEndingDirectorySeparator(IOPath.GetFullPath(Directory)), StringComparison.OrdinalIgnoreCase))
             return false;
-        if (!File.Exists(catalogPath)) return false;
+        if (!File.Exists(full)) return false;
         if ((File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0) return false;
-        File.Delete(catalogPath);
+        File.Delete(full);
+        _index.Remove(full);
         return true;
     }
 

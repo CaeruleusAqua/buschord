@@ -1,4 +1,5 @@
 using Knx;
+using Knx.Workbench;
 
 // Offline regression check: dotnet run --project tests/Knx.Linking.Tests
 void Check(string name, bool condition)
@@ -28,6 +29,8 @@ Check("multiple group addresses allowed", GroupLinks.Link(project, device, "REF"
 Check("list instances are retained", ReferenceEquals(refs, device.ComObjectRefs) && ReferenceEquals(links, obj.Links));
 Check("unlink removes only the chosen address", GroupLinks.Unlink(project, device, "REF", "GA-1") && obj.Links.SequenceEqual(["GA-2"]));
 Check("unlink is idempotent", !GroupLinks.Unlink(project, device, "REF", "GA-1"));
+Check("raw links leave workbench metadata untouched", project.Workbench.IsEmpty && WorkbenchProject.Connector(project, new("D", "REF"), "GA-2") is { Send: false });
+Check("native project reports unknown capability", WorkbenchProject.CheckLink(project, new("D", "REF"), "GA-2").Reason == LinkValidationReason.UnknownCapability);
 
 void Reject(string name, Action action)
 {

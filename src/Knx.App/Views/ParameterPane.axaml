@@ -2,45 +2,143 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Knx.App.Views"
              xmlns:loc="using:Knx.App.Localization"
-             x:Class="Knx.App.Views.ParameterPane">
-  <DockPanel>
-    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
-                Spacing="8" Margin="0,12,0,0">
-      <Button x:Name="ApplyButton" Content="{loc:Tr BtnApply}" Click="OnApply" IsVisible="False" />
-      <Button x:Name="CloseButton" Content="{loc:Tr BtnClose}" Click="OnClose" IsVisible="False" />
-    </StackPanel>
-    <TextBlock x:Name="MessageText" DockPanel.Dock="Bottom" TextWrapping="Wrap" Margin="0,8,0,0" />
-    <Expander x:Name="NoticeExpander" DockPanel.Dock="Top" Padding="0" Margin="0,0,0,8"
-              HorizontalAlignment="Stretch">
-      <Expander.Header>
-        <StackPanel Orientation="Horizontal" Spacing="6">
-          <TextBlock Text="{loc:Tr ParameterNoticeShort}" VerticalAlignment="Center" />
-          <TextBlock Text="?" FontWeight="Bold" VerticalAlignment="Center" />
+             x:Class="Knx.App.Views.ParameterPane"
+             Classes="wb-root" Background="Transparent">
+  <!-- One label hierarchy and one field geometry for the whole editor. wb-label is local until the
+       shared WorkbenchTheme owns it; editors reuse the global wb-field class. -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.wb-label">
+      <Setter Property="FontSize" Value="{DynamicResource WbFontSizeControl}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="NumericUpDown.wb-field">
+      <Setter Property="MinHeight" Value="{DynamicResource WbButtonHeight}" />
+      <Setter Property="Height" Value="{DynamicResource WbButtonHeight}" />
+      <Setter Property="FontSize" Value="{DynamicResource WbFontSizeControl}" />
+    </Style>
+  </UserControl.Styles>
+
+  <DockPanel LastChildFill="True" Margin="0">
+    <!-- Sticky V4 footer: draft indicator and validation summary on the left, actions on the right. -->
+    <Border x:Name="Footer" DockPanel.Dock="Bottom" Background="{DynamicResource WbPaper}"
+            BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0" Padding="0,10,0,2" Margin="0,12,0,0">
+      <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <Border x:Name="DraftPill" Background="{DynamicResource WbTint}" CornerRadius="9"
+                  Padding="9,3" IsVisible="False" VerticalAlignment="Center">
+            <TextBlock x:Name="DraftText" FontSize="10.5" FontWeight="Medium"
+                       Foreground="{DynamicResource WbSelectedText}"
+                       AutomationProperties.LiveSetting="Polite" />
+          </Border>
+          <TextBlock x:Name="ValidationSummary" Classes="wb-error" FontSize="11" TextWrapping="Wrap"
+                     VerticalAlignment="Center" IsVisible="False"
+                     AutomationProperties.LiveSetting="Polite" />
+          <TextBlock x:Name="StatusHint" Classes="wb-muted" VerticalAlignment="Center" IsVisible="False" />
         </StackPanel>
-      </Expander.Header>
-      <StackPanel Spacing="4">
-        <TextBlock Text="{loc:Tr ParameterStaticNotice}" TextWrapping="Wrap" />
-        <TextBlock x:Name="WarningDetail" IsVisible="False" TextWrapping="Wrap" Classes="muted" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button x:Name="ResetButton" Classes="wb-button" Click="OnReset" IsVisible="False" />
+          <Button x:Name="DiscardButton" Classes="wb-button" Click="OnDiscard" IsVisible="False" />
+          <Button x:Name="ReviewButton" Click="OnReview" IsVisible="False" Classes="wb-button" />
+          <Button x:Name="ApplyButton" Content="{loc:Tr BtnApply}" Click="OnApply" IsVisible="False"
+                  Classes="wb-button wb-primary" />
+          <Button x:Name="CloseButton" Content="{loc:Tr BtnClose}" Click="OnClose" IsVisible="False"
+                  Classes="wb-button" />
+        </StackPanel>
+        <TextBlock x:Name="MessageText" Grid.Row="1" Grid.ColumnSpan="2" TextWrapping="Wrap"
+                   Classes="wb-muted" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite" />
+      </Grid>
+    </Border>
+    <StackPanel x:Name="PreviewPanel" DockPanel.Dock="Bottom" IsVisible="False" Spacing="8" Margin="0,12,0,0">
+      <TextBlock x:Name="PreviewSummary" Classes="wb-label" />
+      <ScrollViewer MaxHeight="180">
+        <ItemsControl x:Name="PreviewList">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate><TextBlock Text="{Binding Description}" TextWrapping="Wrap" /></DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+      <TextBlock x:Name="PreviewLimitations" TextWrapping="Wrap" Classes="wb-muted" />
+      <Button x:Name="CancelReviewButton" Click="OnCancelReview" Classes="wb-button" />
+    </StackPanel>
+    <Border x:Name="NoticePanel" DockPanel.Dock="Top" Classes="wb-panel" CornerRadius="6"
+            BorderThickness="1" Padding="10,7" Margin="0,0,0,10" IsVisible="False">
+      <StackPanel Spacing="2">
+        <TextBlock Text="{loc:Tr ParameterNoticeShort}" Classes="wb-label" />
+        <TextBlock Text="{loc:Tr ParameterStaticNotice}" TextWrapping="Wrap" Classes="wb-muted" />
+        <TextBlock x:Name="WarningDetail" IsVisible="False" TextWrapping="Wrap" Classes="wb-warning" />
       </StackPanel>
-    </Expander>
+    </Border>
+    <Border x:Name="ReadOnlyPanel" DockPanel.Dock="Top" Classes="wb-panel" CornerRadius="6"
+            BorderThickness="1" Padding="10,7" Margin="0,0,0,10" IsVisible="False">
+      <StackPanel Spacing="2">
+        <TextBlock x:Name="ReadOnlyHeading" Classes="wb-label" />
+        <TextBlock x:Name="ReadOnlyText" TextWrapping="Wrap" Classes="wb-muted"
+                   AutomationProperties.LiveSetting="Polite" />
+      </StackPanel>
+    </Border>
+    <Border x:Name="DraftNoticePanel" DockPanel.Dock="Top" Classes="wb-panel" CornerRadius="6"
+            BorderThickness="1" Padding="10,7" Margin="0,0,0,10" IsVisible="False">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBlock x:Name="DraftNoticeText" TextWrapping="Wrap" Classes="wb-warning" VerticalAlignment="Center"
+                   AutomationProperties.LiveSetting="Polite" />
+        <Button x:Name="DismissDraftNoticeButton" Grid.Column="1" Classes="wb-button wb-compact wb-quiet"
+                Click="OnDismissDraftNotice" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+    <ItemsControl x:Name="SectionList" DockPanel.Dock="Top" IsVisible="False"
+                  Margin="0,0,0,10" HorizontalAlignment="Stretch">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel Orientation="Horizontal" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Button Classes="wb-button wb-compact wb-quiet" Margin="0,0,6,6"
+                  Content="{Binding Title}" Tag="{Binding Title}" Click="OnSection" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
     <TextBlock x:Name="WarningText" DockPanel.Dock="Top" IsVisible="False" TextWrapping="Wrap"
-               Text="{loc:Tr ParameterNoticeMore}" Classes="muted" Margin="0,0,0,12" />
+               Text="{loc:Tr ParameterNoticeMore}" Classes="wb-muted" Margin="0,0,0,10" />
     <TextBlock x:Name="EmptyText" DockPanel.Dock="Top" IsVisible="False" TextWrapping="Wrap"
-               Classes="muted" Margin="0,0,0,8" />
-    <TextBlock x:Name="HeaderText" DockPanel.Dock="Top" FontWeight="Bold" FontSize="15"
-               Margin="0,0,0,8" Text="{loc:Tr ParameterTitle}" TextWrapping="Wrap" />
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-      <ItemsControl x:Name="ParameterList">
+               Classes="wb-muted" Margin="0,0,0,8" />
+    <TextBlock x:Name="HeaderText" DockPanel.Dock="Top" Classes="wb-heading"
+               Margin="0,0,0,6" Text="{loc:Tr ParameterTitle}" TextWrapping="Wrap" />
+    <ScrollViewer x:Name="ParameterScroll" HorizontalScrollBarVisibility="Disabled" Padding="0,2,2,0"
+                  AutomationProperties.Name="{loc:Tr ParameterTitle}">
+      <ItemsControl x:Name="ParameterList" HorizontalAlignment="Stretch">
+        <!-- Lazy row containers: with 2,181 instances the non-virtualizing stack realised every
+             field editor up front (~1.3 s per open); only the visible rows are built now. -->
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate>
-            <Grid ColumnDefinitions="220,*" Margin="0,3" IsVisible="{Binding IsVisible}">
-              <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                <TextBlock Text="{Binding Name}" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding Description}" FontSize="10" Foreground="Gray"
-                           TextWrapping="Wrap" IsVisible="{Binding Description, Converter={x:Static ObjectConverters.IsNotNull}}" />
-              </StackPanel>
-              <ContentControl Grid.Column="1" Content="{Binding}"
-                              ContentTemplate="{x:Static views:ParameterTemplateSelector.Instance}" />
+            <!-- One field column, capped at 540 px; label above its editor. -->
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto" HorizontalAlignment="Left"
+                  Width="{Binding $parent[ScrollViewer].Bounds.Width, Converter={x:Static views:ParameterFieldWidthConverter.Instance}}"
+                  Margin="0,0,0,14" IsVisible="{Binding IsVisible}">
+              <TextBlock Text="{Binding Name}" Classes="wb-label" />
+              <TextBlock Grid.Row="1" Text="{Binding Description}" Classes="wb-muted" TextWrapping="Wrap"
+                         IsVisible="{Binding Description, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              <ContentControl Grid.Row="2" Content="{Binding}" Margin="0,4,0,0"
+                              HorizontalAlignment="Stretch"
+                              AutomationProperties.Name="{Binding Name}"
+                              ContentTemplate="{x:Static views:SessionParameterTemplate.Instance}" />
+              <TextBlock Grid.Row="3" Classes="wb-error" FontSize="11" TextWrapping="Wrap" Margin="0,3,0,0"
+                         IsVisible="{Binding Text, RelativeSource={RelativeSource Self}, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBlock.Text>
+                  <MultiBinding Converter="{x:Static views:ParameterFieldErrorConverter.Instance}">
+                    <Binding />
+                    <Binding Path="Value" />
+                  </MultiBinding>
+                </TextBlock.Text>
+              </TextBlock>
             </Grid>
           </DataTemplate>
         </ItemsControl.ItemTemplate>

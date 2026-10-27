@@ -1,27 +1,39 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- WinExe: no console window when the desktop app is launched. -->
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Avalonia 12 defaults to compiled bindings; keep runtime bindings for templates without x:DataType. -->
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\brand\buschord-house-transparent-tile.ico</ApplicationIcon>
     <AssemblyName>BusChord</AssemblyName>
     <Product>BusChord</Product>
     <Description>Open-source building automation engineering</Description>
     <Company>BusChord</Company>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.2.0" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.2.0" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.0" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.0" />
+    <!-- Only the runtime sizes are embedded; vector/source artwork stays in the repo. -->
+    <AvaloniaResource Include="Assets\brand\buschord-house-transparent-tile.ico" />
+    <AvaloniaResource Include="Assets\brand\buschord-house-transparent-tile-256.png" />
+    <AvaloniaResource Include="Assets\brand\buschord-mark.png" />
+    <None Include="Assets\brand\buschord-house-transparent-tile.svg" />
+    <None Include="Assets\brand\buschord-house-transparent-tile-1024.png" />
+    <None Include="Assets\brand\buschord-house-transparent-tile-preview.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-    <!-- MIT docking: Dock.Avalonia 11.2.0 matches Avalonia 11.2.0; the model package brings
-         Dock.Model 11.2.0 and Dock.Settings 11.2.0 along. -->
-    <PackageReference Include="Dock.Avalonia" Version="11.2.0" />
-    <PackageReference Include="Dock.Model" Version="11.2.0" />
-    <PackageReference Include="Dock.Model.Mvvm" Version="11.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\i18n\workbench\*.json" LogicalName="BusChord.i18n.workbench.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\i18n\catalog\*.json" LogicalName="BusChord.i18n.catalog.%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Knx.Core\Knx.Core.csproj" />

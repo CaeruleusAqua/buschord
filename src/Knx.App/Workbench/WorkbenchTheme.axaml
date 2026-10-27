@@ -1,0 +1,380 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="using:System"
+        xmlns:views="using:Knx.App.Views">
+  <!-- Opt-in classes only: including this file must not recolor legacy panels. -->
+  <Styles.Resources>
+    <ResourceDictionary>
+      <FontFamily x:Key="WbFontFamily">avares://Avalonia.Fonts.Inter/Assets#Inter, Segoe UI, Arial</FontFamily>
+      <FontFamily x:Key="WbMonoFontFamily">Cascadia Code, Consolas, monospace</FontFamily>
+      <sys:Double x:Key="WbFontSize">13</sys:Double>
+      <sys:Double x:Key="WbFontSizeControl">12</sys:Double>
+      <sys:Double x:Key="WbFontSizeSmall">11</sys:Double>
+      <sys:Double x:Key="WbFontSizeCaption">10</sys:Double>
+      <sys:Double x:Key="WbFontSizeHeading">17</sys:Double>
+      <sys:Double x:Key="WbFontSizeTitle">22</sys:Double>
+      <sys:Double x:Key="WbButtonHeight">30</sys:Double>
+      <sys:Double x:Key="WbCompactHeight">26</sys:Double>
+      <sys:Double x:Key="WbIconButtonSize">28</sys:Double>
+      <sys:Double x:Key="WbIconSize">17</sys:Double>
+      <sys:Double x:Key="WbSmallIconSize">14</sys:Double>
+      <sys:Double x:Key="WbRowHeight">32</sys:Double>
+      <sys:Double x:Key="WbTableHeaderHeight">31</sys:Double>
+      <sys:Double x:Key="WbTreeRowHeight">29</sys:Double>
+      <sys:Double x:Key="WbTopbarHeight">49</sys:Double>
+      <sys:Double x:Key="WbStatusbarHeight">27</sys:Double>
+      <sys:Double x:Key="WbDocumentTabHeight">39</sys:Double>
+      <sys:Double x:Key="WbViewTabHeight">34</sys:Double>
+      <sys:Double x:Key="WbToolTabHeight">35</sys:Double>
+      <sys:Double x:Key="WbRailWidth">47</sys:Double>
+      <sys:Double x:Key="WbRailButtonSize">35</sys:Double>
+      <sys:Double x:Key="WbNavigatorWidth">272</sys:Double>
+      <sys:Double x:Key="WbInspectorWidth">350</sys:Double>
+      <sys:Double x:Key="WbToolHeight">242</sys:Double>
+      <sys:Double x:Key="WbSplitterSize">5</sys:Double>
+      <sys:Double x:Key="WbGapSmall">5</sys:Double>
+      <sys:Double x:Key="WbButtonContentGap">7</sys:Double>
+      <sys:Double x:Key="WbGap">8</sys:Double>
+      <sys:Double x:Key="WbGapLarge">20</sys:Double>
+      <sys:Double x:Key="WbViewTabGap">22</sys:Double>
+      <Thickness x:Key="WbButtonPadding">10,0</Thickness>
+      <Thickness x:Key="WbCompactPadding">8,0</Thickness>
+      <Thickness x:Key="WbEditorPadding">24,16,24,0</Thickness>
+      <Thickness x:Key="WbCellPadding">8,7</Thickness>
+      <Thickness x:Key="WbFocusThickness">2</Thickness>
+      <CornerRadius x:Key="WbRadius">6</CornerRadius>
+      <CornerRadius x:Key="WbButtonRadius">5</CornerRadius>
+      <CornerRadius x:Key="WbSmallRadius">4</CornerRadius>
+      <CornerRadius x:Key="WbDialogRadius">11</CornerRadius>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="WbBackground" Color="#f5f6f8" />
+          <SolidColorBrush x:Key="WbPaper" Color="#ffffff" />
+          <SolidColorBrush x:Key="WbPanel" Color="#f9fafb" />
+          <SolidColorBrush x:Key="WbLine" Color="#e1e5eb" />
+          <SolidColorBrush x:Key="WbText" Color="#202c3c" />
+          <!-- Muted 10px text uses at least 4.5:1 contrast on rail/status. -->
+          <SolidColorBrush x:Key="WbMuted" Color="#5f6b7d" />
+          <SolidColorBrush x:Key="WbSubtle" Color="#5f6b7d" />
+          <SolidColorBrush x:Key="WbAccent" Color="#087e81" />
+          <SolidColorBrush x:Key="WbAccentHover" Color="#076c70" />
+          <SolidColorBrush x:Key="WbOnAccent" Color="#ffffff" />
+          <SolidColorBrush x:Key="WbTint" Color="#e4f2f1" />
+          <SolidColorBrush x:Key="WbHover" Color="#f0f4f5" />
+          <SolidColorBrush x:Key="WbSelected" Color="#dff0ef" />
+          <SolidColorBrush x:Key="WbSelectedText" Color="#176b6e" />
+          <SolidColorBrush x:Key="WbRail" Color="#edf0f4" />
+          <SolidColorBrush x:Key="WbTabbar" Color="#f1f3f6" />
+          <SolidColorBrush x:Key="WbStatusbar" Color="#f3f5f8" />
+          <SolidColorBrush x:Key="WbTableHeader" Color="#ffffff" />
+          <SolidColorBrush x:Key="WbError" Color="#b84245" />
+          <SolidColorBrush x:Key="WbWarning" Color="#996415" />
+          <SolidColorBrush x:Key="WbSuccess" Color="#268175" />
+          <SolidColorBrush x:Key="WbInfo" Color="#345caa" />
+          <SolidColorBrush x:Key="WbDisabled" Color="#eef0f4" />
+          <SolidColorBrush x:Key="WbDisabledText" Color="#5f6b7d" />
+        </ResourceDictionary>
+        <!-- Dark is a native companion palette; the HTML reference only defines light. -->
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="WbBackground" Color="#171d25" />
+          <SolidColorBrush x:Key="WbPaper" Color="#202833" />
+          <SolidColorBrush x:Key="WbPanel" Color="#1c232d" />
+          <SolidColorBrush x:Key="WbLine" Color="#3c4858" />
+          <SolidColorBrush x:Key="WbText" Color="#e5ebf3" />
+          <SolidColorBrush x:Key="WbMuted" Color="#b0bdce" />
+          <SolidColorBrush x:Key="WbSubtle" Color="#a9b7c9" />
+          <SolidColorBrush x:Key="WbAccent" Color="#62d1cd" />
+          <SolidColorBrush x:Key="WbAccentHover" Color="#85e0dc" />
+          <SolidColorBrush x:Key="WbOnAccent" Color="#12292a" />
+          <SolidColorBrush x:Key="WbTint" Color="#233f43" />
+          <SolidColorBrush x:Key="WbHover" Color="#2b3745" />
+          <SolidColorBrush x:Key="WbSelected" Color="#25484b" />
+          <SolidColorBrush x:Key="WbSelectedText" Color="#a5efea" />
+          <SolidColorBrush x:Key="WbRail" Color="#19212b" />
+          <SolidColorBrush x:Key="WbTabbar" Color="#1b232e" />
+          <SolidColorBrush x:Key="WbStatusbar" Color="#1b232e" />
+          <SolidColorBrush x:Key="WbTableHeader" Color="#252f3c" />
+          <SolidColorBrush x:Key="WbError" Color="#ff9da4" />
+          <SolidColorBrush x:Key="WbWarning" Color="#edc27c" />
+          <SolidColorBrush x:Key="WbSuccess" Color="#83d8b9" />
+          <SolidColorBrush x:Key="WbInfo" Color="#a3c0ff" />
+          <SolidColorBrush x:Key="WbDisabled" Color="#252e3a" />
+          <SolidColorBrush x:Key="WbDisabledText" Color="#96a5b9" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Styles.Resources>
+
+  <Style Selector="UserControl.wb-root">
+    <Setter Property="FontFamily" Value="{StaticResource WbFontFamily}" />
+    <Setter Property="FontSize" Value="{StaticResource WbFontSize}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    <Setter Property="Background" Value="{DynamicResource WbBackground}" />
+  </Style>
+  <Style Selector="Border.wb-paper, Border.wb-panel">
+    <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+  </Style>
+  <Style Selector="Border.wb-panel">
+    <Setter Property="Background" Value="{DynamicResource WbPanel}" />
+  </Style>
+  <!-- Docked and floating tools share the host, not the native titlebar. -->
+  <Style Selector="Window.wb-host">
+    <Setter Property="FontFamily" Value="Inter, Segoe UI" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    <Setter Property="Background" Value="{DynamicResource WbBackground}" />
+  </Style>
+  <Style Selector="Window.wb-host TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <!-- Controls without wb-* classes still use the host's V4 tokens, docked or floating. -->
+  <Style Selector="Window.wb-host Button:not(.wb-button)"><Setter Property="MinHeight" Value="30"/><Setter Property="Padding" Value="10,0"/><Setter Property="FontSize" Value="12"/><Setter Property="CornerRadius" Value="5"/><Setter Property="Background" Value="{DynamicResource WbPaper}"/><Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/></Style>
+  <Style Selector="Window.wb-host Button:not(.wb-button):pointerover /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbHover}"/><Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/></Style>
+  <Style Selector="Window.wb-host Button:not(.wb-button):pressed /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
+  <Style Selector="Window.wb-host Button.quiet"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/></Style>
+  <!-- WbAccent on WbTint is 4.24:1; darker selected text keeps the active state legible. -->
+  <Style Selector="Window.wb-host Button.active"><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
+  <Style Selector="Window.wb-host Button.primary"><Setter Property="Background" Value="{DynamicResource WbAccent}"/><Setter Property="Foreground" Value="{DynamicResource WbOnAccent}"/></Style>
+  <Style Selector="Window.wb-host TextBox"><Setter Property="MinHeight" Value="28"/><Setter Property="FontSize" Value="11"/></Style>
+  <Style Selector="Window.wb-host TextBlock.muted"><Setter Property="Foreground" Value="{DynamicResource WbMuted}"/><Setter Property="FontSize" Value="11"/></Style>
+  <Style Selector="Window.wb-host ListBoxItem">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinHeight" Value="29" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Window.wb-host ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbTint}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <!-- One caption and semantic palette in every V4 surface. -->
+  <Style Selector="TextBlock.wb-th">
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Grid.wb-table-header">
+    <Setter Property="Background" Value="{DynamicResource WbTableHeader}" />
+  </Style>
+  <Style Selector="TextBlock.wb-subtle">
+    <Setter Property="Foreground" Value="{DynamicResource WbSubtle}" />
+  </Style>
+  <Style Selector="TextBlock.wb-accent">
+    <Setter Property="Foreground" Value="{DynamicResource WbAccent}" />
+  </Style>
+  <Style Selector="TextBlock.wb-text">
+    <Setter Property="FontFamily" Value="{StaticResource WbFontFamily}" />
+    <Setter Property="FontSize" Value="{StaticResource WbFontSize}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="TextBlock.wb-muted">
+    <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
+    <Setter Property="FontSize" Value="{StaticResource WbFontSizeSmall}" />
+  </Style>
+  <Style Selector="TextBlock.wb-title">
+    <Setter Property="FontSize" Value="{StaticResource WbFontSizeTitle}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.wb-heading">
+    <Setter Property="FontSize" Value="{StaticResource WbFontSizeHeading}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.wb-mono">
+    <Setter Property="FontFamily" Value="{StaticResource WbMonoFontFamily}" />
+    <Setter Property="FontSize" Value="{StaticResource WbFontSizeControl}" />
+  </Style>
+  <Style Selector="TextBlock.wb-error">
+    <Setter Property="Foreground" Value="{DynamicResource WbError}" />
+  </Style>
+  <Style Selector="TextBlock.wb-warning">
+    <Setter Property="Foreground" Value="{DynamicResource WbWarning}" />
+  </Style>
+  <Style Selector="TextBlock.wb-success">
+    <Setter Property="Foreground" Value="{DynamicResource WbSuccess}" />
+  </Style>
+
+  <Style Selector="Button.wb-button">
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="FontFamily" Value="{StaticResource WbFontFamily}" />
+    <Setter Property="FontSize" Value="{StaticResource WbFontSizeControl}" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Height" Value="{StaticResource WbButtonHeight}" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Padding" Value="{StaticResource WbButtonPadding}" />
+    <Setter Property="CornerRadius" Value="{StaticResource WbButtonRadius}" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.wb-button.wb-compact">
+    <Setter Property="Height" Value="{StaticResource WbCompactHeight}" />
+    <Setter Property="Padding" Value="{StaticResource WbCompactPadding}" />
+    <Setter Property="FontSize" Value="{StaticResource WbFontSizeSmall}" />
+  </Style>
+  <Style Selector="Button.wb-button.wb-quiet">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.wb-button.wb-icon">
+    <Setter Property="Width" Value="{StaticResource WbIconButtonSize}" />
+    <Setter Property="Height" Value="{StaticResource WbIconButtonSize}" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="CornerRadius" Value="{StaticResource WbSmallRadius}" />
+  </Style>
+  <Style Selector="Button.wb-button.wb-primary">
+    <Setter Property="Background" Value="{DynamicResource WbAccent}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbOnAccent}" />
+  </Style>
+  <Style Selector="Button.wb-button.wb-danger">
+    <Setter Property="Foreground" Value="{DynamicResource WbError}" />
+  </Style>
+  <Style Selector="Button.wb-button TextBlock">
+    <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource FindAncestor, AncestorType=Button}}" />
+  </Style>
+  <Style Selector="Button.wb-button views|Icon">
+    <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource FindAncestor, AncestorType=Button}}" />
+  </Style>
+  <Style Selector="Button.wb-button:pointerover:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbHover}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Button.wb-button:pressed:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbTint}" />
+  </Style>
+  <Style Selector="Button.wb-button.wb-primary:pointerover:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter, Button.wb-button.wb-primary:pressed:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbAccentHover}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbAccentHover}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource WbOnAccent}" />
+  </Style>
+
+  <!-- Tabs are native TabItems, not buttons that imitate tab semantics. -->
+  <Style Selector="TabItem.wb-tab">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="PART_LayoutRoot" Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Header}"
+                            ContentTemplate="{TemplateBinding HeaderTemplate}"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Setter Property="FontSize" Value="{StaticResource WbFontSizeSmall}" />
+    <Setter Property="MinHeight" Value="{StaticResource WbDocumentTabHeight}" />
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="Background" Value="{DynamicResource WbTabbar}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+    <Setter Property="BorderThickness" Value="0,0,1,0" />
+  </Style>
+  <Style Selector="TabItem.wb-tab.wb-view-tab">
+    <Setter Property="MinHeight" Value="{StaticResource WbViewTabHeight}" />
+    <Setter Property="FontSize" Value="{StaticResource WbFontSizeControl}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0,0,0,9" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="TabItem.wb-tab:selected">
+    <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
+    <Setter Property="BorderThickness" Value="0,2,0,0" />
+  </Style>
+  <Style Selector="TabItem.wb-tab:pointerover:not(:selected)">
+    <Setter Property="Background" Value="{DynamicResource WbHover}" />
+  </Style>
+  <Style Selector="TabItem.wb-tab.wb-view-tab:selected">
+    <Setter Property="Foreground" Value="{DynamicResource WbAccent}" />
+    <Setter Property="BorderThickness" Value="0,0,0,2" />
+  </Style>
+  <Style Selector="TabItem.wb-tab TextBlock">
+    <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource FindAncestor, AncestorType=TabItem}}" />
+  </Style>
+  <Style Selector="ListBoxItem.wb-row">
+    <Setter Property="MinHeight" Value="{StaticResource WbRowHeight}" />
+    <Setter Property="Padding" Value="{StaticResource WbCellPadding}" />
+    <Setter Property="FontSize" Value="{StaticResource WbFontSizeSmall}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="ListBoxItem.wb-row TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="ListBoxItem.wb-row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbHover}" />
+  </Style>
+  <Style Selector="ListBoxItem.wb-row:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbSelected}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <Style Selector="ListBoxItem.wb-row:selected TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <Style Selector="TextBlock.wb-column-header">
+    <Setter Property="MinHeight" Value="{StaticResource WbTableHeaderHeight}" />
+    <Setter Property="FontSize" Value="{StaticResource WbFontSizeCaption}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Padding" Value="8,7" />
+    <Setter Property="Background" Value="{DynamicResource WbTableHeader}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
+  </Style>
+  <Style Selector="TextBox.wb-field, ComboBox.wb-field">
+    <Setter Property="MinHeight" Value="{StaticResource WbButtonHeight}" />
+    <Setter Property="Height" Value="{StaticResource WbButtonHeight}" />
+    <Setter Property="Padding" Value="8,3" />
+    <Setter Property="CornerRadius" Value="{StaticResource WbButtonRadius}" />
+    <Setter Property="FontSize" Value="{StaticResource WbFontSizeControl}" />
+    <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+  </Style>
+  <Style Selector="TextBox.wb-field:focus /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
+    <Setter Property="BorderThickness" Value="{StaticResource WbFocusThickness}" />
+  </Style>
+  <Style Selector="TextBox.wb-field:error /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{DynamicResource WbError}" />
+  </Style>
+  <Style Selector="TextBox.wb-field:disabled /template/ Border#PART_BorderElement, ComboBox.wb-field:disabled /template/ Border#Background">
+    <Setter Property="Background" Value="{DynamicResource WbDisabled}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+  </Style>
+  <Style Selector="views|Icon.wb-icon">
+    <Setter Property="Width" Value="{StaticResource WbIconSize}" />
+    <Setter Property="Height" Value="{StaticResource WbIconSize}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="views|Icon.wb-icon.wb-small">
+    <Setter Property="Width" Value="{StaticResource WbSmallIconSize}" />
+    <Setter Property="Height" Value="{StaticResource WbSmallIconSize}" />
+  </Style>
+  <Style Selector="Button.wb-button:focus-visible /template/ ContentPresenter#PART_ContentPresenter, ListBoxItem.wb-row:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
+    <Setter Property="BorderThickness" Value="{StaticResource WbFocusThickness}" />
+  </Style>
+  <Style Selector="TabItem.wb-tab:focus-visible /template/ Border#PART_LayoutRoot, ComboBox.wb-field:focus-visible /template/ Border#HighlightBackground">
+    <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
+    <Setter Property="BorderThickness" Value="{StaticResource WbFocusThickness}" />
+  </Style>
+  <Style Selector="Button.wb-button:disabled, TabItem.wb-tab:disabled, ListBoxItem.wb-row:disabled, TextBox.wb-field:disabled, ComboBox.wb-field:disabled">
+    <!-- Fluent's 0.46 opacity drops the already-muted disabled text below 2:1. -->
+    <Setter Property="Opacity" Value="1" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource WbDisabledText}" />
+  </Style>
+  <Style Selector="Button.wb-button:disabled /template/ ContentPresenter#PART_ContentPresenter, ListBoxItem.wb-row:disabled /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbDisabled}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource WbDisabledText}" />
+  </Style>
+  <Style Selector="Button.wb-button:disabled TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WbDisabledText}" />
+  </Style>
+  <Style Selector="Button.wb-button:disabled views|Icon">
+    <Setter Property="Foreground" Value="{DynamicResource WbDisabledText}" />
+  </Style>
+</Styles>

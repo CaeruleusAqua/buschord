@@ -87,6 +87,23 @@ public static class ProjectQuery
         return null;
     }
 
+    /// <summary>Installation that contains the given area (reference first, then id).</summary>
+    public static Installation? FindInstallationOf(Project project, Area area)
+    {
+        foreach (var installation in project.Installations)
+            if (installation.Areas.Contains(area)) return installation;
+        return project.Installations.FirstOrDefault(i => i.Areas.Any(a => a.Id == area.Id));
+    }
+
+    /// <summary>Installation that contains the given line (reference first, then id).</summary>
+    public static Installation? FindInstallationOf(Project project, Line line)
+    {
+        foreach (var installation in project.Installations)
+            foreach (var area in installation.Areas)
+                if (area.Lines.Contains(line)) return installation;
+        return project.Installations.FirstOrDefault(i => i.Areas.Any(a => a.Lines.Any(l => l.Id == line.Id)));
+    }
+
     public static DeviceInstance? FindDevice(Project project, IndividualAddress address)        => DeviceList(project).FirstOrDefault(d => d.Address == address);
 
     public static (DeviceInstance Device, Installation Installation, Area Area, Line? Line)? LocateDevice(Project project, IndividualAddress address)
@@ -105,6 +122,35 @@ public static class ProjectQuery
     /// <summary>Group range that directly contains the address, if any.</summary>
     public static GroupRange? FindRangeOf(Project project, GroupAddressEntry entry)
         => project.Installations.SelectMany(i => AllRanges(i)).FirstOrDefault(r => r.Addresses.Contains(entry));
+
+    /// <summary>
+    /// Deepest installed range that covers the address. Root bounds are read both as absolute
+    /// 16-bit values and as main numbers; nested ranges compare the middle number (or raw bounds
+    /// when they carry absolute values), so a middle range cannot capture another middle.
+    /// </summary>
+    public static GroupRange? FindRangeFor(Installation installation, GroupAddress address)
+    {
+        ArgumentNullException.ThrowIfNull(installation);
+        GroupRange? best = null;
+        var bestDepth = 0;
+        foreach (var root in installation.MainRanges) Visit(root, 1);
+        return best;
+
+        void Visit(GroupRange range, int depth)
+        {
+            if (!Covers(range, address, depth == 1)) return;
+            if (depth > bestDepth) { best = range; bestDepth = depth; }
+            foreach (var child in range.Ranges) Visit(child, depth + 1);
+        }
+    }
+
+    private static bool Covers(GroupRange range, GroupAddress address, bool root)
+    {
+        bool In(int value) => value >= range.RangeStart && value <= range.RangeEnd;
+        if (In(address.Raw)) return true;
+        if (!root) return In(address.Middle);
+        return In(address.Main);
+    }
 
     /// <summary>All communication object references of all devices.</summary>
     public static IEnumerable<(DeviceInstance Device, ComObjectInstanceRef Ref)> ComObjectRefs(Project project)

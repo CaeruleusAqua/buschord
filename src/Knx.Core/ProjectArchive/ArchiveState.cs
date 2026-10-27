@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Xml;
 using System.Xml.Linq;
+using Knx.Catalog;
 
 namespace Knx;
 
@@ -17,19 +18,21 @@ internal sealed record ArchiveState(byte[] Bytes, string? NestedEntry, bool Encr
     {
         var bytes = ReadFile(path);
         var encrypted = ValidateZip(bytes);
-        var (xml, nested, projectEncrypted, information) = ReadProject(bytes, password, encrypted, 0);
+        var (xml, nested, projectEncrypted, information, hardware) = ReadProject(bytes, password, encrypted, 0);
         var project = Knxproj.FromXml(xml);
         if (information is not null) Knxproj.ApplyProjectInformation(project, information);
         project.ArchiveState = new ArchiveState(bytes, nested, projectEncrypted);
+        foreach (var part in hardware) CatalogHardwareFacts.Read(part, project.Hardware);
         return project;
     }
 
-    private static (XDocument Xml, string? Nested, bool Encrypted, XDocument? Information) ReadProject(
+    private static (XDocument Xml, string? Nested, bool Encrypted, XDocument? Information, List<XDocument> Hardware) ReadProject(
         byte[] zipBytes, string? password, bool encrypted, int depth)
     {
         if (depth > 1) throw new InvalidDataException("Nested project archives deeper than one level are not supported. " + Supported);
         IReadOnlyDictionary<string, byte[]>? decrypted = encrypted ? EncryptedArchive.ReadAll(zipBytes, password) : null;
         var names = decrypted?.Keys.ToList() ?? ZipNames(zipBytes);
+        var hardware = ReadHardwareParts(decrypted, zipBytes, names);
         var candidates = names.Where(n => n.StartsWith("P-", StringComparison.Ordinal) &&
             n.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && !n.Contains('/')).ToList();
         // /21 keeps project name/GUID/style in project.xml; bounded like 0.xml.
@@ -39,15 +42,36 @@ internal sealed record ArchiveState(byte[] Bytes, string? NestedEntry, bool Encr
         if (names.Contains("0.xml"))
         {
             if (candidates.Count > 0) throw new InvalidDataException("Ambiguous root and nested project archives. " + Supported);
-            return (ReadXml(ReadProjectEntry(decrypted, zipBytes, "0.xml", MaxXmlBytes)), null, encrypted, information);
+            return (ReadXml(ReadProjectEntry(decrypted, zipBytes, "0.xml", MaxXmlBytes)), null, encrypted, information, hardware);
         }
         if (candidates.Count != 1) throw new InvalidDataException(Supported);
         var nested = candidates[0];
         var inner = ReadProjectEntry(decrypted, zipBytes, nested, MaxEntryBytes);
         var innerEncrypted = ValidateZip(inner);
-        var (xml, deeper, _, innerInformation) = ReadProject(inner, password, innerEncrypted, depth + 1);
+        var (xml, deeper, _, innerInformation, innerHardware) = ReadProject(inner, password, innerEncrypted, depth + 1);
         if (deeper is not null) throw new InvalidDataException("Nested project archives deeper than one level are not supported. " + Supported);
-        return (xml, nested, encrypted || innerEncrypted, innerInformation ?? information);
+        hardware.AddRange(innerHardware);
+        return (xml, nested, encrypted || innerEncrypted, innerInformation ?? information, hardware);
+    }
+
+    /// <summary>
+    /// Manufacturer hardware data is optional planning input (BusCurrent, IsPowerSupply, IsCoupler).
+    /// An unreadable part leaves the facts empty, so the check stays silent instead of failing the project.
+    /// </summary>
+    private static List<XDocument> ReadHardwareParts(IReadOnlyDictionary<string, byte[]>? decrypted,
+        byte[] zipBytes, List<string> names)
+    {
+        var parts = new List<XDocument>();
+        foreach (var name in names)
+        {
+            if (!name.EndsWith("/Hardware.xml", StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                parts.Add(ReadXml(ReadProjectEntry(decrypted, zipBytes, name, MaxXmlBytes)));
+            }
+            catch (Exception e) when (e is InvalidDataException or XmlException) { }
+        }
+        return parts;
     }
 
     private static List<string> ZipNames(byte[] bytes)

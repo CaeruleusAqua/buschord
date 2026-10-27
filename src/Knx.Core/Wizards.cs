@@ -69,7 +69,7 @@ public static class ProjectWizard
         {
             installation.MainRanges.Add(new GroupRange
             {
-                Id = "GR-1", Name = "Gruppen", RangeStart = 0, RangeEnd = 0x7FFF,
+                Id = "GR-1", Name = "Gruppen", RangeStart = 0, RangeEnd = 0xFFFF,
             });
         }
 

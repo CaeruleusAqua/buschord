@@ -39,6 +39,11 @@ run the suites that cover your change.
 - [ ] Behaviour changes that can write to a bus, download a device, or handle
       keys are described above, with the safety consequence spelled out.
 
+## CLA
+
+- [ ] I have read the [Contributor License Agreement](../CLA.md) and signed it
+      (the CLA bot asks for the signature comment on this pull request).
+
 ## UI changes
 
 <!-- Screenshots or a short screen recording, light and dark theme. Delete if not applicable. -->

@@ -1,141 +1,148 @@
+using System.Globalization;
 using Avalonia.Controls;
+using Avalonia.Data.Converters;
 using Avalonia.Interactivity;
 using Knx;
-using Knx.App.Localization;
 using Knx.App.Services;
 
 namespace Knx.App.Views;
 
-/// <summary>
-/// Device parameters as an embeddable pane: static-editor notice, unsupported-dynamic warning,
-/// parameter rows and the Apply row pinned to the pane's bottom edge. The pane owns loading,
-/// validation and inline feedback so a hosting window only has to place it.
-/// </summary>
-public sealed partial class ParameterPane : UserControl
+/// <summary>Per-field validation text; the footer uses the same core validation as the session.</summary>
+public sealed class ParameterFieldErrorConverter : IMultiValueConverter
 {
-    private MainWindowViewModel? _vm;
-    private DeviceRow? _row;
-    private Func<bool>? _apply;
-    private Dictionary<string, string?> _baseline = [];
-    private bool _dirty;
+    public static ParameterFieldErrorConverter Instance { get; } = new();
 
-    public ParameterPane() => InitializeComponent();
+    public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (values.Count < 2 || values[0] is not ParameterItemViewModel row || !row.IsVisible || !row.IsEnabled)
+            return null;
+        return ParameterValidation.TryValidate(row.Instance, row.Value, out var error) ? null : error;
+    }
+}
 
-    public ParameterPane(MainWindowViewModel vm) : this() => _vm = vm;
+/// <summary>One field column, capped at 540 px and narrowed on small windows instead of clipping.</summary>
+public sealed class ParameterFieldWidthConverter : IValueConverter
+{
+    public static ParameterFieldWidthConverter Instance { get; } = new();
 
-    /// <summary>Device currently edited; null while the pane shows an empty state.</summary>
-    public DeviceInstance? Device => _row?.Device;
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is double width && double.IsFinite(width) ? Math.Clamp(width - 4, 280, 540) : 540;
 
-    /// <summary>Raised by the pane's Close button, which only the dialog wrapper shows.</summary>
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => Avalonia.Data.BindingOperations.DoNothing;
+}
+
+/// <summary>A disposable view over a host-owned parameter editing session.</summary>
+public sealed partial class ParameterPane : UserControl, IDisposable
+{
+    public ParameterEditingSession Session { get; }
+    private bool _subscribed;
+    private bool _disposed;
+
+    public ParameterPane() : this(new ParameterEditingSession()) { }
+    public ParameterPane(MainWindowViewModel vm) : this(new ParameterEditingSession(vm)) { }
+    public ParameterPane(ParameterEditingSession session)
+    {
+        Session = session;
+        InitializeComponent();
+        Session.Refresh();
+        Subscribe();
+        Render();
+        AttachedToVisualTree += (_, _) => { if (!_disposed) { Subscribe(); Render(); } };
+        DetachedFromVisualTree += (_, _) => Unsubscribe();
+    }
+
+    public DeviceInstance? Device => Session.Device;
+    public bool HasUnappliedChanges => Session.HasUnappliedChanges;
+    public bool IsReadOnly => Session.IsReadOnly;
+    public string? ReadOnlyReason => Session.ReadOnlyReason;
     public event EventHandler? CloseRequested;
-
-    /// <summary>Shows the device's parameters; null shows the empty state without touching the project.</summary>
-    public void Load(DeviceRow? device)
-    {
-        _row = device;
-        _apply = null;
-        if (_vm is not { Project: { } project })
-        {
-            ShowState(ParameterEmptyState.Text(null, device?.Device, 0));
-            return;
-        }
-        if (device is null)
-        {
-            ShowState(ParameterEmptyState.Text(project, null, 0));
-            return;
-        }
-
-        var (instances, types) = _vm.LoadParametersFor(device);
-        _apply = () => _vm.ApplyParameterValues(device.Device, instances, types, _baseline);
-        ApplyButton.IsVisible = true;
-        Show($"Parameter – {device.Name}", instances, types, _vm.ParameterWarning,
-            ParameterEmptyState.Text(project, device.Device, instances.Count));
-    }
-
-    /// <summary>
-    /// Re-reads the model after undo/redo or a project change. Unsaved drafts are dropped, so the
-    /// pane says so instead of silently replacing what the user just typed.
-    /// </summary>
-    public void Refresh()
-    {
-        if (_vm is null) return;
-        var drafts = _dirty;
-        Load(_row);
-        if (drafts && ParameterList.IsVisible) MessageText.Text = ParameterEmptyState.DiscardedText;
-    }
-
-    /// <summary>Applies the drafts atomically; failures stay inline instead of throwing at the caller.</summary>
-    public bool Apply()
-    {
-        if (_apply is null) return false;
-        try
-        {
-            _apply();
-            _dirty = false;
-            MessageText.Text = Strings.Get("ParameterSaved");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            MessageText.Text = ex.Message;
-            return false;
-        }
-    }
-
-    /// <summary>Fills the pane from already resolved parameters (dialog wrapper, demo screens).</summary>
+    public void Load(DeviceRow? device) => Session.Load(device);
+    public void Refresh() => Session.Refresh();
+    public bool Apply() => Session.Apply();
+    public void DiscardDrafts() => Session.DiscardDrafts();
     internal void LoadResolved(string? title, IEnumerable<ParameterInstance> parameters,
-        IEnumerable<ParameterType> types, Func<bool>? apply, string? warning = null)
-    {
-        _row = null;
-        _apply = apply;
-        ApplyButton.IsVisible = apply is not null;
-        var instances = parameters.ToList();
-        Show(title, instances, types.ToList(), warning,
-            instances.Count == 0 ? ParameterEmptyState.NoParametersText : null);
-    }
-
-    /// <summary>Shows the Close button; the dialog wrapper uses it, embedded panes do not.</summary>
+        IEnumerable<ParameterType> types, Func<bool>? apply, string? warning = null, string? readOnlyReason = null)
+        => Session.LoadResolved(title, parameters, types, apply, warning, readOnlyReason);
     internal void ShowClose() => CloseButton.IsVisible = true;
 
-    private void Show(string? title, List<ParameterInstance> instances, List<ParameterType> types,
-        string? warning, string? empty)
-    {
-        _baseline = instances.ToDictionary(i => i.Id, i => i.Value);
-        HeaderText.Text = string.IsNullOrWhiteSpace(title) ? Strings.Get("ParameterTitle") : title;
+    private static string T(string de, string en) => Strings.Language == "en" ? en : de;
 
-        var hasRows = instances.Count > 0;
-        ParameterList.ItemsSource = hasRows ? ParameterItemViewModel.Build(instances, types, () => _dirty = true) : null;
+    private void Subscribe() { if (_subscribed) return; Session.Changed += OnChanged; _subscribed = true; }
+    private void Unsubscribe() { if (!_subscribed) return; Session.Changed -= OnChanged; _subscribed = false; }
+    private void OnChanged(object? sender, EventArgs e) => Render();
+    public void Dispose() { _disposed = true; Unsubscribe(); ParameterList.ItemsSource = Array.Empty<ParameterItemViewModel>(); }
+
+    private void Render()
+    {
+        var hasRows = Session.Rows.Length > 0;
+        // Do not recreate native editors during a keystroke (local TextBox undo must survive).
+        if (!ReferenceEquals(ParameterList.ItemsSource, Session.Rows)) ParameterList.ItemsSource = Session.Rows;
         ParameterList.IsVisible = hasRows;
-        NoticeExpander.IsVisible = hasRows;
-        EmptyText.Text = empty ?? ParameterEmptyState.NoParametersText;
-        EmptyText.IsVisible = empty is not null;
+        HeaderText.Text = string.IsNullOrWhiteSpace(Session.Title) ? Strings.Get("ParameterTitle") : Session.Title;
+        NoticePanel.IsVisible = hasRows;
+        WarningText.IsVisible = WarningDetail.IsVisible = hasRows && !string.IsNullOrWhiteSpace(Session.Warning);
+        WarningDetail.Text = Session.Warning;
+        EmptyText.Text = Session.EmptyText ?? ParameterEmptyState.NoParametersText;
+        EmptyText.IsVisible = Session.EmptyText is not null;
+        MessageText.Text = Session.Message;
+        Footer.IsVisible = hasRows;
 
-        var hasWarning = hasRows && !string.IsNullOrWhiteSpace(warning);
-        WarningText.IsVisible = hasWarning;
-        WarningDetail.IsVisible = hasWarning;
-        WarningDetail.Text = warning ?? "";
-        MessageText.Text = "";
-        _dirty = false;
+        // Section navigation and read-only/opaque banner; drafts stay untouched.
+        var sections = Session.HasSectionNavigation ? Session.Sections : null;
+        if (TopLevel.GetTopLevel(SectionList) is not null && !ReferenceEquals(SectionList.ItemsSource, sections))
+            SectionList.ItemsSource = sections;
+        SectionList.IsVisible = hasRows && sections is not null;
+        ParameterList.IsEnabled = !Session.IsReadOnly;
+        ReadOnlyPanel.IsVisible = hasRows && Session.IsReadOnly;
+        ReadOnlyHeading.Text = T("Schreibgeschützt", "Read-only");
+        ReadOnlyText.Text = Session.ReadOnlyReason ?? "";
+        DraftNoticePanel.IsVisible = Session.DraftNotice is { Length: > 0 };
+        DraftNoticeText.Text = Session.DraftNotice ?? "";
+        DismissDraftNoticeButton.Content = T("Hinweis schließen", "Dismiss notice");
+
+        // Draft indicator and footer-wide validation summary share the left footer slot.
+        DraftPill.IsVisible = hasRows && Session.HasUnappliedChanges;
+        DraftText.Text = Session.DraftText;
+        ValidationSummary.IsVisible = hasRows && Session.HasValidationErrors;
+        ValidationSummary.Text = Session.ValidationSummary;
+        StatusHint.IsVisible = hasRows && !Session.HasUnappliedChanges && !Session.HasValidationErrors;
+        StatusHint.Text = T("Keine nicht übernommenen Parameteränderungen", "No unapplied parameter changes");
+
+        ResetButton.Content = T("Standardwerte", "Reset defaults");
+        DiscardButton.Content = T("Verwerfen", "Discard");
+        ResetButton.IsVisible = Session.CanApply;
+        ResetButton.IsEnabled = Session.CanReset;
+        DiscardButton.IsVisible = ReviewButton.IsVisible = ApplyButton.IsVisible = Session.CanApply;
+        var hasDraft = Session.HasUnappliedChanges;
+        DiscardButton.IsEnabled = ReviewButton.IsEnabled = hasDraft;
+        ReviewButton.Content = T("Änderungen prüfen", "Review changes");
+        CancelReviewButton.Content = T("Vorschau schließen", "Cancel review");
+        PreviewPanel.IsVisible = Session.Preview is not null;
+        PreviewList.ItemsSource = Session.Preview?.Changes ?? Array.Empty<ParameterChange>();
+        PreviewSummary.Text = Session.Preview is { } preview
+            ? T($"Parameteränderungen: {preview.Changes.Count}", $"Parameter changes: {preview.Changes.Count}")
+            : "";
+        PreviewLimitations.Text = Session.Preview?.Limitations;
+        ApplyButton.IsEnabled = Session.CanApply && hasDraft && !Session.HasValidationErrors
+            && Session.Preview?.IsValid != false;
     }
 
-    private void ShowState(string? empty)
-    {
-        _baseline = [];
-        _apply = null;
-        ApplyButton.IsVisible = false;
-        ParameterList.ItemsSource = null;
-        ParameterList.IsVisible = false;
-        NoticeExpander.IsVisible = false;
-        WarningText.IsVisible = false;
-        WarningDetail.IsVisible = false;
-        HeaderText.Text = Strings.Get("ParameterTitle");
-        EmptyText.Text = empty ?? ParameterEmptyState.NoParametersText;
-        EmptyText.IsVisible = true;
-        MessageText.Text = "";
-        _dirty = false;
-    }
-
+    private void OnReview(object? sender, RoutedEventArgs e) => Session.ReviewChanges();
+    private void OnCancelReview(object? sender, RoutedEventArgs e) => Session.CancelReview();
     private void OnApply(object? sender, RoutedEventArgs e) => Apply();
-
+    private void OnDiscard(object? sender, RoutedEventArgs e) => DiscardDrafts();
+    private void OnReset(object? sender, RoutedEventArgs e) => Session.ResetToDefaults();
+    private void OnDismissDraftNotice(object? sender, RoutedEventArgs e) => Session.AcknowledgeNotice();
     private void OnClose(object? sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Jumps to a section without filtering rows, so drafts and validation stay intact.</summary>
+    private void OnSection(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string title }) return;
+        Session.SelectSection(title);
+        if (Session.Sections.FirstOrDefault(s => s.Title == title) is not { } section) return;
+        // ScrollIntoView works with the virtualized list, where far rows have no container yet.
+        ParameterList.ScrollIntoView(section.FirstRow);
+    }
 }

@@ -1,0 +1,320 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:Knx.App.Views" xmlns:loc="using:Knx.App.Localization"
+        xmlns:chrome="using:Avalonia.Controls.Chrome"
+        x:Class="Knx.App.WorkbenchWindow" Classes="wb-host" Title="BusChord" Width="1440" Height="900"
+        MinWidth="900" MinHeight="480" Background="{DynamicResource WbBackground}" FontFamily="Inter, Segoe UI" FontSize="12"
+        Foreground="{DynamicResource WbText}" Icon="/Assets/brand/buschord-house-transparent-tile.ico"
+        WindowDecorations="Full" ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="49"
+        WindowDecorationsTheme="{DynamicResource WbWindowDecorationsTheme}">
+  <!-- Opt-in V4 resources shared with the native workbench; legacy panels keep their own styles. -->
+  <Window.Styles>
+    <!-- Shell window chrome (variant A). The three caption blocks live in the 49 px strip and keep
+         the native HTMINBUTTON/HTMAXBUTTON/HTCLOSE behaviour through ElementRole. -->
+    <Style Selector="Button.wb-caption">
+      <Setter Property="Width" Value="46"/><Setter Property="Height" Value="49"/>
+      <Setter Property="MinWidth" Value="46"/><Setter Property="MinHeight" Value="49"/>
+      <Setter Property="Padding" Value="0"/><Setter Property="CornerRadius" Value="0"/>
+      <Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Foreground" Value="{DynamicResource WbMuted}"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.wb-caption /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/>
+    </Style>
+    <Style Selector="Button.wb-caption:pointerover"><Setter Property="Foreground" Value="{DynamicResource WbText}"/><Setter Property="Background" Value="{DynamicResource WbHover}"/></Style>
+    <Style Selector="Button.wb-caption:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbHover}"/>
+    </Style>
+    <Style Selector="Button.wb-caption:pressed"><Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
+    <Style Selector="Button.wb-caption:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbTint}"/>
+    </Style>
+    <Style Selector="Button.wb-caption:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource WbDisabledText}"/><Setter Property="Opacity" Value="1"/><Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="Button.wb-caption:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="Button.wb-caption:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/><Setter Property="BorderThickness" Value="2"/>
+    </Style>
+    <!-- Close keeps the one native convention: red only on hover or pressed, full 46 x 49 block. -->
+    <Style Selector="Button.wb-caption-close:pointerover"><Setter Property="Foreground" Value="#ffffff"/><Setter Property="Background" Value="#c42b1c"/></Style>
+    <Style Selector="Button.wb-caption-close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#c42b1c"/>
+    </Style>
+    <Style Selector="Button.wb-caption-close:pressed"><Setter Property="Background" Value="#a32416"/></Style>
+    <Style Selector="Button.wb-caption-close:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#a32416"/>
+    </Style>
+    <Style Selector="Button.wb-caption-close:pointerover:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BorderBrush" Value="#ffffff"/>
+    </Style>
+    <!-- NC caption blocks receive no client pointer events, so the chrome poll sets these classes. -->
+    <Style Selector="Button.wb-caption.wb-caption-hover">
+      <Setter Property="Foreground" Value="{DynamicResource WbText}"/><Setter Property="Background" Value="{DynamicResource WbHover}"/>
+    </Style>
+    <Style Selector="Button.wb-caption.wb-caption-hover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbHover}"/>
+    </Style>
+    <Style Selector="Button.wb-caption.wb-caption-press">
+      <Setter Property="Foreground" Value="{DynamicResource WbAccent}"/><Setter Property="Background" Value="{DynamicResource WbTint}"/>
+    </Style>
+    <Style Selector="Button.wb-caption.wb-caption-press /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbTint}"/>
+    </Style>
+    <Style Selector="Button.wb-caption-close.wb-caption-hover">
+      <Setter Property="Foreground" Value="#ffffff"/><Setter Property="Background" Value="#c42b1c"/>
+    </Style>
+    <Style Selector="Button.wb-caption-close.wb-caption-hover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#c42b1c"/>
+    </Style>
+    <Style Selector="Button.wb-caption-close.wb-caption-press">
+      <Setter Property="Foreground" Value="#ffffff"/><Setter Property="Background" Value="#a32416"/>
+    </Style>
+    <Style Selector="Button.wb-caption-close.wb-caption-press /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#a32416"/>
+    </Style>
+    <!-- High contrast: Win32 system colors replace the V4 palette for the strip and its blocks. -->
+    <Style Selector="Border.wb-topbar">
+      <Setter Property="Background" Value="{DynamicResource WbPaper}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/>
+    </Style>
+    <Style Selector="Border.wb-topbar-rule">
+      <Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Border.wb-topbar">
+      <Setter Property="Background" Value="{DynamicResource HcChromeWindow}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource HcChromeText}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Border.wb-topbar-rule">
+      <Setter Property="BorderBrush" Value="{DynamicResource HcChromeText}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Border.wb-topbar TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource HcChromeText}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Border.wb-topbar Button">
+      <Setter Property="Foreground" Value="{DynamicResource HcChromeText}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Border.wb-topbar Menu">
+      <Setter Property="Foreground" Value="{DynamicResource HcChromeText}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption">
+      <Setter Property="Foreground" Value="{DynamicResource HcChromeText}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource HcChromeHighlight}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource HcChromeHighlightText}"/><Setter Property="Background" Value="{DynamicResource HcChromeHighlight}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource HcChromeHighlight}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption:pressed">
+      <Setter Property="Foreground" Value="{DynamicResource HcChromeHighlightText}"/><Setter Property="Background" Value="{DynamicResource HcChromeHighlight}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption-close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource HcChromeHighlight}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption-close:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource HcChromeHighlightText}"/><Setter Property="Background" Value="{DynamicResource HcChromeHighlight}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption.wb-caption-hover">
+      <Setter Property="Foreground" Value="{DynamicResource HcChromeHighlightText}"/><Setter Property="Background" Value="{DynamicResource HcChromeHighlight}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption.wb-caption-hover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource HcChromeHighlight}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption.wb-caption-press">
+      <Setter Property="Foreground" Value="{DynamicResource HcChromeHighlightText}"/><Setter Property="Background" Value="{DynamicResource HcChromeHighlight}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption.wb-caption-press /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource HcChromeHighlight}"/>
+    </Style>
+    <Style Selector="Window.high-contrast Button.wb-caption-close.wb-caption-hover, Window.high-contrast Button.wb-caption-close.wb-caption-press">
+      <Setter Property="Foreground" Value="{DynamicResource HcChromeHighlightText}"/><Setter Property="Background" Value="{DynamicResource HcChromeHighlight}"/>
+    </Style>
+    <!-- Interactive children of the TitleBar need User, otherwise the nearest role is TitleBar
+         and Windows turns the click into a caption drag (S0 hit-test contract). -->
+    <Style Selector="Grid#TopbarContent Button, Grid#TopbarContent Menu">
+      <Setter Property="chrome:WindowDecorationProperties.ElementRole" Value="User"/>
+    </Style>
+    <Style Selector="Grid.wb-row-active"><Setter Property="Background" Value="{DynamicResource WbSelected}"/></Style>
+    <Style Selector="Grid.wb-row-active TextBlock"><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
+    <Style Selector="Border.wb-action-footer"><Setter Property="Background" Value="{DynamicResource WbPaper}"/><Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/><Setter Property="BorderThickness" Value="0,1,0,0"/></Style>
+    <Style Selector="Button.rail-active"><Setter Property="Background" Value="{DynamicResource WbTint}"/><Setter Property="Foreground" Value="{DynamicResource WbSelectedText}"/></Style>
+    <Style Selector="TabItem.wb-doc-tab"><Setter Property="MinWidth" Value="130"/><Setter Property="MaxWidth" Value="240"/><Setter Property="Padding" Value="10,0"/></Style>
+    <Style Selector="TabItem.wb-tool-tab"><Setter Property="MinHeight" Value="35"/><Setter Property="Padding" Value="12,0"/></Style>
+    <Style Selector="Grid.wb-drop-target"><Setter Property="Background" Value="{DynamicResource WbTint}"/></Style>
+    <Style Selector="Grid.wb-device"><Setter Property="Background" Value="{DynamicResource WbHover}"/></Style>
+    <Style Selector="Grid.wb-channel"><Setter Property="Background" Value="{DynamicResource WbPanel}"/></Style>
+    <!-- Same field label contract as ParameterPane, so demo and native editors share one geometry. -->
+    <Style Selector="TextBlock.wb-label"><Setter Property="FontSize" Value="{DynamicResource WbFontSizeControl}"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{DynamicResource WbText}"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+  </Window.Styles>
+  <Grid RowDefinitions="49,*,27">
+    <!-- Variant A: the native caption is not drawn; this 49 px strip is the caption hit region.
+         Only the content columns carry the 1 px rule, the caption blocks stay full height. -->
+    <Border x:Name="Topbar" Classes="wb-topbar"
+            chrome:WindowDecorationProperties.ElementRole="TitleBar">
+      <Grid ColumnDefinitions="*,138">
+        <Border x:Name="TopbarRule" Classes="wb-topbar-rule" BorderThickness="0,0,0,1">
+          <Grid x:Name="TopbarContent" ColumnDefinitions="Auto,Auto,*,Auto" Margin="12,0,8,0">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="0,0,16,0">
+              <Button x:Name="WindowMenuButton" Width="28" Height="28" MinWidth="28" MinHeight="28"
+                      Padding="0" Classes="quiet" IsTabStop="False" Background="Transparent" BorderThickness="0"
+                      Click="OnWindowMenu" ToolTip.Tip="{loc:Wb WindowSystemMenu}"
+                      AutomationProperties.Name="{loc:Wb WindowSystemMenu}">
+                <Image Source="/Assets/brand/buschord-house-transparent-tile-256.png" Width="28" Height="28"/>
+              </Button>
+              <TextBlock Text="BUSCHORD" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
+            </StackPanel>
+            <Menu x:Name="MainMenu" Grid.Column="1" VerticalAlignment="Center"/>
+            <Button x:Name="TopbarSearch" Grid.Column="2" HorizontalAlignment="Center"
+                    MinWidth="220" Classes="quiet" Click="OnPalette" Background="{DynamicResource WbBackground}"
+                    AutomationProperties.Name="{loc:Wb SearchProjectButton}" ToolTip.Tip="{loc:Wb SearchProjectButton}">
+              <Grid>
+                <TextBlock x:Name="TopbarSearchFull" Text="{loc:Wb SearchProjectButton}" VerticalAlignment="Center"/>
+                <views:ConceptIcon x:Name="TopbarSearchCompact" Symbol="search" Width="16" Height="16" IsVisible="False"/>
+              </Grid>
+            </Button>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <TextBlock Text="OFFLINE" Foreground="{DynamicResource WbWarning}" FontSize="10" VerticalAlignment="Center"/>
+              <Button Content="{loc:Wb Programming}" Click="OnProgramming" Classes="primary"/>
+            </StackPanel>
+          </Grid>
+        </Border>
+        <StackPanel x:Name="WindowButtons" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+          <Button x:Name="ChromeMinimize" Classes="wb-caption" Click="OnChromeMinimize"
+                  chrome:WindowDecorationProperties.ElementRole="MinimizeButton"
+                  AutomationProperties.AutomationId="ChromeMinimize"
+                  AutomationProperties.Name="{loc:Wb WindowMinimize}" ToolTip.Tip="{loc:Wb WindowMinimize}">
+            <Path Width="10" Height="10" Stretch="None" StrokeThickness="1.2" StrokeLineCap="Square"
+                  Stroke="{Binding $parent[Button].Foreground}" Data="M0 5 H10"/>
+          </Button>
+          <Button x:Name="ChromeMaximize" Classes="wb-caption" Click="OnChromeMaximize"
+                  chrome:WindowDecorationProperties.ElementRole="MaximizeButton"
+                  AutomationProperties.AutomationId="ChromeMaximize"
+                  AutomationProperties.Name="{loc:Wb WindowMaximize}" ToolTip.Tip="{loc:Wb WindowMaximize}">
+            <Path x:Name="ChromeMaximizeGlyph" Width="10" Height="10" Stretch="None" StrokeThickness="1.2"
+                  Stroke="{Binding $parent[Button].Foreground}" Data="M0 0 H10 V10 H0 Z"/>
+          </Button>
+          <Button x:Name="ChromeClose" Classes="wb-caption wb-caption-close" Click="OnChromeClose"
+                  chrome:WindowDecorationProperties.ElementRole="CloseButton"
+                  AutomationProperties.AutomationId="ChromeClose"
+                  AutomationProperties.Name="{loc:Wb WindowClose}" ToolTip.Tip="{loc:Wb WindowClose}">
+            <Path Width="10" Height="10" Stretch="None" StrokeThickness="1.2" StrokeLineCap="Square"
+                  Stroke="{Binding $parent[Button].Foreground}" Data="M0 0 L10 10 M10 0 L0 10"/>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Grid x:Name="Zones" Grid.Row="1" ColumnDefinitions="47,272,5,*,0,0">
+      <Border Background="{DynamicResource WbRail}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,1,0">
+        <DockPanel><StackPanel x:Name="Rail" Spacing="5" Margin="5,10"/><Button DockPanel.Dock="Bottom" Width="35" Height="35" HorizontalAlignment="Center" Click="OnHelp" VerticalAlignment="Bottom" Classes="quiet" ToolTip.Tip="{loc:Wb Documentation}" AutomationProperties.Name="{loc:Wb Documentation}"><views:ConceptIcon Symbol="help"/></Button></DockPanel>
+      </Border>
+      <Border x:Name="Navigator" Grid.Column="1" Background="{DynamicResource WbPanel}">
+        <Grid RowDefinitions="Auto,Auto,Auto,*,30">
+          <StackPanel Margin="15,14,10,10" Spacing="6"><TextBlock x:Name="ProjectName" FontWeight="SemiBold"/><TextBlock x:Name="ProjectSummary" Classes="muted"/></StackPanel>
+          <UniformGrid Grid.Row="1" Columns="3" Margin="10,0,10,10" x:Name="Perspectives"/>
+          <TextBox x:Name="NavSearch" Grid.Row="2" Classes="wb-field" PlaceholderText="{loc:Wb NavSearchWatermark}" AutomationProperties.Name="{loc:Wb NavSearchWatermark}" Margin="12,0,12,10" TextChanged="OnNavSearch"/>
+          <ListBox x:Name="NavTree" Grid.Row="3" Background="Transparent" Margin="5,0" SelectionChanged="OnNavSelected" AutomationProperties.Name="{loc:Wb Navigator}"/>
+          <TextBlock Grid.Row="4" Text="{loc:Wb NavFootnote}" Classes="muted" Margin="12,8,0,0"/>
+        </Grid>
+      </Border>
+      <GridSplitter x:Name="NavSplitter" Grid.Column="2" Width="5" Background="{DynamicResource WbLine}" ResizeDirection="Columns"/>
+      <Grid x:Name="MainColumn" Grid.Column="3" RowDefinitions="39,*,0,0" Background="{DynamicResource WbPaper}">
+        <Grid x:Name="TabStrip" ColumnDefinitions="*,Auto" Background="{DynamicResource WbTabbar}">
+          <!-- V4 compare stays in the tab strip: the pinned companion follows the active address while the editor navigates. -->
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Background="Transparent"><StackPanel x:Name="ObjectTabs" Orientation="Horizontal"/></ScrollViewer>
+          <Button x:Name="CompareButton" Grid.Column="1" Content="{loc:Wb ComparePinned}" Click="OnComparePinned"
+                  Classes="quiet" Margin="6,4" VerticalAlignment="Center"
+                  ToolTip.Tip="{loc:Wb ComparePinnedTip}" AutomationProperties.Name="{loc:Wb ComparePinned}"/>
+        </Grid>
+        <Grid x:Name="Editor" Grid.Row="1" RowDefinitions="Auto,Auto,*">
+          <StackPanel Margin="24,16,24,0" Spacing="6">
+            <TextBlock x:Name="Breadcrumb" Classes="muted"/>
+            <Grid ColumnDefinitions="*,Auto"><TextBlock x:Name="EditorTitle" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <Button x:Name="WatchButton" Content="{loc:Wb Watch}" Click="OnWatch" Classes="quiet"/>
+                <Button x:Name="AddDeviceButton" Content="{loc:Wb AddDevice}" Click="OnAddDevice" Classes="quiet"/>
+                <Button x:Name="InspectorButton" Content="{loc:Wb Properties}" Click="OnInspector" Classes="quiet"/>
+              </StackPanel></Grid>
+            <TextBlock x:Name="Subtitle" Classes="muted" TextWrapping="Wrap" Margin="0,0,0,6"/>
+            <!-- Wrap instead of clipping when the narrow inspector leaves little editor width. -->
+            <WrapPanel x:Name="Representations" Orientation="Horizontal"/>
+          </StackPanel>
+          <Grid x:Name="ObjectToolbar" Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto,170,Auto" Margin="24,9">
+            <Button Content="{loc:Wb LinkObjects}" Click="OnLinks"/>
+            <Button Grid.Column="1" Content="{loc:Wb Properties}" Classes="quiet" Click="OnInspector"/>
+            <CheckBox x:Name="RelatedBox" Grid.Column="3" Content="{loc:Wb ExternalChannels}" ToolTip.Tip="{loc:Wb ExternalChannelsTip}" FontSize="11" IsCheckedChanged="OnRelated" Margin="8,0"/>
+            <CheckBox x:Name="Unlinked" Grid.Column="4" Content="{loc:Wb WithoutGroupAddress}" FontSize="11" IsCheckedChanged="OnUnlinked" Margin="8,0"/>
+            <TextBox x:Name="ObjectSearch" Grid.Column="5" Classes="wb-field" PlaceholderText="{loc:Wb FilterObjects}" AutomationProperties.Name="{loc:Wb FilterObjects}" TextChanged="OnObjectSearch"/>
+            <Button x:Name="ExpandAllButton" Grid.Column="6" ToolTip.Tip="{loc:Wb ExpandCollapseAll}" AutomationProperties.Name="{loc:Wb ExpandCollapseAllDevices}" Click="OnExpandAll" Classes="quiet"><views:ConceptIcon Symbol="down" Width="17" Height="17"/></Button>
+          </Grid>
+          <Grid Grid.Row="2" RowDefinitions="*,Auto">
+            <ScrollViewer x:Name="TableViewport" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <Grid x:Name="TableHost" RowDefinitions="31,*" Margin="24,0,24,0" MinWidth="568">
+              <Border Grid.Row="0" Background="{DynamicResource WbTableHeader}" BorderBrush="{DynamicResource WbLine}"
+                      BorderThickness="0,0,0,1" Margin="0,0,12,0">
+                <Grid ColumnDefinitions="28,*,80,50,50,170">
+                  <CheckBox x:Name="SelectAllBox" IsThreeState="True" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            MinWidth="0" Padding="0" IsCheckedChanged="OnSelectAll"
+                            AutomationProperties.Name="{loc:Wb SelectAllObjects}"/>
+                  <TextBlock Grid.Column="1" Text="{loc:Wb ColumnObjectFunction}" Margin="8,8" Classes="wb-th"/>
+                  <TextBlock Grid.Column="2" Text="DPT" Margin="0,8" Classes="wb-th"/>
+                  <TextBlock Grid.Column="3" Text="{loc:Wb ColumnLength}" Margin="0,8" Classes="wb-th"/>
+                  <TextBlock Grid.Column="4" Text="Flags" Margin="0,8" Classes="wb-th"/>
+                  <TextBlock Grid.Column="5" Text="{loc:Wb GroupAddresses}" Margin="0,8" Classes="wb-th"/>
+                </Grid>
+              </Border>
+              <ListBox x:Name="ObjectTable" Grid.Row="1" SelectionMode="Multiple" Background="Transparent" SelectionChanged="OnObjectSelected" AutomationProperties.Name="{loc:Wb ObjectsTable}"/>
+            </Grid>
+            </ScrollViewer>
+            <TextBlock x:Name="TableFootnote" Grid.Row="1" Classes="muted" VerticalAlignment="Center"
+                       Margin="24,0,24,0" TextWrapping="Wrap"
+                       AutomationProperties.Name="{loc:Wb TableFootnoteName}" AutomationProperties.LiveSetting="Polite"/>
+            <ContentControl x:Name="ParametersHost" Grid.RowSpan="2" IsVisible="False" Margin="24,12"/>
+            <ContentControl x:Name="RelationsHost" Grid.RowSpan="2" IsVisible="False" Margin="24,12"/>
+            <ContentControl x:Name="ToolPageHost" Grid.RowSpan="2" IsVisible="False" Margin="24,12"/>
+          </Grid>
+        </Grid>
+        <GridSplitter x:Name="ToolsSplitter" Grid.Row="2" Height="5" Background="{DynamicResource WbLine}" ResizeDirection="Rows"/>
+        <Grid x:Name="Tools" Grid.Row="3" RowDefinitions="35,*" Background="{DynamicResource WbPaper}">
+          <Grid ColumnDefinitions="*,Auto,Auto,Auto"><ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" ClipToBounds="True"><StackPanel x:Name="ToolTabs" Orientation="Horizontal" Margin="12,0" Spacing="20"/></ScrollViewer>
+            <Button Grid.Column="1" ToolTip.Tip="{loc:Wb ToolFloatTip}" AutomationProperties.Name="{loc:Wb ToolFloatName}" Click="OnFloatTool" Classes="quiet"><views:ConceptIcon Symbol="export" Width="17" Height="17"/></Button>
+            <Button Grid.Column="2" ToolTip.Tip="{loc:Wb ToolMaximize}" AutomationProperties.Name="{loc:Wb ToolMaximize}" Click="OnMaximizeTool" Classes="quiet"><views:ConceptIcon Symbol="maximize" Width="17" Height="17"/></Button>
+            <Button Grid.Column="3" ToolTip.Tip="{loc:Wb ToolHide}" AutomationProperties.Name="{loc:Wb ToolHide}" Click="OnHideTool" Classes="quiet"><views:ConceptIcon Symbol="close" Width="17" Height="17"/></Button>
+          </Grid>
+          <ContentControl x:Name="ToolHost" Grid.Row="1"/>
+        </Grid>
+      </Grid>
+      <GridSplitter x:Name="InspectorSplitter" Grid.Column="4" Width="5" Background="{DynamicResource WbLine}" ResizeDirection="Columns"/>
+      <Border x:Name="Inspector" Grid.Column="5" Background="{DynamicResource WbPanel}" BorderBrush="{DynamicResource WbLine}" BorderThickness="1,0,0,0">
+        <Grid RowDefinitions="44,*,Auto"><Grid ColumnDefinitions="*,Auto,Auto" Margin="15,0">
+            <TextBlock x:Name="InspectorTitle" Text="{loc:Wb Properties}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+            <ComboBox x:Name="SidebarMode" Grid.Column="1" MinWidth="120" FontSize="10" Margin="0,0,6,0" AutomationProperties.Name="{loc:Wb SidebarTitle}"/>
+            <Button Grid.Column="2" AutomationProperties.Name="{loc:Wb HideProperties}" Click="OnInspector" Classes="quiet"><views:ConceptIcon Symbol="close" Width="17" Height="17"/></Button>
+          </Grid>
+          <ScrollViewer Grid.Row="1"><StackPanel x:Name="InspectorBody" Margin="15" Spacing="12"/></ScrollViewer>
+          <!-- Footer actions stay reachable while the property sections scroll. -->
+          <Border x:Name="InspectorFooterHost" Grid.Row="2" IsVisible="False" Background="{DynamicResource WbPaper}"
+                  BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0">
+            <StackPanel x:Name="InspectorFooter" Margin="15,10" Spacing="6"/>
+          </Border>
+        </Grid>
+      </Border>
+    </Grid>
+    <Border Grid.Row="2" Background="{DynamicResource WbStatusbar}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="*,Auto" Margin="12,0">
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Border Width="3" Height="13" CornerRadius="1" Background="{DynamicResource WbAccent}"/>
+          <TextBlock x:Name="StatusProject" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource WbSelectedText}" VerticalAlignment="Center"/>
+          <TextBlock x:Name="StatusText" Text="{Binding Status}" FontSize="10" VerticalAlignment="Center" Foreground="{DynamicResource WbMuted}" AutomationProperties.Name="{loc:Wb Status}" AutomationProperties.LiveSetting="Polite"/>
+        </StackPanel>
+        <TextBlock Grid.Column="1" Text="{loc:Wb StatusLocalOnly}" Classes="muted" FontSize="10" VerticalAlignment="Center" AutomationProperties.LiveSetting="Off"/>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

@@ -33,6 +33,13 @@ env:
     tests/Knx.Encryption.Tests
     tests/Knx.Parameter.Tests
     tests/Knx.ParameterUi.Tests
+    tests/Knx.Workbench.Tests
+    tests/Knx.WorkbenchUiState.Tests
+    tests/Knx.WorkbenchSessions.Tests
+    tests/Knx.WorkbenchTheme.Tests
+    tests/Knx.WorkbenchPerformance.Tests
+    tests/Knx.Localization.Tests
+    tests/Knx.ProjectCompare.Tests
     src/Knx.App.Tests
 
 jobs:
@@ -72,6 +79,9 @@ jobs:
       - name: Console checks
         shell: bash
         run: |
+          echo "::notice::Docking/Shell window suites run only on Windows: they require a native display"
+          echo "::notice::skipping tests/Knx.Docking.Tests on Linux: native display required"
+          echo "::notice::skipping tests/Knx.Shell.Tests on Linux: native display required"
           for project in $(echo "$TEST_PROJECTS" | tr -d '\r'); do
             if [ "$project" = "tests/Knx.Icon.Tests" ]; then
               echo "::notice::skipping $project on Linux: it starts Avalonia with UsePlatformDetect and needs a display"
@@ -116,6 +126,27 @@ jobs:
         run: dotnet run --project src/Knx.App -c Release --no-build -- --smoke
       - name: App screenshot selftest (Windows only)
         run: dotnet run --project src/Knx.App -c Release --no-build -- --screenshot-selftest
+      - name: Docking window regressions (Windows only)
+        run: dotnet run --project tests/Knx.Docking.Tests -c Release --no-build
+      - name: Parameter draft window regressions (Windows only)
+        run: dotnet run --project tests/Knx.ParameterUi.Tests -c Release --no-build -- --native
+      - name: Project lifecycle window regressions (Windows only)
+        run: dotnet run --project tests/Knx.Shell.Tests -c Release --no-build
+      - name: V4 state regressions (Windows only)
+        shell: bash
+        run: |
+          for mode in --state-k1 --state-k2 --state-k3; do
+            dotnet run --project tests/Knx.Shell.Tests -c Release --no-build -- "$mode"
+          done
+      - name: V4 native dialog regressions (Windows only)
+        shell: bash
+        run: |
+          dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --dialogs
+          dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --dialogs --de
+      - name: Workbench native self-check de/light (Windows only)
+        run: dotnet run --project src/Knx.App -c Release --no-build -- --workbench-selftest --theme=light --lang=de
+      - name: Workbench native self-check en/dark (Windows only)
+        run: dotnet run --project src/Knx.App -c Release --no-build -- --workbench-selftest --theme=dark --lang=en
 
   ci:
     name: ci

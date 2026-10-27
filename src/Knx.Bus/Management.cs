@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using Knx;
 
 namespace Knx.Bus;
@@ -6,20 +5,31 @@ namespace Knx.Bus;
 /// <summary>
 /// Management-layer cEMI frames for device programming over a tunnel:
 /// descriptor read, individual address read/write, restart, memory read/write.
-/// Short frames use the standard APCI nibble in octet 7. Memory read/write need
-/// extended frames (APDU length > 15); see <see cref="ExtendedCemi"/>.
-/// Extended-frame length handling has not yet been validated against a real device.
+/// Wire layout: the service code lives in
+/// octet 7 bits 1..0 and octet 8 bits 7..6; 1..6 bit parameters sit inline in octet 8.
 /// </summary>
 public static class Management
 {
+    /// <summary>
+    /// DeviceDescriptorRead: the descriptor type is the 4-bit management parameter in
+    /// octet 8, not an appended data byte. Types 0..3 are defined for mask/descriptor reads.
+    /// </summary>
     public static byte[] DeviceDescriptorRead(IndividualAddress target, byte descriptorType = 0x00)
-        => Cemi.LDataRequest(new Telegram
+        => Cemi.LDataRequest(DeviceDescriptorReadTelegram(target, descriptorType));
+
+    /// <summary>Same frame as a telegram, so a caller that sends telegrams builds it the same way.</summary>
+    public static Telegram DeviceDescriptorReadTelegram(IndividualAddress target, byte descriptorType = 0x00)
+    {
+        if (descriptorType > 0x03)
+            throw new ArgumentOutOfRangeException(nameof(descriptorType), "descriptor type must be 0..3");
+        return new Telegram
         {
             Source = IndividualAddress.Zero,
             Destination = target,
             Apci = Apci.DeviceDescriptorRead,
             Data = [descriptorType],
-        });
+        };
+    }
 
     public static byte[] IndividualAddressRead()
         => Cemi.LDataRequest(new Telegram
@@ -48,12 +58,12 @@ public static class Management
             Data = erase ? [0x01, eraseCode] : [0x00, 0x00],
         });
 
-    /// <summary>Memory write: 2-byte address + 1..12 payload bytes (extended frame).</summary>
+    /// <summary>Memory write: 2-byte address + 1..12 payload bytes.</summary>
     public static byte[] MemoryWrite(IndividualAddress target, ushort address, byte[] data)
     {
         if (data.Length is 0 or > 12)
             throw new ArgumentOutOfRangeException(nameof(data), "1..12 bytes per memory write frame");
-        return ExtendedCemi.LDataRequest(new Telegram
+        return Cemi.LDataRequest(new Telegram
         {
             Source = IndividualAddress.Zero,
             Destination = target,
@@ -64,37 +74,13 @@ public static class Management
 
     /// <summary>Memory read: 2-byte address + byte count.</summary>
     public static byte[] MemoryRead(IndividualAddress target, ushort address, byte count)
-        => ExtendedCemi.LDataRequest(new Telegram
+        => Cemi.LDataRequest(new Telegram
         {
             Source = IndividualAddress.Zero,
             Destination = target,
             Apci = Apci.MemoryRead,
             Data = [.. address.ToUInt16Big(), count],
         });
-}
-
-/// <summary>
-/// Extended L_Data frame codec: APCI service nibble in octet 7, length in octet 6.
-/// Extended-frame length handling still requires validation against a real device.
-/// </summary>
-internal static class ExtendedCemi
-{
-    public static byte[] LDataRequest(Telegram telegram)
-    {
-        var data = telegram.Data;
-        var apduLen = 1 + data.Length; // apci octet + data
-        var adp = new byte[2 + 7 + apduLen];
-        adp[0] = (byte)CemiMessageCode.LDataReq;
-        adp[1] = 0x00; // additional info length
-        adp[2] = Cemi.Ctrl1Standard;
-        adp[3] = Cemi.Ctrl2Individual;
-        BinaryPrimitives.WriteUInt16BigEndian(adp.AsSpan(4), telegram.Source.Raw);
-        BinaryPrimitives.WriteUInt16BigEndian(adp.AsSpan(6), telegram.Destination.Raw);
-        adp[8] = (byte)(0x40 | (apduLen - 1)); // extended frame format + APDU length LSBs
-        adp[9] = (byte)((((ushort)telegram.Apci >> 6) & 0x0F) << 4); // APCI service nibble
-        data.CopyTo(adp, 10);
-        return adp;
-    }
 }
 
 internal static class UInt16Extensions

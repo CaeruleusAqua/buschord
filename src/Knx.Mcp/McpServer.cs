@@ -27,10 +27,13 @@ public sealed partial class McpServer : IAsyncDisposable
         ".knxproj) or create one with project_new, then inspect it with project_info and project_dashboard. " +
         "Mutations (group_address_*, group_link_*, device_*, smart_link_apply, product_replace) only change the in-memory " +
         "project and can be reverted with undo/redo; call project_save to write the .knxproj. Use " +
-        "project_check and smart_link_suggest for analysis, export_csv/export_semantic/export_labels/report_export for " +
+        "project_check and smart_link_suggest for analysis, export_csv/export_semantic/export_labels/report_export/" +
+        "acceptance_protocol_export/handover_package_export for " +
         "exports, project_compare for diffs and catalog_* for manufacturer product databases. For live bus " +
         "access call bus_connect first (mode tunnel searches for a gateway, mode routing joins the multicast " +
-        "group), then bus_read/bus_write/recorder_*; bus_disconnect releases the interface.";
+        "group), then bus_read/recorder_*; bus_disconnect releases the interface. download_plan reports the " +
+        "read-only preflight and dry run for one project device. This build is read-only: " +
+        "group writes, device programming and downloads are disabled.";
 
     internal static readonly JsonSerializerOptions Json = new()
     {

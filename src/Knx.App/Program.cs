@@ -1,5 +1,6 @@
 using Avalonia;
 using Knx;
+using Knx.App.Workbench;
 
 namespace Knx.App;
 
@@ -11,6 +12,14 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Contains("--workbench-selftest")) WorkbenchCheck.Enabled = true;
+        if (WorkbenchCheck.Enabled || args.Any(a => a.StartsWith("--screenshot=", StringComparison.OrdinalIgnoreCase)))
+        {
+            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Temp", "opencode", "workbench-shell-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            Environment.SetEnvironmentVariable("BUSCHORD_SETTINGS", Path.Combine(root, "settings.json"));
+            WorkbenchCheck.TestDirectory = root;
+        }
         if (args is ["--smoke"])
         {
             Smoke.Run();

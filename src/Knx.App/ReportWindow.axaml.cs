@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Knx;
+using Knx.Reports;
 
 namespace Knx.App;
 
@@ -17,7 +18,7 @@ public partial class ReportWindow : Window
 {
     private readonly List<ReportRow> _rows = [];
     private Func<Task>? _primary;
-    private string _csvName = "befunde";
+    private string _csvName = "";
 
     public ReportWindow()
     {
@@ -25,15 +26,17 @@ public partial class ReportWindow : Window
     }
 
     public void Load(string title, string subtitle, IEnumerable<ReportRow> rows,
-        string? primaryText = null, Func<Task>? primary = null, string csvName = "befunde")
+        string? primaryText = null, Func<Task>? primary = null, string? csvName = null)
     {
         Title = title;
         TitleText.Text = title;
         SubtitleText.Text = subtitle;
         _rows.Clear();
         _rows.AddRange(rows);
-        _csvName = csvName;
+        _csvName = csvName ?? Strings.Get("ReportCsvFileName");
         Rows.ItemsSource = _rows;
+        Rows.IsVisible = _rows.Count > 0;
+        EmptyState.IsVisible = _rows.Count == 0;
         PrimaryButton.Content = primaryText ?? Strings.Get("BtnApply");
         PrimaryButton.IsVisible = primary is not null;
         _primary = primary;
@@ -49,26 +52,26 @@ public partial class ReportWindow : Window
 
     private async void OnSaveCsv(object? sender, RoutedEventArgs e)
     {
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        try
         {
-            SuggestedFileName = _csvName + ".csv",
-            DefaultExtension = "csv",
-        });
-        if (file is null) return;
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                SuggestedFileName = _csvName + ".csv",
+                DefaultExtension = "csv",
+            });
+            if (file is null) return;
 
-        var sb = new StringBuilder("Stufe;Objekt;Beschreibung\n");
-        foreach (var row in _rows)
-            sb.AppendLine($"{row.Severity};{Escape(row.Title)};{Escape(row.Detail)}");
+            var csv = ReportCsv.Render(_rows.Select(row => (row.Severity, row.Title, row.Detail)));
 
-        await using var stream = await file.OpenWriteAsync();
-        await using var writer = new StreamWriter(stream, new UTF8Encoding(true));
-        await writer.WriteAsync(sb.ToString());
+            await using var stream = await file.OpenWriteAsync();
+            await using var writer = new StreamWriter(stream, new UTF8Encoding(true));
+            await writer.WriteAsync(csv);
+        }
+        catch (Exception ex)
+        {
+            await ConfirmDialog.ShowMessageAsync(this, Strings.Get("CsvSaveFailed"), ex.Message);
+        }
     }
-
-    private static string Escape(string value)
-        => value.Contains(';') || value.Contains('"')
-            ? $"\"{value.Replace("\"", "\"\"")}\""
-            : value;
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 }

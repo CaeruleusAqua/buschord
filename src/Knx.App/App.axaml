@@ -1,25 +1,48 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Knx.App.Views"
-             xmlns:dock="using:Dock.Model.Mvvm.Controls"
+             xmlns:sys="using:System"
+             xmlns:chrome="using:Avalonia.Controls.Chrome"
+             xmlns:fluent="using:Avalonia.Themes.Fluent"
              x:Class="Knx.App.App">
-
-  <!-- Dock documents and tools carry an existing control in Context; the host window of a
-       floated panel resolves these templates through the application, not the main window. -->
-  <Application.DataTemplates>
-    <DataTemplate DataType="dock:Document" x:DataType="dock:Document">
-      <ContentControl Content="{Binding Context}" />
-    </DataTemplate>
-    <DataTemplate DataType="dock:Tool" x:DataType="dock:Tool">
-      <ContentControl Content="{Binding Context}" />
-    </DataTemplate>
-  </Application.DataTemplates>
 
   <Application.Resources>
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
         <ResourceInclude Source="avares://BusChord/Assets/Icons.axaml" />
+        <ResourceInclude Source="avares://BusChord/Assets/ConceptIcons.axaml" />
       </ResourceDictionary.MergedDictionaries>
+
+      <!-- Control tokens: the single source of geometry for buttons, fields and cards.
+           Variants change surface, border and text colour only; height, padding, radius and
+           the focus ring stay identical so every control sits on the same baseline. -->
+      <sys:Double x:Key="ControlHeight">30</sys:Double>
+      <sys:Double x:Key="ControlHeightCompact">26</sys:Double>
+      <Thickness x:Key="ControlPadding">10,5</Thickness>
+      <Thickness x:Key="ControlPaddingCompact">8,4</Thickness>
+      <CornerRadius x:Key="ControlRadius">4</CornerRadius>
+      <sys:Double x:Key="ControlGap">6</sys:Double>
+      <sys:Double x:Key="IconSize">16</sys:Double>
+      <sys:Double x:Key="IconSizeRibbon">20</sys:Double>
+      <sys:Double x:Key="IconSizeCard">32</sys:Double>
+      <Thickness x:Key="FocusRing">2</Thickness>
+
+      <!-- The single decorations theme shared by the shell: an explicitly empty overlay.
+           A theme without a Template leaves Fluent's 30 px caption and 45 x 30 buttons drawn
+           over the app strip (S0 finding F1); the empty overlay is the form that suppresses
+           both while keeping the 49 px native caption strip, DWM frame and animations. -->
+      <ControlTheme x:Key="WbWindowDecorationsTheme" TargetType="chrome:WindowDrawnDecorations">
+        <Setter Property="DefaultTitleBarHeight" Value="49" />
+        <Setter Property="Template">
+          <WindowDrawnDecorationsTemplate>
+            <WindowDrawnDecorationsContent>
+              <WindowDrawnDecorationsContent.Overlay>
+                <Panel Height="{TemplateBinding TitleBarHeight}" IsHitTestVisible="False" />
+              </WindowDrawnDecorationsContent.Overlay>
+            </WindowDrawnDecorationsContent>
+          </WindowDrawnDecorationsTemplate>
+        </Setter>
+      </ControlTheme>
 
       <ResourceDictionary.ThemeDictionaries>
 
@@ -29,18 +52,28 @@
           <SolidColorBrush x:Key="EtsPanel" Color="#FFFFFF" />
           <SolidColorBrush x:Key="EtsBorder" Color="#BFC5CB" />
           <SolidColorBrush x:Key="EtsHeaderRow" Color="#E3E9EF" />
-          <SolidColorBrush x:Key="EtsText" Color="#14181C" />
+          <SolidColorBrush x:Key="EtsText" Color="#202C3C" />
           <SolidColorBrush x:Key="EtsMuted" Color="#4C5560" />
-          <SolidColorBrush x:Key="EtsAccent" Color="#0B4F8A" />
-          <SolidColorBrush x:Key="EtsAccentHover" Color="#083D6B" />
+          <SolidColorBrush x:Key="EtsAccent" Color="#087E81" />
+          <SolidColorBrush x:Key="EtsAccentHover" Color="#076C70" />
           <SolidColorBrush x:Key="EtsOnAccent" Color="#FFFFFF" />
-          <SolidColorBrush x:Key="EtsAccentSoft" Color="#D6E6F5" />
+          <SolidColorBrush x:Key="EtsAccentSoft" Color="#E4F2F1" />
           <SolidColorBrush x:Key="EtsButtonBackground" Color="#FBFCFD" />
           <SolidColorBrush x:Key="EtsButtonHover" Color="#E1EDF8" />
           <SolidColorBrush x:Key="EtsStatusBackground" Color="#E2E5E8" />
           <SolidColorBrush x:Key="EtsError" Color="#A31B12" />
           <SolidColorBrush x:Key="EtsWarning" Color="#7A5200" />
           <SolidColorBrush x:Key="EtsOk" Color="#14603A" />
+          <SolidColorBrush x:Key="EtsDisabledBackground" Color="#EEF0F2" />
+          <SolidColorBrush x:Key="EtsDisabledText" Color="#606A75" />
+
+          <!-- Fluent disabled surfaces follow the palette instead of the theme's grey. -->
+          <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#EEF0F2" />
+          <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="#BFC5CB" />
+          <SolidColorBrush x:Key="TextControlForegroundDisabled" Color="#606A75" />
+          <SolidColorBrush x:Key="ComboBoxBackgroundDisabled" Color="#EEF0F2" />
+          <SolidColorBrush x:Key="ComboBoxBorderBrushDisabled" Color="#BFC5CB" />
+          <SolidColorBrush x:Key="ComboBoxForegroundDisabled" Color="#606A75" />
 
           <!-- Dock chrome for the light theme. -->
           <Color x:Key="RegionColor">#FFFFFF</Color>
@@ -48,12 +81,18 @@
           <SolidColorBrush x:Key="DockThemeControlBackgroundBrush" Color="#FFFFFF" />
           <SolidColorBrush x:Key="DockThemeBorderLowBrush" Color="#BFC5CB" />
           <SolidColorBrush x:Key="DockThemeForegroundBrush" Color="#14181C" />
-          <SolidColorBrush x:Key="DockThemeAccentBrush" Color="#0B4F8A" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushLow" Color="#0B4F8A" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushMed" Color="#083D6B" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#D6E6F5" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#0B4F8A" />
+          <SolidColorBrush x:Key="DockThemeAccentBrush" Color="#087E81" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushLow" Color="#087E81" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushMed" Color="#076C70" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#E4F2F1" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#087E81" />
           <SolidColorBrush x:Key="DockApplicationAccentForegroundBrush" Color="#FFFFFF" />
+
+          <!-- Tooltips are popup top-levels and do not inherit the window palette. -->
+          <SolidColorBrush x:Key="ToolTipBackground" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="ToolTipForeground" Color="#202C3C" />
+          <SolidColorBrush x:Key="ToolTipBorderBrush" Color="#BFC5CB" />
+          <SolidColorBrush x:Key="TextControlForeground" Color="#202C3C" />
         </ResourceDictionary>
 
         <!-- ===== dark ===== -->
@@ -62,18 +101,28 @@
           <SolidColorBrush x:Key="EtsPanel" Color="#25292E" />
           <SolidColorBrush x:Key="EtsBorder" Color="#4A5158" />
           <SolidColorBrush x:Key="EtsHeaderRow" Color="#2F353B" />
-          <SolidColorBrush x:Key="EtsText" Color="#F2F4F6" />
+          <SolidColorBrush x:Key="EtsText" Color="#E5EBF3" />
           <SolidColorBrush x:Key="EtsMuted" Color="#B9C1C9" />
-          <SolidColorBrush x:Key="EtsAccent" Color="#6CB6F0" />
-          <SolidColorBrush x:Key="EtsAccentHover" Color="#4D9DD8" />
+          <SolidColorBrush x:Key="EtsAccent" Color="#62D1CD" />
+          <SolidColorBrush x:Key="EtsAccentHover" Color="#85E0DC" />
           <SolidColorBrush x:Key="EtsOnAccent" Color="#101418" />
-          <SolidColorBrush x:Key="EtsAccentSoft" Color="#2B4256" />
+          <SolidColorBrush x:Key="EtsAccentSoft" Color="#233F43" />
           <SolidColorBrush x:Key="EtsButtonBackground" Color="#33383E" />
           <SolidColorBrush x:Key="EtsButtonHover" Color="#3E4A56" />
           <SolidColorBrush x:Key="EtsStatusBackground" Color="#2A2E33" />
           <SolidColorBrush x:Key="EtsError" Color="#FF9A91" />
           <SolidColorBrush x:Key="EtsWarning" Color="#F0C36B" />
           <SolidColorBrush x:Key="EtsOk" Color="#79D2A2" />
+          <SolidColorBrush x:Key="EtsDisabledBackground" Color="#2A2E33" />
+          <SolidColorBrush x:Key="EtsDisabledText" Color="#949DA7" />
+
+          <!-- Fluent disabled surfaces follow the palette instead of the theme's grey. -->
+          <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#2A2E33" />
+          <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="#4A5158" />
+          <SolidColorBrush x:Key="TextControlForegroundDisabled" Color="#949DA7" />
+          <SolidColorBrush x:Key="ComboBoxBackgroundDisabled" Color="#2A2E33" />
+          <SolidColorBrush x:Key="ComboBoxBorderBrushDisabled" Color="#4A5158" />
+          <SolidColorBrush x:Key="ComboBoxForegroundDisabled" Color="#949DA7" />
 
           <!-- Dock chrome for the dark theme. -->
           <Color x:Key="RegionColor">#25292E</Color>
@@ -81,12 +130,18 @@
           <SolidColorBrush x:Key="DockThemeControlBackgroundBrush" Color="#25292E" />
           <SolidColorBrush x:Key="DockThemeBorderLowBrush" Color="#4A5158" />
           <SolidColorBrush x:Key="DockThemeForegroundBrush" Color="#F2F4F6" />
-          <SolidColorBrush x:Key="DockThemeAccentBrush" Color="#6CB6F0" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushLow" Color="#6CB6F0" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushMed" Color="#4D9DD8" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#2B4256" />
-          <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#6CB6F0" />
+          <SolidColorBrush x:Key="DockThemeAccentBrush" Color="#62D1CD" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushLow" Color="#62D1CD" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushMed" Color="#85E0DC" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#233F43" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#62D1CD" />
           <SolidColorBrush x:Key="DockApplicationAccentForegroundBrush" Color="#101418" />
+
+          <!-- Tooltips are popup top-levels and do not inherit the window palette. -->
+          <SolidColorBrush x:Key="ToolTipBackground" Color="#25292E" />
+          <SolidColorBrush x:Key="ToolTipForeground" Color="#E5EBF3" />
+          <SolidColorBrush x:Key="ToolTipBorderBrush" Color="#4A5158" />
+          <SolidColorBrush x:Key="TextControlForeground" Color="#E5EBF3" />
         </ResourceDictionary>
 
       </ResourceDictionary.ThemeDictionaries>
@@ -94,18 +149,13 @@
   </Application.Resources>
 
   <Application.Styles>
-    <FluentTheme />
-    <DockFluentTheme />
-
-    <!-- dock tabs follow the app's TabItem look instead of the Fluent defaults -->
-    <Style Selector="DocumentTabStripItem">
-      <Setter Property="FontSize" Value="12.5" />
-      <Setter Property="MinHeight" Value="28" />
-      <Setter Property="Padding" Value="8,2" />
-    </Style>
-    <Style Selector="ToolTabStripItem">
-      <Setter Property="FontSize" Value="12.5" />
-    </Style>
+    <!-- Fluent controls share the application accent palette. -->
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <fluent:ColorPaletteResources x:Key="Light" Accent="#087E81" />
+        <fluent:ColorPaletteResources x:Key="Dark" Accent="#62D1CD" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
 
     <Style Selector="Window">
       <Setter Property="FontFamily" Value="Segoe UI" />
@@ -114,30 +164,75 @@
       <Setter Property="Background" Value="{DynamicResource EtsChrome}" />
     </Style>
 
+    <Style Selector="ToolTip">
+      <Setter Property="Background" Value="{DynamicResource ToolTipBackground}" />
+      <Setter Property="Foreground" Value="{DynamicResource ToolTipForeground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ToolTipBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="8,6" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="ToolTip /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource ToolTipBackground}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource ToolTipForeground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ToolTipBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="8,6" />
+    </Style>
+    <Style Selector="ToolTip TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource ToolTipForeground}" />
+    </Style>
+    <Style Selector="ToolTip /template/ ContentPresenter TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource ToolTipForeground}" />
+    </Style>
+
     <Style Selector="TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
     </Style>
 
-    <!-- buttons: explicit colours so both variants keep a readable contrast -->
-    <Style Selector="Button">
+    <!-- ===== buttons =====
+         One geometry for every variant: ControlHeight, ControlPadding, ControlRadius and the
+         same 2 px focus ring. Variants below change surface, border and text colour only.
+         RepeatButton is excluded on purpose: ScrollBar and NumericUpDown spinner buttons derive
+         from Button but must keep their own compact theme geometry. -->
+    <Style Selector="Button:not(RepeatButton):not(ToggleButton)">
       <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
       <Setter Property="Background" Value="{DynamicResource EtsButtonBackground}" />
       <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="Padding" Value="{StaticResource ControlPadding}" />
+      <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+      <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Opacity" Value="1" />
     </Style>
-    <Style Selector="Button:pointerover /template/ ContentPresenter">
+    <Style Selector="Button.quiet">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button:not(RepeatButton):not(ToggleButton):pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource EtsButtonHover}" />
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
       <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
     </Style>
-    <Style Selector="Button:pressed /template/ ContentPresenter">
+    <Style Selector="Button:not(RepeatButton):not(ToggleButton):pressed /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
     </Style>
-    <Style Selector="Button:disabled /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource EtsButtonBackground}" />
-      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsMuted}" />
+    <Style Selector="Button:not(RepeatButton):not(ToggleButton):focus-visible /template/ ContentPresenter">
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="BorderThickness" Value="{StaticResource FocusRing}" />
+    </Style>
+    <Style Selector="Button:not(RepeatButton):not(ToggleButton):disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsDisabledBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsDisabledText}" />
+    </Style>
+    <Style Selector="Button:not(RepeatButton):not(ToggleButton):disabled TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource EtsDisabledText}" />
     </Style>
 
     <!-- ribbon -->
@@ -145,29 +240,43 @@
       <Setter Property="Background" Value="{DynamicResource EtsChrome}" />
       <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
       <Setter Property="BorderThickness" Value="0,0,0,1" />
-      <Setter Property="Padding" Value="6,4" />
+      <Setter Property="Padding" Value="4" />
     </Style>
     <Style Selector="Border.ribbonGroup">
       <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
       <Setter Property="BorderThickness" Value="0,0,1,0" />
-      <Setter Property="Padding" Value="8,0,10,0" />
-      <Setter Property="Margin" Value="0,0,2,0" />
+      <Setter Property="Padding" Value="2,0" />
     </Style>
-    <Style Selector="TextBlock.caption">
-      <Setter Property="FontSize" Value="10.5" />
-      <Setter Property="Foreground" Value="{DynamicResource EtsMuted}" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-      <Setter Property="Margin" Value="0,3,0,0" />
-    </Style>
+
+    <!-- transparent command-bar action; same geometry as the default button -->
     <Style Selector="Button.tool">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="Transparent" />
-      <Setter Property="Padding" Value="9,5" />
-      <Setter Property="MinWidth" Value="62" />
       <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
     </Style>
+    <Style Selector="Button.tool:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsDisabledText}" />
+    </Style>
 
-    <!-- primary command (catalogue): EtsAccent with a foreground that keeps AA contrast in both themes -->
+    <!-- secondary action: the default surface, named for explicit intent -->
+    <Style Selector="Button.secondary">
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+      <Setter Property="Background" Value="{DynamicResource EtsButtonBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="Padding" Value="{StaticResource ControlPadding}" />
+      <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+      <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
+    </Style>
+
+    <!-- dense secondary action: only for monitor and toolbar rows -->
+    <Style Selector="Button.compact">
+      <Setter Property="Padding" Value="{StaticResource ControlPaddingCompact}" />
+      <Setter Property="Height" Value="{StaticResource ControlHeightCompact}" />
+    </Style>
+
+    <!-- Primary command foreground keeps AA contrast in both themes. -->
     <Style Selector="Button.primary">
       <Setter Property="Background" Value="{DynamicResource EtsAccent}" />
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
@@ -190,6 +299,17 @@
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccentHover}" />
       <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsOnAccent}" />
     </Style>
+    <Style Selector="Button.primary:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsDisabledBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsDisabledText}" />
+    </Style>
+    <Style Selector="Button.primary:disabled TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource EtsDisabledText}" />
+    </Style>
+    <Style Selector="Button.primary:disabled views|Icon">
+      <Setter Property="Foreground" Value="{DynamicResource EtsDisabledText}" />
+    </Style>
 
     <!-- start screen cards: large keyboard-reachable buttons, not decoration -->
     <Style Selector="Button.card">
@@ -197,7 +317,9 @@
       <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Padding" Value="18,16" />
+      <Setter Property="Height" Value="NaN" />
       <Setter Property="MinHeight" Value="136" />
+      <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="VerticalContentAlignment" Value="Stretch" />
@@ -209,7 +331,7 @@
     </Style>
     <Style Selector="Button.card:focus-visible /template/ ContentPresenter">
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
-      <Setter Property="BorderThickness" Value="2" />
+      <Setter Property="BorderThickness" Value="{StaticResource FocusRing}" />
     </Style>
     <Style Selector="Button.card views|Icon">
       <Setter Property="HorizontalAlignment" Value="Left" />
@@ -242,18 +364,6 @@
       <Setter Property="Padding" Value="6,3" />
     </Style>
 
-    <!-- tabs -->
-    <Style Selector="TabItem">
-      <Setter Property="Foreground" Value="{DynamicResource EtsMuted}" />
-      <Setter Property="Padding" Value="12,5" />
-      <Setter Property="FontSize" Value="12.5" />
-      <Setter Property="MinHeight" Value="30" />
-    </Style>
-    <Style Selector="TabItem:selected">
-      <Setter Property="Foreground" Value="{DynamicResource EtsAccent}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-
     <!-- data rows -->
     <Style Selector="ListBoxItem">
       <Setter Property="Padding" Value="0" />
@@ -266,11 +376,11 @@
     </Style>
 
     <!-- Selected rows use blue in both themes; keyboard focus keeps a visible accent ring. -->
-    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
       <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
     </Style>
-    <Style Selector="ListBoxItem:focus-visible /template/ ContentPresenter">
+    <Style Selector="ListBoxItem:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
@@ -285,11 +395,11 @@
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
-    <Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+    <Style Selector="ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
       <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
     </Style>
-    <Style Selector="ComboBoxItem:focus-visible /template/ ContentPresenter">
+    <Style Selector="ComboBoxItem:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
@@ -298,12 +408,20 @@
     <Style Selector="PathIcon, views|Icon">
       <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
     </Style>
+    <!-- Icon sizes: controls 16, ribbon 20, cards 32; local Width/Height override these. -->
+    <Style Selector="views|Icon">
+      <Setter Property="Width" Value="{StaticResource IconSize}" />
+      <Setter Property="Height" Value="{StaticResource IconSize}" />
+    </Style>
+    <Style Selector="Button views|Icon">
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
     <Style Selector="Button:disabled PathIcon, Button:disabled views|Icon, ListBoxItem:disabled PathIcon, ListBoxItem:disabled views|Icon, TreeViewItem:disabled PathIcon, TreeViewItem:disabled views|Icon, ComboBoxItem:disabled PathIcon, ComboBoxItem:disabled views|Icon">
       <Setter Property="Opacity" Value="0.4" />
     </Style>
     <Style Selector="TextBlock.mono">
       <Setter Property="FontFamily" Value="Consolas" />
-      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="FontSize" Value="11" />
     </Style>
     <Style Selector="TextBlock.muted">
       <Setter Property="Foreground" Value="{DynamicResource EtsMuted}" />
@@ -314,37 +432,182 @@
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Foreground" Value="{DynamicResource EtsAccent}" />
     </Style>
+
+    <!-- fields: same height, padding and radius as buttons so rows share one baseline -->
     <Style Selector="TextBox">
       <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
       <Setter Property="Background" Value="{DynamicResource EtsPanel}" />
       <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="Padding" Value="{StaticResource ControlPadding}" />
+      <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+      <Setter Property="MinHeight" Value="{StaticResource ControlHeight}" />
+      <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
+    </Style>
+    <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="BorderThickness" Value="{StaticResource FocusRing}" />
+    </Style>
+    <!-- text field with a leading icon, e.g. the monitor filter -->
+    <Style Selector="TextBox.search">
+      <Setter Property="Padding" Value="28,4,6,4" />
     </Style>
     <Style Selector="ComboBox">
       <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
       <Setter Property="Background" Value="{DynamicResource EtsPanel}" />
       <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="Padding" Value="{StaticResource ControlPadding}" />
+      <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+      <Setter Property="MinHeight" Value="{StaticResource ControlHeight}" />
+      <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ComboBox:focus-visible /template/ Border#HighlightBackground">
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="BorderThickness" Value="{StaticResource FocusRing}" />
+    </Style>
+    <Style Selector="NumericUpDown">
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+      <Setter Property="Background" Value="{DynamicResource EtsPanel}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="Padding" Value="{StaticResource ControlPadding}" />
+      <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+      <Setter Property="MinHeight" Value="{StaticResource ControlHeight}" />
+      <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
+    </Style>
+    <!-- The inner editor of a spinner shares the outer control's box; keep the ring on the box. -->
+    <Style Selector="NumericUpDown TextBox">
+      <Setter Property="Height" Value="NaN" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="NumericUpDown TextBox:focus /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
     </Style>
     <Style Selector="MenuItem">
       <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
     </Style>
 
-    <!-- Dock tool chrome: the global Button style above must not box or tint its small buttons. -->
-    <Style Selector="ToolChromeControl Button">
+    <!-- Opt-in V4 resources/classes; not applied to legacy panels. -->
+    <StyleInclude Source="avares://BusChord/Workbench/WorkbenchTheme.axaml" />
+
+    <!-- ===== shared V4 dialog chrome =====
+         Dialogs opt in with Window.wb-dialog: 22 px content, 13 px footer, title 22,
+         and surfaces with the 11 px WbDialogRadius token. -->
+    <Style Selector="Window.wb-dialog">
+      <Setter Property="FontFamily" Value="{DynamicResource WbFontFamily}" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+      <Setter Property="Background" Value="{DynamicResource WbBackground}" />
+    </Style>
+    <Style Selector="TextBlock.wb-label">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.wb-dialog-surface">
+      <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="{DynamicResource WbDialogRadius}" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="Border.wb-dialog-footer">
+      <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+      <Setter Property="BorderThickness" Value="0,1,0,0" />
+      <Setter Property="Padding" Value="22,13" />
+    </Style>
+    <Style Selector="ListBox.wb-list">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.wb-list ListBoxItem">
+      <Setter Property="MinHeight" Value="{DynamicResource WbRowHeight}" />
+      <Setter Property="Padding" Value="{DynamicResource WbCellPadding}" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    </Style>
+    <Style Selector="ListBox.wb-list ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbHover}" />
+    </Style>
+    <Style Selector="ListBox.wb-list ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbSelected}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource WbSelectedText}" />
+    </Style>
+    <Style Selector="ListBox.wb-list ListBoxItem TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+    </Style>
+    <Style Selector="ListBox.wb-list ListBoxItem:selected TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
+    </Style>
+
+    <!-- Destructive actions keep the outlined button shape but switch border and text to
+         WbError, with a filled hover/pressed state for a clear affordance. -->
+    <Style Selector="Button.wb-button.wb-danger">
+      <Setter Property="Foreground" Value="{DynamicResource WbError}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbError}" />
+    </Style>
+    <Style Selector="Button.wb-button.wb-danger:pointerover:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbError}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbError}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource WbPaper}" />
+    </Style>
+    <Style Selector="Button.wb-button.wb-danger:pressed:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbError}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbError}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource WbPaper}" />
+    </Style>
+    <Style Selector="Button.wb-button.wb-danger:pointerover TextBlock, Button.wb-button.wb-danger:pressed TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource WbPaper}" />
+    </Style>
+    <Style Selector="Button.wb-button.wb-danger:pointerover views|Icon, Button.wb-button.wb-danger:pressed views|Icon">
+      <Setter Property="Foreground" Value="{DynamicResource WbPaper}" />
+    </Style>
+
+    <!-- V4 field geometry for the numeric editor and its spinner. -->
+    <Style Selector="NumericUpDown.wb-field">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Height" Value="30" />
+      <Setter Property="Padding" Value="8,3" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+      <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+    </Style>
+    <Style Selector="NumericUpDown.wb-field TextBox">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="NumericUpDown /template/ ButtonSpinner">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton">
       <Setter Property="MinWidth" Value="0" />
-      <Setter Property="Padding" Value="3" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
     </Style>
-    <Style Selector="ToolChromeControl Button:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
-      <Setter Property="BorderBrush" Value="Transparent" />
-      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
     </Style>
-    <Style Selector="ToolChromeControl Path">
-      <Setter Property="Fill" Value="{DynamicResource EtsMuted}" />
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:disabled">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
     </Style>
-    <Style Selector="ToolChromeControl:active Path">
-      <Setter Property="Fill" Value="{DynamicResource EtsOnAccent}" />
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbHover}" />
+    </Style>
+    <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource WbTint}" />
     </Style>
   </Application.Styles>
 </Application>

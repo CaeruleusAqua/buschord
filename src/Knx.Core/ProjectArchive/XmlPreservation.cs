@@ -59,6 +59,11 @@ internal static class XmlPreservation
     private static void MergeElement(XElement target, XElement before, XElement after,
         ILookup<string, (XElement Raw, XElement Before)> originals)
     {
+        // Remove a legacy Address attribute when the segment already has Number.
+        if (after.Name.LocalName == "Segment" && after.Attribute("Number") is not null &&
+            target.Attribute("Address") is not null)
+            target.SetAttributeValue("Address", null);
+
         foreach (var name in before.Attributes().Concat(after.Attributes()).Where(a => !a.IsNamespaceDeclaration).Select(a => a.Name).Distinct())
             if ((string?)before.Attribute(name) != (string?)after.Attribute(name) || target.Attribute(name) is null)
                 target.SetAttributeValue(name, (string?)after.Attribute(name));

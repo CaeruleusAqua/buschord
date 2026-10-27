@@ -57,7 +57,9 @@ public readonly struct GroupAddress : IEquatable<GroupAddress>
 {
     public GroupAddress(ushort raw)
     {
-        if (raw is 0 or > 0x7FFF) throw new ArgumentOutOfRangeException(nameof(raw));
+        // KNX group addresses use the full 16-bit space (main groups 0-31); only the
+        // reserved all-zero address is rejected.
+        if (raw is 0) throw new ArgumentOutOfRangeException(nameof(raw));
         Raw = raw;
     }
 

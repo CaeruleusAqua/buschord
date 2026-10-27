@@ -44,6 +44,12 @@ public static class Knxproj
         return ArchiveState.Load(path, password);
     }
 
+    /// <summary>True when the failure is a missing or wrong project password.</summary>
+    public static bool IsPasswordError(Exception exception) =>
+        exception is InvalidDataException &&
+        (exception.Message == EncryptedArchive.PasswordRequiredMessage ||
+         exception.Message == EncryptedArchive.WrongPasswordMessage);
+
     /// <summary>
     /// Lädt die Application-Program-XML (KSXML) eines Geräts aus dem Projektarchiv.
     /// Accepted RefId forms: "M-00FA_H-Base_I-0000_A-0001-0E-1234" (Hardware2Program)
@@ -106,14 +112,18 @@ public static class Knxproj
                         new XAttribute("Id", l.Id),
                         new XAttribute("Address", l.Address),
                         new XAttribute("Name", l.Name ?? ""),
-                        new XAttribute("MediumTypeRefId", l.MediumTypeRefId));
+                        new XAttribute("MediumTypeRefId", l.MediumTypeRefId),
+                        l.DomainAddress is { } lineDomain ? new XAttribute("DomainAddress", lineDomain) : null);
                     foreach (var d in l.Devices) lineEl.Add(DeviceXml(d, ns));
                     foreach (var s in l.Segments)
                     {
+                        // Serialize the segment number and its required medium.
                         var segmentEl = new XElement(ns + XmlNames.Segment,
                             new XAttribute("Id", s.Id),
-                            new XAttribute("Address", s.Address),
-                            new XAttribute("Name", s.Name ?? ""));
+                            new XAttribute("Number", s.Address),
+                            new XAttribute("Name", s.Name ?? ""),
+                            new XAttribute("MediumTypeRefId", s.MediumTypeRefId ?? l.MediumTypeRefId),
+                            s.DomainAddress is { } segmentDomain ? new XAttribute("DomainAddress", segmentDomain) : null);
                         foreach (var d in s.Devices) segmentEl.Add(DeviceXml(d, ns));
                         lineEl.Add(segmentEl);
                     }
@@ -136,6 +146,9 @@ public static class Knxproj
             installationsEl.Add(installationEl);
         }
         projectEl.Add(installationsEl);
+        if (!project.Workbench.IsEmpty)
+            projectEl.Add(new XElement(ExtensionNamespace + "Workbench", new XAttribute("Version", 1),
+                new XAttribute("Data", System.Text.Json.JsonSerializer.Serialize(project.Workbench))));
         var knx = new XElement(ns + XmlNames.Knx,
             new XAttribute("xmlns", ns),
             new XAttribute(XNamespace.Xmlns + "xsi", XNamespace.Get("http://www.w3.org/2001/XMLSchema-instance")),
@@ -273,6 +286,7 @@ public static class Knxproj
                         Name = (string?)lineEl.Attribute("Name"),
                         MediumTypeRefId = (string?)lineEl.Attribute("MediumTypeRefId") ??
                             (string?)Elements(lineEl, XmlNames.Segment).FirstOrDefault()?.Attribute("MediumTypeRefId") ?? "MT-0",
+                        DomainAddress = (string?)lineEl.Attribute("DomainAddress"),
                     };
                     line.Devices.AddRange(Elements(lineEl, XmlNames.DeviceInstance).Select(d => ReadDevice(d, raw21, area.Address, line.Address)));
                     foreach (var segEl in Elements(lineEl, XmlNames.Segment))
@@ -282,6 +296,8 @@ public static class Knxproj
                             Id = (string?)segEl.Attribute("Id") ?? "S-" + (string?)segEl.Attribute("Address"),
                             Address = byte.Parse((string?)segEl.Attribute("Address") ?? (string?)segEl.Attribute("Number") ?? "0"),
                             Name = (string?)segEl.Attribute("Name"),
+                            MediumTypeRefId = (string?)segEl.Attribute("MediumTypeRefId"),
+                            DomainAddress = (string?)segEl.Attribute("DomainAddress"),
                         };
                         segment.Devices.AddRange(Elements(segEl, XmlNames.DeviceInstance).Select(d => ReadDevice(d, raw21, area.Address, line.Address)));
                         line.Segments.Add(segment);
@@ -296,9 +312,48 @@ public static class Knxproj
             if (Element(instEl, XmlNames.Locations) is { } locations) ReadLocations(installation, locations);
             project.Installations.Add(installation);
         }
+        if (proj.Element(ExtensionNamespace + "Workbench") is { } workbench)
+        {
+            if ((int?)workbench.Attribute("Version") != 1) throw new InvalidDataException("Unsupported BusChord Workbench metadata version.");
+            Workbench.WorkbenchMetadata metadata;
+            try
+            {
+                metadata = System.Text.Json.JsonSerializer.Deserialize<Workbench.WorkbenchMetadata>((string?)workbench.Attribute("Data") ?? "")
+                    ?? throw new InvalidDataException("Invalid BusChord Workbench metadata.");
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                throw new InvalidDataException("Invalid BusChord Workbench metadata: " + ex.Message, ex);
+            }
+            metadata.Validate();
+            project.Workbench = metadata;
+        }
         project.BaselineXml = GenerateXml(project);
         project.OriginalXml = new XDocument(doc);
+        NormalizeGroupAddressReferences(project);
         return project;
+    }
+
+    /// <summary>
+    /// /21 group-address element ids may carry a project/range prefix while communication
+    /// object links may use the local <c>GA-n</c> suffix. Normalize only unambiguous suffixes;
+    /// /23 and already-resolved links stay untouched.
+    /// </summary>
+    private static void NormalizeGroupAddressReferences(Project project)
+    {
+        var groups = ProjectQuery.GroupAddresses(project).ToList();
+        var ids = groups.Select(g => g.Id).ToHashSet(StringComparer.Ordinal);
+        var byLocal = groups
+            .Select(g => (Group: g, Local: g.Id[(g.Id.LastIndexOf('_') + 1)..]))
+            .Where(x => x.Local.Length > 0)
+            .GroupBy(x => x.Local, StringComparer.Ordinal)
+            .Where(x => x.Count() == 1 && !ids.Contains(x.Key))
+            .ToDictionary(x => x.Key, x => x.Single().Group, StringComparer.Ordinal);
+        if (byLocal.Count == 0) return;
+        foreach (var (_, comObject) in ProjectQuery.ComObjectRefs(project))
+            for (var index = 0; index < comObject.Links.Count; index++)
+                if (!ids.Contains(comObject.Links[index]) && byLocal.TryGetValue(comObject.Links[index], out var group))
+                    comObject.Links[index] = group.Id;
     }
 
     private static GroupRange ReadRange(XElement element)
