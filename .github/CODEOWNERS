@@ -1,0 +1,13 @@
+# Default owner for everything in this repository.
+* @CaeruleusAqua
+
+# Split ownership later by uncommenting and replacing the owner.
+# A later rule wins over an earlier one, so keep the catch-all above and add
+# narrower paths below.
+#
+# /docs/                @CaeruleusAqua another-docs-maintainer
+# /.github/             @CaeruleusAqua
+# /src/Knx.Bus/         @CaeruleusAqua
+# /src/Knx.Core/        @CaeruleusAqua
+# /src/Knx.App/         @CaeruleusAqua
+# /tests/               @CaeruleusAqua

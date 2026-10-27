@@ -1,0 +1,350 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Knx.App.Views"
+             xmlns:dock="using:Dock.Model.Mvvm.Controls"
+             x:Class="Knx.App.App">
+
+  <!-- Dock documents and tools carry an existing control in Context; the host window of a
+       floated panel resolves these templates through the application, not the main window. -->
+  <Application.DataTemplates>
+    <DataTemplate DataType="dock:Document" x:DataType="dock:Document">
+      <ContentControl Content="{Binding Context}" />
+    </DataTemplate>
+    <DataTemplate DataType="dock:Tool" x:DataType="dock:Tool">
+      <ContentControl Content="{Binding Context}" />
+    </DataTemplate>
+  </Application.DataTemplates>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://BusChord/Assets/Icons.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+
+      <ResourceDictionary.ThemeDictionaries>
+
+        <!-- ===== light ===== -->
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="EtsChrome" Color="#EFF1F3" />
+          <SolidColorBrush x:Key="EtsPanel" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="EtsBorder" Color="#BFC5CB" />
+          <SolidColorBrush x:Key="EtsHeaderRow" Color="#E3E9EF" />
+          <SolidColorBrush x:Key="EtsText" Color="#14181C" />
+          <SolidColorBrush x:Key="EtsMuted" Color="#4C5560" />
+          <SolidColorBrush x:Key="EtsAccent" Color="#0B4F8A" />
+          <SolidColorBrush x:Key="EtsAccentHover" Color="#083D6B" />
+          <SolidColorBrush x:Key="EtsOnAccent" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="EtsAccentSoft" Color="#D6E6F5" />
+          <SolidColorBrush x:Key="EtsButtonBackground" Color="#FBFCFD" />
+          <SolidColorBrush x:Key="EtsButtonHover" Color="#E1EDF8" />
+          <SolidColorBrush x:Key="EtsStatusBackground" Color="#E2E5E8" />
+          <SolidColorBrush x:Key="EtsError" Color="#A31B12" />
+          <SolidColorBrush x:Key="EtsWarning" Color="#7A5200" />
+          <SolidColorBrush x:Key="EtsOk" Color="#14603A" />
+
+          <!-- Dock chrome for the light theme. -->
+          <Color x:Key="RegionColor">#FFFFFF</Color>
+          <SolidColorBrush x:Key="DockThemeBackgroundBrush" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="DockThemeControlBackgroundBrush" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="DockThemeBorderLowBrush" Color="#BFC5CB" />
+          <SolidColorBrush x:Key="DockThemeForegroundBrush" Color="#14181C" />
+          <SolidColorBrush x:Key="DockThemeAccentBrush" Color="#0B4F8A" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushLow" Color="#0B4F8A" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushMed" Color="#083D6B" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#D6E6F5" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#0B4F8A" />
+          <SolidColorBrush x:Key="DockApplicationAccentForegroundBrush" Color="#FFFFFF" />
+        </ResourceDictionary>
+
+        <!-- ===== dark ===== -->
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="EtsChrome" Color="#1C1F23" />
+          <SolidColorBrush x:Key="EtsPanel" Color="#25292E" />
+          <SolidColorBrush x:Key="EtsBorder" Color="#4A5158" />
+          <SolidColorBrush x:Key="EtsHeaderRow" Color="#2F353B" />
+          <SolidColorBrush x:Key="EtsText" Color="#F2F4F6" />
+          <SolidColorBrush x:Key="EtsMuted" Color="#B9C1C9" />
+          <SolidColorBrush x:Key="EtsAccent" Color="#6CB6F0" />
+          <SolidColorBrush x:Key="EtsAccentHover" Color="#4D9DD8" />
+          <SolidColorBrush x:Key="EtsOnAccent" Color="#101418" />
+          <SolidColorBrush x:Key="EtsAccentSoft" Color="#2B4256" />
+          <SolidColorBrush x:Key="EtsButtonBackground" Color="#33383E" />
+          <SolidColorBrush x:Key="EtsButtonHover" Color="#3E4A56" />
+          <SolidColorBrush x:Key="EtsStatusBackground" Color="#2A2E33" />
+          <SolidColorBrush x:Key="EtsError" Color="#FF9A91" />
+          <SolidColorBrush x:Key="EtsWarning" Color="#F0C36B" />
+          <SolidColorBrush x:Key="EtsOk" Color="#79D2A2" />
+
+          <!-- Dock chrome for the dark theme. -->
+          <Color x:Key="RegionColor">#25292E</Color>
+          <SolidColorBrush x:Key="DockThemeBackgroundBrush" Color="#25292E" />
+          <SolidColorBrush x:Key="DockThemeControlBackgroundBrush" Color="#25292E" />
+          <SolidColorBrush x:Key="DockThemeBorderLowBrush" Color="#4A5158" />
+          <SolidColorBrush x:Key="DockThemeForegroundBrush" Color="#F2F4F6" />
+          <SolidColorBrush x:Key="DockThemeAccentBrush" Color="#6CB6F0" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushLow" Color="#6CB6F0" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushMed" Color="#4D9DD8" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushHigh" Color="#2B4256" />
+          <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="#6CB6F0" />
+          <SolidColorBrush x:Key="DockApplicationAccentForegroundBrush" Color="#101418" />
+        </ResourceDictionary>
+
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme />
+    <DockFluentTheme />
+
+    <!-- dock tabs follow the app's TabItem look instead of the Fluent defaults -->
+    <Style Selector="DocumentTabStripItem">
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="Padding" Value="8,2" />
+    </Style>
+    <Style Selector="ToolTabStripItem">
+      <Setter Property="FontSize" Value="12.5" />
+    </Style>
+
+    <Style Selector="Window">
+      <Setter Property="FontFamily" Value="Segoe UI" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+      <Setter Property="Background" Value="{DynamicResource EtsChrome}" />
+    </Style>
+
+    <Style Selector="TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+
+    <!-- buttons: explicit colours so both variants keep a readable contrast -->
+    <Style Selector="Button">
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+      <Setter Property="Background" Value="{DynamicResource EtsButtonBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsButtonHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+    <Style Selector="Button:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
+    </Style>
+    <Style Selector="Button:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsButtonBackground}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsMuted}" />
+    </Style>
+
+    <!-- ribbon -->
+    <Style Selector="Border.ribbon">
+      <Setter Property="Background" Value="{DynamicResource EtsChrome}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Padding" Value="6,4" />
+    </Style>
+    <Style Selector="Border.ribbonGroup">
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="BorderThickness" Value="0,0,1,0" />
+      <Setter Property="Padding" Value="8,0,10,0" />
+      <Setter Property="Margin" Value="0,0,2,0" />
+    </Style>
+    <Style Selector="TextBlock.caption">
+      <Setter Property="FontSize" Value="10.5" />
+      <Setter Property="Foreground" Value="{DynamicResource EtsMuted}" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,3,0,0" />
+    </Style>
+    <Style Selector="Button.tool">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Padding" Value="9,5" />
+      <Setter Property="MinWidth" Value="62" />
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+
+    <!-- primary command (catalogue): EtsAccent with a foreground that keeps AA contrast in both themes -->
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="Foreground" Value="{DynamicResource EtsOnAccent}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.primary TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource EtsOnAccent}" />
+    </Style>
+    <Style Selector="Button.primary views|Icon">
+      <Setter Property="Foreground" Value="{DynamicResource EtsOnAccent}" />
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsAccentHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccentHover}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsOnAccent}" />
+    </Style>
+    <Style Selector="Button.primary:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsAccentHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccentHover}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsOnAccent}" />
+    </Style>
+
+    <!-- start screen cards: large keyboard-reachable buttons, not decoration -->
+    <Style Selector="Button.card">
+      <Setter Property="Background" Value="{DynamicResource EtsPanel}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="18,16" />
+      <Setter Property="MinHeight" Value="136" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.card:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+    <Style Selector="Button.card:focus-visible /template/ ContentPresenter">
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="BorderThickness" Value="2" />
+    </Style>
+    <Style Selector="Button.card views|Icon">
+      <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
+    <!-- status bar -->
+    <Style Selector="Border.statusBar">
+      <Setter Property="Background" Value="{DynamicResource EtsStatusBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="BorderThickness" Value="0,1,0,0" />
+      <Setter Property="Padding" Value="8,3" />
+    </Style>
+
+    <!-- panels -->
+    <Style Selector="Border.panel">
+      <Setter Property="Background" Value="{DynamicResource EtsPanel}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBlock.panelHeader">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="Background" Value="{DynamicResource EtsHeaderRow}" />
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+    <Style Selector="TextBlock.columnHeader">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource EtsMuted}" />
+      <Setter Property="Padding" Value="6,3" />
+    </Style>
+
+    <!-- tabs -->
+    <Style Selector="TabItem">
+      <Setter Property="Foreground" Value="{DynamicResource EtsMuted}" />
+      <Setter Property="Padding" Value="12,5" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="MinHeight" Value="30" />
+    </Style>
+    <Style Selector="TabItem:selected">
+      <Setter Property="Foreground" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <!-- data rows -->
+    <Style Selector="ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+    <Style Selector="TreeViewItem">
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+
+    <!-- Selected rows use blue in both themes; keyboard focus keeps a visible accent ring. -->
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+    <Style Selector="ListBoxItem:focus-visible /template/ ContentPresenter">
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TreeViewItem:selected /template/ Border#PART_LayoutRoot">
+      <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccentSoft}" />
+    </Style>
+    <Style Selector="TreeViewItem:selected /template/ ContentPresenter#PART_HeaderPresenter">
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+    <Style Selector="TreeViewItem:focus-visible /template/ Border#PART_LayoutRoot">
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+    <Style Selector="ComboBoxItem:focus-visible /template/ ContentPresenter">
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <!-- icons: text colour by default, and the same 40% fade the review asks for when unavailable -->
+    <Style Selector="PathIcon, views|Icon">
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+    <Style Selector="Button:disabled PathIcon, Button:disabled views|Icon, ListBoxItem:disabled PathIcon, ListBoxItem:disabled views|Icon, TreeViewItem:disabled PathIcon, TreeViewItem:disabled views|Icon, ComboBoxItem:disabled PathIcon, ComboBoxItem:disabled views|Icon">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+    <Style Selector="TextBlock.mono">
+      <Setter Property="FontFamily" Value="Consolas" />
+      <Setter Property="FontSize" Value="11.5" />
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="{DynamicResource EtsMuted}" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="TextBlock.kpi">
+      <Setter Property="FontSize" Value="22" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource EtsAccent}" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+      <Setter Property="Background" Value="{DynamicResource EtsPanel}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+      <Setter Property="Background" Value="{DynamicResource EtsPanel}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource EtsBorder}" />
+    </Style>
+    <Style Selector="MenuItem">
+      <Setter Property="Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+
+    <!-- Dock tool chrome: the global Button style above must not box or tint its small buttons. -->
+    <Style Selector="ToolChromeControl Button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="3" />
+    </Style>
+    <Style Selector="ToolChromeControl Button:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource EtsAccentSoft}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource EtsText}" />
+    </Style>
+    <Style Selector="ToolChromeControl Path">
+      <Setter Property="Fill" Value="{DynamicResource EtsMuted}" />
+    </Style>
+    <Style Selector="ToolChromeControl:active Path">
+      <Setter Property="Fill" Value="{DynamicResource EtsOnAccent}" />
+    </Style>
+  </Application.Styles>
+</Application>

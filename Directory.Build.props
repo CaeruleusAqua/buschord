@@ -1,0 +1,5 @@
+<Project>
+  <ItemGroup Condition="$([System.String]::Copy('$(MSBuildProjectName)').EndsWith('.Tests'))">
+    <Compile Include="$(MSBuildThisFileDirectory)tests/ArchiveProtectionTestSettings.cs" Link="ArchiveProtectionTestSettings.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,39 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="using:Knx.App.Localization"
+        x:Class="Knx.App.CompareWindow"
+        Title="{loc:Tr TitleCompare}" Width="900" Height="640">
+  <DockPanel Margin="12">
+    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,8">
+      <TextBlock x:Name="SummaryText" FontWeight="Bold" />
+      <TextBlock x:Name="ProjectsText" Foreground="Gray" FontSize="11" />
+    </StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,12,0,0">
+      <Button Content="{loc:Tr BtnSaveCsvDots}" Click="OnExportCsv" />
+      <Button Content="{loc:Tr BtnClose}" Click="OnClose" />
+    </StackPanel>
+    <DockPanel>
+      <Grid DockPanel.Dock="Top" ColumnDefinitions="260,110,180,90,*" Background="{DynamicResource EtsHeaderRow}">
+        <TextBlock Grid.Column="0" Classes="columnHeader" Text="{loc:Tr ColPath}" />
+        <TextBlock Grid.Column="1" Classes="columnHeader" Text="{loc:Tr ColType}" />
+        <TextBlock Grid.Column="2" Classes="columnHeader" Text="{loc:Tr ColName}" />
+        <TextBlock Grid.Column="3" Classes="columnHeader" Text="{loc:Tr ColChange}" />
+        <TextBlock Grid.Column="4" Classes="columnHeader" Text="{loc:Tr ColValue}" />
+      </Grid>
+      <ListBox x:Name="DiffGrid" IsVisible="True">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <Grid ColumnDefinitions="260,110,180,90,*">
+              <TextBlock Grid.Column="0" Text="{Binding Path}" FontFamily="Consolas" FontSize="11" />
+              <TextBlock Grid.Column="1" Text="{Binding ObjectType}" FontSize="11" />
+              <TextBlock Grid.Column="2" Text="{Binding ObjectName}" FontSize="11" />
+              <TextBlock Grid.Column="3" Text="{Binding Modification}" FontSize="11" FontWeight="Bold" />
+              <TextBlock Grid.Column="4" Text="{Binding NewValue}" FontSize="11" Foreground="Gray" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
+  </DockPanel>
+</Window>
