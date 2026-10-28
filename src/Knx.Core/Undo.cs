@@ -9,7 +9,8 @@ namespace Knx;
 /// </summary>
 public sealed class UndoStack
 {
-    private readonly List<(string Xml, ArchiveState? Archive, Dictionary<string, CatalogHardware> Hardware)> _snapshots = [];
+    private readonly List<(string Xml, ArchiveState? Archive, Dictionary<string, CatalogHardware> Hardware,
+        Dictionary<Workbench.ObjectKey, ObjectTextDefinition> Texts)> _snapshots = [];
     private int _savedIndex = -1;
 
     public UndoStack(int capacity = 60) => Capacity = capacity;
@@ -55,7 +56,7 @@ public sealed class UndoStack
         }
         // Hardware facts live in the archive's Hardware.xml, not in the project XML; the snapshot keeps
         // them so a restored project can still run the bus-power and coupler checks.
-        _snapshots.Add((xml, project.ArchiveState, new Dictionary<string, CatalogHardware>(project.Hardware)));
+        _snapshots.Add((xml, project.ArchiveState, new Dictionary<string, CatalogHardware>(project.Hardware), new(project.ObjectTextDefinitions)));
         if (_snapshots.Count > Capacity)
         {
             _snapshots.RemoveAt(0);
@@ -84,6 +85,8 @@ public sealed class UndoStack
         var project = Knxproj.FromXml(XDocument.Parse(snapshot.Xml, LoadOptions.PreserveWhitespace));
         project.ArchiveState = snapshot.Archive;
         foreach (var (id, fact) in snapshot.Hardware) project.Hardware[id] = fact;
+        foreach (var (id, definition) in snapshot.Texts) project.ObjectTextDefinitions[id] = definition;
+        foreach (var device in ProjectQuery.DeviceList(project)) ApplicationTexts.RefreshObjects(project, device);
         return project;
     }
 }

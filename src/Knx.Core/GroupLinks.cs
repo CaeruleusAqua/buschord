@@ -12,9 +12,22 @@ public static class GroupLinks
         return true;
     }
 
-    /// <summary>Removes the link (including legacy duplicates); returns false if absent.</summary>
+    /// <summary>Removes the link (including legacy duplicates) and its connector facts; returns whether anything changed.</summary>
     public static bool Unlink(Project project, DeviceInstance device, string comObjectRefId, string groupAddressId)
-        => Validate(project, device, comObjectRefId, groupAddressId).Links.RemoveAll(id => id == groupAddressId) > 0;
+    {
+        var obj = Validate(project, device, comObjectRefId, groupAddressId);
+        var changed = obj.Links.RemoveAll(id => id == groupAddressId) > 0;
+        if (project.Workbench.Objects.GetValueOrDefault(new Workbench.ObjectKey(device.Id, comObjectRefId).ToString()) is { } metadata)
+        {
+            changed |= metadata.Connectors.Remove(groupAddressId);
+            if (metadata.SendingGroupId == groupAddressId)
+            {
+                metadata.SendingGroupId = null;
+                changed = true;
+            }
+        }
+        return changed;
+    }
 
     private static ComObjectInstanceRef Validate(Project project, DeviceInstance device,
         string comObjectRefId, string groupAddressId)

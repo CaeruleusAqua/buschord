@@ -2,10 +2,9 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Knx;
 
-                                                                             
-                                                                                      
-                                                                                    
-              
+/// <summary>KSXML parameter system: types, blocks, instances and references.
+/// Contains parameter types, blocks, instances and references used by the editor.
+/// </summary>
 
 /// <summary>Datentyp eines Parameters (KSXML).</summary>
 public enum ParameterDataType
@@ -68,10 +67,17 @@ public sealed class ParameterType
         SizeInBit = other.SizeInBit;
         Encoding = other.Encoding;
         NumberType = other.NumberType;
+        AddressType = other.AddressType;
+        AddressVersion = other.AddressVersion;
+        TimeUnit = other.TimeUnit;
+        TimeUIHint = other.TimeUIHint;
+        RawDataMaxSize = other.RawDataMaxSize;
         UnsupportedReason = other.UnsupportedReason;
         UIHint = other.UIHint;
         Unit = other.Unit;
         Description = other.Description;
+        PictureResourceId = other.PictureResourceId;
+        PictureAlignment = other.PictureAlignment;
         IsVisible = other.IsVisible;
         foreach (var restriction in other.Restrictions) Restrictions.Add(new ParameterRestriction(restriction));
     }
@@ -82,17 +88,28 @@ public sealed class ParameterType
     public int SizeInBit { get; set; }
     public string? Encoding { get; set; }
     public string? NumberType { get; set; }
+    public string? AddressType { get; set; }
+    public string? AddressVersion { get; set; }
+    /// <summary>TypeTime storage unit; separate from the decorative ParameterType.Unit label.</summary>
+    public string? TimeUnit { get; set; }
+    /// <summary>Original time display hint, preserved without converting the stored integer to a clock time.</summary>
+    public string? TimeUIHint { get; set; }
+    /// <summary>TypeRawData maximum decoded size in bytes; not a bit-size declaration.</summary>
+    public int? RawDataMaxSize { get; set; }
     public string? UnsupportedReason { get; set; }
     public ParameterUIHint UIHint { get; set; } = ParameterUIHint.None;
     public List<ParameterRestriction> Restrictions { get; } = [];
     public string? Unit { get; set; }
     public string? Description { get; set; }
     public bool IsVisible { get; set; } = true;
+    public string? PictureResourceId { get; set; }
+    public string? PictureAlignment { get; set; }
 }
 
 /// <summary>Parameter-Block (KSXML: ParameterBlock) — Container mit Zeilen/Spalten.</summary>
 public sealed class ParameterBlock
 {
+    internal string? DeclaredName { get; set; }
     public required string Id { get; init; }
     public string? Name { get; set; }
     public int Rows { get; set; } = 1;
@@ -134,9 +151,15 @@ public sealed class ParameterInstance
         Id = other.Id;
         Name = other.Name;
         ParameterId = other.ParameterId;
+        DeclaredName = other.DeclaredName;
+        SectionTitle = other.SectionTitle;
+        Placement = other.Placement;
+        IsDerivedValue = other.IsDerivedValue;
         Unit = other.Unit;
         UnsupportedReason = other.UnsupportedReason;
         Description = other.Description;
+        Storage = other.Storage;
+        ModuleOrigin = other.ModuleOrigin;
         ParameterTypeId = other.ParameterTypeId;
         ParameterType = other.ParameterType;
         Value = other.Value;
@@ -151,12 +174,19 @@ public sealed class ParameterInstance
     }
 
     public required string Id { get; init; }
-    public required string Name { get; init; }
+    public required string Name { get; set; }
+    public string? DeclaredName { get; internal set; }
+    public string? SectionTitle { get; internal set; }
+    public ParameterPlacement? Placement { get; internal set; }
+    public bool IsDerivedValue { get; internal set; }
     /// <summary>Static Parameter id when this row represents a ParameterRef.</summary>
     public string? ParameterId { get; set; }
     public string? Unit { get; set; }
     public string? UnsupportedReason { get; set; }
     public string? Description { get; set; }
+    /// <summary>Read-only storage diagnosis; independent of value editing and image/device readiness.</summary>
+    public ParameterStorageLocation Storage { get; internal set; } = new(ParameterStorageStatus.NotDeclared);
+    internal ModuleParameterOrigin? ModuleOrigin { get; set; }
     public string? ParameterTypeId { get; set; }
     public ParameterType? ParameterType { get; set; }
     /// <summary>Effective value after the initial dynamic evaluation (assignments applied).</summary>
@@ -202,13 +232,21 @@ public sealed class ComObject
 /// <summary>ComObject-Instanz-Referenz (KSXML: ComObjectInstanceRef, knxproj: ComObjectInstanceRef).</summary>
 public sealed class ComObjectInstanceRef
 {
+    private string? _text;
+    private string? _functionText;
+    internal string? ExplicitText => _text;
+    internal string? ExplicitFunctionText => _functionText;
+    internal string? InheritedText { get; set; }
+    internal string? InheritedFunctionText { get; set; }
     public required string Id { get; init; }
     public required string ComObjectId { get; init; }
-    public string? Text { get; set; }
+    public string? Text { get => _text ?? InheritedText; set => _text = value; }
     public int Number { get; set; }
-    public string? FunctionText { get; set; }
+    public string? FunctionText { get => _functionText ?? InheritedFunctionText; set => _functionText = value; }
     /// <summary>Send/receive flag as stored in the knxproj (ComObjectInstanceRef Device=\...\...).</summary>
     public string? Device { get; set; }
+    /// <summary>Explicit native ChannelInstance.Id pin. It is independent of derived or manual Workbench grouping.</summary>
+    public string? ChannelId { get; set; }
     /// <summary>Referenced group address ids ("GA-1 GA-2"), knxproj attribute Links.</summary>
     public List<string> Links { get; } = [];
 }

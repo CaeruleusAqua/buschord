@@ -1,4 +1,5 @@
 using Knx.Workbench;
+using System.Xml.Linq;
 
 namespace Knx;
 
@@ -30,8 +31,8 @@ public sealed record ProjectEditResult<T>(ProjectEditStatus Status, T? Value, st
 /// Validated, atomic topology and group-address edits. Every operation validates before it
 /// mutates, changes the model in one step and records at most one undo snapshot, so a rejected
 /// edit leaves the project and the undo history untouched. The UI stays thin: it calls one
-/// operation per user action. Line and segment numbers are 0-15; device addresses belong
-/// to their line, and building references never outlive their device.
+/// operation per user action. Line and segment numbers are limited to 0-15, device addresses
+/// belong to their line, and building references never outlive their device.
 /// <para>
 /// Limits: deleting a non-empty line or segment is refused instead of deleting or adopting its
 /// devices; the caller moves the devices first. Moving a device or segment into a line only
@@ -57,6 +58,8 @@ public static class ProjectOperations
         if (!TryLocateDevice(project, device, out var source)) return Fail(ProjectEditStatus.NotFound, "Device does not exist in this project.");
         if (!TryLocateLine(project, targetLine, out var targetInstallation, out var targetArea))
             return Fail(ProjectEditStatus.NotFound, "Target line does not exist in this project.");
+        if (ProjectFormats.Of(project) == ProjectFormat.Native20 && (targetSegment is not null || source.Segment is not null))
+            return Fail(ProjectEditStatus.InvalidTarget, "Schema /20 does not support topology segments.");
         if (targetSegment is not null && !targetLine.Segments.Contains(targetSegment))
             return Fail(ProjectEditStatus.InvalidTarget, "Target segment does not belong to the target line.");
         if (targetArea.Address > 15 || targetLine.Address > 15)
@@ -97,8 +100,12 @@ public static class ProjectOperations
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(targetLine);
         if (!TryLocateDevice(project, source, out _)) return Fail<DeviceInstance>(ProjectEditStatus.NotFound, "Device does not exist in this project.");
+        if (source.HasOpaqueBinaryData || source.BinaryDataCopyUnsafe)
+            return Fail<DeviceInstance>(ProjectEditStatus.InvalidTarget, "Native binary data cannot be copied without a verified identity mapping.");
         if (!TryLocateLine(project, targetLine, out var targetInstallation, out var targetArea))
             return Fail<DeviceInstance>(ProjectEditStatus.NotFound, "Target line does not exist in this project.");
+        if (ProjectFormats.Of(project) == ProjectFormat.Native20 && targetSegment is not null)
+            return Fail<DeviceInstance>(ProjectEditStatus.InvalidTarget, "Schema /20 does not support topology segments.");
         if (targetSegment is not null && !targetLine.Segments.Contains(targetSegment))
             return Fail<DeviceInstance>(ProjectEditStatus.InvalidTarget, "Target segment does not belong to the target line.");
         if (targetArea.Address > 15 || targetLine.Address > 15)
@@ -108,14 +115,22 @@ public static class ProjectOperations
         if (!AddressStrategy.TryNextIndividual(targetInstallation, targetArea.Address, targetLine.Address, out var address))
             return Fail<DeviceInstance>(ProjectEditStatus.NoFreeAddress, $"Line {targetArea.Address}.{targetLine.Address} has no free device address.");
 
-        var copy = Clone(source, UniqueId(project, address.ToString()));
+        var sourceChannelIds = Channels(source.Channels).Select(c => c.Id).ToArray();
+        if (sourceChannelIds.Distinct(StringComparer.Ordinal).Count() != sourceChannelIds.Length)
+            return Fail<DeviceInstance>(ProjectEditStatus.InvalidTarget, "Native channel instance identities are ambiguous.");
+        var knownChannels = sourceChannelIds.ToHashSet(StringComparer.Ordinal);
+        if (source.ComObjectRefs.Any(o => o.ChannelId is { } pin && !knownChannels.Contains(pin)))
+            return Fail<DeviceInstance>(ProjectEditStatus.InvalidTarget, "Native object channel pins cannot be mapped to this device's channel instances.");
+        var basis = ProjectFormats.Of(project).IsNative()
+            ? "D-" + address.ToString().Replace('.', '-') : address.ToString();
+        var copy = Clone(project, source, UniqueId(project, basis), UsedIds(project), out var channelIds);
         copy.Address = address;
         if (name is not null)
         {
             if (string.IsNullOrWhiteSpace(name)) return Fail<DeviceInstance>(ProjectEditStatus.EmptyName, "A device needs a name.");
             copy.Name = name.Trim();
         }
-        CopyMetadata(project, source, copy);
+        CopyMetadata(project, source, copy, channelIds);
         (targetSegment?.Devices ?? targetLine.Devices).Add(copy);
         var targetRoom = room ?? (roomId is null
             ? targetInstallation.Locations.AllNodes.FirstOrDefault(n => n.DeviceRefs.Contains(source.Id))
@@ -139,6 +154,7 @@ public static class ProjectOperations
         project.Workbench.Devices.Remove(device.Id);
         foreach (var key in project.Workbench.Objects.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList())
             project.Workbench.Objects.Remove(key);
+        foreach (var key in project.ObjectTextDefinitions.Keys.Where(k => k.DeviceId == device.Id).ToList()) project.ObjectTextDefinitions.Remove(key);
         undo?.Push(project);
         return Ok();
     }
@@ -242,6 +258,8 @@ public static class ProjectOperations
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(line);
         if (!TryLocateLine(project, line, out _, out _)) return Fail<Segment>(ProjectEditStatus.NotFound, "Line does not exist in this project.");
+        if (ProjectFormats.Of(project) == ProjectFormat.Native20)
+            return Fail<Segment>(ProjectEditStatus.InvalidTarget, "Schema /20 does not support topology segments.");
         if (string.IsNullOrWhiteSpace(name)) return Fail<Segment>(ProjectEditStatus.EmptyName, "A segment needs a name.");
         if (address > 15) return Fail<Segment>(ProjectEditStatus.AddressOutOfRange, "Segment address must be between 0 and 15.");
         if (address is { } requested && line.Segments.Any(s => s.Address == requested))
@@ -263,6 +281,8 @@ public static class ProjectOperations
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(segment);
+        if (ProjectFormats.Of(project) == ProjectFormat.Native20)
+            return Fail(ProjectEditStatus.InvalidTarget, "Schema /20 does not support topology segments.");
         if (!TryLocateSegment(project, segment, out _, out _, out _)) return Fail(ProjectEditStatus.NotFound, "Segment does not exist in this project.");
         if (string.IsNullOrWhiteSpace(name)) return Fail(ProjectEditStatus.EmptyName, "A segment needs a name.");
         var trimmed = name.Trim();
@@ -282,6 +302,8 @@ public static class ProjectOperations
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(segment);
         ArgumentNullException.ThrowIfNull(targetLine);
+        if (ProjectFormats.Of(project) == ProjectFormat.Native20)
+            return Fail(ProjectEditStatus.InvalidTarget, "Schema /20 does not support topology segments.");
         if (!TryLocateSegment(project, segment, out var installation, out _, out var sourceLine))
             return Fail(ProjectEditStatus.NotFound, "Segment does not exist in this project.");
         if (!TryLocateLine(project, targetLine, out var targetInstallation, out var targetArea))
@@ -318,6 +340,8 @@ public static class ProjectOperations
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(segment);
+        if (ProjectFormats.Of(project) == ProjectFormat.Native20)
+            return Fail(ProjectEditStatus.InvalidTarget, "Schema /20 does not support topology segments.");
         if (!TryLocateSegment(project, segment, out _, out _, out var line)) return Fail(ProjectEditStatus.NotFound, "Segment does not exist in this project.");
         if (segment.Devices.Count > 0)
             return Fail(ProjectEditStatus.NotEmpty, "Segment still contains devices; move or delete them first.");
@@ -372,12 +396,37 @@ public static class ProjectOperations
         if (!TryLocateGroupAddress(project, entry, out _)) return Fail(ProjectEditStatus.NotFound, "Group address does not exist in this project.");
         if (string.IsNullOrWhiteSpace(name)) return Fail(ProjectEditStatus.EmptyName, "A group address needs a name.");
         var trimmed = name.Trim();
-        var dpt = Trim(datapointType);
-        if (entry.Name == trimmed && entry.DatapointType == dpt) return Ok();
+        var previousDpt = entry.DatapointType;
+        var previousBits = project.Workbench.Groups.GetValueOrDefault(entry.Id)?.Bits;
+        var result = UpdateGroupAddressDatapointType(project, entry, datapointType);
+        if (!result.Ok) return result;
+        if (entry.Name == trimmed && previousDpt == entry.DatapointType
+            && previousBits == project.Workbench.Groups.GetValueOrDefault(entry.Id)?.Bits) return result;
         entry.Name = trimmed;
-        entry.DatapointType = dpt;
         undo?.Push(project);
-        return Ok();
+        return result;
+    }
+
+    /// <summary>Updates DPT and size together without changing the address's independent text fields.</summary>
+    public static ProjectEditResult UpdateGroupAddressDatapointType(Project project, GroupAddressEntry entry,
+        string? datapointType, UndoStack? undo = null)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(entry);
+        if (!TryLocateGroupAddress(project, entry, out _)) return Fail(ProjectEditStatus.NotFound, "Group address does not exist in this project.");
+        var dpt = Trim(datapointType);
+        project.Workbench.Groups.TryGetValue(entry.Id, out var metadata);
+        var bits = DptId.TryBitSize(dpt, out var knownBits) ? (int?)knownBits
+            : entry.DatapointType == dpt ? metadata?.Bits : null;
+        if (entry.DatapointType == dpt && metadata?.Bits == bits) return Ok();
+        entry.DatapointType = dpt;
+        if (metadata is not null) metadata.Bits = bits;
+        else if (bits is not null) project.Workbench.Groups[entry.Id] = new GroupMetadata { Bits = bits };
+        var warning = ProjectQuery.ComObjectRefs(project).Where(r => r.Ref.Links.Contains(entry.Id))
+            .Select(r => WorkbenchProject.CheckLink(project, new(r.Device.Id, r.Ref.Id), entry.Id))
+            .FirstOrDefault(validation => !validation.Ok)?.Message;
+        undo?.Push(project);
+        return new(ProjectEditStatus.Ok, warning);
     }
 
     /// <summary>
@@ -579,8 +628,19 @@ public static class ProjectOperations
         return false;
     }
 
-    private static DeviceInstance Clone(DeviceInstance source, string id)
+    private static IEnumerable<ChannelInstance> Channels(IEnumerable<ChannelInstance> channels)
     {
+        foreach (var channel in channels)
+        {
+            yield return channel;
+            foreach (var child in Channels(channel.Channels)) yield return child;
+        }
+    }
+
+    private static DeviceInstance Clone(Project project, DeviceInstance source, string id, HashSet<string> used,
+        out Dictionary<string, string> channelIds)
+    {
+        var mapping = new Dictionary<string, string>(StringComparer.Ordinal); channelIds = mapping;
         var copy = new DeviceInstance
         {
             Id = id,
@@ -591,34 +651,54 @@ public static class ProjectOperations
             Description = source.Description,
             Comment = source.Comment,
         };
-        foreach (var channel in source.Channels) copy.Channels.Add(Clone(channel));
+        foreach (var channel in source.Channels) copy.Channels.Add(CloneChannel(channel));
         foreach (var comObject in source.ComObjectRefs)
         {
             var clone = new ComObjectInstanceRef
             {
                 Id = comObject.Id,
                 ComObjectId = comObject.ComObjectId,
-                Text = comObject.Text,
+                Text = comObject.ExplicitText,
                 Number = comObject.Number,
-                FunctionText = comObject.FunctionText,
+                FunctionText = comObject.ExplicitFunctionText,
                 Device = comObject.Device,
+                ChannelId = comObject.ChannelId is { } pin && mapping.TryGetValue(pin, out var mappedPin) ? mappedPin : comObject.ChannelId,
             };
             clone.Links.AddRange(comObject.Links);
             copy.ComObjectRefs.Add(clone);
         }
         foreach (var (key, value) in source.ParameterValues) copy.ParameterValues[key] = value;
+        foreach (var (key, value) in source.BinaryData)
+        {
+            var info = source.BinaryDataInfo.GetValueOrDefault(key);
+            if (info?.DoNotCopy == true) continue;
+            copy.BinaryData[key] = value.ToArray();
+            if (info is not null) copy.BinaryDataInfo[key] = info;
+        }
         return copy;
 
-        static ChannelInstance Clone(ChannelInstance source)
+        ChannelInstance CloneChannel(ChannelInstance channel)
         {
-            var copy = new ChannelInstance { Id = source.Id, Name = source.Name };
-            foreach (var child in source.Channels) copy.Channels.Add(Clone(child));
+            var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(id + "\0" + channel.Id)))[..20];
+            var newId = "CI-" + digest; var suffix = 1;
+            while (!used.Add(newId)) newId = "CI-" + digest + "-" + suffix++;
+            mapping.Add(channel.Id, newId);
+            var reference = channel.RefId;
+            if (reference is null)
+            {
+                var declared = project.ObjectTextDefinitions.Where(p => p.Key.DeviceId == source.Id && p.Value.Channel?.Id == channel.Id)
+                    .Select(p => p.Value.Channel?.DeclarationId).Where(v => v is not null).Distinct(StringComparer.Ordinal).Take(2).ToArray();
+                if (declared.Length == 1) reference = declared[0];
+            }
+            var copy = new ChannelInstance { Id = newId, Name = channel.Name, RefId = reference };
+            foreach (var child in channel.Channels) copy.Channels.Add(CloneChannel(child));
             return copy;
         }
     }
 
-    private static void CopyMetadata(Project project, DeviceInstance source, DeviceInstance copy)
+    private static void CopyMetadata(Project project, DeviceInstance source, DeviceInstance copy, IReadOnlyDictionary<string, string> channels)
     {
+        string? Channel(string? value) => value is not null && channels.TryGetValue(value, out var mapped) ? mapped : value;
         if (project.Workbench.Devices.TryGetValue(source.Id, out var device))
             project.Workbench.Devices[copy.Id] = new DeviceMetadata
             {
@@ -626,19 +706,34 @@ public static class ProjectOperations
                 Revision = device.Revision, DownloadedRevision = device.DownloadedRevision,
             };
         foreach (var comObject in source.ComObjectRefs)
+        {
             if (project.Workbench.Objects.TryGetValue(new ObjectKey(source.Id, comObject.Id).ToString(), out var metadata))
                 project.Workbench.Objects[new ObjectKey(copy.Id, comObject.Id).ToString()] = new ObjectMetadata
                 {
                     Dpt = metadata.Dpt, Bits = metadata.Bits, Flags = metadata.Flags, Active = metadata.Active,
-                    ChannelId = metadata.ChannelId, Role = metadata.Role, SendingGroupId = metadata.SendingGroupId,
+                    StructuralPreviousActive = metadata.StructuralPreviousActive,
+                    StructuralDeclaredNumber = metadata.StructuralDeclaredNumber,
+                    StructuralDeclaredChannelId = Channel(metadata.StructuralDeclaredChannelId),
+                    StructuralDeclaredChannelName = metadata.StructuralDeclaredChannelName,
+                    ChannelId = Channel(metadata.ChannelId), ChannelSource = metadata.ChannelSource,
+                    Role = metadata.Role, SendingGroupId = metadata.SendingGroupId,
                     Connectors = metadata.Connectors.ToDictionary(p => p.Key, p => p.Value with { }),
                 };
+            if (project.ObjectTextDefinitions.TryGetValue(new(source.Id, comObject.Id), out var text))
+                project.ObjectTextDefinitions[new(copy.Id, comObject.Id)] = text with
+                { Channel = text.Channel is { } channel ? channel with { Id = Channel(channel.Id), NativeChannelId = Channel(channel.NativeChannelId) } : null };
+        }
+        ApplicationTexts.RefreshObjects(project, copy);
     }
 
     /// <summary>Ids from every XML element that is an <c>xs:ID</c> in the native schema.</summary>
     private static HashSet<string> UsedIds(Project project)
     {
         var ids = new HashSet<string>(StringComparer.Ordinal);
+        // Newly allocated native channel IDs share the global XML ID namespace with preserved nodes.
+        ids.Add(project.Id);
+        if (project.OriginalXml is { } original) ids.UnionWith(original.Descendants().Attributes("Id").Select(a => a.Value));
+        foreach (var channel in ProjectQuery.DeviceList(project).SelectMany(d => Channels(d.Channels))) ids.Add(channel.Id);
         foreach (var installation in project.Installations)
         {
             ids.Add(installation.Id);
@@ -664,7 +759,8 @@ public static class ProjectOperations
         return ids;
     }
 
-    private static string UniqueId(Project project, string requested)
+    /// <summary>Finds a free native XML id across all installations without mutating the project.</summary>
+    internal static string UniqueId(Project project, string requested)
     {
         var used = UsedIds(project);
         if (!used.Contains(requested)) return requested;

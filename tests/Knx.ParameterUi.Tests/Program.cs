@@ -27,6 +27,67 @@ try
     typeof(CatalogLibrary).GetField("_store", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
         .SetValue(CatalogLibrary.Shared, new CatalogStore(Path.Combine(directory, "empty-catalog")));
     var path = Path.Combine(directory, "test.knxproj");
+    failures += ImportRegressionChecks.Run(directory);
+    failures += SemanticsChecks.Run();
+    failures += TextReferenceChecks.Run(directory);
+    failures += ModuleAllocationChecks.Run(directory);
+    failures += ModuleScopeChecks.Run();
+    failures += LiveStructureChecks.Run(directory);
+    failures += ConditionalStructureChecks.Run(directory);
+    failures += FunctionCalculationChecks.Run();
+    failures += TimeParameterChecks.Run(directory);
+    failures += NeverPlacedObjectChecks.Run();
+    failures += DcaHostChecks.Run(directory);
+    failures += RawDataParameterChecks.Run();
+    failures += PreparedFunctionChecks.Run();
+    failures += ChannelPipelineChecks.Run(directory);
+    failures += SmartLinkWorkflowChecks.Run(directory);
+    failures += LinkAtomicityChecks.Run(directory);
+    failures += ParameterStorageChecks.Run(directory);
+    failures += ParameterFootprintChecks.Run(directory);
+    failures += OfflineParameterPatchChecks.Run(directory);
+    failures += EnumParameterPatchChecks.Run(directory);
+    failures += FloatParameterPatchChecks.Run(directory);
+    failures += PackedTimeParameterPatchChecks.Run(directory);
+    failures += ModuleParameterPatchChecks.Run(directory);
+    failures += ModuleEnumParameterPatchChecks.Run(directory);
+    failures += DenseTimeParameterPatchChecks.Run(directory);
+    failures += ResourcePatchChecks.Run(directory);
+    failures += ArchivedResourceChecks.Run(directory);
+    failures += ArchivedFactoryImageChecks.Run();
+    failures += ArchivedImageSourceChecks.Run(directory);
+    failures += PropertySourceChecks.Run(directory);
+    failures += PropertyPatchChecks.Run(directory);
+    failures += DesiredImageChecks.Run(directory);
+    failures += LoadProcedureChecks.Run(directory);
+    failures += ApplicationBuildChecks.Run(directory);
+    failures += NativeProcedureContextChecks.Run(directory);
+    failures += SharedProcedureContextChecks.Run(directory);
+    failures += ConditionalLoadProcedureChecks.Run(directory);
+    failures += ResolvedApplicationBuildChecks.Run(directory);
+    failures += GeneratedTableSerializerChecks.Run(directory);
+    failures += ProvidedTableContextChecks.Run(directory);
+    failures += TableEmissionMaterializerChecks.Run(directory);
+    failures += SharedResolvedTableChecks.Run(directory);
+    failures += RootImageBuildChecks.Run(directory);
+    failures += RootResolvedImageBuildChecks.Run(directory);
+    failures += RootWriterCommonChecks.Run(directory);
+    failures += PropertyInitializationChecks.Run(directory);
+    failures += RootPropertyBuildChecks.Run(directory);
+    failures += NativeGeneralPopulationChecks.Run(directory);
+    failures += NativeGeneralInitializationChecks.Run(directory);
+    failures += NativeGeneralImageBuildChecks.Run(directory);
+    failures += NativeImageBuildPublicChecks.Run(directory);
+    failures += NativeImageCoalescingChecks.Run(directory);
+    failures += NativeImageGrowthBuildChecks.Run(directory);
+    failures += NativeImageScalarBuildChecks.Run(directory);
+failures += NativeImageFoldChecks.Run(directory);
+    failures += NativeCommunicationChecks.Run(directory);
+    failures += NativeActivationChecks.Run(directory);
+    failures += NativeStructuralActivationChecks.Run(directory);
+    failures += ParameterMaskProfileChecks.Run(directory);
+    failures += MaskProfileHostChecks.Run(directory);
+    failures += StorageDiagnosticsChecks.Run(directory);
     var project = new Project { Id = "P-1", Name = "Parameter UI" };
     var installation = new Installation { Id = "I-1" };
     var area = new Area { Id = "A-1", Address = 1 };
@@ -156,9 +217,13 @@ try
         definition.Save(output);
     }
     pane.Load(vm.Devices[1]);
-    Check("Refreshed application definition cannot restore an obsolete hidden draft", PaneRows()[0].Value == "47"
-        && !PaneRows()[0].IsVisible && !pane.HasUnappliedChanges
-        && pane.FindControl<TextBlock>("MessageText")!.Text == ParameterEmptyState.DiscardedText);
+    Check("External application replacement preserves the open immutable definition and draft", PaneRows()[0].Value == "48"
+        && PaneRows()[0].IsVisible && pane.HasUnappliedChanges);
+    vm.CreateProject(Knxproj.Load(path), path);
+    vm.Devices[1].Device.ParameterValues["R-N"] = "47";
+    pane.Load(vm.Devices[1]);
+    Check("Explicit reimport cannot restore an obsolete hidden draft", PaneRows()[0].Value == "47"
+        && !PaneRows()[0].IsVisible && !pane.HasUnappliedChanges);
     using (var archive = ZipFile.Open(path, ZipArchiveMode.Update))
     {
         archive.GetEntry(applicationEntry)!.Delete();

@@ -1,6 +1,10 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Knx.App.Services;
+using Knx.App.Localization;
 
 namespace Knx.App.Views;
 
@@ -18,8 +22,10 @@ public sealed class ParameterTemplateSelector : IDataTemplate
         [ParameterKind.Enumeration] = Func(x => BuildCombo((ParameterItemViewModel)x)),
         [ParameterKind.Color] = Func(x => BuildColor((ParameterItemViewModel)x)),
         [ParameterKind.Date] = Func(x => BuildText((ParameterItemViewModel)x, "TT.MM.JJJJ")),
-        [ParameterKind.Time] = Func(x => BuildText((ParameterItemViewModel)x, "HH:MM:SS")),
-        [ParameterKind.IpAddress] = Func(x => BuildText((ParameterItemViewModel)x, "0.0.0.0")),
+        [ParameterKind.Time] = Func(x => BuildText((ParameterItemViewModel)x, null)),
+        [ParameterKind.Duration] = Func(x => BuildNumeric((ParameterItemViewModel)x, false)),
+        [ParameterKind.IpAddress] = Func(x => BuildText((ParameterItemViewModel)x,
+            ((ParameterItemViewModel)x).Type?.AddressVersion == "IPv6" ? "::" : "0.0.0.0")),
         [ParameterKind.RawData] = Func(x => BuildText((ParameterItemViewModel)x, "Hex")),
         [ParameterKind.Picture] = Func(x => BuildPicture((ParameterItemViewModel)x)),
         [ParameterKind.Text] = Func(x => BuildText((ParameterItemViewModel)x, null)),
@@ -93,9 +99,94 @@ public sealed class ParameterTemplateSelector : IDataTemplate
 
     private static Control BuildPicture(ParameterItemViewModel vm)
     {
-        var text = new TextBlock { Text = $"[Bild: {vm.Value}]" };
-        text.Classes.Add("wb-muted");
-        return text;
+        var panel = new StackPanel { Spacing = 4 };
+        var image = new Image { MaxHeight = 260, MaxWidth = 540, Stretch = Avalonia.Media.Stretch.Uniform,
+            HorizontalAlignment = vm.Type?.PictureAlignment switch
+            { "Right" => Avalonia.Layout.HorizontalAlignment.Right, "Center" => Avalonia.Layout.HorizontalAlignment.Center, _ => Avalonia.Layout.HorizontalAlignment.Left } };
+        Avalonia.Automation.AutomationProperties.SetName(image, vm.Name);
+        var status = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap, Classes = { "wb-muted" } };
+        panel.Children.Add(image); panel.Children.Add(status);
+        ParameterImageCache.ImageLease? lease = null;
+        ParameterResourceReader? leasedReader = null;
+        string? leasedResourceId = null;
+        var attached = false;
+        var refreshQueued = false;
+        var reloadRequested = false;
+        long attachmentGeneration = 0;
+        Visual[] visibilityOwners = [];
+        void RefreshImage(bool reload = false)
+        {
+            if (reload && (!ReferenceEquals(leasedReader, vm.Resources) || leasedResourceId != vm.Type?.PictureResourceId))
+            { image.Source = null; lease?.Dispose(); lease = null; }
+            image.HorizontalAlignment = vm.Type?.PictureAlignment switch
+            { "Right" => Avalonia.Layout.HorizontalAlignment.Right, "Center" => Avalonia.Layout.HorizontalAlignment.Center, _ => Avalonia.Layout.HorizontalAlignment.Left };
+            Avalonia.Automation.AutomationProperties.SetName(image, vm.Name);
+            if (!attached || !panel.IsEffectivelyVisible)
+            { image.Source = null; lease?.Dispose(); lease = null; return; }
+            if (lease is null)
+            {
+                lease = ParameterImageCache.Acquire(vm);
+                leasedReader = vm.Resources; leasedResourceId = vm.Type?.PictureResourceId;
+            }
+            if (lease.Bitmap is { } bitmap)
+            {
+                image.Source = bitmap; status.Text = ""; return;
+            }
+            status.Text = lease.BudgetExceeded ? WorkbenchStrings.Get("ParameterImageBudget") : WorkbenchStrings.Get(lease.Status switch
+            {
+                ParameterResourceStatus.TooLarge => "ParameterResourceTooLarge",
+                ParameterResourceStatus.Unsupported => "ParameterResourceUnsupported",
+                ParameterResourceStatus.Invalid => "ParameterResourceInvalid",
+                _ => "ParameterResourceMissing",
+            });
+        }
+        void QueueRefresh(bool reload)
+        {
+            if (!attached) return;
+            reloadRequested |= reload;
+            if (refreshQueued) return;
+            refreshQueued = true;
+            var generation = attachmentGeneration;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!attached || generation != attachmentGeneration) return;
+                refreshQueued = false;
+                var force = reloadRequested; reloadRequested = false;
+                RefreshImage(force);
+            });
+        }
+        void RowChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(ParameterItemViewModel.Type) or nameof(ParameterItemViewModel.Resources) or nameof(ParameterItemViewModel.Name))
+                QueueRefresh(true);
+        }
+        void LanguageChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        { if (e.PropertyName == "Item[]") QueueRefresh(false); }
+        void VisibilityChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.Property == Visual.IsVisibleProperty)
+                QueueRefresh(false);
+        }
+        panel.AttachedToVisualTree += (_, _) =>
+        {
+            attached = true; attachmentGeneration++;
+            visibilityOwners = panel.GetVisualAncestors().Prepend(panel).ToArray();
+            foreach (var owner in visibilityOwners) owner.PropertyChanged += VisibilityChanged;
+            vm.PropertyChanged += RowChanged;
+            Strings.Instance.PropertyChanged += LanguageChanged;
+            // Earlier ancestor-visibility notifications release their leases before this view acquires one.
+            QueueRefresh(true);
+        };
+        panel.DetachedFromVisualTree += (_, _) =>
+        {
+            attached = false; attachmentGeneration++; refreshQueued = reloadRequested = false;
+            foreach (var owner in visibilityOwners) owner.PropertyChanged -= VisibilityChanged;
+            vm.PropertyChanged -= RowChanged;
+            Strings.Instance.PropertyChanged -= LanguageChanged;
+            visibilityOwners = [];
+            RefreshImage();
+        };
+        return panel;
     }
 
     private static Control BuildReadOnly(ParameterItemViewModel vm)

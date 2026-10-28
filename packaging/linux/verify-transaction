@@ -1,0 +1,35 @@
+#!/usr/bin/python3
+"""Fail closed before dpkg: only BusChord actions from the real APT transaction are permitted."""
+import os, pathlib, subprocess, sys
+
+def require(condition):
+    if not condition: raise ValueError('Unexpected package transaction')
+
+try:
+    # Version 2 is requested explicitly, including the information FD contract.
+    fd = int(os.environ['APT_HOOK_INFO_FD'])
+    with os.fdopen(fd, encoding='utf-8', closefd=False) as info:
+        require(info.readline().rstrip('\n') == 'VERSION 2')
+        for line in info:
+            if line == '\n': break
+        else: raise ValueError('Missing APT protocol separator')
+        seen = False
+        for line in info:
+            parts = line.rstrip('\n').split(' ', 4)
+            require(len(parts) == 5 and parts[0] == 'buschord')
+            name, old, direction, new, action = parts
+            require(direction in ('<', '='))
+            require(action != '**REMOVE**')
+            if action == '**CONFIGURE**':
+                require(old != '-' and new != '-')
+            else:
+                path = pathlib.Path(action)
+                require(path.is_absolute() and path.is_file())
+                actual = subprocess.check_output(['/usr/bin/dpkg-deb', '-f', str(path), 'Package'], text=True).strip()
+                require(actual == 'buschord')
+                require(old != '-' and new != '-')
+            seen = True
+        require(seen)
+except Exception:
+    print('BusChord automatic update refused an unexpected APT transaction.', file=sys.stderr)
+    sys.exit(1)

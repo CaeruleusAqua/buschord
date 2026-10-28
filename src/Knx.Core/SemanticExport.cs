@@ -5,7 +5,7 @@ namespace Knx;
 
 /// <summary>
 /// Semantic export. Emits the project as linked
-/// data in the KNX Information Model vocabulary shipped with ETS6 (ontology.ttl):
+/// data in the KNX Information Model vocabulary (ontology.ttl):
 /// knx: &lt;http://schema.knx.org/2020/ontology/knx#&gt;,
 /// core: &lt;http://schema.knx.org/2023/en50090-6-2/core#&gt;.
 /// Only a subset of the ontology is instantiated here (installation, devices,

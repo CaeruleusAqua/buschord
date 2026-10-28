@@ -1,0 +1,20 @@
+[Unit]
+Description=Update only BusChord from its authenticated repository while the app is closed
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/buschord-updater/enabled
+ConditionPathExists=/etc/buschord-updater/buschord.sources
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/buschord-update/update-buschord
+TimeoutStartSec=infinity
+Nice=10
+IOSchedulingClass=idle
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+NoNewPrivileges=true
+UMask=0022

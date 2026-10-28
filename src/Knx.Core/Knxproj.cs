@@ -14,21 +14,21 @@ public static class Knxproj
     public const string ProjectNamespace = "http://knx.org/xml/project/23";
     internal static readonly XNamespace ExtensionNamespace = "urn:buschord:project:1";
 
-    // Supported project namespaces; /23 is the default for new projects.
-    private const string Schema21 = "http://knx.org/xml/project/21";
-    private static readonly string[] ReadNamespaces = [Schema21, "http://knx.org/xml/project/23"];
+    public static void Save(Project project, string path) => Save(project, path, null);
 
-    public static void Save(Project project, string path)
+    /// <summary>Saves atomically, retaining source encryption. Protected sources require their password on every save.</summary>
+    public static void Save(Project project, string path, string? password) => Save(project, path, password, null);
+
+    /// <summary>Native module export may require the same explicit manufacturer-script capability as parameter editing.</summary>
+    public static void Save(Project project, string path, string? password, IParameterScriptRuntime? scripts)
     {
-        if (project.OriginalXml?.Root?.Name.NamespaceName == Schema21)
-            throw new InvalidDataException(
-                "This project uses schema http://knx.org/xml/project/21. BusChord can read it but not save it, " +
-                "because its writer implements the /23 layout. Export the project from ETS6 with a newer schema to edit it.");
         var xml = ToXml(project);
         // Refuse before any write so an existing destination stays byte-identical.
         XmlPreservation.ValidateIdentities(xml.Root!);
-        ArchiveState.Save(project, xml, path);
+        ArchiveState.Save(project, xml, path, password, scripts);
     }
+
+    public static bool IsPasswordProtected(Project project) => project.ArchiveState?.Encrypted == true;
 
     public static Project Load(string path)
     {
@@ -37,12 +37,15 @@ public static class Knxproj
 
     /// <summary>
     /// Loads a project archive, decrypting a WinZip AES protected inner archive with the
-    /// ETS6 project password. Reads only; encrypted projects cannot be saved back.
+    /// project password. Passwords are not retained in the project or its undo history.
     /// </summary>
     public static Project Load(string path, string? password)
     {
         return ArchiveState.Load(path, password);
     }
+
+    public static Project Load(string path, string? password, IParameterScriptRuntime? scripts)
+        => ArchiveState.Load(path, password, scripts);
 
     /// <summary>True when the failure is a missing or wrong project password.</summary>
     public static bool IsPasswordError(Exception exception) =>
@@ -52,14 +55,51 @@ public static class Knxproj
 
     /// <summary>
     /// Lädt die Application-Program-XML (KSXML) eines Geräts aus dem Projektarchiv.
-    /// Accepted RefId forms: "M-00FA_H-Base_I-0000_A-0001-0E-1234" (Hardware2Program)
-    /// and "M-00FA_A-0001-0E-1234" (Product). Entry lives at "M-00FA/M-00FA_A-0001-0E-1234.xml".
+    /// Resolves direct application ids and Hardware2Program ids through the manufacturer's
+    /// Hardware.xml. Entry lives at "M-00FA/M-00FA_A-0001-0E-1234.xml".
     /// </summary>
-    public static XDocument? LoadApplicationProgram(string knxprojPath, string refId)
+    public static XDocument? LoadApplicationProgram(string knxprojPath, string refId) => LoadApplicationProgram(knxprojPath, refId, null);
+
+    public static XDocument? LoadApplicationProgram(string knxprojPath, string refId, string? password)
+        => LoadApplicationProgramCore(refId, (entry, application) => ArchiveState.LoadPart(knxprojPath, entry, application, password));
+
+    /// <summary>Reads manufacturer data from the immutable loaded archive, including after Save As or an external file change.</summary>
+    public static XDocument? LoadApplicationProgram(Project project, string refId, string? password = null)
+        => project.ArchiveState is { } state
+            ? LoadApplicationProgramCore(refId, (entry, application) => ArchiveState.LoadPart(state, entry, application, password)) : null;
+
+    /// <summary>
+    /// Reads only the exact root knx_master.xml from the immutable loaded archive. No external
+    /// installation or catalogue fallback is consulted. Missing metadata returns null; callers may keep
+    /// ordinary parameter editing available when metadata is protected or unreadable.
+    /// </summary>
+    public static XDocument? LoadMasterData(Project project, string? password = null)
+        => project.ArchiveState is { } state ? ArchiveState.LoadPart(state, "knx_master.xml", false, password) : null;
+
+    /// <summary>Reads one manufacturer's exact Hardware.xml from the immutable loaded archive.</summary>
+    public static XDocument? LoadHardwareData(Project project, string referenceId, string? password = null)
+    {
+        if (referenceId is not { Length: >= 6 and <= 256 } || referenceId[0] != 'M' || referenceId[1] != '-'
+            || !referenceId.AsSpan(2, 4).ToArray().All(char.IsAsciiHexDigit)
+            || referenceId.Length > 6 && referenceId[6] != '_') return null;
+        return project.ArchiveState is { } state ? ArchiveState.LoadPart(state, referenceId[..6] + "/Hardware.xml", false, password) : null;
+    }
+
+    private static XDocument? LoadApplicationProgramCore(string refId, Func<string, bool, XDocument?> load)
     {
         var entryPath = ApplicationProgramEntryPath(refId);
         if (entryPath is null) return null;
-        return ArchiveState.LoadPart(knxprojPath, entryPath);
+        var document = load(entryPath, true);
+        if (document is not null) return document;
+        var hardware = load(refId[..6] + "/Hardware.xml", false);
+        var reference = hardware?.Descendants().FirstOrDefault(e =>
+            e.Name.LocalName == "Hardware2Program" && (string?)e.Attribute("Id") == refId);
+        var programs = reference?.Elements().Where(e => e.Name.LocalName == "ApplicationProgramRef")
+            .Select(e => (string?)e.Attribute("RefId")).Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal).ToList();
+        // Never guess between application versions on the same hardware.
+        return programs is { Count: 1 } && ApplicationProgramEntryPath(programs[0]!) is { } resolved
+            ? load(resolved, true) : null;
     }
 
     /// <summary>Maps a RefId to the XML entry path inside the archive, or null when unrecognized.</summary>
@@ -82,8 +122,21 @@ public static class Knxproj
     public static XDocument ToXml(Project project)
     {
         var generated = GenerateXml(project);
-        return project.OriginalXml is { } original && project.BaselineXml is { } baseline
+        var result = project.OriginalXml is { } original && project.BaselineXml is { } baseline
             ? XmlPreservation.Merge(original, baseline, generated) : generated;
+        // A tolerated legacy layout must not create or lose a device when the native projection
+        // moves children between line/segment containers. Refuse ambiguous merges before undo/save.
+        var expected = ProjectQuery.DeviceList(project).Select(d => d.Id).ToArray();
+        var ns = result.Root!.Name.Namespace;
+        var written = result.Descendants(ns + "DeviceInstance")
+            .Where(d => d.Ancestors(ns + "Topology").Any()).Select(d => (string?)d.Attribute("Id") ?? "").ToArray();
+        if (!expected.Order(StringComparer.Ordinal).SequenceEqual(written.Order(StringComparer.Ordinal)))
+            throw new InvalidDataException("Cannot safely reconcile device identities across native topology containers.");
+        var format = ProjectFormats.Of(result.Root!);
+        if (format == ProjectFormat.Native20) Validate20Topology(Element(result.Root, XmlNames.Project)!);
+        if (format == ProjectFormat.Native22) Validate22Topology(Element(result.Root, XmlNames.Project)!);
+        if (format.IsNative()) new NativeProject(format).CompleteSnapshot(project, result);
+        return result;
     }
 
     private static XDocument GenerateXml(Project project)
@@ -159,7 +212,9 @@ public static class Knxproj
                 new XAttribute("Version", project.MasterData.Version),
                 Attr("Signature", project.MasterData.Signature)),
             projectEl);
-        return new XDocument(new XDeclaration("1.0", "utf-8", null), knx);
+        var document = new XDocument(new XDeclaration("1.0", "utf-8", null), knx);
+        var format = ProjectFormats.Of(knx);
+        return format.IsNative() ? new NativeProject(format).ProjectModel(project, document) : document;
 
         static XAttribute? Attr(string name, string? value) => value is null ? null : new XAttribute(name, value);
     }
@@ -182,9 +237,10 @@ public static class Knxproj
                     new XAttribute("RefId", r.Id),
                     new XAttribute(ExtensionNamespace + "ComObjectId", r.ComObjectId),
                     new XAttribute(ExtensionNamespace + "Number", r.Number),
-                    r.Text is { } t ? new XAttribute("Text", t) : null,
-                    r.FunctionText is { } f ? new XAttribute("FunctionText", f) : null,
+                    r.ExplicitText is { } t ? new XAttribute("Text", t) : null,
+                    r.ExplicitFunctionText is { } f ? new XAttribute("FunctionText", f) : null,
                     r.Device is { } d ? new XAttribute("Device", d) : null,
+                    r.ChannelId is { } channel ? new XAttribute("ChannelId", channel) : null,
                     r.Links.Count > 0 ? new XAttribute("Links", string.Join(' ', r.Links)) : null));
             el.Add(refs);
         }
@@ -193,16 +249,19 @@ public static class Knxproj
         if (device.ParameterValues.Count > 0)
             el.Add(new XElement(ExtensionNamespace + "ParameterInstanceRefs", device.ParameterValues.Select(p =>
                 new XElement(ExtensionNamespace + "ParameterInstanceRef", new XAttribute("RefId", p.Key), new XAttribute("Value", p.Value)))));
+        el.Add(DeviceBinaryData.Write(device, ns));
         return el;
     }
 
     private static XElement WriteChannel(ChannelInstance channel, XNamespace ns) => new(ns + "ChannelInstance",
         new XAttribute("Id", channel.Id), new XAttribute("Name", channel.Name),
+        channel.RefId is { } reference ? new XAttribute("RefId", reference) : null,
         channel.Channels.Select(c => WriteChannel(c, ns)));
 
     private static ChannelInstance ReadChannel(XElement element)
     {
-        var channel = new ChannelInstance { Id = (string?)element.Attribute("Id") ?? "", Name = (string?)element.Attribute("Name") ?? "" };
+        var channel = new ChannelInstance { Id = (string?)element.Attribute("Id") ?? "", Name = (string?)element.Attribute("Name") ?? "",
+            RefId = (string?)element.Attribute("RefId") };
         channel.Channels.AddRange(element.Elements(element.Name).Select(ReadChannel));
         return channel;
     }
@@ -233,11 +292,21 @@ public static class Knxproj
     {
         var root = doc.Root ?? throw new InvalidDataException("empty XML");
         var ns = root.Name.Namespace;
-        if (root.Name.LocalName != XmlNames.Knx || !ReadNamespaces.Contains(ns.NamespaceName) || Elements(root, XmlNames.Project).Count() != 1)
+        if (root.Name.LocalName != XmlNames.Knx || !ProjectFormats.TryRead(ns, out var format) || Elements(root, XmlNames.Project).Count() != 1)
             throw new InvalidDataException(
-                "Supported format: one KNX project in namespace /21 or /23; other schemas or multiple projects cannot be saved safely.");
+                "Supported format: one KNX project in namespace /20, /21, /22 or /23; other schemas or multiple projects cannot be saved safely.");
         var proj = Element(root, XmlNames.Project) ?? throw new InvalidDataException("no <Project>");
-        var raw21 = ns.NamespaceName == Schema21;
+        var rawNative = format.IsNative();
+        if (format == ProjectFormat.Native20)
+        {
+            XmlPreservation.ValidateIdentities(root);
+            Validate20Topology(proj);
+        }
+        if (format == ProjectFormat.Native22)
+        {
+            XmlPreservation.ValidateIdentities(root);
+            Validate22Topology(proj);
+        }
         var master = Element(root, XmlNames.MasterData);
         var project = new Project
         {
@@ -276,7 +345,7 @@ public static class Knxproj
                     Address = byte.Parse((string?)areaEl.Attribute("Address") ?? "0"),
                     Name = (string?)areaEl.Attribute("Name"),
                 };
-                area.Devices.AddRange(Elements(areaEl, XmlNames.DeviceInstance).Select(d => ReadDevice(d, raw21, area.Address, 0)));
+                area.Devices.AddRange(Elements(areaEl, XmlNames.DeviceInstance).Select(d => ReadDevice(d, rawNative, area.Address, 0)));
                 foreach (var lineEl in Elements(areaEl, XmlNames.Line))
                 {
                     var line = new Line
@@ -288,7 +357,7 @@ public static class Knxproj
                             (string?)Elements(lineEl, XmlNames.Segment).FirstOrDefault()?.Attribute("MediumTypeRefId") ?? "MT-0",
                         DomainAddress = (string?)lineEl.Attribute("DomainAddress"),
                     };
-                    line.Devices.AddRange(Elements(lineEl, XmlNames.DeviceInstance).Select(d => ReadDevice(d, raw21, area.Address, line.Address)));
+                    line.Devices.AddRange(Elements(lineEl, XmlNames.DeviceInstance).Select(d => ReadDevice(d, rawNative, area.Address, line.Address)));
                     foreach (var segEl in Elements(lineEl, XmlNames.Segment))
                     {
                         var segment = new Segment
@@ -299,7 +368,7 @@ public static class Knxproj
                             MediumTypeRefId = (string?)segEl.Attribute("MediumTypeRefId"),
                             DomainAddress = (string?)segEl.Attribute("DomainAddress"),
                         };
-                        segment.Devices.AddRange(Elements(segEl, XmlNames.DeviceInstance).Select(d => ReadDevice(d, raw21, area.Address, line.Address)));
+                        segment.Devices.AddRange(Elements(segEl, XmlNames.DeviceInstance).Select(d => ReadDevice(d, rawNative, area.Address, line.Address)));
                         line.Segments.Add(segment);
                     }
                     area.Lines.Add(line);
@@ -328,9 +397,11 @@ public static class Knxproj
             metadata.Validate();
             project.Workbench = metadata;
         }
-        project.BaselineXml = GenerateXml(project);
         project.OriginalXml = new XDocument(doc);
         NormalizeGroupAddressReferences(project);
+        if (rawNative) ApplyProjectInformation(project, doc);
+        ApplicationChannels.Refresh(project);
+        project.BaselineXml = GenerateXml(project);
         return project;
     }
 
@@ -354,6 +425,102 @@ public static class Knxproj
             for (var index = 0; index < comObject.Links.Count; index++)
                 if (!ids.Contains(comObject.Links[index]) && byLocal.TryGetValue(comObject.Links[index], out var group))
                     comObject.Links[index] = group.Id;
+    }
+
+    private static void Validate20Topology(XElement project)
+    {
+        var ns = project.Name.Namespace;
+        ValidateNativeIdentities(project, segmented: false);
+        foreach (var topology in project.Descendants(ns + "Topology"))
+        {
+            if (topology.Descendants(ns + "Segment").Any())
+                throw new InvalidDataException("Schema /20 has no topology segments.");
+            foreach (var area in topology.Elements(ns + "Area"))
+            {
+                if (!byte.TryParse((string?)area.Attribute("Address"), out var areaNumber) || areaNumber > 15)
+                    throw new InvalidDataException("Invalid native area address.");
+                foreach (var line in area.Elements(ns + "Line"))
+                    if (!byte.TryParse((string?)line.Attribute("Address"), out var lineNumber) || lineNumber > 15
+                        || string.IsNullOrWhiteSpace((string?)line.Attribute("MediumTypeRefId")))
+                        throw new InvalidDataException("Invalid schema /20 line address or medium.");
+            }
+            foreach (var device in topology.Descendants(ns + "DeviceInstance"))
+                if (device.Parent?.Name != ns + "Line" || device.Parent.Parent?.Name != ns + "Area"
+                    || device.Parent.Parent.Parent != topology)
+                    throw new InvalidDataException("Schema /20 devices must belong directly to a topology line.");
+        }
+    }
+
+    private static void Validate22Topology(XElement project)
+    {
+        var ns = project.Name.Namespace;
+        ValidateNativeIdentities(project, segmented: true);
+        void AtMostOne(XElement parent, params string[] names)
+        {
+            foreach (var name in names)
+                if (parent.Elements(ns + name).Take(2).Count() > 1)
+                    throw new InvalidDataException("Ambiguous schema /22 native container.");
+        }
+        AtMostOne(project, "Installations", "ProjectInformation");
+        foreach (var installation in project.Descendants(ns + "Installation"))
+        {
+            if (installation.Parent?.Name != ns + "Installations" || installation.Parent.Parent != project
+                || installation.Elements(ns + "Topology").Count() != 1)
+                throw new InvalidDataException("Invalid schema /22 installation placement or topology.");
+            AtMostOne(installation, "Locations", "GroupAddresses");
+            foreach (var groups in installation.Elements(ns + "GroupAddresses")) AtMostOne(groups, "GroupRanges");
+        }
+        var topologies = project.Descendants(ns + "Topology").ToHashSet();
+        foreach (var topology in topologies)
+            if (topology.Parent?.Name != ns + "Installation" || topology.Parent.Parent?.Name != ns + "Installations"
+                || topology.Parent.Parent.Parent != project || topology.Elements(ns + "UnassignedDevices").Any())
+                throw new InvalidDataException("Schema /22 requires an assigned native topology.");
+        foreach (var area in project.Descendants(ns + "Area"))
+            if (area.Parent is null || !topologies.Contains(area.Parent)
+                || !byte.TryParse((string?)area.Attribute("Address"), out var areaAddress) || areaAddress > 15)
+                throw new InvalidDataException("Invalid schema /22 area placement or address.");
+        foreach (var line in project.Descendants(ns + "Line"))
+        {
+            if (line.Parent?.Name != ns + "Area" || line.Parent.Parent is null || !topologies.Contains(line.Parent.Parent)
+                || !byte.TryParse((string?)line.Attribute("Address"), out var lineAddress) || lineAddress > 15
+                || line.Elements(ns + "Segment").Count() is < 1 or > 128)
+                throw new InvalidDataException("Invalid schema /22 line placement, address or segment count.");
+        }
+        foreach (var segment in project.Descendants(ns + "Segment"))
+            if (segment.Parent?.Name != ns + "Line" || segment.Parent.Parent?.Name != ns + "Area"
+                || segment.Parent.Parent.Parent is null || !topologies.Contains(segment.Parent.Parent.Parent)
+                || !byte.TryParse((string?)segment.Attribute("Number"), out var number) || number > 127
+                || string.IsNullOrWhiteSpace((string?)segment.Attribute("MediumTypeRefId")))
+                throw new InvalidDataException("Invalid schema /22 segment placement, number or medium.");
+        foreach (var device in project.Descendants(ns + "DeviceInstance"))
+        {
+            if (device.Parent?.Name != ns + "Segment" || device.Parent.Parent?.Name != ns + "Line"
+                || device.Parent.Parent.Parent?.Name != ns + "Area" || device.Parent.Parent.Parent.Parent is null
+                || !topologies.Contains(device.Parent.Parent.Parent.Parent)
+                || !byte.TryParse((string?)device.Attribute("Address"), out _))
+                throw new InvalidDataException("Schema /22 devices require a native byte address in a topology segment.");
+            AtMostOne(device, "ParameterInstanceRefs", "ComObjectInstanceRefs", "ChannelInstances", "ModuleInstances", "BinaryData");
+        }
+    }
+
+    private static void ValidateNativeIdentities(XElement project, bool segmented)
+    {
+        var ns = project.Name.Namespace;
+        // ModuleInstance Id is relative to its device and BinaryData has its own
+        // local keys. Neither is a document-global XML identity.
+        var globalNames = new HashSet<string>(["Project", "Area", "Line", "DeviceInstance", "Space", "Function",
+            "GroupRange", "GroupAddress", "ChannelInstance", "ParameterInstanceRef", "ComObjectInstanceRef"], StringComparer.Ordinal);
+        var required = new HashSet<string>(["Project", "Line", "DeviceInstance", "Space", "Function", "GroupRange", "GroupAddress", "ChannelInstance"], StringComparer.Ordinal);
+        if (segmented) { globalNames.Add("Segment"); required.Add("Segment"); required.Add("Area"); }
+        var identified = project.DescendantsAndSelf().Where(e => e.Name.Namespace == ns && globalNames.Contains(e.Name.LocalName)).ToArray();
+        if (identified.Any(e => required.Contains(e.Name.LocalName) && e.Attribute("Id") is null))
+            throw new InvalidDataException("Missing required native project identity.");
+        var identities = identified.Attributes("Id").ToArray();
+        if (identities.GroupBy(a => a.Value, StringComparer.Ordinal).Any(g => g.Count() > 1))
+            throw new InvalidDataException("Ambiguous document-global native project identities.");
+        foreach (var id in identities)
+            try { System.Xml.XmlConvert.VerifyNCName(id.Value); }
+            catch (System.Xml.XmlException ex) { throw new InvalidDataException("Invalid native project identity.", ex); }
     }
 
     private static GroupRange ReadRange(XElement element)
@@ -382,12 +549,12 @@ public static class Knxproj
         return range;
     }
 
-    private static DeviceInstance ReadDevice(XElement device, bool raw21, byte area, byte line)
+    private static DeviceInstance ReadDevice(XElement device, bool rawNative, byte area, byte line)
     {
         var instance = new DeviceInstance
         {
             Id = (string?)device.Attribute("Id") ?? (string?)device.Attribute("Address") ?? "",
-            Address = DeviceAddress(device, raw21, area, line),
+            Address = DeviceAddress(device, rawNative, area, line),
             Name = (string?)device.Attribute("Name"),
             ProductRefId = (string?)device.Attribute("ProductRefId") ?? "",
             Hardware2ProgramRefId = (string?)device.Attribute("Hardware2ProgramRefId"),
@@ -405,40 +572,50 @@ public static class Knxproj
                 Text = (string?)r.Attribute("Text"),
                 FunctionText = (string?)r.Attribute("FunctionText"),
                 Device = (string?)r.Attribute("Device"),
+                ChannelId = (string?)r.Attribute("ChannelId"),
             };
             var links = (string?)r.Attribute("Links");
             if (!string.IsNullOrWhiteSpace(links))
                 comObject.Links.AddRange(links.Split(' ', StringSplitOptions.RemoveEmptyEntries));
             instance.ComObjectRefs.Add(comObject);
         }
-        instance.Channels.AddRange(Elements(Element(device, "Channels"), "ChannelInstance").Select(ReadChannel));
-        foreach (var parameter in device.Element(ExtensionNamespace + "ParameterInstanceRefs")?.Elements(ExtensionNamespace + "ParameterInstanceRef") ?? [])
+        instance.Channels.AddRange(Elements(Element(device, rawNative ? "ChannelInstances" : "Channels"), "ChannelInstance").Select(ReadChannel));
+        foreach (var parameter in Elements(Element(device, "ParameterInstanceRefs"), "ParameterInstanceRef"))
         {
             var id = (string?)parameter.Attribute("RefId") ?? throw new InvalidDataException("Parameter RefId is required.");
             if (!instance.ParameterValues.TryAdd(id, (string?)parameter.Attribute("Value") ?? ""))
                 throw new InvalidDataException($"Duplicate parameter RefId: {id}");
         }
+        // BusChord edits overlay the retained native values; duplicates within either source are invalid.
+        var editedValues = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var parameter in device.Element(ExtensionNamespace + "ParameterInstanceRefs")?.Elements(ExtensionNamespace + "ParameterInstanceRef") ?? [])
+        {
+            var id = (string?)parameter.Attribute("RefId") ?? throw new InvalidDataException("Parameter RefId is required.");
+            if (!editedValues.TryAdd(id, (string?)parameter.Attribute("Value") ?? ""))
+                throw new InvalidDataException($"Duplicate parameter RefId: {id}");
+        }
+        foreach (var (id, value) in editedValues) instance.ParameterValues[id] = value;
+        DeviceBinaryData.Read(instance, device);
         return instance;
     }
 
-    /// <summary>Children in the parent's project namespace, matched by local name so /21 and /23 share one reader.</summary>
+    /// <summary>Children in the parent's project namespace, shared by the admitted formats.</summary>
     private static IEnumerable<XElement> Elements(XElement? parent, string localName) =>
         parent is null ? [] : parent.Elements().Where(e => e.Name.LocalName == localName && e.Name.Namespace == parent.Name.Namespace);
 
     private static XElement? Element(XElement? parent, string localName) => Elements(parent, localName).FirstOrDefault();
 
-    // Keep a loaded schema on save so a /21 project is not rewritten as a mixed /23 document.
+    // Keep a loaded schema on save; archive placement never selects a schema.
     private static XNamespace WriteNamespace(Project project) =>
-        project.OriginalXml?.Root is { } root && ReadNamespaces.Contains(root.Name.NamespaceName)
-            ? root.Name.Namespace : (XNamespace)ProjectNamespace;
+        ProjectFormats.Of(project).Namespace();
 
-    // /21 stores the device number within the line; /23 stores the full x.y.z address.
-    private static IndividualAddress DeviceAddress(XElement device, bool raw21, byte area, byte line)
+    // Native /20 and /21 store a device number within the line; /23 stores x.y.z.
+    private static IndividualAddress DeviceAddress(XElement device, bool rawNative, byte area, byte line)
     {
         var value = (string?)device.Attribute("Address") ?? "";
-        if (!raw21) return IndividualAddress.Parse(value.Length == 0 ? "0.0.0" : value);
+        if (!rawNative) return IndividualAddress.Parse(value.Length == 0 ? "0.0.0" : value);
         if (!byte.TryParse(value, out var deviceNumber))
-            throw new InvalidDataException($"Invalid device address '{value}' in schema /21.");
+            throw new InvalidDataException("Invalid native device number.");
         return new IndividualAddress(area, line, deviceNumber);
     }
 
@@ -456,7 +633,14 @@ public static class Knxproj
     /// </summary>
     internal static void ApplyProjectInformation(Project project, XDocument document)
     {
-        if (document.Root?.Name.NamespaceName != Schema21) return;
+        var format = ProjectFormats.Of(project);
+        if (!format.IsNative()) return;
+        if (document.Root is not { } root || root.Name != format.Namespace() + "KNX"
+            || Elements(root, XmlNames.Project).Count() != 1
+            || (string?)Element(root, XmlNames.Project)?.Attribute("Id") != project.Id)
+            throw new InvalidDataException("Native project information identity or namespace does not match the project.");
+        if (Elements(Element(root, XmlNames.Project), "ProjectInformation").Count() > 1)
+            throw new InvalidDataException("Ambiguous native project information.");
         var info = Element(Element(document.Root, XmlNames.Project), "ProjectInformation");
         if (info is null) return;
         if (string.IsNullOrEmpty(project.Name) && (string?)info.Attribute("Name") is { Length: > 0 } name) project.Name = name;
@@ -469,6 +653,14 @@ public static class Knxproj
         if (Enum.TryParse<GroupAddressStyle>((string?)info.Attribute("GroupAddressStyle"), out var style))
             foreach (var installation in project.Installations) installation.GroupAddressStyle = style;
         // FromXml built the baseline before this overlay; keep ToXml consistent with the loaded model.
+        project.BaselineXml = GenerateXml(project);
+    }
+
+    internal static void ApplyArchiveSidecar(Project project, XDocument document)
+    {
+        new NativeProject(ProjectFormats.Of(project)).ApplySidecar(project, document);
+        NormalizeGroupAddressReferences(project);
+        ApplicationChannels.Refresh(project);
         project.BaselineXml = GenerateXml(project);
     }
 

@@ -120,6 +120,25 @@ try
     }
 
     var freshPath = Path.Combine(directory, "fresh.knxproj");
+
+    var interleavedXml = XDocument.Parse(fixture);
+    XNamespace fixtureNs = Knxproj.ProjectNamespace;
+    var interleavedObjects = interleavedXml.Descendants(fixtureNs + "ComObjectInstanceRefs").Single();
+    interleavedObjects.Add(new XComment("between native references"), new XElement(fixtureNs + "ComObjectInstanceRef", new XAttribute("RefId", "O-2")));
+    var interleavedPath = Path.Combine(directory, "interleaved.knxproj");
+    File.WriteAllBytes(interleavedPath, Zip(new() { ["0.xml"] = Encoding.UTF8.GetBytes(interleavedXml.ToString()) }));
+    var interleaved = Knxproj.Load(interleavedPath); interleaved.Name = "Opaque slots retained";
+    Knxproj.Save(interleaved, interleavedPath);
+    Check(ReferenceSlots(interleavedPath).SequenceEqual(new[] { "O-1", "between native references", "O-2" }), "opaque comments stay between modeled references on save");
+    Device(interleaved).ComObjectRefs.RemoveAt(0); Knxproj.Save(interleaved, interleavedPath);
+    Check(ReferenceSlots(interleavedPath).SequenceEqual(new[] { "between native references", "O-2" }), "deleting a modeled reference retains opaque sibling placement");
+
+    static IEnumerable<string> ReferenceSlots(string path)
+    {
+        using var stream = new MemoryStream(Unzip(File.ReadAllBytes(path))["0.xml"]);
+        return XDocument.Load(stream).Descendants().Single(e => e.Name.LocalName == "ComObjectInstanceRefs").Nodes()
+            .Select(n => n is XElement e ? (string?)e.Attribute("RefId") : n is XComment c ? c.Value : null).OfType<string>().ToList();
+    }
     var fresh = new Project { Id = "P-new", Name = "New" };
     Knxproj.Save(fresh, freshPath);
     Check(Unzip(File.ReadAllBytes(freshPath)).ContainsKey("0.xml") && Knxproj.Load(freshPath).Name == "New", "new projects use root 0.xml");
@@ -149,6 +168,67 @@ try
         ["M-0001/M-0001_A-0001.xml"] = Encoding.UTF8.GetBytes("<ApplicationProgram Name='retained'/>")
     }));
     Check((string?)Knxproj.LoadApplicationProgram(appPath, "M-0001_A-0001")?.Root?.Attribute("Name") == "retained", "application program caller uses bounded archive reader");
+    var largeApplicationPath = Path.Combine(directory, "large-application.knxproj");
+    File.WriteAllBytes(largeApplicationPath, Zip(new()
+    {
+        ["0.xml"] = Encoding.UTF8.GetBytes(fixture),
+        ["M-0001/M-0001_A-large.xml"] = Encoding.UTF8.GetBytes("<ApplicationProgram><!--" + new string('x', 65 * 1024 * 1024) + "--></ApplicationProgram>")
+    }));
+    Check(Knxproj.LoadApplicationProgram(largeApplicationPath, "M-0001_A-large") is not null,
+        "manufacturer applications have a separate bounded size budget from project XML");
+    var largeRoundtrip = Path.Combine(directory, "large-application-roundtrip.knxproj");
+    Knxproj.Save(Knxproj.Load(largeApplicationPath), largeRoundtrip);
+    Check(Knxproj.LoadApplicationProgram(largeRoundtrip, "M-0001_A-large")?.Root?.FirstNode is XComment largeComment
+        && largeComment.Value.Length == 65 * 1024 * 1024, "application above 64 MiB survives the bounded archive rewrite");
+    var mismatchedApplication = Path.Combine(directory, "mismatched-application.knxproj");
+    using (var sourceArchive = ZipFile.OpenRead(largeApplicationPath))
+    using (var targetArchive = ZipFile.Open(mismatchedApplication, ZipArchiveMode.Create))
+        foreach (var entry in sourceArchive.Entries)
+        {
+            using var sourceEntry = entry.Open();
+            using var targetEntry = targetArchive.CreateEntry(entry.FullName.Replace("M-0001/", "M-0002/", StringComparison.Ordinal)).Open();
+            sourceEntry.CopyTo(targetEntry);
+        }
+    ExpectFailure(() => Knxproj.Load(mismatchedApplication), "mismatched manufacturer path does not acquire the larger application budget");
+    var linkedAppPath = Path.Combine(directory, "hardware-application.knxproj");
+    var nativeParameters = XDocument.Parse(fixture);
+    var nativeDevice = nativeParameters.Descendants().First(e => e.Name.LocalName == "DeviceInstance");
+    var nativeNs = nativeDevice.Name.Namespace;
+    nativeDevice.Element(nativeNs + "ParameterInstanceRefs")!.Add(
+        new XElement(nativeNs + "ParameterInstanceRef", new XAttribute("RefId", "native-ref"), new XAttribute("Value", "42")));
+    File.WriteAllBytes(linkedAppPath, Zip(new()
+    {
+        ["0.xml"] = Encoding.UTF8.GetBytes(nativeParameters.ToString()),
+        ["M-0001/Hardware.xml"] = Encoding.UTF8.GetBytes("""
+            <KNX><Hardware Id="M-0001_H-test" Name="Hardware">
+              <Products><Product Id="M-0001_H-test_P-test" Text="Product label" /></Products>
+              <Hardware2Programs><Hardware2Program Id="M-0001_H-test_HP-0001">
+                <ApplicationProgramRef RefId="M-0001_A-0001" />
+              </Hardware2Program></Hardware2Programs>
+            </Hardware></KNX>
+            """),
+        ["M-0001/M-0001_A-0001.xml"] = Encoding.UTF8.GetBytes("<ApplicationProgram Name='linked'/>")
+    }));
+    Check((string?)Knxproj.LoadApplicationProgram(linkedAppPath, "M-0001_H-test_HP-0001")?.Root?.Attribute("Name") == "linked",
+        "hardware program references resolve through Hardware.xml");
+    var linkedProject = Knxproj.Load(linkedAppPath);
+    Check(Device(linkedProject).ParameterValues.GetValueOrDefault("native-ref") == "42", "native parameter overrides are imported");
+    Check(linkedProject.Hardware["M-0001_H-test_P-test"].Name == "Product label", "product-specific display text is retained");
+    var parameterEdit = Device(linkedProject);
+    parameterEdit.ParameterValues["native-ref"] = "43";
+    var editedParameterProject = Knxproj.FromXml(Knxproj.ToXml(linkedProject));
+    Check(Device(editedParameterProject).ParameterValues["native-ref"] == "43", "local parameter edits override retained native values on reload");
+    var duplicateParameters = new XDocument(nativeParameters);
+    duplicateParameters.Descendants(nativeNs + "ParameterInstanceRefs").First().Add(
+        new XElement(nativeNs + "ParameterInstanceRef", new XAttribute("RefId", "native-ref"), new XAttribute("Value", "0")));
+    ExpectFailure(() => Knxproj.FromXml(duplicateParameters), "duplicate native parameter references are rejected");
+    var ambiguousAppPath = Path.Combine(directory, "ambiguous-application.knxproj");
+    var ambiguousParts = Unzip(File.ReadAllBytes(linkedAppPath));
+    ambiguousParts["M-0001/Hardware.xml"] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(ambiguousParts["M-0001/Hardware.xml"])
+        .Replace("<ApplicationProgramRef RefId=\"M-0001_A-0001\" />", "<ApplicationProgramRef RefId=\"M-0001_A-0001\" /><ApplicationProgramRef RefId=\"M-0001_A-0002\" />"));
+    File.WriteAllBytes(ambiguousAppPath, Zip(ambiguousParts));
+    Check(Knxproj.LoadApplicationProgram(ambiguousAppPath, "M-0001_H-test_HP-0001") is null,
+        "ambiguous hardware application versions are never guessed");
     var applicationProject = Knxproj.Load(appPath);
     var applicationSaveAs = Path.Combine(directory, "application-copy.knxproj");
     Knxproj.Save(applicationProject, applicationSaveAs);
@@ -338,6 +418,8 @@ try
         ExpectFailure(() => ProjectBackup.Delete(captured.Id, backupRoot), "delete missing backup is explicit");
     }
 
+    Native20ArchiveChecks.Run(directory, Check);
+    Native22ArchiveChecks.Run(directory, Check);
     Console.WriteLine($"ALL {checks} ARCHIVE CHECKS PASSED");
 }
 finally

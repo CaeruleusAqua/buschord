@@ -100,6 +100,7 @@
                       VerticalAlignment="Center">
             <Button x:Name="ImportButton" Classes="wb-button" Content="{loc:Tr CatalogImport}"
                     ToolTip.Tip="{loc:Tr CatalogFileTypes}" Click="OnImport" />
+            <Button x:Name="DownloadCatalogsButton" Classes="wb-button" Click="OnDownloadCatalogs" />
             <Button x:Name="ReloadButton" Classes="wb-button" Content="{loc:Tr CatalogReload}"
                     ToolTip.Tip="{loc:Tr CatalogTitle}" Click="OnReload" />
             <Button x:Name="CloseButton" Classes="wb-button wb-quiet"

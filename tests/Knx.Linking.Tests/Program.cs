@@ -99,4 +99,25 @@ try
 finally { File.Delete(path); }
 obj.Links.Add("GA-2");
 Check("unlink removes legacy duplicates", GroupLinks.Unlink(project, device, "REF", "GA-2") && obj.Links.SequenceEqual(["GA-1"]));
+var key = new ObjectKey(device.Id, obj.Id);
+var metadata = new ObjectMetadata { SendingGroupId = "GA-1" };
+metadata.Connectors["GA-1"] = new ConnectorMetadata { Send = true, Priority = 1 };
+metadata.Connectors["GA-2"] = new ConnectorMetadata { Acknowledge = true };
+project.Workbench.Objects[key.ToString()] = metadata;
+GroupLinks.Link(project, device, obj.Id, "GA-2");
+Check("shared unlink removes connector and sending choice", GroupLinks.Unlink(project, device, obj.Id, "GA-1")
+    && metadata.SendingGroupId is null && !metadata.Connectors.ContainsKey("GA-1")
+    && metadata.Connectors["GA-2"].Acknowledge);
+GroupLinks.Link(project, device, obj.Id, "GA-1");
+Check("relink never resurrects old sending or priority", WorkbenchProject.Connector(project, key, "GA-1") is { Send: false, Priority: null });
+metadata.SendingGroupId = "GA-1";
+metadata.Connectors["GA-1"] = new ConnectorMetadata { Send = true };
+var removal = WorkbenchProject.RemoveLink(project, key, "GA-1");
+Check("workbench retains sending-removal warning", removal.Changed == 1 && removal.Warnings.Count == 1
+    && metadata.SendingGroupId is null && !metadata.Connectors.ContainsKey("GA-1"));
+metadata.SendingGroupId = "GA-1";
+metadata.Connectors["GA-1"] = new ConnectorMetadata { Send = true };
+Check("shared unlink cleans orphan metadata and reports mutation", GroupLinks.Unlink(project, device, obj.Id, "GA-1")
+    && metadata.SendingGroupId is null && !metadata.Connectors.ContainsKey("GA-1"));
+Check("clean shared unlink is idempotent", !GroupLinks.Unlink(project, device, obj.Id, "GA-1"));
 Console.WriteLine("ALL LINKING TESTS PASSED");

@@ -67,6 +67,7 @@ public partial class App : Application
         var settings = AppSettings.Load();
         SettingsWindow.ApplyTheme(ForcedTheme ?? settings.Theme);
         Strings.Language = ForcedLanguage ?? settings.Language;
+        WorkbenchHighContrast.Attach(this);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -89,6 +90,7 @@ public partial class App : Application
                 : new WorkbenchWindow();
             desktop.MainWindow = window;
             desktop.ShutdownRequested += (_, _) => window.RequestShutdown();
+            window.Opened += (_, _) => Services.AppUpdateService.Current?.Start();
 
             if (WorkbenchCheck.Enabled)
             {

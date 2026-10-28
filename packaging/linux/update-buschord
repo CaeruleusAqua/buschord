@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+# Package-owned root script; no application-provided path, command or URI is read.
+# A running workbench keeps its existing installation until a later timer run.
+if pgrep -f '^/opt/buschord/BusChord( |$)' >/dev/null; then exit 0; fi
+exec 9>/run/lock/buschord-update.lock
+flock -n 9 || exit 0
+exec 8<>/var/lib/buschord-updater/running.lock
+flock -x -n 8 || exit 0
+install -d -m 0755 /var/lib/buschord-updater/lists/partial /var/cache/buschord-updater/archives/partial
+set -- -o Dir::Etc::sourcelist=/etc/buschord-updater/buschord.sources \
+  -o Dir::Etc::sourceparts=- -o Dir::State::lists=/var/lib/buschord-updater/lists \
+  -o Dir::Cache::archives=/var/cache/buschord-updater/archives \
+  -o Acquire::AllowInsecureRepositories=false -o APT::Get::AllowUnauthenticated=false \
+  -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+  -o DPkg::Lock::Timeout=60 -o DPkg::ConfigurePending=false \
+  -o DPkg::Pre-Install-Pkgs::=/usr/lib/buschord-update/verify-transaction \
+  -o DPkg::Tools::Options::/usr/lib/buschord-update/verify-transaction::Version=2 \
+  -o DPkg::Tools::Options::/usr/lib/buschord-update/verify-transaction::InfoFD=0
+apt-get "$@" update
+# Never run a distro upgrade; only this package is eligible from this isolated source.
+# No new dependency or removal is allowed. A dependency change waits for manual administration.
+simulation=$(apt-get "$@" --simulate --only-upgrade --no-remove --no-install-recommends install buschord)
+printf '%s\n' "$simulation" | awk '/^(Inst|Remv) / && $2 != "buschord" { bad=1 } END { exit bad }' || exit 0
+if pgrep -f '^/opt/buschord/BusChord( |$)' >/dev/null; then exit 0; fi
+DEBIAN_FRONTEND=noninteractive apt-get "$@" --yes --only-upgrade --no-remove --no-install-recommends install buschord

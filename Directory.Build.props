@@ -1,4 +1,10 @@
 <Project>
+  <PropertyGroup>
+    <!-- One supported runtime target for the application, libraries and console checks. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
   <ItemGroup Condition="$([System.String]::Copy('$(MSBuildProjectName)').EndsWith('.Tests'))">
     <Compile Include="$(MSBuildThisFileDirectory)tests/ArchiveProtectionTestSettings.cs" Link="ArchiveProtectionTestSettings.cs" />
   </ItemGroup>

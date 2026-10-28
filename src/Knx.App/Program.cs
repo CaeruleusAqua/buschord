@@ -1,6 +1,11 @@
 using Avalonia;
 using Knx;
 using Knx.App.Workbench;
+using Knx.App.Services;
+using Knx.App.Localization;
+using Knx.Updates;
+using Velopack;
+using System.Runtime.InteropServices;
 
 namespace Knx.App;
 
@@ -12,6 +17,7 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
         if (args.Contains("--workbench-selftest")) WorkbenchCheck.Enabled = true;
         if (WorkbenchCheck.Enabled || args.Any(a => a.StartsWith("--screenshot=", StringComparison.OrdinalIgnoreCase)))
         {
@@ -59,6 +65,58 @@ internal static class Program
         if (args.Contains("--log"))
             System.Diagnostics.Trace.Listeners.Add(new System.Diagnostics.ConsoleTraceListener());
 
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        if (WorkbenchCheck.Enabled || Screenshot.TargetPath is not null)
+        {
+            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+            return;
+        }
+
+        using var updates = new AppUpdateService();
+        AppUpdateService.Current = updates;
+        try
+        {
+            // No project or window exists at this boundary. A failed attempt leaves the
+            // current version available; the broker's one-shot fallback avoids restart loops.
+            if (!args.Contains("--skip-auto-update-once", StringComparer.Ordinal)
+                && updates.TryApplyAsync(restart: true, args).GetAwaiter().GetResult()) return;
+            IDisposable? lease = null;
+            if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
+            {
+                for (var attempt = 0; attempt < 40; attempt++)
+                {
+                    try
+                    {
+                        lease = AppUpdateService.PackageManaged ? UpdateProcessLease.EnterPackageManagedApplication()
+                            : UpdateProcessLease.EnterApplication(AppUpdateService.StateDirectory);
+                        break;
+                    }
+                    catch (IOException) when (attempt < 39) { Thread.Sleep(250); }
+                    catch (IOException) { ShowUpdateBusy(); return; }
+                    catch (UnauthorizedAccessException) { ShowUpdateBusy(); return; }
+                }
+            }
+            var exitCode = 1;
+            try { exitCode = BuildAvaloniaApp().StartWithClassicDesktopLifetime(args); }
+            finally
+            {
+                updates.StopAsync().GetAwaiter().GetResult();
+                lease?.Dispose();
+            }
+            Environment.ExitCode = exitCode;
+            // The existing workbench save/discard gate has already completed. Other
+            // application instances still hold their own lease and prevent the swap.
+            if (exitCode == 0) updates.TryApplyAsync(restart: false, []).GetAwaiter().GetResult();
+        }
+        finally { AppUpdateService.Current = null; }
     }
+
+    private static void ShowUpdateBusy()
+    {
+        try { Strings.Language = App.ForcedLanguage ?? AppSettings.Load().Language; } catch { }
+        var message = UpdateUiStrings.Get("StartupBlocked");
+        if (OperatingSystem.IsWindows()) _ = MessageBoxW(IntPtr.Zero, message, "BusChord", 0x40);
+        else Console.Error.WriteLine(message);
+    }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int MessageBoxW(IntPtr owner, string text, string caption, uint type);
 }

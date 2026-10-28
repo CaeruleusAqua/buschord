@@ -2,7 +2,6 @@
   <PropertyGroup>
     <!-- WinExe: no console window when the desktop app is launched. -->
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Avalonia 12 defaults to compiled bindings; keep runtime bindings for templates without x:DataType. -->
@@ -34,9 +33,13 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\i18n\workbench\*.json" LogicalName="BusChord.i18n.workbench.%(Filename)%(Extension)" />
     <EmbeddedResource Include="..\..\i18n\catalog\*.json" LogicalName="BusChord.i18n.catalog.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\i18n\catalog-downloads\*.json" LogicalName="BusChord.i18n.catalog-downloads.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\i18n\updates\*.json" LogicalName="BusChord.i18n.updates.%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Knx.Core\Knx.Core.csproj" />
+    <ProjectReference Include="..\Knx.Updates\Knx.Updates.csproj" />
+    <ProjectReference Include="..\Knx.Scripting\Knx.Scripting.csproj" />
     <ProjectReference Include="..\Knx.Bus\Knx.Bus.csproj" />
     <ProjectReference Include="..\Knx.ProjectCompare\Knx.ProjectCompare.csproj" />
     <ProjectReference Include="..\Knx.Reports\Knx.Reports.csproj" />

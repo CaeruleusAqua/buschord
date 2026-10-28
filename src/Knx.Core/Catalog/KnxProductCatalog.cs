@@ -10,7 +10,7 @@ namespace Knx.Catalog;
 /// knxprod.xml in namespace http://knx.org/xml/prod/20 (older 14/17/19 occur too), or a
 /// loose knxprod.xml, or a directory containing one.
 ///
-/// Supported product-database element paths: KNX/ManufacturerData/
+/// Element names follow the KNX product XML schema: KNX/ManufacturerData/
 /// Manufacturer(@RefId)/{Catalog/CatalogSection, Hardware/Hardware(@Id)/Products/Product,
 /// Hardware/Hardware/Hardware2Programs/Hardware2Program/ApplicationProgramRef,
 /// ApplicationPrograms/ApplicationProgram, Languages/Language(@Identifier)/TranslationUnit/
@@ -42,7 +42,7 @@ public sealed partial class KnxProductCatalog
     // Metadata is appended by the background index build while search reads it: concurrent map.
     private readonly ConcurrentDictionary<string, CatalogApplicationProgram> _programsById = new(StringComparer.Ordinal);
 
-    // Split archives (the layout every shipped .knxprod we have seen uses) keep the
+    // Split catalogue archives keep the
     // application programs in separate parts; part names are known without parsing them.
     private readonly Dictionary<string, string> _partByName = new(StringComparer.Ordinal);
     private readonly HashSet<string> _loadedParts = new(StringComparer.Ordinal);
@@ -155,7 +155,7 @@ public sealed partial class KnxProductCatalog
     }
 
     /// <summary>
-    /// Split layout as shipped by manufacturers: knx_master.xml plus per-manufacturer
+    /// Split catalogue layout: knx_master.xml plus per-manufacturer
     /// Catalog.xml, Hardware.xml and one XML per application program. Hardware and catalogue
     /// metadata are read eagerly; program metadata and parameter models load on demand.
     /// </summary>
@@ -436,6 +436,10 @@ public sealed partial class KnxProductCatalog
     public CatalogProduct? FindProduct(string productId) =>
         _productsById.GetValueOrDefault(productId);
 
+    /// <summary>Exact catalogue entry references, falling back to the product's declared program references.</summary>
+    public IReadOnlyList<string> GetProgramReferencesFor(CatalogProduct product) =>
+        (product.EntryRefIds.Count > 0 ? product.EntryRefIds : product.ProgramRefIds).Distinct(StringComparer.Ordinal).ToArray();
+
     /// <summary>Finds a program by its own id or by a Hardware2Program id that references it.</summary>
     public CatalogApplicationProgram? FindProgram(string programRefId)
     {
@@ -446,6 +450,77 @@ public sealed partial class KnxProductCatalog
         foreach (var reference in refs)
             if (FindProgramById(reference) is { } program) return program;
         return null;
+    }
+
+    /// <summary>Loads one detached original application document with its namespace and enclosing XML containers.</summary>
+    public XDocument? LoadProgramDocument(string programRefId)
+    {
+        if (_hardware2Programs.TryGetValue(programRefId, out var references)
+            && references.Distinct(StringComparer.Ordinal).Count() != 1)
+            throw new InvalidDataException("Hardware references multiple application programs; choose an explicit application id.");
+        var program = FindProgram(programRefId);
+        if (program?.Source is not { } source) return null;
+        lock (_modelGate)
+        {
+            var (element, _) = LoadProgramElement(program, source);
+            if (element is null) return null;
+            if (element.Document is { } original && original.Descendants().Count(e => e.Name.LocalName == "ApplicationProgram") == 1)
+                return new XDocument(original);
+            var copy = new XElement(element);
+            foreach (var parent in element.Ancestors())
+                copy = new XElement(parent.Name, parent.Attributes().Select(a => new XAttribute(a)), copy,
+                    parent.Elements().Where(e => e.Name.LocalName == "Languages").Select(e => new XElement(e)));
+            return new XDocument(copy);
+        }
+    }
+
+    /// <summary>Detached manufacturer parts for migration; the original catalogue is never modified. Plain XML has no archive parts.</summary>
+    public IReadOnlyDictionary<string, byte[]> ReadManufacturerParts(string? applicationReference = null)
+    {
+        var parts = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        if (_archivePath is not null)
+        {
+            if (applicationReference is not null)
+            {
+                var id = applicationReference;
+                if (_hardware2Programs.TryGetValue(id, out var references))
+                {
+                    var distinct = references.Distinct(StringComparer.Ordinal).ToArray();
+                    if (distinct.Length != 1) throw new InvalidDataException("An exact application is required for migration parts.");
+                    id = distinct[0];
+                }
+                var selected = Knxproj.ApplicationProgramEntryPath(id);
+                if (selected is null || !ArchiveEntryLimits.IsApplication(selected)) throw new InvalidDataException("Invalid application identity for migration parts.");
+                var manufacturer = selected[..selected.IndexOf('/')];
+                using var selectedStream = new FileStream(_archivePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                if (selectedStream.Length > 128L * 1024 * 1024) throw new InvalidDataException("Migration catalogue archive exceeds the 128 MiB safety limit.");
+                using var archive = new ZipArchive(selectedStream, ZipArchiveMode.Read);
+                if (archive.Entries.Count > 4096 || archive.Entries.Select(e => e.FullName).Distinct(StringComparer.Ordinal).Count() != archive.Entries.Count)
+                    throw new InvalidDataException("Ambiguous or excessive migration catalogue entries.");
+                long total = 0;
+                foreach (var entry in archive.Entries)
+                {
+                    var name = entry.FullName;
+                    if (!name.StartsWith(manufacturer + "/", StringComparison.Ordinal) || name.EndsWith('/')) continue;
+                    if (ArchiveEntryLimits.IsApplication(name) && name != selected) continue;
+                    if (name.Split('/').Any(s => s is "" or "." or ".." || s.Any(c => char.IsControl(c) || c is '\\' or ':'))
+                        || entry.Length > ArchiveEntryLimits.For(name) || (total += entry.Length) > 128L * 1024 * 1024)
+                        throw new InvalidDataException("Selected manufacturer parts exceed archive safety limits.");
+                    var data = new byte[checked((int)entry.Length)];
+                    using var input = entry.Open(); input.ReadExactly(data);
+                    if (input.ReadByte() != -1) throw new InvalidDataException("Catalogue entry length mismatch.");
+                    parts.Add(name, data);
+                }
+                return new System.Collections.ObjectModel.ReadOnlyDictionary<string, byte[]>(parts);
+            }
+            using var stream = new FileStream(_archivePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (stream.Length > 128L * 1024 * 1024) throw new InvalidDataException("Migration catalogue archive exceeds the 128 MiB safety limit.");
+            var bytes = new byte[checked((int)stream.Length)]; stream.ReadExactly(bytes);
+            if (stream.ReadByte() != -1) throw new InvalidDataException("Catalogue changed while reading migration parts.");
+            foreach (var (name, data) in EncryptedArchive.ReadAll(bytes, null))
+                if (name.StartsWith("M-", StringComparison.Ordinal) && !(name.EndsWith('/') && data.Length == 0)) parts.Add(name, data);
+        }
+        return new System.Collections.ObjectModel.ReadOnlyDictionary<string, byte[]>(parts);
     }
 
     /// <summary>

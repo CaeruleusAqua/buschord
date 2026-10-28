@@ -105,8 +105,28 @@
                Text="{loc:Tr ParameterNoticeMore}" Classes="wb-muted" Margin="0,0,0,10" />
     <TextBlock x:Name="EmptyText" DockPanel.Dock="Top" IsVisible="False" TextWrapping="Wrap"
                Classes="wb-muted" Margin="0,0,0,8" />
+    <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
+      <CheckBox x:Name="TableLayoutToggle" Content="{loc:Wb ParameterTableLayout}" IsChecked="True"
+                IsVisible="False" IsCheckedChanged="OnTableLayoutChanged" AutomationProperties.Name="{loc:Wb ParameterTableLayout}" />
+      <TextBlock x:Name="TableLayoutHint" IsVisible="False" Text="{loc:Wb ParameterLayoutFallback}" Classes="wb-muted" TextWrapping="Wrap" />
+    </StackPanel>
+    <Border x:Name="HelpPanel" DockPanel.Dock="Bottom" Classes="wb-panel" Padding="10" IsVisible="False" Margin="0,8,0,0">
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock x:Name="HelpHeading" TextWrapping="Wrap" Classes="wb-heading" />
+          <Button Grid.Column="1" Classes="wb-button wb-compact" Content="{loc:Tr BtnClose}" Click="OnCloseHelp" />
+        </Grid>
+        <TextBlock x:Name="HelpLanguage" TextWrapping="Wrap" Classes="wb-muted" />
+        <TextBox x:Name="HelpText" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="220"
+                 AutomationProperties.Name="{loc:Wb ParameterContextHelp}" />
+      </StackPanel>
+    </Border>
     <TextBlock x:Name="HeaderText" DockPanel.Dock="Top" Classes="wb-heading"
                Margin="0,0,0,6" Text="{loc:Tr ParameterTitle}" TextWrapping="Wrap" />
+    <Grid>
+    <ScrollViewer x:Name="TableScroll" IsVisible="False" HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="{loc:Wb ParameterTableLayout}">
+      <StackPanel x:Name="TablePages" Spacing="16" />
+    </ScrollViewer>
     <ScrollViewer x:Name="ParameterScroll" HorizontalScrollBarVisibility="Disabled" Padding="0,2,2,0"
                   AutomationProperties.Name="{loc:Tr ParameterTitle}">
       <ItemsControl x:Name="ParameterList" HorizontalAlignment="Stretch">
@@ -120,7 +140,7 @@
         <ItemsControl.ItemTemplate>
           <DataTemplate>
             <!-- One field column, capped at 540 px; label above its editor. -->
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto" HorizontalAlignment="Left"
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" HorizontalAlignment="Left"
                   Width="{Binding $parent[ScrollViewer].Bounds.Width, Converter={x:Static views:ParameterFieldWidthConverter.Instance}}"
                   Margin="0,0,0,14" IsVisible="{Binding IsVisible}">
               <TextBlock Text="{Binding Name}" Classes="wb-label" />
@@ -139,10 +159,20 @@
                   </MultiBinding>
                 </TextBlock.Text>
               </TextBlock>
+              <Expander Grid.Row="4" Classes="wb-storage-details" Margin="0,6,0,0" HorizontalAlignment="Stretch"
+                        Header="{loc:Wb ParameterStorageDetails}" IsExpanded="{Binding IsStorageExpanded, Mode=TwoWay}" IsVisible="{Binding HasStorage}"
+                        AutomationProperties.Name="{Binding StorageAutomationName}">
+                <TextBlock Text="{Binding StorageText}" TextWrapping="Wrap" Classes="wb-muted"
+                           AutomationProperties.Name="{Binding StorageAutomationName}" />
+              </Expander>
+              <Button Grid.Row="5" Classes="wb-button wb-compact wb-quiet" Content="{loc:Wb ParameterContextHelp}" Margin="0,4,0,0"
+                      Tag="{Binding}" Click="OnHelp" IsVisible="{Binding HasContextHelp}" HorizontalAlignment="Left"
+                      AutomationProperties.Name="{Binding HelpAutomationName}" />
             </Grid>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
     </ScrollViewer>
+    </Grid>
   </DockPanel>
 </UserControl>

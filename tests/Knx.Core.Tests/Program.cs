@@ -13,6 +13,31 @@ void Check(string name, bool ok, string? detail = null)
     if (!ok) failures.Add(name + (detail is null ? "" : ": " + detail));
 }
 
+// --- Review invariants: shared project identity and DPT metadata ---
+{
+    var sample = Knx.Workbench.WorkbenchJson.CreateDemo();
+    var address = IndividualAddress.Parse("1.1.200");
+    sample.Installations.Add(new Installation { Id = address.ToString() });
+    sample.Installations[1].Locations.Roots.Add(new SpaceNode { Id = address + "-2", Name = "Fixture", Kind = SpaceKind.Room });
+    var product = new Knx.Catalog.CatalogProduct { Id = "fixture", Name = "Fixture" };
+    var detached = Knx.Catalog.CatalogInstaller.CreateDevice(sample, product, null, address, "New");
+    Check("C1 installer avoids IDs of every XML element across installations", detached.Id == address + "-3"
+        && !ProjectQuery.DeviceList(sample).Contains(detached));
+    var ga = ProjectQuery.FindGroupAddressById(sample, "living-switch")!;
+    var metadata = sample.Workbench.Groups[ga.Id];
+    metadata.EffectRoomId = "living";
+    ProjectOperations.RenameGroupAddress(sample, ga, ga.Name, "DPST-9-1");
+    Check("C5 known size changes without losing group facts", metadata.Bits == 16 && metadata.Secure == false
+        && metadata.EffectRoomId == "living");
+    ProjectOperations.RenameGroupAddress(sample, ga, ga.Name, "vendor-type");
+    Check("C5 changing to an unknown DPT clears the old size", metadata.Bits is null);
+    metadata.Bits = 37;
+    ProjectOperations.RenameGroupAddress(sample, ga, "Renamed", "vendor-type");
+    Check("C5 name-only edit preserves explicitly known native size", metadata.Bits == 37);
+    Check("S4 main-only and full subtypes stay distinct", DptId.Normalize("DPT-1") == "1.x"
+        && DptId.Normalize("DPST-1-1") == "1.001" && DptId.Normalize("1.002") == "1.002");
+}
+
 // --- Testprojekt: 1 Area, 1 Line mit Segment, Gerät, Main/Mid-Range mit GAs ---
 var project = new Project
 {
@@ -370,6 +395,9 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         cFindings.Any(f => f.Code == "P011" && f.Severity == CheckSeverity.Error));
     Check("Check: P020 Geräteadresse 0 Error",
         cFindings.Any(f => f.Code == "P020" && f.Severity == CheckSeverity.Error));
+    cP.Hardware[cD3.ProductRefId] = new Knx.Catalog.CatalogHardware { HardwareId = "coupler", IsCoupler = true };
+    Check("Check: declared coupler may use device address zero", !ProjectCheck.Run(cP).Any(f => f.Code == "P020"));
+    cP.Hardware.Clear();
     Check("Check: P025 doppelte Geräteadresse Error",
         cFindings.Any(f => f.Code == "P025" && f.Severity == CheckSeverity.Error));
     Check("Check: P030 fehlender Datapoint-Typ Warning",
@@ -444,15 +472,22 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
     Check("Replace: Dry-Run ändert nichts",
         rA.ProductRefId == "M-1_A-1" && rA.Hardware2ProgramRefId == "M-1_H-1");
 
-    var rReal = ProductReplacer.Replace(rP, "M-1_A-1", "M-9_A-9", "M-9_H-9");
-    Check("Replace: ProductRefId neu", rA.ProductRefId == "M-9_A-9", rA.ProductRefId);
-    Check("Replace: Hardware2ProgramRefId neu", rA.Hardware2ProgramRefId == "M-9_H-9", rA.Hardware2ProgramRefId);
+    var unsafeRejected = false;
+    try { ProductReplacer.Replace(rP, "M-1_A-1", "M-9_A-9", "M-9_H-9"); }
+    catch (InvalidOperationException) { unsafeRejected = true; }
+    Check("Replace: ungeprüfte Migration wird atomar verweigert", unsafeRejected
+        && rA.ProductRefId == "M-1_A-1" && rA.Hardware2ProgramRefId == "M-1_H-1");
     Check("Replace: Links erhalten", rA.ComObjectRefs[0].Links.SequenceEqual(["GA-1", "GA-2"]));
-    Check("Replace: Ergebnis", rReal.Count == 1 && rReal[0].OldRefId == "M-1_A-1" && rReal[0].KeptLinks == 2);
     Check("Replace: fremdes Gerät unverändert",
         rB.ProductRefId == "M-2_A-2" && rB.Hardware2ProgramRefId == "M-2_H-2" && rB.ComObjectRefs.Count == 0);
-    Check("Replace: Find", ProductReplacer.Find(rP, "M-9_A-9").Count == 1 && ProductReplacer.Find(rP, "M-1_A-1").Count == 0);
+    Check("Replace: Find", ProductReplacer.Find(rP, "M-9_A-9").Count == 0 && ProductReplacer.Find(rP, "M-1_A-1").Count == 1);
 }
+if (MigrationChecks.Run() != 0) failures.Add("Product migration");
+if (JungKspChecks.Run() != 0) failures.Add("Jung KSP");
+if (JungKspImportChecks.Run() != 0) failures.Add("Jung KSP import");
+if (DeviceBinaryDataChecks.Run() != 0) failures.Add("Device binary data");
+if (Native20CoreChecks.Run() != 0) failures.Add("Native /20 projects");
+if (Native22CoreChecks.Run() != 0) failures.Add("Native /22 projects");
 
 // --- ProjectWizard: Projekt anlegen, CSV importieren ---
 {
@@ -949,7 +984,7 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         var copyKey = new Knx.Workbench.ObjectKey(copy.Id, "CO-1").ToString();
         var sourceKey = new Knx.Workbench.ObjectKey(source.Id, "CO-1").ToString();
         Check("Ops: externe Kanal-Metadaten kopiert",
-            p.Workbench.Objects[copyKey].ChannelId == "CH-1"
+            p.Workbench.Objects[copyKey].ChannelId == copy.Channels[0].Id && copy.Channels[0].Id != "CH-1"
             && p.Workbench.Objects[copyKey].Connectors["GA-1"].Send,
             p.Workbench.Objects[copyKey].ChannelId);
         p.Workbench.Objects[copyKey].ChannelId = "CH-2";
@@ -1701,5 +1736,9 @@ static GroupRange AddMainRange(Project prj, string name, int mainNo, params Grou
         && supply.IsPowerSupply && supply.IsChoke && supply.BusCurrent == 640);
 }
 
+Knx.Core.Tests.WizardIdentityChecks.Run(Check);
+Knx.Core.Tests.TopologyTemplateChecks.Run(Check);
+Knx.Core.Tests.ParameterPresentationChecks.Run(Check);
+MassLinkReviewChecks.Run((name, ok) => Check(name, ok));
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER: {string.Join("; ", failures)}");
 return failures.Count == 0 ? 0 : 1;

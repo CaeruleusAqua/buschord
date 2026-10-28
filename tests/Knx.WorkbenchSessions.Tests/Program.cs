@@ -622,6 +622,8 @@ catch (ObjectDisposedException) { Check("disposed sessions cannot service the ol
 try { oldSessions.Programming.Enqueue(device.Id); throw new Exception("Expected disposed programming session"); }
 catch (ObjectDisposedException) { Check("disposed programming queue rejects new jobs", true); }
 
+await ProgrammingPersistenceChecks.Run(Check);
+Check("configuration location identity checks", ConfigurationLocationChecks.Run() == 0);
 Console.WriteLine($"{checks} checks passed.");
 
 sealed class FakeTelegramSource : IMonitorTelegramSource

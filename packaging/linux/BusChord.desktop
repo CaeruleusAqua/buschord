@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=BusChord
+Comment=Building automation project workbench
+Exec=/opt/buschord/BusChord %F
+Icon=buschord
+Terminal=false
+Categories=Development;Engineering;

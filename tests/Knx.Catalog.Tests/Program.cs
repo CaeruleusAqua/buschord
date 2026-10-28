@@ -963,6 +963,9 @@ else
 }
 
 Console.WriteLine();
+Knx.Catalog.Tests.DcaManifestChecks.Run(Check);
+Knx.Catalog.Tests.KnownDcaRequirementChecks.Run(Check);
+Knx.Catalog.Tests.DownloadAcquisitionChecks.Run(Check);
 if (failures.Count == 0)
 {
     Console.WriteLine("ALLE CHECKS OK");

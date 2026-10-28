@@ -7,7 +7,7 @@ using Knx.App.Localization;
 using Knx.App.Services;
 
 // Offline localization gates. No product code, no network, no Roslyn: everything is derived
-// from the three string facades and a text scan of src/ and tests/. Run with
+// from the string facades and a text scan of src/ and tests/. Run with
 //   dotnet run --project tests/Knx.Localization.Tests
 // See README.md for the gate list and how to add a key or a language.
 var failures = new List<string>();
@@ -44,7 +44,7 @@ var exceptions = SourceScan.ExceptionList.Load(Path.Combine(root, "tests/Knx.Loc
     Check("scan: literals, comments, escapes and interpolation holes", got.SequenceEqual(want), string.Join(" | ", got));
 }
 
-// --- the three facades; maps stay private until the JSON loader lands (analysis §10) ---
+// --- the string facades ---
 static IReadOnlyDictionary<string, (string De, string En)> MapOf(Type type) =>
     type.GetField("Map", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null)
         as IReadOnlyDictionary<string, (string De, string En)>
@@ -55,6 +55,8 @@ var maps = new (string Module, string File, IReadOnlyDictionary<string, (string 
     ("core", "src/Knx.Core/Localization.cs", Strings.Catalogue),
     ("workbench", "src/Knx.App/Localization/WorkbenchStrings.cs", MapOf(typeof(WorkbenchStrings))),
     ("catalog", "src/Knx.App/Services/CatalogBrowser.cs", MapOf(typeof(CatalogUiText))),
+    ("catalog-downloads", "src/Knx.App/Localization/CatalogDownloadStrings.cs", MapOf(typeof(CatalogDownloadStrings))),
+    ("updates", "src/Knx.App/Localization/UpdateUiStrings.cs", MapOf(typeof(UpdateUiStrings))),
 };
 var mapByModule = maps.ToDictionary(m => m.Module, m => m.Map, StringComparer.Ordinal);
 Info($"i18n: {maps.Sum(m => m.Map.Count)} keys ({string.Join(", ", maps.Select(m => m.Module + " " + m.Map.Count))})");
@@ -109,6 +111,8 @@ var catalogModules = new (string Module, Assembly Assembly,
     ("core", typeof(Strings).Assembly, Strings.Catalogue),
     ("workbench", typeof(WorkbenchStrings).Assembly, MapOf(typeof(WorkbenchStrings))),
     ("catalog", typeof(CatalogUiText).Assembly, MapOf(typeof(CatalogUiText))),
+    ("catalog-downloads", typeof(CatalogDownloadStrings).Assembly, MapOf(typeof(CatalogDownloadStrings))),
+    ("updates", typeof(UpdateUiStrings).Assembly, MapOf(typeof(UpdateUiStrings))),
 };
 var placeholderShape = new Regex(@"\{(\d+)(?:[^}]*)\}", RegexOptions.CultureInvariant);
 foreach (var language in supportedLanguages)
@@ -152,10 +156,14 @@ foreach (var language in supportedLanguages)
     Strings.Language = language;
     var core = Strings.Get("MenuFile");
     var workbench = WorkbenchStrings.Get("Project");
+    var downloads = CatalogDownloadStrings.Get("Title");
+    var updates = UpdateUiStrings.Get("Title");
     var expectedCore = LanguageCatalog.Load(typeof(Strings).Assembly, "core", language)["MenuFile"];
     var expectedWorkbench = LanguageCatalog.Load(typeof(WorkbenchStrings).Assembly, "workbench", language)["Project"];
-    Check($"i18n: {language} UI resolves", core == expectedCore && workbench == expectedWorkbench,
-        $"{core} / {workbench}");
+    var expectedDownloads = LanguageCatalog.Load(typeof(CatalogDownloadStrings).Assembly, "catalog-downloads", language)["Title"];
+    var expectedUpdates = LanguageCatalog.Load(typeof(UpdateUiStrings).Assembly, "updates", language)["Title"];
+    Check($"i18n: {language} UI resolves", core == expectedCore && workbench == expectedWorkbench && downloads == expectedDownloads && updates == expectedUpdates,
+        $"{core} / {workbench} / {downloads} / {updates}");
 }
 Strings.Language = originalCatalogLanguage;
 
@@ -173,11 +181,15 @@ Check("i18n: missing reference key falls back to the key",
 // --- G2: every referenced key exists in the map its call site resolves against ---
 var locTr = new Regex(@"\{loc:Tr\s+([A-Za-z][A-Za-z0-9]*)\s*\}", RegexOptions.CultureInvariant);
 var locWb = new Regex(@"\{loc:Wb\s+([A-Za-z][A-Za-z0-9]*)\s*\}", RegexOptions.CultureInvariant);
+var locUp = new Regex(@"\{loc:Up\s+([A-Za-z][A-Za-z0-9]*)\s*\}", RegexOptions.CultureInvariant);
 var callCore = new Regex("\\bStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callWb = new Regex("\\bWorkbenchStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callCat = new Regex("\\bCatalogUiText\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
+var callDownloads = new Regex("\\bCatalogDownloadStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
+var callUpdates = new Regex("\\bUpdateUiStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
+var callUpdateWrap = new Regex("\\bU\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callWrap = new Regex("\\b(W|Wb)\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
-var dynCore = new Regex("\\b(Strings|WorkbenchStrings|CatalogUiText)\\.Get\\(\\s*(?!\"[A-Za-z])", RegexOptions.CultureInvariant);
+var dynCore = new Regex("\\b(Strings|WorkbenchStrings|CatalogUiText|CatalogDownloadStrings|UpdateUiStrings)\\.Get\\(\\s*(?!\"[A-Za-z])", RegexOptions.CultureInvariant);
 var dynWrap = new Regex("\\b(W|Wb)\\(\\s*(?!\"[A-Za-z])", RegexOptions.CultureInvariant);
 
 var referenced = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
@@ -185,6 +197,8 @@ var referenced = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
     ["core"] = new(StringComparer.Ordinal),
     ["workbench"] = new(StringComparer.Ordinal),
     ["catalog"] = new(StringComparer.Ordinal),
+    ["catalog-downloads"] = new(StringComparer.Ordinal),
+    ["updates"] = new(StringComparer.Ordinal),
 };
 var missing = new List<(string Site, string Detail)>();
 var dynamicLookups = 0;
@@ -203,6 +217,10 @@ foreach (var file in SourceScan.Files(root, ["src", "tests"], "*.cs"))
     foreach (Match m in callCore.Matches(text)) Use(file, LineAt(text, m.Index), "core", m.Groups[1].Value, "Strings.Get");
     foreach (Match m in callWb.Matches(text)) Use(file, LineAt(text, m.Index), "workbench", m.Groups[1].Value, "WorkbenchStrings.Get");
     foreach (Match m in callCat.Matches(text)) Use(file, LineAt(text, m.Index), "catalog", m.Groups[1].Value, "CatalogUiText.Get");
+    foreach (Match m in callDownloads.Matches(text)) Use(file, LineAt(text, m.Index), "catalog-downloads", m.Groups[1].Value, "CatalogDownloadStrings.Get");
+    foreach (Match m in callUpdates.Matches(text)) Use(file, LineAt(text, m.Index), "updates", m.Groups[1].Value, "UpdateUiStrings.Get");
+    if (file.StartsWith("src/Knx.App/UpdateWindow", StringComparison.Ordinal))
+        foreach (Match m in callUpdateWrap.Matches(text)) Use(file, LineAt(text, m.Index), "updates", m.Groups[1].Value, "U(...)");
     foreach (Match m in callWrap.Matches(text)) Use(file, LineAt(text, m.Index), "workbench", m.Groups[2].Value, m.Groups[1].Value + "(...)");
     dynamicLookups += dynCore.Matches(text).Count + dynWrap.Matches(text).Count;
 }
@@ -211,6 +229,7 @@ foreach (var file in SourceScan.Files(root, ["src", "tests"], "*.axaml"))
     var text = SourceScan.StripXamlComments(File.ReadAllText(Path.Combine(root, file)));
     foreach (Match m in locTr.Matches(text)) Use(file, LineAt(text, m.Index), "core", m.Groups[1].Value, "{loc:Tr}");
     foreach (Match m in locWb.Matches(text)) Use(file, LineAt(text, m.Index), "workbench", m.Groups[1].Value, "{loc:Wb}");
+    foreach (Match m in locUp.Matches(text)) Use(file, LineAt(text, m.Index), "updates", m.Groups[1].Value, "{loc:Up}");
 }
 var unexpectedMissing = missing.Where(m => !exceptions.Missing.Contains(m.Site)).ToList();
 Check("i18n: every referenced key exists in its module", unexpectedMissing.Count == 0,
@@ -279,6 +298,8 @@ foreach (var (module, _, map) in maps)
         "src/Knx.Reports/HandoverPackage",
         "src/Knx.App/Smoke.cs", "src/Knx.App/Screenshot.cs", "src/Knx.App/Workbench/WorkbenchCheck.cs",
         "src/Knx.Core/Localization.cs", "src/Knx.App/Localization/WorkbenchStrings.cs", "src/Knx.App/Services/CatalogBrowser.cs",
+        "src/Knx.App/Localization/CatalogDownloadStrings.cs",
+        "src/Knx.App/Localization/UpdateUiStrings.cs",
     ];
     var files = SourceScan.Files(root, ["src"], "*.cs", skip)
         .Concat(SourceScan.Files(root, ["src"], "*.axaml", skip)).OrderBy(f => f, StringComparer.Ordinal);

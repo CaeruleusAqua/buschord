@@ -605,11 +605,14 @@ internal static class WorkbenchCheck
                 // CI runners may clamp the native window to a 1024-wide desktop. Force the
                 // layout width so the narrow/wide contract is deterministic on every host.
                 window.ApplyLayoutForWidth(1024);
-                var narrow = KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.None;
+                var narrow = KeyboardNavigation.GetTabNavigation(window.FindControl<Grid>("Editor")!) == KeyboardNavigationMode.None
+                    && KeyboardNavigation.GetTabNavigation(window.FindControl<StackPanel>("ObjectTabs")!) == KeyboardNavigationMode.None
+                    && KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.Continue;
                 Check("narrow inspector overlay keeps covered editor stops out of the tab order",
                     narrow && window.Workspace.InspectorVisible);
                 window.ApplyLayoutForWidth(1440);
-                var wide = KeyboardNavigation.GetTabNavigation(mainColumn) == KeyboardNavigationMode.Continue;
+                var wide = KeyboardNavigation.GetTabNavigation(window.FindControl<Grid>("Editor")!) == KeyboardNavigationMode.Continue
+                    && KeyboardNavigation.GetTabNavigation(window.FindControl<StackPanel>("ObjectTabs")!) == KeyboardNavigationMode.Continue;
                 Check("wide layout restores editor tab navigation", wide);
                 window.ApplyLayoutForWidth(window.Bounds.Width);
                 window.ShowTool("programming");

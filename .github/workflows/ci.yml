@@ -3,9 +3,14 @@ name: CI
 on:
   push:
     branches: [development, main]
+  # Feature branches use their PR check, avoiding a second run for the same push.
   pull_request:
     branches: [development, main]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -40,42 +45,55 @@ env:
     tests/Knx.WorkbenchPerformance.Tests
     tests/Knx.Localization.Tests
     tests/Knx.ProjectCompare.Tests
+    tests/Knx.Updates.Tests
     src/Knx.App.Tests
 
 jobs:
   build:
     name: build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          dotnet-version: 9.0.x
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
           cache: true
-          cache-dependency-path: "**/*.csproj"
+          cache-dependency-path: |
+            **/*.csproj
+            global.json
+            Directory.Build.props
       - name: Show SDK
         run: dotnet --info
       - name: Restore
-        run: dotnet restore ets6.sln
+        run: dotnet restore BusChord.sln
       - name: Build
-        run: dotnet build ets6.sln -c Release --no-restore --nologo
+        run: dotnet build BusChord.sln -c Release --no-restore --nologo
 
   test-linux:
     name: test-linux
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          dotnet-version: 9.0.x
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
           cache: true
-          cache-dependency-path: "**/*.csproj"
+          cache-dependency-path: |
+            **/*.csproj
+            global.json
+            Directory.Build.props
       - name: Show SDK
         run: dotnet --info
       - name: Restore
-        run: dotnet restore ets6.sln
+        run: dotnet restore BusChord.sln
       - name: Build
-        run: dotnet build ets6.sln -c Release --no-restore --nologo
+        run: dotnet build BusChord.sln -c Release --no-restore --nologo
       - name: Console checks
         shell: bash
         run: |
@@ -98,19 +116,25 @@ jobs:
   test-windows:
     name: test-windows
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          dotnet-version: 9.0.x
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
           cache: true
-          cache-dependency-path: "**/*.csproj"
+          cache-dependency-path: |
+            **/*.csproj
+            global.json
+            Directory.Build.props
       - name: Show SDK
         run: dotnet --info
       - name: Restore
-        run: dotnet restore ets6.sln
+        run: dotnet restore BusChord.sln
       - name: Build
-        run: dotnet build ets6.sln -c Release --no-restore --nologo
+        run: dotnet build BusChord.sln -c Release --no-restore --nologo
       - name: Console checks
         shell: bash
         run: |
@@ -135,7 +159,7 @@ jobs:
       - name: V4 state regressions (Windows only)
         shell: bash
         run: |
-          for mode in --state-k1 --state-k2 --state-k3; do
+          for mode in --state-k1 --state-k2 --state-k3 --transaction; do
             dotnet run --project tests/Knx.Shell.Tests -c Release --no-build -- "$mode"
           done
       - name: V4 native dialog regressions (Windows only)
@@ -143,6 +167,8 @@ jobs:
         run: |
           dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --dialogs
           dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --dialogs --de
+      - name: Workbench selection and refresh regressions (Windows only)
+        run: dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --projection-refresh
       - name: Workbench native self-check de/light (Windows only)
         run: dotnet run --project src/Knx.App -c Release --no-build -- --workbench-selftest --theme=light --lang=de
       - name: Workbench native self-check en/dark (Windows only)
@@ -153,7 +179,11 @@ jobs:
     needs: [build, test-linux, test-windows]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Fail unless every job passed
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        if: >-
+          needs.build.result != 'success' ||
+          needs.test-linux.result != 'success' ||
+          needs.test-windows.result != 'success'
         run: exit 1

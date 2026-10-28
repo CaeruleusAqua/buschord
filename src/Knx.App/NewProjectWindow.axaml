@@ -3,8 +3,14 @@
         xmlns:loc="using:Knx.App.Localization"
         x:Class="Knx.App.NewProjectWindow"
         Classes="wb-dialog"
-        Title="{loc:Tr NewProjectTitle}" Width="560" Height="440" MinWidth="460" MinHeight="380"
+        Title="{loc:Tr NewProjectTitle}" Width="600" Height="600" MinWidth="460" MinHeight="380"
         Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
+  <Window.Styles>
+    <Style Selector="NumericUpDown /template/ TextBox#PART_TextBox">
+      <Setter Property="AutomationProperties.Name"
+              Value="{Binding Path=(AutomationProperties.Name), RelativeSource={RelativeSource TemplatedParent}}" />
+    </Style>
+  </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
     <Border Padding="22,20,22,10">
       <TextBlock Text="{loc:Tr NewProjectTitle}" Classes="wb-title" />
@@ -17,15 +23,29 @@
           <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto" RowSpacing="10">
             <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr ColName}" Classes="wb-label" />
             <TextBox Grid.Row="0" Grid.Column="1" x:Name="NameBox" Classes="wb-field"
+                     AutomationProperties.Name="{loc:Tr ColName}"
                      Text="{loc:Tr NewProjectTitle}" />
             <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr NewProjectComment}" Classes="wb-label" />
-            <TextBox Grid.Row="1" Grid.Column="1" x:Name="CommentBox" Classes="wb-field" />
+            <TextBox Grid.Row="1" Grid.Column="1" x:Name="CommentBox" Classes="wb-field"
+                     AutomationProperties.Name="{loc:Tr NewProjectComment}" />
           </Grid>
 
           <TextBlock Text="{loc:Tr NewProjectTopology}" Classes="wb-heading" Margin="0,4,0,0" />
+          <TextBlock Text="{loc:Wb NewTopologyHint}" TextWrapping="Wrap" Classes="wb-label" />
+          <Grid ColumnDefinitions="150,*" ColumnSpacing="8">
+            <TextBlock Text="{loc:Wb NewTopologyTemplate}" Classes="wb-label" />
+            <ComboBox Grid.Column="1" x:Name="TemplateBox" Classes="wb-field" SelectedIndex="0"
+                      AutomationProperties.Name="{loc:Wb NewTopologyTemplate}" HorizontalAlignment="Stretch">
+              <ComboBoxItem Content="{loc:Wb NewTopologyTp}" />
+              <ComboBoxItem Content="{loc:Wb NewTopologyLegacy}" />
+            </ComboBox>
+          </Grid>
+          <TextBlock x:Name="TopologyPreview" TextWrapping="Wrap" Classes="wb-label"
+                     AutomationProperties.LiveSetting="Polite" />
           <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
             <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr NewProjectStyle}" Classes="wb-label" />
             <ComboBox Grid.Row="0" Grid.Column="1" x:Name="StyleBox" Classes="wb-field"
+                      AutomationProperties.Name="{loc:Tr NewProjectStyle}"
                       SelectedIndex="0" HorizontalAlignment="Left" Width="220">
               <ComboBoxItem Content="{loc:Tr NewProjectStyleThree}" />
               <ComboBoxItem Content="{loc:Tr NewProjectStyleTwo}" />
@@ -34,11 +54,13 @@
 
             <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Tr NewProjectAreas}" Classes="wb-label" />
             <NumericUpDown Grid.Row="1" Grid.Column="1" x:Name="AreasBox" Classes="wb-field"
+                           AutomationProperties.Name="{loc:Tr NewProjectAreas}"
                            Minimum="1" Maximum="15" Value="1"
                            HorizontalAlignment="Left" Width="140" />
 
             <TextBlock Grid.Row="2" Grid.Column="0" Text="{loc:Tr NewProjectLines}" Classes="wb-label" />
             <NumericUpDown Grid.Row="2" Grid.Column="1" x:Name="LinesBox" Classes="wb-field"
+                           AutomationProperties.Name="{loc:Tr NewProjectLines}"
                            Minimum="1" Maximum="15" Value="1"
                            HorizontalAlignment="Left" Width="140" />
           </Grid>

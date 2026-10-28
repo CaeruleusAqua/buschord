@@ -46,6 +46,8 @@ internal static class NativeDraftChecks
             {
                 Source = new Uri("avares://BusChord/Workbench/WorkbenchTheme.axaml"),
             });
+            failures += await TimeParameterChecks.RunNative(root);
+            failures += await StorageDiagnosticsChecks.RunNative(root);
             var project = new Project { Id = "P", Name = "Native draft regression" };
             var installation = new Installation { Id = "I" };
             var area = new Area { Id = "A", Address = 1 };
@@ -55,10 +57,16 @@ internal static class NativeDraftChecks
             area.Lines.Add(line); installation.Areas.Add(area); project.Installations.Add(installation);
             var path = Path.Combine(root, "fixture.knxproj");
             Knxproj.Save(project, path);
-            line.Devices[1] = new DeviceInstance { Id = "A", Name = "B", Address = new(1, 1, 2), ProductRefId = "M-000F_A-0001-01-0000" };
             using (var zip = ZipFile.Open(path, ZipArchiveMode.Update))
             using (var stream = zip.CreateEntry("M-000F/M-000F_A-0001-01-0000.xml").Open())
                 XDocument.Parse("<KNX><ApplicationProgram><Static><ParameterTypes><ParameterType Id='N' Name='Number'><TypeNumber Type='unsignedInt' SizeInBit='8' minInclusive='0' maxInclusive='100'/></ParameterType></ParameterTypes><Parameters><Parameter Id='P-N' Name='Brightness' ParameterType='N' Value='25'/></Parameters><ParameterRefs><ParameterRef Id='R-N' RefId='P-N'/></ParameterRefs></Static></ApplicationProgram></KNX>").Save(stream);
+            // This identity-isolation fixture deliberately has duplicate device IDs.
+            // Keep its synthetic in-memory tree separate from XML merge/roundtrip tests,
+            // but supply the immutable completed archive used for parameter declarations.
+            var importedFixture = Knxproj.Load(path);
+            var archiveState = typeof(Project).GetProperty("ArchiveState", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            archiveState.SetValue(project, archiveState.GetValue(importedFixture));
+            line.Devices[1] = new DeviceInstance { Id = "A", Name = "B", Address = new(1, 1, 2), ProductRefId = "M-000F_A-0001-01-0000" };
             var vm = new MainWindowViewModel(); vm.CreateProject(project, null); vm.ProjectPath = path;
             var a = vm.Devices[0]; var b = vm.Devices[1];
             var pane = new ParameterPane(vm);
@@ -67,7 +75,8 @@ internal static class NativeDraftChecks
             ParameterItemViewModel Row() => ((IEnumerable<ParameterItemViewModel>)pane.FindControl<ItemsControl>("ParameterList")!.ItemsSource!).Single();
             pane.Load(a);
             await Task.Delay(300);
-            var editor = pane.GetVisualDescendants().OfType<TextBox>().First();
+            var editor = pane.GetVisualDescendants().OfType<NumericUpDown>().Single(control => control.IsEffectivelyVisible)
+                .GetVisualDescendants().OfType<TextBox>().Single(control => control.IsEffectivelyVisible);
             editor.Focus(); editor.SelectAll();
             editor.SelectedText = "44";
             await Task.Delay(100);
@@ -89,6 +98,18 @@ internal static class NativeDraftChecks
             Assert("Only B was dirty after Apply; reverting B leaves no hidden A draft", !pane.HasUnappliedChanges);
             pane.DiscardDrafts();
             Assert("Discarding B leaves applied A clean", !pane.HasUnappliedChanges);
+            pane.Load(a); Row().Value = "55";
+            pane.Load(b); Row().Value = "56";
+            pane.FindControl<Button>("DiscardButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert("C6 local native Discard restores only B", Row().Value == "25" && pane.HasUnappliedChanges);
+            pane.Load(a);
+            Assert("C6 local native Discard preserves hidden A draft", Row().Value == "55");
+            pane.Load(b); Row().Value = "57"; pane.Load(a);
+            pane.DiscardDrafts();
+            pane.Load(b);
+            Assert("C6 explicit project-wide discard also clears hidden drafts", Row().Value == "25" && !pane.HasUnappliedChanges);
+            pane.Load(a);
+            Assert("C6 project-wide discard also restores the current device", Row().Value == "47" && !pane.HasUnappliedChanges);
             pane.Load(a); Row().Value = "70";
             var reentered = false;
             System.ComponentModel.PropertyChangedEventHandler replaceDraft = (_, e) =>
@@ -135,6 +156,7 @@ internal static class NativeDraftChecks
             peerWindow.Show();
             await Task.Delay(150);
             Row().Value = "72";
+            await Task.Delay(100); // Validation can change the virtualized viewport before the next layout pass.
             Assert("Two native views update the same draft without recreating editors", peer.GetVisualDescendants()
                 .OfType<NumericUpDown>().Single().Value == 72 && Row().Value == "72");
             Click("ReviewButton"); Click("ApplyButton");
@@ -184,6 +206,48 @@ internal static class NativeDraftChecks
                 sectionButtons.Length > 3 && parameterScroll.Offset.Y > 0
                 && longPane.Session.SelectedSection == (string)sectionButtons[2].Tag!);
             longWindow.Close();
+
+            var structurePath = Path.Combine(root, "structure.knxproj");
+            Knxproj.Save(Knxproj.Load(path), structurePath);
+            using (var zip = ZipFile.Open(structurePath, ZipArchiveMode.Update))
+            {
+                zip.GetEntry("M-000F/M-000F_A-0001-01-0000.xml")?.Delete();
+                using var stream = zip.CreateEntry("M-000F/M-000F_A-0001-01-0000.xml").Open();
+                XDocument.Parse("""
+                    <KNX><ApplicationProgram Id="APP"><Static><ParameterTypes><ParameterType Id="N"><TypeNumber Type="unsignedInt" SizeInBit="8" /></ParameterType></ParameterTypes>
+                    <Parameters><Parameter Id="P-count" Text="Count" ParameterType="N" Value="20" /></Parameters><ParameterRefs><ParameterRef Id="R-count" RefId="P-count" /></ParameterRefs>
+                    <ModuleDefs><ModuleDef Id="APP_MD-1"><Static><Parameters><Parameter Id="APP_MD-1_P-1" Text="Value" ParameterType="N" Value="1" /></Parameters>
+                    <ParameterRefs><ParameterRef Id="APP_MD-1_R-1" RefId="APP_MD-1_P-1" /></ParameterRefs></Static><Dynamic><ParameterRefRef RefId="APP_MD-1_R-1" /></Dynamic></ModuleDef></ModuleDefs></Static>
+                    <Dynamic><ParameterRefRef RefId="R-count" /><Repeat Id="Repeat" Count="0" ParameterRefId="R-count"><Module Id="APP_MD-1_M-1" RefId="APP_MD-1" /></Repeat></Dynamic></ApplicationProgram></KNX>
+                    """).Save(stream);
+            }
+            var structureVm = new MainWindowViewModel(); structureVm.CreateProject(Knxproj.Load(structurePath), null); structureVm.ProjectPath = structurePath;
+            using var structurePane = new ParameterPane(structureVm);
+            var structureWindow = new Window { Content = structurePane, Width = 700, Height = 700 };
+            structureWindow.Show(); structurePane.Load(structureVm.Devices[0]);
+            await Task.Delay(300);
+            var nativeCount = structurePane.GetVisualDescendants().OfType<NumericUpDown>().First();
+            var nativeCountText = nativeCount.GetVisualDescendants().OfType<TextBox>().First();
+            nativeCountText.Focus(); nativeCount.Value = 21;
+            await Task.Delay(200);
+            Assert("Native count growth retains the focused editor and publishes all rows", structurePane.Session.Rows.Length == 22
+                && ReferenceEquals(nativeCount, structurePane.GetVisualDescendants().OfType<NumericUpDown>().First()) && nativeCount.IsKeyboardFocusWithin);
+            var structureScroll = structurePane.FindControl<ScrollViewer>("ParameterScroll")!;
+            structureScroll.Offset = new Vector(0, 250);
+            await Task.Delay(100);
+            var scrollBefore = structureScroll.Offset.Y;
+            structurePane.Session.Rows.Single(r => r.Instance.Id == "R-count").Value = "22";
+            await Task.Delay(200);
+            Assert("Native structural growth preserves the scroll position", structurePane.Session.Rows.Length == 23
+                && scrollBefore > 0 && Math.Abs(structureScroll.Offset.Y - scrollBefore) < 1);
+            structurePane.Session.Rows.Single(r => r.Instance.Id == "R-count").Value = "257";
+            await Task.Delay(100);
+            Assert("Native structure errors keep Discard visible and Apply disabled", structurePane.FindControl<Button>("DiscardButton")!.IsVisible
+                && structurePane.FindControl<Button>("DiscardButton")!.IsEnabled && !structurePane.FindControl<Button>("ApplyButton")!.IsEnabled);
+            structurePane.FindControl<Button>("DiscardButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert("Native Discard recovers from a failed count", structurePane.Session.Rows.Single(r => r.Instance.Id == "R-count").Value == "20"
+                && structurePane.Session.Rows.Length == 21 && structurePane.Session.CanApply);
+            structureWindow.Close();
 
             if (_shots)
             {

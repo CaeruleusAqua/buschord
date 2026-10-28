@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 /// </summary>
 public static class SourceScan
 {
-    /// <summary>Repository root (the directory holding ets6.sln), found from the test binaries.</summary>
+    /// <summary>Repository root (the directory holding BusChord.sln), found from the test binaries.</summary>
     public static string FindRepoRoot()
     {
         foreach (var start in new[] { AppContext.BaseDirectory, Environment.CurrentDirectory })
@@ -16,11 +16,11 @@ public static class SourceScan
             var dir = new DirectoryInfo(start);
             while (dir is not null)
             {
-                if (File.Exists(Path.Combine(dir.FullName, "ets6.sln"))) return dir.FullName;
+                if (File.Exists(Path.Combine(dir.FullName, "BusChord.sln"))) return dir.FullName;
                 dir = dir.Parent;
             }
         }
-        throw new InvalidOperationException("repository root (ets6.sln) not found");
+        throw new InvalidOperationException("repository root (BusChord.sln) not found");
     }
 
     /// <summary>Same length as the input, comments blanked out (newlines kept, line numbers stay valid).</summary>

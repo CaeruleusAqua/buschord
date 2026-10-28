@@ -1,9 +1,10 @@
 # Knx.Localization.Tests
 
-Offline localization gates for the three string facades (`Knx.Strings`,
-`Knx.App.Localization.WorkbenchStrings`, `Knx.App.Services.CatalogUiText`).
-No product code, no network, no Roslyn: every gate reads the dictionaries at runtime
-(reflection on the private maps until the JSON loader lands) and scans `src/` and `tests/` as text.
+Offline localization gates for the string facades (`Knx.Strings`,
+`Knx.App.Localization.WorkbenchStrings`, `Knx.App.Services.CatalogUiText`,
+`Knx.App.Localization.CatalogDownloadStrings` and `Knx.App.Localization.UpdateUiStrings`).
+No network or Roslyn: the gates read the runtime reference maps and supported
+JSON catalogs, then scan `src/` and `tests/` as text.
 Runs on Windows and Linux through `TEST_PROJECTS` in `.github/workflows/ci.yml`.
 
 ## Run
@@ -18,8 +19,9 @@ I18N_GATE_VERBOSE=1 dotnet run --project tests/Knx.Localization.Tests   # print 
 | Gate | What it checks |
 | --- | --- |
 | parity | every key of a module has non-empty `de` and `en` text |
+| overlays | supported language catalogs contain the complete reference key set, non-empty values and matching placeholders; fallback behaviour remains defined |
 | duplicates | no key appears twice in a source map, and source entries match the runtime key set |
-| references | every `{loc:Tr K}` / `{loc:Wb K}`, `Strings.Get("K")`, `WorkbenchStrings.Get("K")`, `CatalogUiText.Get("K")` and `W("K")` / `Wb("K")` resolves in the map its call site uses |
+| references | `{loc:Tr K}` / `{loc:Wb K}` / `{loc:Up K}`, calls to the five facades, and `W("K")` / `Wb("K")` resolve in their own module; `U("K")` is checked in UpdateWindow sources only, separately from unrelated numeric helpers |
 | placeholders | `{n}` index sets are equal across languages, braces are balanced, `string.Format` succeeds with dummy args for every key |
 | German guard | no hardcoded German literal in product source outside `exceptions.txt` (umlaut/ß, German wordlist, `lang="de"`) |
 | pseudo-loc | a test-only `qps` transform expands every German value into `[!! … !!]`, keeps placeholders intact and leaves real languages untouched |
@@ -30,8 +32,8 @@ Dev-log and selftest output (`src/Knx.Bus`, `src/Knx.Mcp`, `Smoke.cs`, `Screensh
 
 ## Add a key
 
-1. Add one entry to the right map with German **and** English text, non-empty:
-   `["MenuFileOpen"] = ("Projekt öffnen…", "Open project…"),`.
+1. Add one entry to the right German/English reference map and update the matching
+   supported catalogs in `i18n/<module>/<lang>.json`.
 2. Use it via `{loc:Tr MenuFileOpen}` / `{loc:Wb MenuFileOpen}` (XAML) or
    `Strings.Get` / `WorkbenchStrings.Get` / `CatalogUiText.Get` (C#); `W(`/`Wb(` resolve in
    `WorkbenchStrings` only. Placeholders must match between `de` and `en` (`{0}`, `{1}`, …).
@@ -39,11 +41,9 @@ Dev-log and selftest output (`src/Knx.Bus`, `src/Knx.Mcp`, `Smoke.cs`, `Screensh
 
 ## Add a language
 
-Today the maps are `(string De, string En)` tuples, so a third language means a third column
-in all three maps. Then extend this project: the parity/placeholder loops iterate the tuple,
-and the German guard stays unchanged. The planned JSON loader (`i18n/<module>/<lang>.json`)
-replaces the tuple shape and the reflection with a per-language loop; until
-then, keep the parity checks in this file in sync with the facade shape.
+The runtime already supports JSON language overlays with German/English reference
+maps. Follow the [catalog workflow](../../i18n/README.md#adding-a-language).
+These tests iterate the registered supported overlays; no new tuple column is needed.
 
 ## exceptions.txt
 
@@ -56,14 +56,5 @@ then, keep the parity checks in this file in sync with the facade shape.
 Stale entries (no longer found) are reported as INFO, not failed. Interpolation holes in
 scanned literals are normalized to `{}`.
 
-Current known exceptions:
-
-- `missing src/Knx.App/WorkbenchWindow.Commands.cs|LinkProjectChanged`: `W(...)` resolves in
-  `WorkbenchStrings`, but the key exists only in the core `Strings` map, so the dialog shows
-  the raw key. Fix: move the key to `WorkbenchStrings` or call `Strings.Get`.
-- `missing tests/Knx.Core.Tests/Program.cs|GibtEsNicht`: deliberate unknown key, the test
-  exercises the "unknown key returns the key" fallback.
-- 34 `ratchet` entries: German literals in `ParameterEditingSession`, `ParameterItemViewModel`,
-  `ParameterPane`, `MainWindowViewModel`, `Dashboard`, `ProjectQuery`, `Values`, `Wizards`,
-  `LabelCreator` and the workbench label export. They are localized inline in places, but
-  should move into the dictionaries.
+The maintained exceptions are in [exceptions.txt](exceptions.txt). Use the verbose
+run to inspect current findings; do not add entries to hide new localization failures.

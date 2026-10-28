@@ -3,6 +3,9 @@ using System.Text;
 
 namespace Knx;
 
+/// <summary>Address origin for a new topology, without renumbering existing projects.</summary>
+public enum NewProjectTopologyTemplate { LegacyZero, TpFromOne }
+
 /// <summary>Input of the "new project" wizard.</summary>
 public sealed class NewProjectOptions
 {
@@ -13,6 +16,8 @@ public sealed class NewProjectOptions
     public int LinesPerArea { get; set; } = 1;
     public bool CreateAreaAndLineNames { get; set; } = true;
     public uint MasterDataVersion { get; set; } = 198;
+    /// <summary>Existing API callers retain the zero-based template unless explicitly changed.</summary>
+    public NewProjectTopologyTemplate TopologyTemplate { get; set; } = NewProjectTopologyTemplate.LegacyZero;
 }
 
 public sealed record ImportResult(int Imported, int Skipped, IReadOnlyList<string> Errors);
@@ -22,6 +27,13 @@ public static class ProjectWizard
     /// <summary>Creates an empty project with the requested topology and group ranges.</summary>
     public static Project Create(NewProjectOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        if (!Enum.IsDefined(options.TopologyTemplate)) throw new ArgumentOutOfRangeException(nameof(options.TopologyTemplate));
+        var start = options.TopologyTemplate == NewProjectTopologyTemplate.TpFromOne ? 1 : 0;
+        var maximum = 16 - start;
+        if (options.Areas > maximum || options.LinesPerArea > maximum
+            || start == 1 && (options.Areas < 1 || options.LinesPerArea < 1))
+            throw new ArgumentOutOfRangeException(nameof(options), $"This topology template supports 1..{maximum} areas and lines per area.");
         var project = new Project
         {
             Id = "P-" + Random.Shared.Next(1, 9999).ToString("D4", CultureInfo.InvariantCulture),
@@ -40,7 +52,7 @@ public static class ProjectWizard
             Address = new IndividualAddress(1, 1, 0),
         };
 
-        for (var a = 0; a < Math.Max(1, options.Areas); a++)
+        for (var a = start; a < start + Math.Max(1, options.Areas); a++)
         {
             var area = new Area
             {
@@ -48,7 +60,7 @@ public static class ProjectWizard
                 Address = (byte)a,
                 Name = options.CreateAreaAndLineNames ? $"Bereich {a}" : null,
             };
-            for (var l = 0; l < Math.Max(1, options.LinesPerArea); l++)
+            for (var l = start; l < start + Math.Max(1, options.LinesPerArea); l++)
                 area.Lines.Add(new Line
                 {
                     Id = $"L-{a}-{l}",
@@ -110,16 +122,16 @@ public static class ProjectWizard
                 continue;
             }
 
+            var range = EnsureRange(project, installation, address);
             var entry = new GroupAddressEntry
             {
-                Id = NextAddressId(project),
+                Id = ProjectOperations.UniqueId(project, NextAddressId(project)),
                 Name = columns.Count > 1 && columns[1].Length > 0 ? columns[1] : address.ToString(),
                 Address = address,
                 DatapointType = columns.Count > 2 && columns[2].Length > 0 ? NormaliseDpt(columns[2]) : null,
                 Description = columns.Count > 3 && columns[3].Length > 0 ? columns[3] : null,
             };
 
-            var range = EnsureRange(installation, address);
             range.Addresses.Add(entry);
             imported++;
         }
@@ -127,14 +139,14 @@ public static class ProjectWizard
         return new ImportResult(imported, skipped, errors);
     }
 
-    private static GroupRange EnsureRange(Installation installation, GroupAddress address)
+    private static GroupRange EnsureRange(Project project, Installation installation, GroupAddress address)
     {
         var main = installation.MainRanges.FirstOrDefault(r => r.RangeStart == address.Main);
         if (main is null)
         {
             main = new GroupRange
             {
-                Id = $"GR-{installation.MainRanges.Count + 1}",
+                Id = ProjectOperations.UniqueId(project, $"GR-{installation.MainRanges.Count + 1}"),
                 Name = $"Hauptbereich {address.Main}",
                 RangeStart = address.Main,
                 RangeEnd = address.Main,
@@ -147,7 +159,7 @@ public static class ProjectWizard
         {
             middle = new GroupRange
             {
-                Id = $"{main.Id}-{address.Middle}",
+                Id = ProjectOperations.UniqueId(project, $"{main.Id}-{address.Middle}"),
                 Name = $"Mittelbereich {address.Main}/{address.Middle}",
                 RangeStart = address.Middle,
                 RangeEnd = address.Middle,

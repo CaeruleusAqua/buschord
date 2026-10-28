@@ -17,9 +17,7 @@ the SVG and copy the `d` attribute. See `Views/Icon.cs` for the rendering.
 
 ## Workbench V4 shell additions
 
-Added on 2026-10-21 for the raw text glyphs in `WorkbenchWindow` listed in
-the project documentation P2-5. Both official URLs above
-returned byte-identical `d` data for every entry.
+These entries support the Workbench shell. The official sources and license above apply.
 
 | Resource | Upstream name | Replaces | Usage |
 |---|---|---|---|

@@ -1,0 +1,76 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:chrome="using:Avalonia.Controls.Chrome">
+  <Styles.Resources>
+    <!-- Reserve the app's own caption while retaining the native resize/DWM frame.
+         An explicitly empty overlay suppresses Fluent's duplicate caption/buttons. -->
+    <ControlTheme x:Key="WbDialogWindowDecorationsTheme" TargetType="chrome:WindowDrawnDecorations">
+      <Setter Property="DefaultTitleBarHeight" Value="40" />
+      <Setter Property="Template">
+        <WindowDrawnDecorationsTemplate>
+          <WindowDrawnDecorationsContent>
+            <WindowDrawnDecorationsContent.Overlay>
+              <Panel Height="{TemplateBinding TitleBarHeight}" IsHitTestVisible="False" />
+            </WindowDrawnDecorationsContent.Overlay>
+          </WindowDrawnDecorationsContent>
+        </WindowDrawnDecorationsTemplate>
+      </Setter>
+    </ControlTheme>
+  </Styles.Resources>
+
+  <Style Selector="Border.wb-dialog-caption">
+    <Setter Property="Background" Value="{DynamicResource WbPaper}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource WbLine}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+  </Style>
+  <Style Selector="TextBlock.wb-dialog-caption-title">
+    <Setter Property="FontFamily" Value="{DynamicResource WbFontFamily}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Button.wb-dialog-caption-close">
+    <Setter Property="MinWidth" Value="46" />
+    <Setter Property="MinHeight" Value="40" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource WbMuted}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="0" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border x:Name="CaptionBorder" Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+          <ContentPresenter x:Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="Button.wb-dialog-caption-close:pointerover">
+    <Setter Property="Background" Value="#c42b1c" />
+    <Setter Property="Foreground" Value="White" />
+  </Style>
+  <Style Selector="Button.wb-dialog-caption-close:pressed">
+    <Setter Property="Background" Value="#a32416" />
+    <Setter Property="Foreground" Value="White" />
+  </Style>
+  <Style Selector="Button.wb-dialog-caption-close:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="Button.wb-dialog-caption-close:pointerover:focus-visible">
+    <Setter Property="BorderBrush" Value="White" />
+  </Style>
+  <!-- Whole-client contrast tokens also cover these captions and future modal windows. -->
+  <Style Selector="Window.wb-high-contrast Button.wb-dialog-caption-close">
+    <Setter Property="Foreground" Value="{DynamicResource WbText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast Button.wb-dialog-caption-close:pointerover, Window.wb-high-contrast Button.wb-dialog-caption-close:pressed">
+    <Setter Property="Background" Value="{DynamicResource WbSelected}" />
+    <Setter Property="Foreground" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+  <Style Selector="Window.wb-high-contrast Button.wb-dialog-caption-close:pointerover:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource WbSelectedText}" />
+  </Style>
+</Styles>

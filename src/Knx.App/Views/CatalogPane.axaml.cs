@@ -41,6 +41,7 @@ public partial class CatalogPane : UserControl
         _vm = vm;
         _library = library ?? CatalogLibrary.Shared;
         InitializeComponent();
+        DownloadCatalogsButton.Content = Localization.CatalogDownloadStrings.Get("Title");
         RemoveCatalogButton.Content = CatalogUiText.Get("RemoveCatalog");
         ToolTip.SetTip(RemoveCatalogButton, CatalogUiText.Get("RemoveCatalogTip"));
         SegmentCaption.Text = CatalogUiText.Get("TargetSegment");
@@ -180,6 +181,7 @@ public partial class CatalogPane : UserControl
     {
         LoadingState.IsVisible = loading;
         ImportButton.IsEnabled = !loading;
+        DownloadCatalogsButton.IsEnabled = !loading;
         ReloadButton.IsEnabled = !loading;
         CancelButton.IsVisible = loading;
         CancelButton.IsEnabled = loading;
@@ -394,6 +396,35 @@ public partial class CatalogPane : UserControl
     }
 
     private async void OnReload(object? sender, RoutedEventArgs e) => await LoadAsync(reload: true);
+
+    private async void OnDownloadCatalogs(object? sender, RoutedEventArgs e)
+    {
+        if (_busy || TopLevel.GetTopLevel(this) is not Window owner) return;
+        try
+        {
+            DownloadCatalogsButton.IsEnabled = false;
+            var dialog = new CatalogDownloadsWindow(_library);
+            await dialog.ShowDialog(owner);
+            if (dialog.LibraryReloadContinues && dialog.LibraryReloadTask is { } reload)
+            {
+                WatchBackgroundLoad();
+                _ = ObserveDownloadedCatalogReloadAsync(reload);
+            }
+            if (_library.Current is { } snapshot) Bind(snapshot);
+        }
+        catch (Exception error) { SetMessage(Strings.Get("CatalogLoadError", error.Message)); }
+        finally { DownloadCatalogsButton.IsEnabled = !_busy; }
+    }
+
+    private async Task ObserveDownloadedCatalogReloadAsync(Task<CatalogSnapshot> reload)
+    {
+        try { await reload; }
+        catch (Exception error)
+        {
+            UnwatchBackground();
+            SetMessage(Strings.Get("CatalogLoadError", error.Message));
+        }
+    }
 
     /// <summary>
     /// Removes the selected catalogue file from the local library after confirmation.

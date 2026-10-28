@@ -1,6 +1,6 @@
 # Translation catalogs
 
-Source of truth for the language roadmap: the project documentation.
+Source of truth for the language roadmap: [product status](../docs/status.md#native-ui-and-accessibility).
 
 - `core/<lang>.json` - `Knx.Strings` keys (German/English reference stays in C#).
 - `workbench/<lang>.json` - Workbench shell keys.

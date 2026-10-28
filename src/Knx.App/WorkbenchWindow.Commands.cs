@@ -38,6 +38,8 @@ public partial class WorkbenchWindow
                 Async(W("ExportReport"), () => ExportAsync("projektbericht.html", p => ProjectReport.Render(p))),
                 Async(W("ExportAssociations"), () => ExportAsync("zuordnungen.csv", ProjectCsvExporter.Associations)),
                 Async(W("ExportLabels"), ExportLabelsAsync),
+                Async(W("MergeDevices"), () => ExportLabelMergeAsync(true)),
+                Async(W("MergeGroups"), () => ExportLabelMergeAsync(false)),
                 Async(W("ExportSemanticTtl"), () => ExportSemanticAsync(SemanticExport.SemanticFormat.Turtle, "semantik.ttl", "ttl")),
                 Async(W("ExportSemanticJsonLd"), () => ExportSemanticAsync(SemanticExport.SemanticFormat.JsonLd, "semantik.jsonld", "jsonld")),
                 Async(W("CompareProjects"), CompareProjectsAsync),
@@ -55,6 +57,7 @@ public partial class WorkbenchWindow
                 Item(W("MenuRedo"), () => ViewModel.RedoCommand.Execute(null)),
                 Item(W("EditLinks"), () => SetRepresentation("relations")),
                 Item(W("LinkSelection"), ShowBatchLinkDialog),
+                Item(W("SmartTitle"), () => ShowSmartLinkDialog()),
                 Item(W("SelectAll"), SelectAllRows),
                 Item(W("ClearSelection"), ClearSelection),
                 Item(W("Properties"), () => Workspace.InspectorVisible = true)
@@ -90,7 +93,8 @@ public partial class WorkbenchWindow
             MinHeight = Math.Min(height, 220),
             WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
-        // Keep native titlebars; unhandled Escape bubbles after editors/popups have their turn.
+        WorkbenchDialogChrome.Apply(dialog);
+        // Unhandled Escape bubbles after editors/popups have their turn.
         dialog.Classes.Add("wb-dialog");
         dialog.KeyDown += (_, e) =>
         {
@@ -188,7 +192,7 @@ public partial class WorkbenchWindow
             {
                 try
                 {
-                    loaded = Knxproj.Load(path, password);
+                    loaded = Knxproj.Load(path, password, Knx.Scripting.IsolatedScriptRuntime.Shared);
                     break;
                 }
                 catch (InvalidDataException ex) when (Knxproj.IsPasswordError(ex))
@@ -197,9 +201,11 @@ public partial class WorkbenchWindow
                     if (password is null) return false;
                 }
             }
-            await ResetSessionsForReplacementAsync();
-            _parameters.DiscardDrafts();
+            // Adoption prepares undo and persists settings before publishing. A failed
+            // replacement must leave the old monitor and every hidden draft intact.
             ViewModel.AdoptProject(loaded, path);
+            _parameters.DiscardDrafts();
+            await ResetSessionsForReplacementAsync();
             ViewModel.Status = W("ProjectLoaded", ViewModel.Project?.Name ?? "");
             RefreshWorkspace();
             return true;
@@ -213,18 +219,18 @@ public partial class WorkbenchWindow
         }
     }
 
-    private async Task<string?> PromptPasswordAsync(string message)
+    private async Task<string?> PromptPasswordAsync(string message, bool saving = false)
     {
         var dialog = CreateDialog(W("Password"), 460, 230);
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         panel.Children.Add(Note(message));
-        panel.Children.Add(Note(W("PasswordPrompt")));
+        if (message != W("PasswordPrompt")) panel.Children.Add(Note(W("PasswordPrompt")));
         var box = new TextBox { PasswordChar = '●', Classes = { "wb-field" } };
         panel.Children.Add(box);
         string? result = null;
         var actions = DialogActions(
             DialogCancel(dialog),
-            ActionButton(W("Open"), () => { result = box.Text; dialog.Close(); }, "primary", isDefault: true));
+            ActionButton(W(saving ? "MenuSave" : "Open"), () => { result = box.Text; dialog.Close(); }, "primary", isDefault: true));
         dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => box.Focus();
         await dialog.ShowDialog(this);
@@ -239,8 +245,14 @@ public partial class WorkbenchWindow
         var project = ProjectWizard.Create(wizard.Options);
         var file = await StorageProvider.SaveFilePickerAsync(new() { Title = W("SaveNewProjectTitle"), SuggestedFileName = project.Name + ".knxproj", DefaultExtension = "knxproj" });
         if (file?.TryGetLocalPath() is not { } path) return;
-        await ResetSessionsForReplacementAsync();
-        try { ViewModel.CreateProject(project, path); _parameters.DiscardDrafts(); ViewModel.Status = W("ProjectCreated", project.Name); RefreshWorkspace(); }
+        try
+        {
+            ViewModel.CreateProject(project, path);
+            _parameters.DiscardDrafts();
+            await ResetSessionsForReplacementAsync();
+            ViewModel.Status = W("ProjectCreated", project.Name);
+            RefreshWorkspace();
+        }
         catch (Exception ex) { ViewModel.Status = ex.Message; await ConfirmDialog.ShowMessageAsync(this, W("ProjectCreateFailed"), ex.Message); RefreshWorkspace(); }
     }
 
@@ -270,9 +282,32 @@ public partial class WorkbenchWindow
             }
             // Record the durable revision before writing, so the saved archive carries the
             // revision that describes the state being saved. The log is additive and undo-safe.
-            ProjectRevisions.Capture(project, path);
-            if (saveAs || ViewModel.ProjectPath.Length == 0) ViewModel.SaveProjectAs(path);
-            else ViewModel.SaveProject();
+            string? password = null;
+            if (Knxproj.IsPasswordProtected(project))
+            {
+                password = await PromptPasswordAsync(W("PasswordPrompt"), saving: true);
+                if (password is null) return false;
+            }
+            while (true)
+            {
+                try
+                {
+                    if (!ReferenceEquals(ViewModel.Project, project)) return false;
+                    var revision = ProjectRevisions.Capture(project, path);
+                    try
+                    {
+                        if (saveAs || ViewModel.ProjectPath.Length == 0) ViewModel.SaveProjectAs(path, password);
+                        else ViewModel.SaveProject(password);
+                    }
+                    catch { project.Workbench.Revisions.Remove(revision); throw; }
+                    break;
+                }
+                catch (InvalidDataException ex) when (Knxproj.IsPasswordError(ex))
+                {
+                    password = await PromptPasswordAsync(ex.Message, saving: true);
+                    if (password is null) return false;
+                }
+            }
             if (backupWarning is not null) ViewModel.Status = backupWarning;
             else if (HasParameterDrafts) ViewModel.Status = W("SavedWithDrafts");
             return true;
@@ -292,6 +327,9 @@ public partial class WorkbenchWindow
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
+        if (e.CloseReason == WindowCloseReason.OSShutdown && AppUpdateService.Current is { } updates)
+            updates.SuppressApply = true;
+        if (_closingSessionsForExit) { e.Cancel = true; return; }
         if (!_shuttingDown && (ViewModel.IsDirty || HasParameterDrafts))
         {
             e.Cancel = true;
@@ -304,6 +342,28 @@ public partial class WorkbenchWindow
             });
             return;
         }
+        _closingSessionsForExit = true;
+        _ = DisposeSessionsAsync();
+        var sessionsEnded = Task.WhenAll(_pendingSessionDisposals);
+        if (!sessionsEnded.IsCompleted)
+        {
+            // Keep the dispatcher and application lease alive while cancellation unwinds.
+            // Closing the native lifetime first could strand UI-bound continuations.
+            e.Cancel = true;
+            IsEnabled = false;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { await sessionsEnded; }
+                finally
+                {
+                    _closingSessionsForExit = false;
+                    _shuttingDown = true;
+                    Close();
+                }
+            });
+            return;
+        }
+        _closingSessionsForExit = false;
         if (_layoutPath is not null)
         {
             try
@@ -324,12 +384,13 @@ public partial class WorkbenchWindow
     private async Task ExportAsync(string fileName, Func<Project, string> render)
     {
         if (ViewModel.Project is not { } project) { ViewModel.Status = W("NoProjectLoaded"); return; }
+        var content = render(project); // Rendering/validation must succeed before any destination is opened or truncated.
         var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = fileName });
         if (file is null) return;
         await using var stream = await file.OpenWriteAsync();
         stream.SetLength(0);
         await using var writer = new StreamWriter(stream, new UTF8Encoding(false));
-        await writer.WriteAsync(render(project));
+        await writer.WriteAsync(content);
         ViewModel.Status = W("Exported", fileName);
     }
 
@@ -729,7 +790,7 @@ public partial class WorkbenchWindow
     private async Task ReplaceProductAsync()
     {
         if (ViewModel.Project is null) { ViewModel.Status = W("NoProjectLoaded"); return; }
-        var window = new ReplaceProductWindow(ViewModel.ReplaceProduct);
+        var window = new ReplaceProductWindow(ViewModel.PreviewProductMigration, ViewModel.ApplyProductMigration);
         if (ViewModel.SelectedDevice is { } device && device.Device.ProductRefId.Length > 0)
             window.SetOldReference(device.Device.ProductRefId);
         if (await window.ShowDialog<bool>(this) == true)
@@ -742,9 +803,10 @@ public partial class WorkbenchWindow
     private async Task ResetDemoAsync()
     {
         if (!await ConfirmDialog.AskDemoResetAsync(this)) return;
-        await ResetSessionsForReplacementAsync();
+        if (!await ConfirmDiscardAsync()) return;
         ViewModel.CreateProject(Knx.Workbench.WorkbenchJson.CreateDemo(), null);
         _parameterSession.DiscardDrafts();
+        await ResetSessionsForReplacementAsync();
         _audit.Clear();
         Workspace.ChangeProject(ViewModel.Project!.Id);
         RefreshWorkspace();
@@ -760,9 +822,9 @@ public partial class WorkbenchWindow
         try
         {
             var imported = Knx.Workbench.WorkbenchJson.Import(await File.ReadAllTextAsync(path));
-            await ResetSessionsForReplacementAsync();
             ViewModel.CreateProject(imported, null);
             _parameterSession.DiscardDrafts();
+            await ResetSessionsForReplacementAsync();
             RefreshWorkspace();
             ViewModel.Status = W("DemoImported");
         }
@@ -834,6 +896,9 @@ public partial class WorkbenchWindow
             foreach (var g in ProjectQuery.GroupAddresses(p)) candidates.Add(($"{g.Address} · {g.Name}", () => OpenTarget(new("ga", g.Id))));
         }
         candidates.AddRange([(W("Catalog"), ShowCatalog), (W("ProjectCheck"), () => ShowTool("problems")), (W("Monitor"), () => ShowTool("monitor")),
+            (W("SmartTitle"), () => ShowSmartLinkDialog()),
+            (W("MergeDevices"), () => _ = GuardAsync(() => ExportLabelMergeAsync(true))),
+            (W("MergeGroups"), () => _ = GuardAsync(() => ExportLabelMergeAsync(false))),
             (W("ProgrammingTab"), () => ShowTool("programming")), (W("ResetLayout"), Workspace.ResetLayout),
             (W("OpenProject"), () => _ = GuardAsync(OpenProjectAsync)), (W("Help"), ShowHelp)]);
         list.ItemTemplate = new FuncDataTemplate<PaletteEntry>((entry, _) => Label(entry?.Label ?? ""));
@@ -853,11 +918,11 @@ public partial class WorkbenchWindow
         {
             if (e.Key == Avalonia.Input.Key.Down) { list.Focus(); if (list.SelectedIndex < 0 && list.ItemCount > 0) list.SelectedIndex = 0; e.Handled = true; }
         };
-        list.KeyDown += (_, e) =>
+        list.AddHandler(Avalonia.Input.InputElement.KeyDownEvent, (_, e) =>
         {
             if (e.Key == Avalonia.Input.Key.Enter) { Activate(); e.Handled = true; }
             else if (e.Key == Avalonia.Input.Key.Escape) { dialog.Close(); e.Handled = true; }
-        };
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         dialog.KeyDown += (_, e) => { if (!e.Handled && e.Key == Avalonia.Input.Key.Enter) { Activate(); e.Handled = true; } };
         Filter(); dialog.Opened += (_, _) => query.Focus(); dialog.ShowDialog(this);
     }
@@ -907,6 +972,10 @@ public partial class WorkbenchWindow
         var rooms = project.Installations.SelectMany(i => i.Locations.AllNodes).Where(n => n.Kind == SpaceKind.Room).ToList();
         var room = new ComboBox { ItemsSource = rooms, PlaceholderText = W("RoomOptional"), Classes = { "wb-field" } };
         room.ItemTemplate = new FuncDataTemplate<SpaceNode>((r, _) => Label(r is null ? "" : r.Path));
+        AutomationProperties.SetName(address, W("GroupAddress"));
+        AutomationProperties.SetName(name, W("NameLabel"));
+        AutomationProperties.SetName(dpt, W("DatapointType"));
+        AutomationProperties.SetName(room, W("RoomOptional"));
         panel.Children.Add(Label(W("GroupAddress"))); panel.Children.Add(address);
         panel.Children.Add(Label(W("NameLabel"))); panel.Children.Add(name);
         panel.Children.Add(Label(W("DatapointType"))); panel.Children.Add(dpt);
@@ -947,45 +1016,66 @@ public partial class WorkbenchWindow
     private void ShowBatchLinkDialog()
     {
         if (ViewModel.Project is not { } project || Workspace.ActiveTab is not { } tab) return;
-        var selected = BatchSelection(project, tab);
+        ShowBatchLinkDialogForSelection(BatchSelection(project, tab));
+    }
+
+    private void ShowBatchLinkDialogForSelection(IReadOnlyList<BatchLinkItem> selection)
+    {
+        if (ViewModel.Project is not { } project) return;
+        IReadOnlyList<BatchLinkItem> selected = Array.AsReadOnly(selection.ToArray());
+        var session = ViewModel.ProjectSessionIdentity;
         if (selected.Count == 0) { ViewModel.Status = W("BatchNeedSelection"); return; }
         var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();
         var dialog = CreateDialog(W("BatchTitle", selected.Count), 720, 560);
+        dialog.Name = "BatchLinkDialog";
         var top = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 8 };
-        var picker = new ComboBox { ItemsSource = groups, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+        var search = new TextBox { Name = "BatchGroupSearch", Watermark = W("BatchSearch"), Classes = { "wb-field" } };
+        AutomationProperties.SetName(search, W("BatchSearch"));
+        var count = Note(W("GroupAddressCount", groups.Count)); count.Name = "BatchGroupCount";
+        AutomationProperties.SetLiveSetting(count, AutomationLiveSetting.Polite);
+        var picker = new ComboBox { Name = "BatchGroupPicker", ItemsSource = groups, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
             PlaceholderText = W("ChooseGroupAddress"), Classes = { "wb-field" } };
-        picker.ItemTemplate = new FuncDataTemplate<GroupAddressEntry>((g, _) => Label(g is null ? "" : $"{g.Address} · {g.Name} · {g.DatapointType ?? "DPT?"}"));
-        var preview = new ListBox { Height = 320 };
-        var errors = new TextBlock { FontSize = 11, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+        AutomationProperties.SetName(picker, W("ChooseGroupAddress"));
+        picker.ItemTemplate = new FuncDataTemplate<GroupAddressEntry>((g, _) => Label(g is null ? "" : $"{g.Address} · {g.Name} · {g.DatapointType ?? W("Unknown")}"));
+        var preview = new ListBox { Name = "BatchLinkPreview", Height = 230 };
+        var errors = new TextBlock { Name = "BatchLinkError", FontSize = 11, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
         AutomationProperties.SetLiveSetting(errors, AutomationLiveSetting.Polite);
         var add = ActionButton(W("LinkAction"), () => { }, "primary");
+        add.Name = "BatchLinkApply";
         add.IsEnabled = false;
         top.Children.Add(Label(W("BatchIntro")));
+        top.Children.Add(search);
+        top.Children.Add(count);
         top.Children.Add(picker);
         top.Children.Add(preview);
         var actions = DialogActions(
             DialogCancel(dialog),
             add);
         dialog.Content = DialogLayout(top, actions, errors);
-        dialog.Opened += (_, _) => picker.Focus();
+        dialog.Opened += (_, _) => search.Focus();
+        bool IsCurrent() => ReferenceEquals(project, ViewModel.Project) && ReferenceEquals(session, ViewModel.ProjectSessionIdentity);
         void Validate()
         {
-            if (picker.SelectedItem is not GroupAddressEntry ga) { preview.ItemsSource = null; errors.Text = ""; add.IsEnabled = false; return; }
-            var live = ViewModel.Project;
-            var results = selected.Select(item =>
+            if (!IsCurrent())
             {
-                var key = new ObjectKey(item.DeviceId, item.ObjectId);
-                var reason = live is null ? Strings.Get("LinkProjectChanged") : WorkbenchProject.ValidateLink(live, key, ga.Id);
-                var already = live is not null && ProjectQuery.ComObjectRefs(live)
-                    .Any(r => r.Device.Id == item.DeviceId && r.Ref.Id == item.ObjectId && r.Ref.Links.Contains(ga.Id));
-                return new LinkPreview(item, reason, already);
-            }).ToList();
+                preview.ItemsSource = null; errors.Text = Strings.Get("LinkProjectChanged"); add.IsEnabled = false;
+                errors.Classes.Set("wb-success", false); errors.Classes.Set("wb-error", true); return;
+            }
+            if (picker.SelectedItem is not GroupAddressEntry ga)
+            {
+                preview.ItemsSource = null; errors.Text = ""; add.IsEnabled = false;
+                errors.Classes.Set("wb-success", false); errors.Classes.Set("wb-error", false); return;
+            }
+            var live = ViewModel.Project;
+            var checks = WorkbenchProject.CheckLinks(live!, selected.Select(item => new LinkCheckRequest(new(item.DeviceId, item.ObjectId), ga.Id)));
+            var results = selected.Select((item, i) => new LinkPreview(item,
+                checks[i].Validation.Ok ? null : checks[i].Validation.Message, checks[i].AlreadyLinked)).ToList();
             preview.ItemsSource = results;
             preview.ItemTemplate = new FuncDataTemplate<LinkPreview>((p, _) => Label(
                 p is null ? "" : $"{(p.AlreadyLinked ? W("AlreadyLinked") : p.Error is null ? W("Ready") : W("Incompatible"))} · {p.Item.Name}"
                 + (p.Error is null ? "" : " — " + p.Error)));
             var invalid = results.Where(r => r.Error is not null).ToList();
-            add.IsEnabled = invalid.Count == 0;
+            add.IsEnabled = invalid.Count == 0 && results.Any(r => !r.AlreadyLinked);
             errors.Text = invalid.Count == 0
                 ? results.All(r => r.AlreadyLinked) ? W("BatchAllAlreadyLinked")
                 : W("BatchCompatible")
@@ -994,22 +1084,33 @@ public partial class WorkbenchWindow
             errors.Classes.Set("wb-error", invalid.Count != 0);
         }
         picker.SelectionChanged += (_, _) => Validate();
+        search.TextChanged += (_, _) =>
+        {
+            var query = search.Text?.Trim() ?? "";
+            var previous = picker.SelectedItem as GroupAddressEntry;
+            var filtered = groups.Where(g => $"{g.Address} {g.Name} {g.DatapointType}".Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+            picker.ItemsSource = filtered;
+            picker.SelectedItem = previous is not null && filtered.Contains(previous) ? previous : null;
+            count.Text = W("GroupAddressCount", filtered.Length);
+            Validate();
+        };
+        search.KeyDown += (_, e) =>
+        {
+            if (e.Key != Avalonia.Input.Key.Down) return;
+            picker.Focus(); picker.IsDropDownOpen = true; e.Handled = true;
+        };
         add.Click += (_, _) =>
         {
-            if (picker.SelectedItem is not GroupAddressEntry ga) return;
             try
             {
-                var keys = selected.Select(r => new ObjectKey(r.DeviceId, r.ObjectId)).ToList();
-                MutationResult result = new(false, 0, [], []);
-                ViewModel.Edit(W("EditLink", ga.Address), p => result = WorkbenchProject.AddLinks(p, keys, ga.Id));
-                if (!result.Ok)
-                {
-                    ViewModel.Status = result.Errors.FirstOrDefault()?.Reason ?? W("LinkImpossible");
-                    errors.Classes.Set("wb-success", false);
-                    errors.Classes.Set("wb-error", true);
-                    errors.Text = ViewModel.Status;
-                    return;
-                }
+                if (!IsCurrent()) throw new InvalidOperationException(Strings.Get("LinkProjectChanged"));
+                if (ViewModel.HistoryBlocked?.Invoke() == true) throw new InvalidOperationException(W("SmartBusy"));
+                if (picker.SelectedItem is not GroupAddressEntry ga) return;
+                Validate();
+                if (!add.IsEnabled) { ViewModel.Status = errors.Text ?? W("LinkImpossible"); return; }
+                var requests = selected.Select(r => new LinkCheckRequest(new(r.DeviceId, r.ObjectId), ga.Id));
+                var result = ViewModel.ApplyLinkPairs(W("EditLink", ga.Address), requests);
+                if (!result.Ok) throw new InvalidOperationException(result.Errors.FirstOrDefault()?.Reason ?? W("LinkImpossible"));
                 ViewModel.Status = W("LinksAdded", result.Changed, ga.Address);
                 dialog.Close(); RefreshWorkspace();
             }

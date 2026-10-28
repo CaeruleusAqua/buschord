@@ -6,15 +6,23 @@ namespace Knx.Catalog;
 /// </summary>
 public static class CatalogInstaller
 {
+    /// <summary>Creates a detached device with a project-wide free stable id, before insertion.</summary>
+    public static DeviceInstance CreateDevice(Project project, CatalogProduct product,
+        CatalogApplicationProgram? program, IndividualAddress address, string name)
+        => CreateDevice(product, program, address, name, ProjectOperations.UniqueId(project, address.ToString()));
+
     public static DeviceInstance CreateDevice(
         CatalogProduct product,
         CatalogApplicationProgram? program,
         IndividualAddress address,
-        string name)
+        string name) => CreateDevice(product, program, address, name, address.ToString());
+
+    private static DeviceInstance CreateDevice(CatalogProduct product, CatalogApplicationProgram? program,
+        IndividualAddress address, string name, string id)
     {
         var device = new DeviceInstance
         {
-            Id = address.ToString(),
+            Id = id,
             Address = address,
             Name = name,
             ProductRefId = product.Id,

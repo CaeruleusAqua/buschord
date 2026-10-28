@@ -17,29 +17,32 @@ public static class Ksxml
     /// <summary>Parses and returns the dynamic evaluation for callers that need to re-evaluate later.</summary>
     public static (List<ParameterType> Types, List<ParameterBlock> Blocks,
         List<ParameterInstance> Instances, List<ComObject> ComObjects,
-        List<ComObjectInstanceRef> ComObjectRefs) Parse(XDocument doc, out DynamicEvaluation evaluation)
+        List<ComObjectInstanceRef> ComObjectRefs) Parse(XDocument doc, out DynamicEvaluation evaluation,
+            IReadOnlyDictionary<string, string?>? userValues = null, IParameterScriptRuntime? scripts = null,
+            string? editedReference = null, bool editableStructure = false, ParameterProfileContext? profile = null)
     {
-        var root = doc.Root ?? throw new InvalidDataException("empty XML");
+        var root = StructureExpansion.Expand(doc.Root ?? throw new InvalidDataException("empty XML"), userValues, scripts, editedReference);
         var types = Elements(root, "ParameterType").Select(ParseParameterType).OfType<ParameterType>().ToList();
         var typeMap = types.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First());
-        // Module definitions have their own identity/argument space and cannot be flattened safely.
+        // Unexpanded definitions have a separate identity space; never treat templates as instances.
         var parameters = root.DescendantsAndSelf().Where(e => e.Name.LocalName is "Parameter" or "ParameterInstance")
             .Where(e => !e.Ancestors().Any(a => a.Name.LocalName == "ModuleDef")).ToList();
         var refs = Elements(root, "ParameterRef").Where(e => !e.Ancestors().Any(a => a.Name.LocalName == "ModuleDef"))
             .ToLookup(e => Attr(e, "RefId") ?? "", StringComparer.Ordinal);
         var instances = new List<ParameterInstance>();
+        var storage = new ParameterStorageReader(root, profile);
         foreach (var parameter in parameters)
         {
             var references = refs[Attr(parameter, "Id") ?? ""].ToList();
-            if (references.Count == 0) instances.Add(ReadInstance(parameter, null, typeMap));
-            else foreach (var reference in references) instances.Add(ReadInstance(parameter, reference, typeMap));
+            if (references.Count == 0) instances.Add(ReadInstance(parameter, null, typeMap, storage));
+            else foreach (var reference in references) instances.Add(ReadInstance(parameter, reference, typeMap, storage));
         }
-        var blocks = Elements(root, "ParameterBlock").Select(el => new ParameterBlock
+        var blocks = Elements(root, "ParameterBlock").Where(e => !e.Ancestors().Any(a => a.Name.LocalName == "ModuleDef")).Select(el => new ParameterBlock
         {
             Id = Attr(el, "Id") ?? "", Name = Attr(el, "Text") ?? Attr(el, "Name"),
             Rows = Int(el, "Rows", 1), Columns = Int(el, "Columns", 1),
         }).ToList();
-        var objects = Elements(root, "ComObject").Select(el => new ComObject
+        var objects = Elements(root, "ComObject").Where(e => !e.Ancestors().Any(a => a.Name.LocalName == "ModuleDef")).Select(el => new ComObject
         {
             Id = Attr(el, "Id") ?? "", Name = Attr(el, "Text") ?? Attr(el, "Name") ?? "",
             Description = Attr(el, "Description"), Number = Int(el, "Number"),
@@ -51,13 +54,13 @@ public static class Ksxml
             Id = Attr(el, "Id") ?? "", ComObjectId = Attr(el, "ComObjectId") ?? Attr(el, "RefId") ?? "",
             Text = Attr(el, "Text"), Number = Int(el, "Number"), FunctionText = Attr(el, "FunctionText"),
         }).ToList();
-        evaluation = DynamicParameters.Evaluate(root);
+        evaluation = DynamicParameters.Evaluate(root, userValues, scripts, editedReference, editableStructure);
         DynamicParameters.Apply(evaluation, instances, blocks);
         return (types, blocks, instances, objects, objectRefs);
     }
 
     private static ParameterInstance ReadInstance(XElement parameter, XElement? reference,
-        Dictionary<string, ParameterType> types)
+        Dictionary<string, ParameterType> types, ParameterStorageReader storage)
     {
         string? Pick(string name) => Attr(reference, name) ?? Attr(parameter, name);
         var typeId = Pick("ParameterType") ?? Pick("ParameterTypeId");
@@ -77,6 +80,8 @@ public static class Ksxml
             IsVisible = visible, IsEnabled = editable,
             IsStaticallyVisible = visible, IsStaticallyEnabled = editable,
             UnsupportedReason = type?.UnsupportedReason,
+            Storage = storage.Read(parameter, reference, type),
+            ModuleOrigin = ModuleParameterOrigin.Read(parameter, reference),
             Row = Int(reference ?? parameter, "Row"), Column = Int(reference ?? parameter, "Column"),
         };
     }
@@ -93,6 +98,11 @@ public static class Ksxml
             Id = Attr(el, "Id") ?? "", Name = Attr(el, "Name") ?? "",
             SizeInBit = Int(source, "SizeInBit"), Encoding = Attr(source, "Encoding"),
             NumberType = Attr(source, "Type") ?? Attr(source, "Base"),
+            AddressType = Attr(source, "AddressType"), AddressVersion = Attr(source, "Version"),
+            TimeUnit = shape?.Name.LocalName == "TypeTime" ? Attr(source, "Unit") : null,
+            TimeUIHint = shape?.Name.LocalName == "TypeTime" ? Attr(source, "UIHint") : null,
+            PictureResourceId = shape?.Name.LocalName == "TypePicture" ? Attr(source, "RefId") : null,
+            PictureAlignment = shape?.Name.LocalName == "TypePicture" ? Attr(source, "HorizontalAlignment") : null,
             Unit = Attr(el, "Unit"), Description = Attr(el, "Description"), IsVisible = Visible(el),
         };
         if (shape is null)
@@ -108,6 +118,7 @@ public static class Ksxml
                 "TypeFloat" => ParameterDataType.Float,
                 "TypeText" => ParameterDataType.Text,
                 "TypeColor" => ParameterDataType.Color,
+                "TypeTime" => ParameterDataType.Time,
                 "TypeIPAddress" => ParameterDataType.IPAddress,
                 "TypeRawData" => ParameterDataType.RawData,
                 "TypePicture" => ParameterDataType.Picture,
@@ -137,6 +148,17 @@ public static class Ksxml
                 Id = Attr(enumeration, "Id"), EnumerationValue = Attr(enumeration, "Value"),
                 EnumerationText = Attr(enumeration, "Text") ?? Attr(enumeration, "Value"),
             });
+        if (type.DataType == ParameterDataType.Time)
+            type.UnsupportedReason ??= ParameterValidation.TimeDeclarationError(type);
+        if (type.DataType == ParameterDataType.RawData)
+        {
+            if (shape?.Name.LocalName == "TypeRawData" && int.TryParse(Attr(source, "MaxSize"),
+                NumberStyles.Integer, CultureInfo.InvariantCulture, out var maximum)) type.RawDataMaxSize = maximum;
+            if (shape?.Name.LocalName != "TypeRawData" || source.HasElements
+                || source.Attributes().Any(a => !a.IsNamespaceDeclaration && a.Name != "MaxSize"))
+                type.UnsupportedReason ??= "Unsupported TypeRawData declaration.";
+            type.UnsupportedReason ??= ParameterValidation.RawDataDeclarationError(type);
+        }
         return type;
     }
 

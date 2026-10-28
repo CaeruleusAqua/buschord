@@ -120,6 +120,7 @@ public sealed class ConfirmDialog : Window
         root.Children.Add(footer);
 
         Content = root;
+        WorkbenchDialogChrome.Apply(this);
 
         var escapeChoice = buttons.Any(b => b.Choice == ConfirmChoice.Cancel)
             ? ConfirmChoice.Cancel

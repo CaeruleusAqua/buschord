@@ -10,6 +10,10 @@ public static class WorkbenchProjection
 {
     public static IEnumerable<SpaceNode> Spaces(Project p) => p.Installations.SelectMany(i => i.Locations.AllNodes);
     public static IEnumerable<Line> Lines(Project p) => p.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines);
+    public static string DeviceName(Project project, DeviceInstance device) =>
+        !string.IsNullOrWhiteSpace(device.Name) ? device.Name
+        : project.Hardware.TryGetValue(device.ProductRefId, out var product) && !string.IsNullOrWhiteSpace(product.Name)
+            ? product.Name : device.Address.ToString();
     public static object? Resolve(Project? p, WorkbenchTarget target) => p is null ? null : target.Kind switch
     {
         "project" => p.Id == target.Id ? p : null,
@@ -56,13 +60,13 @@ public static class WorkbenchProjection
             var d = deviceGroup.Key;
             var objects = deviceGroup
                 .Where(r => !tab.UnlinkedOnly || r.Object.Links.Count == 0)
-                .Where(r => Match(tab.Filter, d.Name, d.Address.ToString(), r.Object.Text, r.Object.FunctionText, r.Object.Number.ToString(),
+                .Where(r => Match(tab.Filter, DeviceName(p, d), d.Address.ToString(), r.Object.Text, r.Object.FunctionText, r.Object.Number.ToString(),
                     string.Join(" ", r.Object.Links.Select(id => addresses.TryGetValue(id, out var g) ? $"{g.Address} {g.Name}" : id))))
                 .OrderBy(r => r.Metadata?.ChannelId, StringComparer.Ordinal)
                 .ThenBy(r => r.Object.Number).ToList();
             if (objects.Count == 0 && (tab.UnlinkedOnly || tab.Filter.Length > 0 || tab.Target.Kind == "ga")) continue;
             var external = objects.Any(r => r.External);
-            result.Add(new("device:" + d.Id, "device", d.Name ?? d.Address.ToString(), d.Address.ToString(), d, null, 0,
+            result.Add(new("device:" + d.Id, "device", DeviceName(p, d), d.Address.ToString(), d, null, 0,
                 !tab.CollapsedDeviceIds.Contains(d.Id), true, External: external));
             if (tab.CollapsedDeviceIds.Contains(d.Id)) continue;
             var hasChannelMetadata = objects.Any(r => r.Metadata?.ChannelId is not null);
@@ -75,11 +79,26 @@ public static class WorkbenchProjection
                 foreach (var r in objects) result.Add(ObjectRowOf(r, 2, addresses));
                 continue;
             }
-            var channelNames = d.Channels.ToDictionary(c => c.Id, c => c.Name, StringComparer.Ordinal);
+            IEnumerable<ChannelInstance> AllChannels(IEnumerable<ChannelInstance> channels)
+            {
+                foreach (var channel in channels)
+                {
+                    yield return channel;
+                    foreach (var child in AllChannels(channel.Channels)) yield return child;
+                }
+            }
+            var channelNames = AllChannels(d.Channels).GroupBy(c => c.Id, StringComparer.Ordinal)
+                .Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.Single().Name, StringComparer.Ordinal);
             foreach (var channel in objects.Where(r => r.Metadata?.ChannelId is not null)
                          .GroupBy(r => r.Metadata!.ChannelId!).OrderBy(g => g.Key, StringComparer.Ordinal))
             {
-                var name = channelNames.GetValueOrDefault(channel.Key, channel.Key);
+                var name = channelNames.GetValueOrDefault(channel.Key);
+                if (string.IsNullOrEmpty(name))
+                {
+                    var declaredNames = channel.Where(r => r.Metadata?.StructuralDeclaredChannelId == channel.Key)
+                        .Select(r => r.Metadata?.StructuralDeclaredChannelName).Where(n => !string.IsNullOrEmpty(n)).Distinct(StringComparer.Ordinal).Take(2).ToArray();
+                    name = declaredNames.Length == 1 ? declaredNames[0] : channel.Key;
+                }
                 var key = "channel:" + d.Id + ":" + channel.Key;
                 var expanded = !tab.CollapsedDeviceIds.Contains(key);
                 result.Add(new(key, "channel", name, "", d, null, 1, expanded, true, External: channel.Any(r => r.External)));
@@ -147,7 +166,7 @@ public static class WorkbenchProjection
     public static IReadOnlyList<WorkbenchNavNode> Navigation(Project p, string perspective)
     {
         var devices = ProjectQuery.DeviceList(p).ToList();
-        WorkbenchNavNode Device(DeviceInstance d) => new("device:" + d.Id, d.Name ?? d.Address.ToString(), d.Address.ToString(),
+        WorkbenchNavNode Device(DeviceInstance d) => new("device:" + d.Id, DeviceName(p, d), d.Address.ToString(),
             d, new("device", d.Id), []);
         WorkbenchNavNode Space(SpaceNode s) => new("space:" + s.Id, s.Name,
             BuildingTree.DevicesUnder(s).Count() is var count && count > 0 ? count.ToString() : "",

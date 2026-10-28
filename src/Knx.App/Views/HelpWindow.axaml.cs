@@ -12,6 +12,7 @@ public partial class HelpWindow : Window
     public HelpWindow()
     {
         InitializeComponent();
+        WorkbenchDialogChrome.Apply(this);
         Title = WorkbenchStrings.Get("HelpTitle");
         AutomationProperties.SetName(this, Title);
         CloseButton.Content = WorkbenchStrings.Get("Close");

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -21,7 +22,9 @@ public sealed partial class McpServer
         new("project_open",
             "Open an existing ETS project archive (*.knxproj) and make it the working project. " +
             "Replaces the current project and resets undo/redo history.",
-            Schema(StrProp("path", "Path to the .knxproj file.", true)),
+            Schema(StrProp("path", "Path to the .knxproj file.", true),
+                StrProp("password", "Project password for this call only; never remembered."),
+                BoolProp("execute_scripts", "Explicitly run bounded manufacturer calculations for this call (default false).")),
             Sync(ProjectOpen)),
         new("project_new",
             "Create a new empty project in memory with the given name, group address style, area count and " +
@@ -31,12 +34,15 @@ public sealed partial class McpServer
                 EnumProp("style", "Group address style.", ["three_level", "two_level", "free"]),
                 IntProp("areas", "Number of areas to create (default 1)."),
                 IntProp("lines", "Number of lines per area (default 1)."),
+                EnumProp("topology_template", "Address origin: tp starts with line 1.1; legacy keeps line 0.0 (default legacy). TP supports 1..15, legacy 1..16 areas/lines.", ["tp", "legacy"]),
                 StrProp("save_path", "Target .knxproj path used by project_save.")),
             Sync(ProjectNew)),
         new("project_save",
             "Write the in-memory project to disk as a .knxproj archive. Uses the path from project_open or " +
             "project_new unless path is given.",
-            Schema(StrProp("path", "Target .knxproj path; overrides the remembered path.")),
+            Schema(StrProp("path", "Target .knxproj path; remembered only after a successful save."),
+                StrProp("password", "Protected sources require their project password again; never remembered."),
+                BoolProp("execute_scripts", "Explicitly run bounded manufacturer calculations required for native export (default false).")),
             Sync(ProjectSave)),
         new("project_info",
             "Summarize the open project: ids, path, topology/device/group address counts and undo state.",
@@ -160,8 +166,8 @@ public sealed partial class McpServer
             Schema(StrProp("device_address", "Individual address, e.g. 1.1.5.", true)),
             Sync(CommunicationObjectsList)),
         new("group_link_add",
-            "Manually link a communication object reference to an existing group address. Idempotent, offline and undoable; no DPT compatibility is inferred.",
-            GroupLinkSchema(),
+            "Manually link a communication object reference to an existing group address. Known DPT/bit/security conflicts are rejected atomically. Unknown facts remain explicitly unverified unless require_compatibility=true. Idempotent, offline and undoable.",
+            GroupLinkSchema(add: true),
             Sync(args => GroupLinkChange(args, true))),
         new("group_link_remove",
             "Remove a communication object reference's link to an existing group address. Idempotent, offline and undoable.",
@@ -178,19 +184,31 @@ public sealed partial class McpServer
             "type match (minimum score 40, up to 3 suggestions per object).",
             Schema(),
             Sync(SmartLinkSuggest)),
+        new("mass_link_review",
+            "Review every unlinked communication object before an atomic batch. Returns ready/ambiguous/incompatible/unmatched/unverified rows and a bound ten-minute review_token. Set per-row group ids through targets; missing facts never become ready.",
+            MassLinkReviewSchema(), Sync(MassLinkReviewTool)),
+        new("mass_link_apply",
+            "Atomically apply selected ready rows from mass_link_review, rechecking project lifetime, identities and complete compatibility. One undo step; no partial links. Omit row_ids to apply all ready rows.",
+            MassLinkApplySchema(), Sync(MassLinkApplyTool)),
         new("smart_link_apply",
-            "Apply the best suggestion (same scoring as smart_link_suggest) to every unlinked communication " +
-            "object of the project.",
+            "Legacy manual batch: apply the highest-scoring suggestion per unlinked object. Known conflicts reject the whole transaction; missing facts return unverified warnings. For explicit ambiguous-target review and strict compatibility use mass_link_review/mass_link_apply.",
             Schema(),
             Sync(SmartLinkApply)),
         new("product_replace",
-            "Repoint all devices of one product or application-program reference to another. dry_run reports " +
-            "what would change without modifying the project.",
+            "Preview a validated product/application migration with dry_run=true, inspect its exact mappings, " +
+            "then apply using the returned review_token and identical inputs. Missing declarations yield " +
+            "discovery only, never a validated migration. Changes remain in memory until project_save.",
             Schema(
                 StrProp("old_ref", "Product or hardware2program reference to replace.", true),
                 StrProp("new_ref", "Replacement reference id.", true),
                 StrProp("new_program", "Optional new hardware2program reference id."),
-                BoolProp("dry_run", "Report matches without changing the project.")),
+                BoolProp("dry_run", "Create a detached, validated preview without project or undo changes."),
+                StrProp("review_token", "Apply only a previously reviewed preview; one use, expires after ten minutes."),
+                MapProp("parameter_map", "Exact complete source parameter-reference ids mapped to exact target ids."),
+                MapProp("object_map", "Exact complete source communication-object-reference ids mapped to exact target ids."),
+                MapProp("channel_map", "Exact complete source channel ids mapped to exact target ids."),
+                BoolProp("target_secure_capable", "Explicitly confirmed target Secure capability; omitted remains unknown."),
+                BoolProp("execute_scripts", "Explicitly run bounded manufacturer calculations for this migration (default false).")),
             Sync(ProductReplace)),
 
         new("export_csv",
@@ -356,18 +374,30 @@ public sealed partial class McpServer
             "completeness, confirmations), the computed image chunks, the printable dry run and the " +
             "attempt-log status. Sends no programming frame and never downloads; with 'gateway' it reads " +
             "the descriptor over a short-lived read-only tunnel (like bus_device_info). " +
+            "Adds archiveMaskProfile metadata from the loaded archive without script evaluation. " +
+            "An explicit parameter_subset plus byte_order optionally adds an offline subset preview (Subset-Vorschau) for numeric fields, declared unsigned enum values, aligned IEEE32 using the explicit .NET10 XML Double-to-Single profile, bounded signed raw ordinary Time counts without unit scaling, and 24-bit PackedDaysHoursMinutesAndSeconds with BigEndian requests only; it never supplies a complete application image or download permission. " +
+            "resource_preview=true explicitly uses typed absolute/LSM-relative arenas, compact resource hashes and archived image-source metadata for that subset; absent or false keeps the ordinary subset contract. " +
+            "property_preview=true separately previews bounded root Number/Value-enum property fields from complete archived data/count buffers with explicit validity masks and declared symmetric PDT widths; it excludes resource_preview=true and preserves count bytes. " +
+            "image_composition_preview with explicit mask_policy composes root static-code source contributions and reports unspecified bits. It applies no parameter/table overlays and does not infer a device load route from Full flags. " +
+            "root_image_build_preview with explicit mask_policy and load_procedure_preview instead combines a complete admitted fixed-root parameter population, code and optional tables using one evaluation. Native byte order comes from application options; subset and source-only composition options are excluded. " +
+            "root_resolved_image_build_preview separately selects mask_policy, its own procedure object and optional generated_tables, resolving bounded root conditions with all admitted fixed-root writers and tables from the same evaluation. " +
+            "root_property_image_build_preview separately initializes and formats all admitted fixed-root property references from actual allocation controls and its own procedure selection. It reports initial/desired hashes and observed archived counts without device-state or download authority. " +
+            "native_image_build_preview exclusively builds combined logical working alternatives for 1..16 distinct native option_words and optional tables. It reports bounded role hashes, unavailable alternatives and current working table inputs; it never selects actual device options or enables downloads. " +
+            "load_procedure_preview explicitly selects remote primary-program controls and load parts; its optional generated_tables format adds bound communication-table fragments. Alternatively, resolve_conditions:true resolves bounded root conditions in a procedure-only preview without scripts. It reports ordered controls and remaining image requirements without execution. " +
             "Real downloads stay disabled (writesEnabled false).",
-            Schema(
-                StrProp("device_address", "Individual address of a project device, e.g. 1.1.5.", true),
-                StrProp("gateway", "Optional gateway to read the descriptor from; omit for a purely offline plan."),
-                IntProp("timeout_ms", "Gateway search duration in ms (100..10000, default 1500)."),
-                IntProp("response_timeout_ms", "Descriptor response timeout in ms (100..5000, default 1000).")),
+            DownloadPlanSchema(),
             DownloadPlanTool),
         new("catalog_library",
             "List the product catalogues (.knxprod) in the local library with manufacturer, product " +
             "count and any files that failed to parse.",
             Schema(),
             Sync(CatalogLibrary)),
+        new("dca_manifest_info",
+            "Inspect an ETS app package's declared device compatibility and byte hashes. Does not install, extract or run package code; compatibility does not imply an implemented adapter.",
+            Schema(StrProp("path", "Local .etsapp package path.", true),
+                StrProp("application_program_id", "Optional complete application id to compare by manufacturer, program and version.")),
+            Sync(DcaManifestInfo)),
+        .. JungKspTools(),
         new("catalog_import",
             "Copy a .knxprod file into the local catalogue library and return its products summary.",
             Schema(StrProp("path", "Absolute path of the .knxprod file.", true)),
@@ -412,10 +442,12 @@ public sealed partial class McpServer
     {
         var path = Path.GetFullPath(Required(args, "path"));
         if (!File.Exists(path)) throw new ToolException($"project file not found: {path}");
-        var project = Knxproj.Load(path);
+        var project = Knxproj.Load(path, OptionalString(args, "password"), ScriptCapability(args));
         _project = project;
         _projectPath = path;
         _undo.Reset(project);
+        _migrationReviews.Clear();
+        _jungKspProjectLoaded = true; _jungKspReview = null;
         return new { opened = true, project = Summary(project), undo = History() };
     }
 
@@ -425,24 +457,33 @@ public sealed partial class McpServer
         {
             Name = Required(args, "name"),
             GroupAddressStyle = ParseStyle(Str(args, "style")),
-            Areas = Math.Max(1, Int(args, "areas") ?? 1),
-            LinesPerArea = Math.Max(1, Int(args, "lines") ?? 1),
+            Areas = Int(args, "areas") ?? 1,
+            LinesPerArea = Int(args, "lines") ?? 1,
+            TopologyTemplate = OptionalString(args, "topology_template") switch
+            {
+                null or "legacy" => NewProjectTopologyTemplate.LegacyZero,
+                "tp" => NewProjectTopologyTemplate.TpFromOne,
+                _ => throw new ToolException("topology_template must be tp or legacy"),
+            },
         };
         var project = ProjectWizard.Create(options);
         _project = project;
         _projectPath = Str(args, "save_path") is { Length: > 0 } savePath ? Path.GetFullPath(savePath) : null;
         _undo.Reset(project);
+        _migrationReviews.Clear();
+        _jungKspProjectLoaded = false; _jungKspReview = null;
         return new { created = true, project = Summary(project), undo = History() };
     }
 
     private object ProjectSave(JsonElement args)
     {
         var project = Current;
-        if (Str(args, "path") is { Length: > 0 } path) _projectPath = Path.GetFullPath(path);
-        var target = _projectPath
+        var target = Str(args, "path") is { Length: > 0 } path ? Path.GetFullPath(path) : _projectPath;
+        target = target
                      ?? throw new ToolException("no save path: pass 'path' or set save_path when creating the project");
         EnsureDirectory(target);
-        Knxproj.Save(project, target);
+        Knxproj.Save(project, target, OptionalString(args, "password"), ScriptCapability(args));
+        _projectPath = target;
         return new
         {
             saved = true,
@@ -517,18 +558,20 @@ public sealed partial class McpServer
     {
         var project = Current;
         var entry = FindAddressOrThrow(project, Required(args, "address"));
-        var changed = false;
-
-        if (TryStr(args, "name", out var name)) { entry.Name = name ?? ""; changed = true; }
-        if (TryStr(args, "datapoint_type", out var datapointType))
+        var hasName = TryStr(args, "name", out var name);
+        var hasDpt = TryStr(args, "datapoint_type", out var datapointType);
+        var hasDescription = TryStr(args, "description", out var description);
+        var hasComment = TryStr(args, "comment", out var comment);
+        if (!hasName && !hasDpt && !hasDescription && !hasComment)
+            throw new ToolException("nothing to update: pass name, datapoint_type, description or comment");
+        if (hasDpt)
         {
-            entry.DatapointType = NormaliseDpt(datapointType);
-            changed = true;
+            var result = ProjectOperations.UpdateGroupAddressDatapointType(project, entry, NormaliseDpt(datapointType));
+            if (!result.Ok) throw new ToolException(result.Message ?? "could not update group address");
         }
-        if (TryStr(args, "description", out var description)) { entry.Description = description; changed = true; }
-        if (TryStr(args, "comment", out var comment)) { entry.Comment = comment; changed = true; }
-
-        if (!changed) throw new ToolException("nothing to update: pass name, datapoint_type, description or comment");
+        if (hasName) entry.Name = name ?? "";
+        if (hasDescription) entry.Description = description;
+        if (hasComment) entry.Comment = comment;
         _undo.Push(project);
         return new { updated = true, groupAddress = Address(entry) };
     }
@@ -712,9 +755,12 @@ public sealed partial class McpServer
             .GroupBy(s => s.ComObject)
             .Select(group => group.OrderByDescending(s => s.Score).First())
             .ToList();
-        var applied = SmartLinking.Apply(best);
-        if (applied > 0) _undo.Push(project);
-        return new { applied, suggestions = best.Select(Suggestion).ToList() };
+        if (best.Count == 0) return new { applied = 0, compatibilityVerified = false, suggestions = best.Select(Suggestion).ToList(), warnings = Array.Empty<string>() };
+        var result = WorkbenchProject.AddLinkPairs(project, best.Select(proposal =>
+            new LinkCheckRequest(new(proposal.Device.Id, proposal.ComObject.Id), proposal.GroupAddress.Id)), _undo, allowUnverified: true);
+        if (!result.Ok) throw new ToolException(string.Join("; ", result.Errors.Select(error => error.Code + ": " + error.Reason)));
+        return new { applied = result.Changed, compatibilityVerified = result.Warnings.Count == 0,
+            suggestions = best.Select(Suggestion).ToList(), warnings = result.Warnings };
     }
 
     private object ProductReplace(JsonElement args)
@@ -722,25 +768,99 @@ public sealed partial class McpServer
         var project = Current;
         var oldRef = Required(args, "old_ref");
         var newRef = Required(args, "new_ref");
-        var newProgram = Str(args, "new_program");
-        var dryRun = Bool(args, "dry_run");
-
-        var results = ProductReplacer.Replace(project, oldRef, newRef, newProgram, dryRun);
-        if (!dryRun && results.Count > 0) _undo.Push(project);
-
-        return new
+        var newProgram = OptionalString(args, "new_program");
+        var dryRun = OptionalBoolean(args, "dry_run") ?? false;
+        var executeScripts = OptionalBoolean(args, "execute_scripts") ?? false;
+        var secure = OptionalBoolean(args, "target_secure_capable");
+        var parameters = ExactMap(args, "parameter_map"); var objects = ExactMap(args, "object_map"); var channels = ExactMap(args, "channel_map");
+        var key = JsonSerializer.Serialize(new { oldRef, newRef, newProgram, executeScripts, secure,
+            parameters = parameters.OrderBy(p => p.Key, StringComparer.Ordinal), objects = objects.OrderBy(p => p.Key, StringComparer.Ordinal), channels = channels.OrderBy(p => p.Key, StringComparer.Ordinal) }, Json);
+        foreach (var expired in _migrationReviews.Where(p => p.Value.Expires <= DateTimeOffset.UtcNow).Select(p => p.Key).ToArray()) _migrationReviews.Remove(expired);
+        if (!dryRun)
         {
-            dryRun,
-            matched = results.Count,
-            devices = results.Select(r => new
+            var token = OptionalString(args, "review_token");
+            if (token is null || !_migrationReviews.TryGetValue(token, out var review))
+                throw new ToolException("Create and inspect a dry_run=true migration preview first, then pass its review_token.");
+            if (!ReferenceEquals(review.Project, project) || review.RequestKey != key)
+                throw new ToolException("Migration inputs differ from the reviewed preview. Create a new preview.");
+            _migrationReviews.Remove(token);
+            var results = ProductReplacer.Apply(project, review.Plans);
+            if (results.Count > 0) _undo.Push(project);
+            _migrationReviews.Clear();
+            return new { dryRun = false, validated = true, applied = results.Count > 0, matched = results.Count,
+                devices = results.Select(r => new { address = r.Device.Address.ToString(), name = r.Device.Name, oldRefId = r.OldRefId, newRefId = r.NewRefId, keptLinks = r.KeptLinks }).ToArray(), undo = History() };
+        }
+        if (OptionalString(args, "review_token") is not null) throw new ToolException("A review_token applies a preview; omit it when creating a new preview.");
+        _migrationReviews.Clear();
+        var devices = ProductReplacer.Find(project, oldRef);
+        var definitions = new Dictionary<(string Reference, string? Product), MigrationApplication?>();
+        MigrationApplication? Resolve(string reference, string? product)
+        {
+            var identity = (reference, product);
+            if (!definitions.TryGetValue(identity, out var definition)) definitions[identity] = definition = ResolveMigrationApplication(reference, product);
+            return definition;
+        }
+        var target = Resolve(newProgram ?? newRef, newProgram is null ? newRef : null);
+        var resolved = devices.Select(device => (Device: device, Source: Resolve(device.Hardware2ProgramRefId ?? device.ProductRefId, device.ProductRefId))).ToArray();
+        var blockers = resolved.Where(p => p.Source is null).Select(p => "Source application definition missing for device " + p.Device.Id).ToList();
+        if (target is null) blockers.Add("Target application definition missing; load the exact application into the project or catalogue library.");
+        if (devices.Count == 0) blockers.Add("No devices match old_ref.");
+        if (blockers.Count > 0) return new { dryRun = true, validated = false, matched = devices.Count, blockers,
+            devices = devices.Select(d => new { id = d.Id, address = d.Address.ToString(), oldRefId = d.ProductRefId, newRefId = newRef }).ToArray() };
+        var runtime = executeScripts ? Knx.Scripting.IsolatedScriptRuntime.Shared : null;
+        var prepared = resolved.Select(p => (p.Device, Source: p.Source!, Parts: MergeMigrationParts(p.Source!.Parts, target!.Parts))).ToArray();
+        long copiedBytes = 0;
+        foreach (var item in prepared)
+        {
+            copiedBytes = checked(copiedBytes + Encoding.UTF8.GetByteCount(item.Source.Document.ToString(SaveOptions.DisableFormatting))
+                + Encoding.UTF8.GetByteCount(target!.Document.ToString(SaveOptions.DisableFormatting)) + item.Parts.Values.Sum(p => (long)p.Length));
+            if (copiedBytes > 256L * 1024 * 1024) throw new ToolException("Migration preview exceeds the 256 MiB batch input budget; reduce the batch or manufacturer bundle.");
+        }
+        var plans = prepared.Select(p => ProductReplacer.Preview(project, p.Device, newRef, newProgram ?? target!.ProgramReference,
+            p.Source.Document, target!.Document, parameters, objects, channels, secure, runtime, p.Parts)).ToArray();
+        var reviewToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        var expires = DateTimeOffset.UtcNow.AddMinutes(10);
+        _migrationReviews.Add(reviewToken, new(project, key, plans, expires));
+        return new { dryRun = true, validated = true, matched = plans.Length, reviewToken, expires,
+            devices = plans.Select(p => new { id = p.DeviceId, oldRefId = p.OldProductRefId, newRefId = p.NewProductRefId,
+                newProgram = p.NewHardware2ProgramRefId, parameters = p.Parameters, objects = p.Objects }).ToArray() };
+    }
+
+    private sealed record MigrationReview(Project Project, string RequestKey, ProductMigrationPlan[] Plans, DateTimeOffset Expires);
+    private sealed record MigrationApplication(XDocument Document, string ProgramReference, IReadOnlyDictionary<string, byte[]>? Parts);
+    private readonly Dictionary<string, MigrationReview> _migrationReviews = new(StringComparer.Ordinal);
+
+    private static IReadOnlyDictionary<string, byte[]> MergeMigrationParts(IReadOnlyDictionary<string, byte[]>? source, IReadOnlyDictionary<string, byte[]>? target)
+    {
+        var result = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        foreach (var (key, data) in (source ?? new Dictionary<string, byte[]>()).Concat(target ?? new Dictionary<string, byte[]>()))
+        {
+            if (result.TryGetValue(key, out var existing) && !existing.AsSpan().SequenceEqual(data))
+                throw new ToolException("Source and target manufacturer parts conflict: " + key);
+            result[key] = data;
+        }
+        return result;
+    }
+
+    private MigrationApplication? ResolveMigrationApplication(string reference, string? productReference)
+    {
+        if (Knxproj.LoadApplicationProgram(Current, reference) is { } projectDocument)
+            return new(projectDocument, reference, null);
+        var matches = new List<MigrationApplication>();
+        foreach (var catalog in Catalogs())
+        {
+            var programReference = reference;
+            var document = catalog.LoadProgramDocument(reference);
+            if (document is null && productReference is not null && catalog.FindProduct(productReference) is { } product)
             {
-                address = r.Device.Address.ToString(),
-                name = r.Device.Name,
-                oldRefId = r.OldRefId,
-                newRefId = r.NewRefId,
-                keptLinks = r.KeptLinks,
-            }).ToList(),
-        };
+                var programs = catalog.GetProgramReferencesFor(product);
+                if (programs.Count != 1) throw new ToolException("Product " + productReference + " has no unique application; supply its exact new_program reference.");
+                programReference = programs[0]; document = catalog.LoadProgramDocument(programReference);
+            }
+            if (document is not null) matches.Add(new(document, programReference, catalog.ReadManufacturerParts(programReference)));
+        }
+        if (matches.Count > 1) throw new ToolException("Application reference is ambiguous across catalogue files: " + reference);
+        return matches.SingleOrDefault();
     }
 
     // ---------------------------------------------------------------- export
@@ -1063,6 +1183,8 @@ public sealed partial class McpServer
     {
         var restored = _undo.Undo() ?? throw new ToolException("nothing to undo");
         _project = restored;
+        _migrationReviews.Clear();
+        _jungKspReview = null;
         return new { undone = true, project = Summary(restored), undo = History() };
     }
 
@@ -1070,6 +1192,8 @@ public sealed partial class McpServer
     {
         var restored = _undo.Redo() ?? throw new ToolException("nothing to redo");
         _project = restored;
+        _migrationReviews.Clear();
+        _jungKspReview = null;
         return new { redone = true, project = Summary(restored), undo = History() };
     }
 
@@ -1352,10 +1476,17 @@ public sealed partial class McpServer
 
     private async Task<object> DownloadPlanTool(JsonElement args)
     {
+        var nativeImageOptions = ReadNativeImageBuildOptions(args);
+        var rootPropertyOptions = ReadRootPropertyBuildOptions(args);
         var project = Current;
         var address = ParseIndividualAddress(Required(args, "device_address"));
         var located = ProjectQuery.LocateDevice(project, address)
             ?? throw new ToolException($"device {address} not found in the project");
+        var patchOptions = ReadParameterPatchOptions(args);
+        var buildOptions = ReadApplicationBuildOptions(args);
+        var imageOptions = ReadImageCompositionOptions(args);
+        var rootImageOptions = ReadRootImageBuildOptions(args, buildOptions, patchOptions, imageOptions);
+        var resolvedRootOptions = ReadRootResolvedImageBuildOptions(args, buildOptions, patchOptions, imageOptions, rootImageOptions);
 
         // A descriptor read is the only live step and it is read-only; without 'gateway' the plan
         // stays offline and reports the missing descriptor as a blocker.
@@ -1414,6 +1545,14 @@ public sealed partial class McpServer
                 description = descriptor.Describe(),
             },
             confirmations = new { programmingMode = false, address = false, dryRun = false },
+            archiveMaskProfile = nativeImageOptions is null ? ArchiveMaskProfileDiagnostic(project, located.Device) : null,
+            offlineParameterPatch = OfflineParameterPatchDiagnostic(project, located.Device, patchOptions),
+            offlineApplicationBuild = buildOptions is null || rootImageOptions is not null ? null : ApplicationBuildDiagnostic(project, located.Device, buildOptions),
+            offlineImageComposition = imageOptions is null ? null : ImageCompositionDiagnostic(project, located.Device, imageOptions),
+            offlineRootImageBuild = rootImageOptions is null ? null : RootImageBuildDiagnostic(project, located.Device, rootImageOptions),
+            offlineRootResolvedImageBuild = resolvedRootOptions is null ? null : RootResolvedImageBuildDiagnostic(project, located.Device, resolvedRootOptions),
+            offlineRootPropertyBuild = rootPropertyOptions is null ? null : RootPropertyBuildDiagnostic(project, located.Device, rootPropertyOptions),
+            offlineNativeImageBuild = nativeImageOptions is null ? null : NativeImageBuildDiagnostic(project, located.Device, nativeImageOptions),
             plan = new
             {
                 ready = plan.Ready,
@@ -1475,7 +1614,7 @@ public sealed partial class McpServer
     // ---------------------------------------------------------------- catalog
 
     private List<KnxProductCatalog>? _catalogs;
-    // KNX_CATALOG_DIR lets hosts/tests point the library somewhere else (default: %APPDATA%\BusChord\catalogs).
+    // KNX_CATALOG_DIR lets hosts/tests select a local library (default: %APPDATA%\BusChord\catalogs).
     private readonly CatalogStore _catalogStore = new(Environment.GetEnvironmentVariable("KNX_CATALOG_DIR"));
 
     private List<KnxProductCatalog> Catalogs() => _catalogs ??= _catalogStore.LoadAll();
@@ -1511,6 +1650,24 @@ public sealed partial class McpServer
         }).ToList(),
         errors = _catalogStore.LoadErrors.Select(e => new { file = e.File, message = e.Message }).ToList(),
     };
+
+    private object DcaManifestInfo(JsonElement args)
+    {
+        var manifest = DcaPackageManifest.Read(Path.GetFullPath(Required(args, "path")));
+        var application = OptionalString(args, "application_program_id");
+        if (application is not null && !DcaApplicationIdentity.TryParse(application, out _))
+            throw new ToolException("application_program_id must be a complete canonical application id.");
+        return new
+        {
+            appId = manifest.AppId, assemblyEntry = manifest.AssemblyEntry, displayNames = manifest.DisplayNames,
+            declaredApplicationIds = manifest.DeclaredApplicationIds,
+            applications = manifest.Applications.Select(a => a.ToString()).ToArray(),
+            manifest.PackageSha256, manifest.AssemblySha256, applicationProgramId = application,
+            declaresSupport = application is null ? (bool?)null : manifest.DeclaresSupportFor(application),
+            knownRequirement = application is null ? null : KnownDcaRequirementsRegistry.Find(application),
+            codeExecuted = false,
+        };
+    }
 
     private object CatalogImport(JsonElement args)
     {
@@ -1586,8 +1743,11 @@ public sealed partial class McpServer
         if (ProjectQuery.FindDevice(project, address) is not null)
             throw new ToolException($"individual address {address} is already in use");
 
+        if (address.Area != areaAddress || address.Line != lineAddress)
+            throw new ToolException($"individual address {address} is outside line {areaAddress}.{lineAddress}");
+
         var program = catalog.FindProgramFor(product);
-        var device = CatalogInstaller.CreateDevice(product, program,
+        var device = CatalogInstaller.CreateDevice(project, product, program,
             address, Str(args, "name") ?? product.Name);
         ProjectQuery.AddToLine(line, device);
 
@@ -1719,6 +1879,7 @@ public sealed partial class McpServer
         isGroupAddress = entry.IsGroupAddress,
         apci = entry.Apci,
         data = entry.Data,
+        hopCount = entry.HopCount,
     };
 
     private static bool Matches(GroupAddressEntry entry, string filter)
@@ -1875,6 +2036,32 @@ public sealed partial class McpServer
             ? value
             : throw new ToolException($"missing required argument '{name}'");
 
+    private static string? OptionalString(JsonElement args, string name)
+    {
+        if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null) return null;
+        return value.ValueKind == JsonValueKind.String ? value.GetString() : throw new ToolException(name + " must be a string.");
+    }
+
+    private static bool? OptionalBoolean(JsonElement args, string name)
+    {
+        if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty(name, out var value)) return null;
+        return value.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => throw new ToolException(name + " must be a boolean.") };
+    }
+
+    private static IParameterScriptRuntime? ScriptCapability(JsonElement args)
+        => OptionalBoolean(args, "execute_scripts") == true ? Knx.Scripting.IsolatedScriptRuntime.Shared : null;
+
+    private static Dictionary<string, string> ExactMap(JsonElement args, string name)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty(name, out var map)) return result;
+        if (map.ValueKind != JsonValueKind.Object) throw new ToolException(name + " must be an object mapping complete source ids to target-id strings.");
+        foreach (var property in map.EnumerateObject())
+            if (property.Name.Length == 0 || property.Value.ValueKind != JsonValueKind.String || property.Value.GetString() is not { Length: > 0 } value
+                || !result.TryAdd(property.Name, value)) throw new ToolException(name + " contains an empty, duplicate or non-string mapping.");
+        return result;
+    }
+
     private static int? Int(JsonElement args, string name)
     {
         if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty(name, out var value)) return null;
@@ -1927,6 +2114,7 @@ public sealed partial class McpServer
                 foreach (var value in values) allowed.Add(value);
                 node["enum"] = allowed;
             }
+            if (property.Type == "object") node["additionalProperties"] = new JsonObject { ["type"] = "string" };
             propertiesObject[property.Name] = node;
             if (property.Required) required.Add(property.Name);
         }
@@ -1944,6 +2132,8 @@ public sealed partial class McpServer
 
     private static Prop BoolProp(string name, string description, bool required = false)
         => new(name, "boolean", description, required);
+
+    private static Prop MapProp(string name, string description) => new(name, "object", description);
 
     private static Prop EnumProp(string name, string description, string[] values, bool required = false)
         => new(name, "string", description, required, values);

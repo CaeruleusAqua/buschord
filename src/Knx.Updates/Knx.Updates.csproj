@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup><PackageReference Include="Velopack" Version="1.2.161" /></ItemGroup>
+  <ItemGroup Condition="'$(BusChordUpdateTrustSource)' != ''">
+    <Compile Remove="ProductionUpdateTrust.cs" />
+    <Compile Include="$(BusChordUpdateTrustSource)" Link="ProductionUpdateTrust.g.cs" />
+  </ItemGroup>
+</Project>

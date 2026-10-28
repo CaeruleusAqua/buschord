@@ -5,6 +5,17 @@ using Knx.Portfolio;
 using System.IO.Compression;
 using System.Text;
 
+if (args.Contains("--performance-budget") || args.Contains("--performance-budget-checks"))
+{
+    if (args.Length != 1) { Console.Error.WriteLine("Use exactly one performance-budget mode without additional arguments."); return 2; }
+    if (args[0] == "--performance-budget") return NativePerformanceChecks.RunBudget();
+    var failures = 0; var count = 0;
+    NativePerformanceBudgetChecks.Run((name, value) => { count++; if (!value) failures++; Console.WriteLine((value ? "PASS " : "FAIL ") + name); });
+    Console.WriteLine($"Performance budget checks: {count}, failures: {failures}");
+    return failures == 0 ? 0 : 1;
+}
+if (args.Contains("--performance")) return NativePerformanceChecks.Run();
+if (args.Contains("--projection-refresh")) return WorkbenchRefreshChecks.Run();
 if (args.Contains("--dialogs")) return DialogChecks.Run(args.Contains("--de") ? "de" : "en");
 
 var checks = 0;
@@ -18,7 +29,23 @@ var root = Path.Combine(Path.GetTempPath(), "buschord-workspace-" + Guid.NewGuid
 Directory.CreateDirectory(root);
 try
 {
+    NativePerformanceBudgetChecks.Run(Check);
     var workspace = new WorkbenchWorkspace("P1");
+    var unnamedProject = Knx.Workbench.WorkbenchJson.CreateDemo();
+    var unnamedDevice = ProjectQuery.DeviceList(unnamedProject).First();
+    unnamedDevice.Name = "";
+    unnamedProject.Hardware[unnamedDevice.ProductRefId] = new Knx.Catalog.CatalogHardware
+        { HardwareId = "hardware-test", Name = "Product label" };
+    var navigationDevice = WorkbenchProjection.Navigation(unnamedProject, "building")
+        .SelectMany(Flatten).First(n => ReferenceEquals(n.Model, unnamedDevice));
+    Check("Unnamed navigator devices show product text without changing stored name",
+        navigationDevice.Name == "Product label" && unnamedDevice.Name == "");
+    unnamedDevice.Name = "Custom name";
+    Check("Explicit device names take precedence over product labels", WorkbenchProjection.DeviceName(unnamedProject, unnamedDevice) == "Custom name");
+    unnamedDevice.Name = " ";
+    unnamedProject.Hardware.Clear();
+    Check("Devices without name or product text fall back to address", WorkbenchProjection.DeviceName(unnamedProject, unnamedDevice) == unnamedDevice.Address.ToString());
+    static IEnumerable<WorkbenchNavNode> Flatten(WorkbenchNavNode node) => new[] { node }.Concat(node.Children.SelectMany(Flatten));
     var room = workspace.Open(new("room", "R1"), "Wohnzimmer");
     room.Filter = "Licht"; room.IncludeRelated = false; room.SelectedObjectIds.Add("KO1");
     room.CollapsedDeviceIds.Add("D1"); room.View = "relations";
@@ -468,6 +495,7 @@ try
     }
     finally { Knx.Strings.Language = language; }
 
+    AppUpdateServiceChecks.Run(Check);
     Console.WriteLine($"WORKBENCH UI STATE OK ({checks})");
 }
 finally { Directory.Delete(root, recursive: true); }

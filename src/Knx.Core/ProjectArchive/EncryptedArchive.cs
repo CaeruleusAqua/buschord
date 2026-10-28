@@ -8,16 +8,10 @@ using System.Text;
 
 namespace Knx;
 
-/// <summary>
-/// Read-only reader for WinZip AES entries (AE-1/AE-2, AES-128/192/256) inside a .knxproj.
-/// Decrypts to memory only; never extracts to disk and never writes an archive.
-/// A missing or wrong password surfaces as <see cref="InvalidDataException"/> with
-/// <see cref="PasswordRequiredMessage"/> or <see cref="WrongPasswordMessage"/>.
-/// </summary>
-internal static class EncryptedArchive
+/// <summary>Authenticated password-protected ZIP entry support.</summary>
+internal static partial class EncryptedArchive
 {
     private const int MaxEntries = 4096;
-    private const int MaxEntryBytes = 64 * 1024 * 1024;
     private const long MaxTotalBytes = 256L * 1024 * 1024;
     private const int AesExtraId = 0x9901;
     private const int AuthenticationLength = 10;
@@ -26,13 +20,12 @@ internal static class EncryptedArchive
         "Supported format: ZIP entries with WinZip AES (AE-1/AE-2); ZipCrypto (ETS4/5), ZIP64 and multi-volume archives are not supported.";
 
     internal const string PasswordRequiredMessage =
-        "This ETS6 project is password-protected (WinZip AES-256). Reading it requires the project password; BusChord does not guess passwords.";
+        "This project is password-protected. Reading it requires the project password; BusChord does not guess passwords.";
 
     internal const string WrongPasswordMessage =
-        "Wrong project password for this ETS6 archive (AES authentication failed). If the password is correct, the file is damaged.";
+        "Wrong project password or archive protection settings (AES authentication failed). The archive may also be damaged.";
 
-    internal static string DeriveZipPassword(string password) =>
-        ArchiveProtectionSettings.Load().DeriveZipPassword(password);
+    internal static string DeriveZipPassword(string password) => ArchiveProtectionSettings.Load().DeriveZipPassword(password);
 
     /// <summary>
     /// Returns every entry of a ZIP as uncompressed bytes. Plain entries are read directly,
@@ -42,13 +35,18 @@ internal static class EncryptedArchive
     internal static Dictionary<string, byte[]> ReadAll(byte[] zip, string? password)
     {
         var entries = Parse(zip, out var centralOffset);
-        var zipPassword = password is null || !entries.Any(entry => entry.Method == 99) ? null : DeriveZipPassword(password);
+        var zipPassword = password is not null && entries.Any(e => e.Method == 99) ? DeriveZipPassword(password) : null;
+        return ReadPrepared(zip, entries, centralOffset, zipPassword);
+    }
+
+    private static Dictionary<string, byte[]> ReadPrepared(byte[] zip, List<Raw> entries, int centralOffset, string? zipPassword)
+    {
         var result = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         long total = 0;
         foreach (var entry in entries)
         {
-            if (entry.UncompressedSize > MaxEntryBytes)
-                throw new InvalidDataException("Archive entry exceeds the 64 MiB safety limit.");
+            if (entry.UncompressedSize > ArchiveEntryLimits.For(entry.Name))
+                throw new InvalidDataException("Archive entry exceeds its safety limit.");
             total += entry.UncompressedSize;
             if (total > MaxTotalBytes)
                 throw new InvalidDataException("Archive expanded size exceeds the 256 MiB safety limit.");
@@ -68,7 +66,7 @@ internal static class EncryptedArchive
                 throw new InvalidDataException(
                     "This project archive uses ZipCrypto encryption (ETS4/5), which is not supported. " + Supported);
             var offset = DataStart(zip, entry, centralOffset, out _);
-            return Decompress(zip, offset, checked((int)entry.CompressedSize), entry.Method, entry.UncompressedSize);
+            return Decompress(zip, offset, checked((int)entry.CompressedSize), entry.Method, entry.UncompressedSize, ArchiveEntryLimits.For(entry.Name));
         }
 
         var dataStart = DataStart(zip, entry, centralOffset, out var aes);
@@ -108,14 +106,20 @@ internal static class EncryptedArchive
         {
             hmac.AppendData(cipher);
             var digest = hmac.GetHashAndReset();
-            // The HMAC over the ciphertext authenticates the entry. AE-1's CRC-32 is not
-            // re-checked: the BCL has no CRC32 helper and the HMAC is strictly stronger.
+            // Authenticate the ciphertext before decryption or decompression.
             if (!CryptographicOperations.FixedTimeEquals(digest.AsSpan(0, AuthenticationLength), authentication))
                 throw new InvalidDataException(WrongPasswordMessage);
         }
 
         var plain = AesCtr(derived.AsSpan(0, keyLength).ToArray(), cipher);
-        return Decompress(plain, 0, plain.Length, aes.Method, entry.UncompressedSize);
+        var data = Decompress(plain, 0, plain.Length, aes.Method, entry.UncompressedSize, ArchiveEntryLimits.For(entry.Name));
+        // AE-1 additionally checks the original uncompressed content. The central
+        // CRC is authoritative here: streamed ZIP entries may have a zero local
+        // CRC and carry their final values in a data descriptor (ZIP flag bit 3).
+        // AE-2 instead uses its authentication code and stores no content CRC.
+        if (aes.Version == 1 && Crc32(data) != U32(zip, entry.CentralOffset + 16))
+            throw new InvalidDataException("Archive entry CRC-32 mismatch.");
+        return data;
     }
 
     /// <summary>WinZip AES uses AES-CTR with a 128-bit little-endian counter block starting at 1.</summary>
@@ -123,26 +127,60 @@ internal static class EncryptedArchive
     {
         var output = new byte[cipher.Length];
         using var aes = Aes.Create();
-        aes.Mode = CipherMode.ECB;
-        aes.Padding = PaddingMode.None;
         aes.Key = key;
-        using var transform = aes.CreateEncryptor();
-        var counter = new byte[16];
-        var keyStream = new byte[16];
+        if (cipher.IsEmpty) return output;
+        const int blockSize = 16;
+        const int batchSize = 64 * 1024;
+        var bufferLength = (int)Math.Min(batchSize, ((long)cipher.Length + blockSize - 1) / blockSize * blockSize);
+        var counterBlocks = new byte[bufferLength];
+        var keyStream = new byte[bufferLength];
+        Span<byte> counter = stackalloc byte[blockSize];
+        counter.Clear();
         counter[0] = 1;
-        for (int position = 0; position < cipher.Length; position += 16)
+        try
         {
-            transform.TransformBlock(counter, 0, 16, keyStream, 0);
-            var count = Math.Min(16, cipher.Length - position);
-            for (int i = 0; i < count; i++) output[position + i] = (byte)(cipher[position + i] ^ keyStream[i]);
-            for (int i = 0; i < counter.Length; i++) if (++counter[i] != 0) break;
+            for (var position = 0; position < cipher.Length;)
+            {
+                var count = Math.Min(bufferLength, cipher.Length - position);
+                var rounded = (count + blockSize - 1) / blockSize * blockSize;
+                for (var block = 0; block < rounded; block += blockSize)
+                {
+                    counter.CopyTo(counterBlocks.AsSpan(block, blockSize));
+                    for (var index = 0; index < counter.Length; index++)
+                    {
+                        counter[index] = unchecked((byte)(counter[index] + 1));
+                        if (counter[index] != 0) break;
+                    }
+                }
+                EncryptEcbCounterBlocks(aes, counterBlocks.AsSpan(0, rounded), keyStream.AsSpan(0, rounded));
+                for (var index = 0; index < count; index++)
+                    output[position + index] = (byte)(cipher[position + index] ^ keyStream[index]);
+                position += count;
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(keyStream);
+            CryptographicOperations.ZeroMemory(counterBlocks);
+            CryptographicOperations.ZeroMemory(counter);
         }
         return output;
     }
 
-    private static byte[] Decompress(byte[] source, int offset, int length, ushort method, long expected)
+    // AES is a block primitive for WinZip AE-1/AE-2 CTR: input contains only
+    // consecutive counter blocks, never file data. Batch the key stream so the
+    // one-shot primitive is called at most once per 64 KiB, not once per block.
+    // Ciphertext authentication remains before decryption and decompression.
+    // https://www.winzip.com/en/support/aes-encryption/ (III.4-5)
+    private static void EncryptEcbCounterBlocks(Aes aes, ReadOnlySpan<byte> counterBlocks, Span<byte> keyStream)
     {
-        if (expected > MaxEntryBytes) throw new InvalidDataException("Archive entry exceeds the 64 MiB safety limit.");
+        if (aes.EncryptEcb(counterBlocks, keyStream, PaddingMode.None) != counterBlocks.Length)
+            throw new CryptographicException("Incomplete AES counter-block encryption.");
+    }
+
+    private static byte[] Decompress(byte[] source, int offset, int length, ushort method, long expected, int maximum)
+    {
+        if (expected > maximum) throw new InvalidDataException("Archive entry exceeds its safety limit.");
         if (method == 0)
         {
             if (length != expected) throw new InvalidDataException("Archive entry length mismatch.");
@@ -160,7 +198,7 @@ internal static class EncryptedArchive
     private static int DataStart(byte[] zip, Raw entry, int centralOffset, out AesExtra? aes)
     {
         if ((long)entry.LocalOffset + 30 > centralOffset || U32(zip, entry.LocalOffset) != 0x04034b50)
-            throw new InvalidDataException(". " + Supported);
+            throw new InvalidDataException("Invalid ZIP local-entry header. " + Supported);
         var nameLength = U16(zip, entry.LocalOffset + 26);
         var extraLength = U16(zip, entry.LocalOffset + 28);
         var start = (long)entry.LocalOffset + 30 + nameLength + extraLength;
@@ -213,7 +251,7 @@ internal static class EncryptedArchive
             if (next > end) throw new InvalidDataException("Malformed central directory. " + Supported);
             var name = Encoding.UTF8.GetString(bytes, cursor + 46, nameLength);
             entries.Add(new Raw(name, U16(bytes, cursor + 8), U16(bytes, cursor + 10),
-                U32(bytes, cursor + 20), U32(bytes, cursor + 24), checked((int)U32(bytes, cursor + 42))));
+                U32(bytes, cursor + 20), U32(bytes, cursor + 24), checked((int)U32(bytes, cursor + 42)), cursor));
             cursor = (int)next;
         }
         if (cursor != end) throw new InvalidDataException("Malformed central directory. " + Supported);
@@ -223,6 +261,6 @@ internal static class EncryptedArchive
     private static ushort U16(byte[] bytes, int at) => BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(at, 2));
     private static uint U32(byte[] bytes, int at) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(at, 4));
 
-    private sealed record Raw(string Name, ushort Flags, ushort Method, uint CompressedSize, uint UncompressedSize, int LocalOffset);
+    private sealed record Raw(string Name, ushort Flags, ushort Method, uint CompressedSize, uint UncompressedSize, int LocalOffset, int CentralOffset);
     private sealed record AesExtra(ushort Version, string Vendor, byte Strength, ushort Method);
 }

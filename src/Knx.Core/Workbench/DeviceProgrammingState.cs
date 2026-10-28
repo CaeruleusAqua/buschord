@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace Knx.Workbench;
 
 /// <summary>
-/// Load flags of one device: Adr/Prg/Par/Grp/Cfg.
+/// Load flags of one device, displayed as Adr/Prg/Par/Grp/Cfg.
 /// </summary>
 [Flags]
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -45,7 +45,7 @@ public enum DeviceChangeKind
     Configuration = 1 << 7,
 }
 
-/// <summary>Explicit provenance of a recorded load. Real execution is not implemented.</summary>
+/// <summary>Execution source of a recorded load. Real execution is not implemented.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ProgrammingOrigin { Demo, Real }
 

@@ -20,7 +20,7 @@ public sealed record CatalogImportReport(string File, string CatalogName, int Pr
 {
     /// <summary>
     /// The container carries a *.signature entry. Presence is surfaced only; the signature is
-    /// never verified here.
+    /// not cryptographically verified by this reader.
     /// </summary>
     public bool HasSignatureFile { get; init; }
 
@@ -31,6 +31,10 @@ public sealed record CatalogImportReport(string File, string CatalogName, int Pr
 /// <summary>What the last <see cref="CatalogStore.LoadAll"/> read from cache and from XML.</summary>
 public sealed record CatalogIndexStatistics(int Files, int IndexHits, int IndexMisses, int XmlCatalogFiles,
     int XmlProgramParts, int Errors, TimeSpan Elapsed);
+
+public enum CatalogPreservingImportDisposition { Imported, IdenticalSkipped, ConflictKeptExisting }
+public sealed record CatalogPreservingImportResult(CatalogPreservingImportDisposition Disposition,
+    string LibraryPath, KnxProductCatalog? Catalog, string? CacheWarning = null);
 
 /// <summary>
 /// Local catalogue library in %APPDATA%\BusChord\catalogs (or an explicit directory):
@@ -110,6 +114,80 @@ public sealed class CatalogStore
         };
         _index.Save(catalog);
         return catalog;
+    }
+
+    /// <summary>
+    /// Imports a validated acquisition candidate without replacing an installed identity.
+    /// Identical bytes skip; changed bytes under the same logical identity preserve the old file.
+    /// A create-only final move protects the library when another importer wins the race.
+    /// </summary>
+    public CatalogPreservingImportResult ImportPreservingExisting(string path, CancellationToken cancellationToken = default,
+        string? expectedManufacturer = null)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var catalog = KnxProductCatalog.Open(path, _index.Directory);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (expectedManufacturer is not null && catalog.Manufacturer?.Id != expectedManufacturer)
+            throw new InvalidDataException("The parsed catalogue manufacturer does not match the acquisition source.");
+        System.IO.Directory.CreateDirectory(Directory);
+        var target = IOPath.Combine(Directory, LibraryFileName(catalog));
+        var incomingHash = Hash(path);
+        CatalogPreservingImportResult Existing() => new(
+            incomingHash.SequenceEqual(Hash(target)) ? CatalogPreservingImportDisposition.IdenticalSkipped :
+                CatalogPreservingImportDisposition.ConflictKeptExisting, target, null);
+        if (File.Exists(target)) return Existing();
+        var temp = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using (var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan))
+            using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, FileOptions.SequentialScan))
+            {
+                var buffer = new byte[65536];
+                int read;
+                while ((read = input.Read(buffer)) > 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    output.Write(buffer, 0, read);
+                }
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!incomingHash.SequenceEqual(Hash(temp))) throw new IOException("Catalogue staging copy is incomplete.");
+            cancellationToken.ThrowIfCancellationRequested();
+            try { File.Move(temp, target, overwrite: false); }
+            catch (IOException) when (File.Exists(target)) { return Existing(); }
+            catalog.Relocate(target);
+            LastImportReport = new(target, catalog.Name, catalog.Products.Count, catalog.CatalogSections.Count,
+                catalog.Programs.Count, catalog.Programs.Any(p => p.Broken || p.DownloadInfoIncomplete),
+                catalog.Programs.Any(p => p.RequiresDca), catalog.Programs.Any(p => p.RequiresExternalSoftware))
+            {
+                HasSignatureFile = HasSignatureEntry(catalog), ReplacedExisting = false,
+            };
+            string? cacheWarning = null;
+            try { _index.Save(catalog); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or NotSupportedException)
+            {
+                cacheWarning = "Catalogue imported; its derived metadata cache could not be saved and can be rebuilt.";
+            }
+            return new(CatalogPreservingImportDisposition.Imported, target, catalog, cacheWarning);
+        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
+
+        byte[] Hash(string file)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var input = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[65536];
+            int read;
+            while ((read = input.Read(buffer)) > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                hash.AppendData(buffer, 0, read);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return hash.GetHashAndReset();
+        }
     }
 
     /// <summary>

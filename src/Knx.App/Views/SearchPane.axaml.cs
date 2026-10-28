@@ -87,6 +87,16 @@ public partial class SearchPane : UserControl
         ScopeBox.SelectedIndex = 0;
     }
 
+    /// <summary>Relabels the existing pane without replacing its query, options or reviewed plan.</summary>
+    public void RefreshLanguage()
+    {
+        var scope = ScopeBox.SelectedIndex;
+        FillScopes();
+        ScopeBox.SelectedIndex = scope;
+        if (_preview is { FieldCount: > 0 } preview)
+            PreviewCounts.Text = Strings.Get("SearchPreviewCounts", preview.FieldCount, preview.ItemCount);
+    }
+
     private SearchScope SelectedScope
     {
         get

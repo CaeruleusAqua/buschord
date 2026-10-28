@@ -1,9 +1,11 @@
 using System.Globalization;
+using System.Collections.ObjectModel;
 using Avalonia.Controls;
 using Avalonia.Data.Converters;
 using Avalonia.Interactivity;
 using Knx;
 using Knx.App.Services;
+using Knx.App.Localization;
 
 namespace Knx.App.Views;
 
@@ -38,6 +40,7 @@ public sealed partial class ParameterPane : UserControl, IDisposable
     public ParameterEditingSession Session { get; }
     private bool _subscribed;
     private bool _disposed;
+    private readonly ObservableCollection<ParameterItemViewModel> _displayRows = [];
 
     public ParameterPane() : this(new ParameterEditingSession()) { }
     public ParameterPane(MainWindowViewModel vm) : this(new ParameterEditingSession(vm)) { }
@@ -48,6 +51,7 @@ public sealed partial class ParameterPane : UserControl, IDisposable
         Session.Refresh();
         Subscribe();
         Render();
+        InitializePresentation();
         AttachedToVisualTree += (_, _) => { if (!_disposed) { Subscribe(); Render(); } };
         DetachedFromVisualTree += (_, _) => Unsubscribe();
     }
@@ -68,16 +72,45 @@ public sealed partial class ParameterPane : UserControl, IDisposable
 
     private static string T(string de, string en) => Strings.Language == "en" ? en : de;
 
-    private void Subscribe() { if (_subscribed) return; Session.Changed += OnChanged; _subscribed = true; }
-    private void Unsubscribe() { if (!_subscribed) return; Session.Changed -= OnChanged; _subscribed = false; }
+    private void Subscribe()
+    {
+        if (_subscribed) return;
+        Session.Changed += OnChanged; Strings.Instance.PropertyChanged += OnLanguageChanged; _subscribed = true;
+        foreach (var row in Session.Rows) row.RefreshStorage();
+    }
+    private void Unsubscribe()
+    {
+        if (!_subscribed) return;
+        Session.Changed -= OnChanged; Strings.Instance.PropertyChanged -= OnLanguageChanged; _subscribed = false;
+    }
+    private void OnLanguageChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    { if (e.PropertyName == "Item[]") { foreach (var row in Session.Rows) row.RefreshStorage(); RefreshHelp(); } }
     private void OnChanged(object? sender, EventArgs e) => Render();
-    public void Dispose() { _disposed = true; Unsubscribe(); ParameterList.ItemsSource = Array.Empty<ParameterItemViewModel>(); }
+    public void Dispose() { _disposed = true; Unsubscribe(); ParameterList.ItemsSource = Array.Empty<ParameterItemViewModel>(); TablePages.Children.Clear(); }
 
     private void Render()
     {
         var hasRows = Session.Rows.Length > 0;
-        // Do not recreate native editors during a keystroke (local TextBox undo must survive).
-        if (!ReferenceEquals(ParameterList.ItemsSource, Session.Rows)) ParameterList.ItemsSource = Session.Rows;
+        if (TopLevel.GetTopLevel(ParameterList) is null)
+        {
+            if (!ReferenceEquals(ParameterList.ItemsSource, Session.Rows)) ParameterList.ItemsSource = Session.Rows;
+        }
+        else
+        {
+            // Collection edits retain surviving native editors, keyboard focus, scroll and local text undo.
+            var retained = Session.Rows.ToHashSet();
+            for (var index = _displayRows.Count - 1; index >= 0; index--)
+                if (!retained.Contains(_displayRows[index])) _displayRows.RemoveAt(index);
+            for (var index = 0; index < Session.Rows.Length; index++)
+            {
+                var row = Session.Rows[index];
+                if (index < _displayRows.Count && ReferenceEquals(_displayRows[index], row)) continue;
+                var previous = _displayRows.IndexOf(row);
+                if (previous < 0) _displayRows.Insert(index, row);
+                else _displayRows.Move(previous, index);
+            }
+            if (!ReferenceEquals(ParameterList.ItemsSource, _displayRows)) ParameterList.ItemsSource = _displayRows;
+        }
         ParameterList.IsVisible = hasRows;
         HeaderText.Text = string.IsNullOrWhiteSpace(Session.Title) ? Strings.Get("ParameterTitle") : Session.Title;
         NoticePanel.IsVisible = hasRows;
@@ -111,9 +144,10 @@ public sealed partial class ParameterPane : UserControl, IDisposable
 
         ResetButton.Content = T("Standardwerte", "Reset defaults");
         DiscardButton.Content = T("Verwerfen", "Discard");
-        ResetButton.IsVisible = Session.CanApply;
+        var editable = hasRows && !Session.IsReadOnly && !Session.IsStale;
+        ResetButton.IsVisible = editable;
         ResetButton.IsEnabled = Session.CanReset;
-        DiscardButton.IsVisible = ReviewButton.IsVisible = ApplyButton.IsVisible = Session.CanApply;
+        DiscardButton.IsVisible = ReviewButton.IsVisible = ApplyButton.IsVisible = editable;
         var hasDraft = Session.HasUnappliedChanges;
         DiscardButton.IsEnabled = ReviewButton.IsEnabled = hasDraft;
         ReviewButton.Content = T("Änderungen prüfen", "Review changes");
@@ -122,16 +156,23 @@ public sealed partial class ParameterPane : UserControl, IDisposable
         PreviewList.ItemsSource = Session.Preview?.Changes ?? Array.Empty<ParameterChange>();
         PreviewSummary.Text = Session.Preview is { } preview
             ? T($"Parameteränderungen: {preview.Changes.Count}", $"Parameter changes: {preview.Changes.Count}")
+                + (preview.AddedObjects + preview.RemovedObjects > 0
+                    ? " · " + WorkbenchStrings.Get("ParameterStructureObjects", preview.AddedObjects, preview.RemovedObjects) : "")
+                + (preview.ActivatedObjects + preview.DeactivatedObjects > 0
+                    ? " · " + WorkbenchStrings.Get("ParameterActivityObjects", preview.ActivatedObjects, preview.DeactivatedObjects) : "")
+                + (preview.AffectedLinks > 0 ? " · " + WorkbenchStrings.Get("ParameterAffectedLinks", preview.AffectedLinks) : "")
             : "";
         PreviewLimitations.Text = Session.Preview?.Limitations;
         ApplyButton.IsEnabled = Session.CanApply && hasDraft && !Session.HasValidationErrors
             && Session.Preview?.IsValid != false;
+        RenderPresentation();
+        RefreshHelp();
     }
 
     private void OnReview(object? sender, RoutedEventArgs e) => Session.ReviewChanges();
     private void OnCancelReview(object? sender, RoutedEventArgs e) => Session.CancelReview();
     private void OnApply(object? sender, RoutedEventArgs e) => Apply();
-    private void OnDiscard(object? sender, RoutedEventArgs e) => DiscardDrafts();
+    private void OnDiscard(object? sender, RoutedEventArgs e) => Session.DiscardCurrentDraft();
     private void OnReset(object? sender, RoutedEventArgs e) => Session.ResetToDefaults();
     private void OnDismissDraftNotice(object? sender, RoutedEventArgs e) => Session.AcknowledgeNotice();
     private void OnClose(object? sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
@@ -141,6 +182,12 @@ public sealed partial class ParameterPane : UserControl, IDisposable
     {
         if (sender is not Button { Tag: string title }) return;
         Session.SelectSection(title);
+        if (TableScroll.IsVisible && Session.Sections.FirstOrDefault(s => s.Title == title) is { } tableSection
+            && Session.Rows.ElementAtOrDefault(tableSection.FirstRow)?.Instance.Placement?.BlockId is { } blockId)
+        {
+            TablePages.Children.FirstOrDefault(c => c.Tag as string == blockId)?.BringIntoView();
+            return;
+        }
         if (Session.Sections.FirstOrDefault(s => s.Title == title) is not { } section) return;
         // ScrollIntoView works with the virtualized list, where far rows have no container yet.
         ParameterList.ScrollIntoView(section.FirstRow);

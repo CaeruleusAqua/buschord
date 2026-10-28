@@ -25,7 +25,7 @@ public sealed class ProgrammingJob : SessionState
     public string Operation { get; }
     public ProgrammingJobType Type { get; }
     public string InterfaceId { get; }
-    /// <summary>Explicit provenance. Real jobs are rejected at enqueue; execution is demo-only.</summary>
+    /// <summary>Execution source. Real jobs are rejected at enqueue; execution is demo-only.</summary>
     public SessionOrigin Origin { get; }
     public FrozenConfiguration Configuration { get; }
     public ProgrammingJobStatus Status { get; private set; }
@@ -174,6 +174,7 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
         var reset = state.ResetForChange(change);
         if (reset == state) return false;
         _states[deviceId] = reset;
+        PublishDownloaded();
         return true;
     }
 
@@ -287,11 +288,13 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
                     catch (OperationCanceledException) when (token.IsCancellationRequested)
                     {
                         job.Change(ProgrammingJobStatus.Cancelled, "Queue cancelled; no success recorded.");
+                        PublishDownloaded();
                         break;
                     }
                     catch (OperationCanceledException) when (jobCancellation.IsCancellationRequested)
                     {
                         job.Change(ProgrammingJobStatus.Cancelled, "Job cancelled; no success recorded.");
+                        PublishDownloaded();
                         continue;
                     }
                     catch (Exception ex)
@@ -300,6 +303,7 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
                             : string.IsNullOrWhiteSpace(ex.Message) ? ex.GetType().Name : ex.Message;
                         RecordFailure(job, error);
                         job.Change(ProgrammingJobStatus.Failed, error);
+                        PublishDownloaded();
                         continue;
                     }
                     finally

@@ -2,7 +2,7 @@ namespace Knx;
 
 /// <summary>
 /// Pure address allocation over the existing model: it only reads the installation and never
-/// mutates it. A lowest-free-address query supports an explicit skip set.
+/// mutates it. Lowest-free-address queries also accept an explicit skip set.
 /// </summary>
 public static class AddressStrategy
 {

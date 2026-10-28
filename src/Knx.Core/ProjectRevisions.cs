@@ -253,6 +253,7 @@ public static class ProjectRevisions
                 p.Value.Flags,
                 p.Value.Active,
                 p.Value.ChannelId,
+                p.Value.ChannelSource,
                 p.Value.Role,
                 p.Value.SendingGroupId,
                 Connectors = p.Value.Connectors.OrderBy(c => c.Key, StringComparer.Ordinal).Select(c => new
@@ -304,15 +305,19 @@ public static class ProjectRevisions
                 r.Text,
                 r.FunctionText,
                 r.Device,
+                r.ChannelId,
                 Links = r.Links.OrderBy(l => l, StringComparer.Ordinal).ToArray(),
             }).ToArray(),
         Parameters = device.ParameterValues.OrderBy(p => p.Key, StringComparer.Ordinal)
             .Select(p => new { p.Key, p.Value }).ToArray(),
+        BinaryData = device.BinaryData.OrderBy(p => p.Key, StringComparer.Ordinal)
+            .Select(p => new { p.Key, Value = Convert.ToBase64String(p.Value) }).ToArray(),
     };
 
     private static object ChannelSnapshot(ChannelInstance channel) => new
     {
         channel.Id,
+        channel.RefId,
         channel.Name,
         Channels = channel.Channels.OrderBy(c => c.Id, StringComparer.Ordinal).Select(ChannelSnapshot).ToArray(),
     };
