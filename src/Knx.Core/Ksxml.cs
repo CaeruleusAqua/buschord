@@ -101,6 +101,8 @@ public static class Ksxml
             AddressType = Attr(source, "AddressType"), AddressVersion = Attr(source, "Version"),
             TimeUnit = shape?.Name.LocalName == "TypeTime" ? Attr(source, "Unit") : null,
             TimeUIHint = shape?.Name.LocalName == "TypeTime" ? Attr(source, "UIHint") : null,
+            PictureResourceId = shape?.Name.LocalName == "TypePicture" ? Attr(source, "RefId") : null,
+            PictureAlignment = shape?.Name.LocalName == "TypePicture" ? Attr(source, "HorizontalAlignment") : null,
             Unit = Attr(el, "Unit"), Description = Attr(el, "Description"), IsVisible = Visible(el),
         };
         if (shape is null)

@@ -127,24 +127,55 @@ internal static partial class EncryptedArchive
     {
         var output = new byte[cipher.Length];
         using var aes = Aes.Create();
-        // Block primitive for WinZip AE-1/AE-2 CTR: only the counter enters AES,
-        // never file data. The ciphertext is authenticated before decryption.
-        // https://www.winzip.com/en/support/aes-encryption/ (III.4-5)
-        aes.Mode = CipherMode.ECB;
-        aes.Padding = PaddingMode.None;
         aes.Key = key;
-        using var transform = aes.CreateEncryptor();
-        var counter = new byte[16];
-        var keyStream = new byte[16];
+        if (cipher.IsEmpty) return output;
+        const int blockSize = 16;
+        const int batchSize = 64 * 1024;
+        var bufferLength = (int)Math.Min(batchSize, ((long)cipher.Length + blockSize - 1) / blockSize * blockSize);
+        var counterBlocks = new byte[bufferLength];
+        var keyStream = new byte[bufferLength];
+        Span<byte> counter = stackalloc byte[blockSize];
+        counter.Clear();
         counter[0] = 1;
-        for (int position = 0; position < cipher.Length; position += 16)
+        try
         {
-            transform.TransformBlock(counter, 0, 16, keyStream, 0);
-            var count = Math.Min(16, cipher.Length - position);
-            for (int i = 0; i < count; i++) output[position + i] = (byte)(cipher[position + i] ^ keyStream[i]);
-            for (int i = 0; i < counter.Length; i++) if (++counter[i] != 0) break;
+            for (var position = 0; position < cipher.Length;)
+            {
+                var count = Math.Min(bufferLength, cipher.Length - position);
+                var rounded = (count + blockSize - 1) / blockSize * blockSize;
+                for (var block = 0; block < rounded; block += blockSize)
+                {
+                    counter.CopyTo(counterBlocks.AsSpan(block, blockSize));
+                    for (var index = 0; index < counter.Length; index++)
+                    {
+                        counter[index] = unchecked((byte)(counter[index] + 1));
+                        if (counter[index] != 0) break;
+                    }
+                }
+                EncryptEcbCounterBlocks(aes, counterBlocks.AsSpan(0, rounded), keyStream.AsSpan(0, rounded));
+                for (var index = 0; index < count; index++)
+                    output[position + index] = (byte)(cipher[position + index] ^ keyStream[index]);
+                position += count;
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(keyStream);
+            CryptographicOperations.ZeroMemory(counterBlocks);
+            CryptographicOperations.ZeroMemory(counter);
         }
         return output;
+    }
+
+    // AES is a block primitive for WinZip AE-1/AE-2 CTR: input contains only
+    // consecutive counter blocks, never file data. Batch the key stream so the
+    // one-shot primitive is called at most once per 64 KiB, not once per block.
+    // Ciphertext authentication remains before decryption and decompression.
+    // https://www.winzip.com/en/support/aes-encryption/ (III.4-5)
+    private static void EncryptEcbCounterBlocks(Aes aes, ReadOnlySpan<byte> counterBlocks, Span<byte> keyStream)
+    {
+        if (aes.EncryptEcb(counterBlocks, keyStream, PaddingMode.None) != counterBlocks.Length)
+            throw new CryptographicException("Incomplete AES counter-block encryption.");
     }
 
     private static byte[] Decompress(byte[] source, int offset, int length, ushort method, long expected, int maximum)
@@ -167,7 +198,7 @@ internal static partial class EncryptedArchive
     private static int DataStart(byte[] zip, Raw entry, int centralOffset, out AesExtra? aes)
     {
         if ((long)entry.LocalOffset + 30 > centralOffset || U32(zip, entry.LocalOffset) != 0x04034b50)
-            throw new InvalidDataException(". " + Supported);
+            throw new InvalidDataException("Invalid ZIP local-entry header. " + Supported);
         var nameLength = U16(zip, entry.LocalOffset + 26);
         var extraLength = U16(zip, entry.LocalOffset + 28);
         var start = (long)entry.LocalOffset + 30 + nameLength + extraLength;

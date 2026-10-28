@@ -495,6 +495,7 @@ try
     }
     finally { Knx.Strings.Language = language; }
 
+    AppUpdateServiceChecks.Run(Check);
     Console.WriteLine($"WORKBENCH UI STATE OK ({checks})");
 }
 finally { Directory.Delete(root, recursive: true); }

@@ -1,8 +1,8 @@
 # Knx.Localization.Tests
 
 Offline localization gates for the string facades (`Knx.Strings`,
-`Knx.App.Localization.WorkbenchStrings`, `Knx.App.Services.CatalogUiText` and
-`Knx.App.Localization.CatalogDownloadStrings`).
+`Knx.App.Localization.WorkbenchStrings`, `Knx.App.Services.CatalogUiText`,
+`Knx.App.Localization.CatalogDownloadStrings` and `Knx.App.Localization.UpdateUiStrings`).
 No network or Roslyn: the gates read the runtime reference maps and supported
 JSON catalogs, then scan `src/` and `tests/` as text.
 Runs on Windows and Linux through `TEST_PROJECTS` in `.github/workflows/ci.yml`.
@@ -21,7 +21,7 @@ I18N_GATE_VERBOSE=1 dotnet run --project tests/Knx.Localization.Tests   # print 
 | parity | every key of a module has non-empty `de` and `en` text |
 | overlays | supported language catalogs contain the complete reference key set, non-empty values and matching placeholders; fallback behaviour remains defined |
 | duplicates | no key appears twice in a source map, and source entries match the runtime key set |
-| references | every `{loc:Tr K}` / `{loc:Wb K}`, `Strings.Get("K")`, `WorkbenchStrings.Get("K")`, `CatalogUiText.Get("K")` and `W("K")` / `Wb("K")` resolves in the map its call site uses |
+| references | `{loc:Tr K}` / `{loc:Wb K}` / `{loc:Up K}`, calls to the five facades, and `W("K")` / `Wb("K")` resolve in their own module; `U("K")` is checked in UpdateWindow sources only, separately from unrelated numeric helpers |
 | placeholders | `{n}` index sets are equal across languages, braces are balanced, `string.Format` succeeds with dummy args for every key |
 | German guard | no hardcoded German literal in product source outside `exceptions.txt` (umlaut/ß, German wordlist, `lang="de"`) |
 | pseudo-loc | a test-only `qps` transform expands every German value into `[!! … !!]`, keeps placeholders intact and leaves real languages untouched |

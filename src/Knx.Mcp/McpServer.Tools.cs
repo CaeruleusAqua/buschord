@@ -34,6 +34,7 @@ public sealed partial class McpServer
                 EnumProp("style", "Group address style.", ["three_level", "two_level", "free"]),
                 IntProp("areas", "Number of areas to create (default 1)."),
                 IntProp("lines", "Number of lines per area (default 1)."),
+                EnumProp("topology_template", "Address origin: tp starts with line 1.1; legacy keeps line 0.0 (default legacy). TP supports 1..15, legacy 1..16 areas/lines.", ["tp", "legacy"]),
                 StrProp("save_path", "Target .knxproj path used by project_save.")),
             Sync(ProjectNew)),
         new("project_save",
@@ -165,8 +166,8 @@ public sealed partial class McpServer
             Schema(StrProp("device_address", "Individual address, e.g. 1.1.5.", true)),
             Sync(CommunicationObjectsList)),
         new("group_link_add",
-            "Manually link a communication object reference to an existing group address. Idempotent, offline and undoable; no DPT compatibility is inferred.",
-            GroupLinkSchema(),
+            "Manually link a communication object reference to an existing group address. Known DPT/bit/security conflicts are rejected atomically. Unknown facts remain explicitly unverified unless require_compatibility=true. Idempotent, offline and undoable.",
+            GroupLinkSchema(add: true),
             Sync(args => GroupLinkChange(args, true))),
         new("group_link_remove",
             "Remove a communication object reference's link to an existing group address. Idempotent, offline and undoable.",
@@ -183,9 +184,14 @@ public sealed partial class McpServer
             "type match (minimum score 40, up to 3 suggestions per object).",
             Schema(),
             Sync(SmartLinkSuggest)),
+        new("mass_link_review",
+            "Review every unlinked communication object before an atomic batch. Returns ready/ambiguous/incompatible/unmatched/unverified rows and a bound ten-minute review_token. Set per-row group ids through targets; missing facts never become ready.",
+            MassLinkReviewSchema(), Sync(MassLinkReviewTool)),
+        new("mass_link_apply",
+            "Atomically apply selected ready rows from mass_link_review, rechecking project lifetime, identities and complete compatibility. One undo step; no partial links. Omit row_ids to apply all ready rows.",
+            MassLinkApplySchema(), Sync(MassLinkApplyTool)),
         new("smart_link_apply",
-            "Apply the best suggestion (same scoring as smart_link_suggest) to every unlinked communication " +
-            "object of the project.",
+            "Legacy manual batch: apply the highest-scoring suggestion per unlinked object. Known conflicts reject the whole transaction; missing facts return unverified warnings. For explicit ambiguous-target review and strict compatibility use mass_link_review/mass_link_apply.",
             Schema(),
             Sync(SmartLinkApply)),
         new("product_replace",
@@ -451,8 +457,14 @@ public sealed partial class McpServer
         {
             Name = Required(args, "name"),
             GroupAddressStyle = ParseStyle(Str(args, "style")),
-            Areas = Math.Max(1, Int(args, "areas") ?? 1),
-            LinesPerArea = Math.Max(1, Int(args, "lines") ?? 1),
+            Areas = Int(args, "areas") ?? 1,
+            LinesPerArea = Int(args, "lines") ?? 1,
+            TopologyTemplate = OptionalString(args, "topology_template") switch
+            {
+                null or "legacy" => NewProjectTopologyTemplate.LegacyZero,
+                "tp" => NewProjectTopologyTemplate.TpFromOne,
+                _ => throw new ToolException("topology_template must be tp or legacy"),
+            },
         };
         var project = ProjectWizard.Create(options);
         _project = project;
@@ -743,9 +755,12 @@ public sealed partial class McpServer
             .GroupBy(s => s.ComObject)
             .Select(group => group.OrderByDescending(s => s.Score).First())
             .ToList();
-        var applied = SmartLinking.Apply(best);
-        if (applied > 0) _undo.Push(project);
-        return new { applied, suggestions = best.Select(Suggestion).ToList() };
+        if (best.Count == 0) return new { applied = 0, compatibilityVerified = false, suggestions = best.Select(Suggestion).ToList(), warnings = Array.Empty<string>() };
+        var result = WorkbenchProject.AddLinkPairs(project, best.Select(proposal =>
+            new LinkCheckRequest(new(proposal.Device.Id, proposal.ComObject.Id), proposal.GroupAddress.Id)), _undo, allowUnverified: true);
+        if (!result.Ok) throw new ToolException(string.Join("; ", result.Errors.Select(error => error.Code + ": " + error.Reason)));
+        return new { applied = result.Changed, compatibilityVerified = result.Warnings.Count == 0,
+            suggestions = best.Select(Suggestion).ToList(), warnings = result.Warnings };
     }
 
     private object ProductReplace(JsonElement args)
@@ -1864,6 +1879,7 @@ public sealed partial class McpServer
         isGroupAddress = entry.IsGroupAddress,
         apci = entry.Apci,
         data = entry.Data,
+        hopCount = entry.HopCount,
     };
 
     private static bool Matches(GroupAddressEntry entry, string filter)

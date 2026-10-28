@@ -184,12 +184,11 @@ internal static class MigrationExportChecks
         var keys = Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(zipPassword), salt, 1000, HashAlgorithmName.SHA1, 66);
         // WinZip CTR fixture: only counter blocks enter AES; HMAC authenticates ciphertext.
         // https://www.winzip.com/en/support/aes-encryption/ (III.4-5)
-        using var aes = Aes.Create(); aes.Mode = CipherMode.ECB; aes.Padding = PaddingMode.None; aes.Key = keys[..32];
-        using var encryptor = aes.CreateEncryptor();
+        using var aes = Aes.Create(); aes.Key = keys[..32];
         var cipher = new byte[data.Length]; var counter = new byte[16]; counter[0] = 1; var block = new byte[16];
         for (var offset = 0; offset < data.Length; offset += 16)
         {
-            encryptor.TransformBlock(counter, 0, 16, block, 0);
+            aes.EncryptEcb(counter, block, PaddingMode.None);
             for (var i = 0; i < Math.Min(16, data.Length - offset); i++) cipher[offset + i] = (byte)(data[offset + i] ^ block[i]);
             for (var i = 0; i < 16; i++) if (++counter[i] != 0) break;
         }

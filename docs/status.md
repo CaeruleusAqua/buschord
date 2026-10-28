@@ -473,8 +473,8 @@ physical mapping, applying procedure adjustments and image finalization remain o
 
 ## Validation
 
-The current Windows build passes all 28 maintained suites, the MCP selftest and
-750 native dialog checks in each of German and English. Encryption passes 322
+The current Windows build passes all 29 maintained suites, the MCP selftest and
+828 native dialog checks in each of German and English. Encryption passes 377
 checks. Six new import regressions cover unique XML identities, including IDs
 allocated for different element kinds in the same operation. All 51 fixed
 compatibility comparisons below pass without recapturing their envelopes.
@@ -482,8 +482,8 @@ App-owned modal windows share a theme-aware caption on Windows; native file
 pickers and the explicit native-titlebar fallback keep system decorations.
 This is not a completed manual Linux/macOS or acoustic screenreader acceptance.
 
-The solution contains 35 projects. The maintained regression matrix covers
-28 suites and 13 additional modes; see [test commands](../CONTRIBUTING.md).
+The solution contains 39 projects. The maintained regression matrix covers
+29 suites and 13 additional modes; see [test commands](../CONTRIBUTING.md).
 The property extension passes both affected Core/parameter and MCP suites locally.
 The Time slice
 adds 106 Core and 70 MCP checks. Persistent projects reproduce four complete legacy
@@ -622,7 +622,7 @@ frame to the current monitor working area and keeps its scrolling body separate
 from the fixed action row. An actual 200 % Windows recheck confirmed a new,
 unmaximized Settings window with both action buttons visible, its last editor
 reachable by scrolling and Tab, and correct Cancel/Save keyboard focus. Native
-dialog suites pass 750 checks in each of German and English; the item-Enter
+dialog suites pass 828 checks in each of German and English; the item-Enter
 regression failed in both themes before the correction. The ordinary UI-state
 suite passes 206 checks. Navigator expansion/collapse and selection retain the
 current row's focus across queued refreshes without taking focus from another

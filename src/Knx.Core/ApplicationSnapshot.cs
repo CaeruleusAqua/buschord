@@ -88,6 +88,7 @@ public sealed class ApplicationSnapshot
 
     private string LocalId(string id) => _programId is { Length: > 0 } && id.StartsWith(_programId + "_", StringComparison.Ordinal)
         ? id[(_programId.Length + 1)..] : id;
+    public string ObjectReferenceKey(string id) => LocalId(id);
 
     private static bool SupportedPlacement(XElement reference)
     {

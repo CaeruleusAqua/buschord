@@ -27,12 +27,24 @@ public static class SmartLinking
         Func<DeviceInstance, ComObjectInstanceRef, string?>? datapointTypeOf = null,
         int minimumScore = 40,
         int perObject = 3)
+        => SuggestCore(project, datapointTypeOf, minimumScore, perObject, false, null);
+
+    /// <summary>Includes named conflicting candidates so an explicit review can explain them.</summary>
+    public static IReadOnlyList<LinkSuggestion> SuggestForReview(Project project,
+        Func<DeviceInstance, ComObjectInstanceRef, string?>? datapointTypeOf = null,
+        int minimumScore = 40, int perObject = 16, IReadOnlySet<Workbench.ObjectKey>? objectKeys = null)
+        => SuggestCore(project, datapointTypeOf, minimumScore, perObject, true, objectKeys);
+
+    private static IReadOnlyList<LinkSuggestion> SuggestCore(Project project,
+        Func<DeviceInstance, ComObjectInstanceRef, string?>? datapointTypeOf, int minimumScore,
+        int perObject, bool includeIncompatible, IReadOnlySet<Workbench.ObjectKey>? objectKeys)
     {
         var candidates = ProjectQuery.GroupAddresses(project).ToList();
         var result = new List<LinkSuggestion>();
 
         foreach (var (device, comObject) in ProjectQuery.ComObjectRefs(project))
         {
+            if (objectKeys is not null && !objectKeys.Contains(new(device.Id, comObject.Id))) continue;
             if (comObject.Links.Count > 0) continue;
 
             var objectText = $"{device.Name} {comObject.Text} {comObject.FunctionText}";
@@ -46,9 +58,10 @@ public static class SmartLinking
                 var matchesDpt = false;
                 if (expectedDpt is { } expected && candidateDpt is { } actual)
                 {
-                    if (expected.Main != actual.Main ||
-                        (expected.Sub is not null && actual.Sub is not null && expected.Sub != actual.Sub)) continue;
-                    matchesDpt = true;
+                    var compatible = expected.Main == actual.Main &&
+                        (expected.Sub is null || actual.Sub is null || expected.Sub == actual.Sub);
+                    if (!compatible && !includeIncompatible) continue;
+                    matchesDpt = compatible;
                 }
 
                 var gaTokens = Tokens(candidate.Name);

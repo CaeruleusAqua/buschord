@@ -22,3 +22,16 @@ artifacts/
 
 # Machine-local protection settings belong outside the checkout.
 archive-protection*.json
+
+# Release signing material stays outside the checkout; public anchors are source.
+*.pfx
+*.p12
+*.key
+*-private.pem
+*.private.pem
+*-private.asc
+*.private.asc
+
+# Python checks do not add interpreter caches to source control.
+__pycache__/
+*.py[cod]

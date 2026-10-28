@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Knx;
 using Knx.App;
+using Knx.App.Localization;
 
 internal static class NewProjectAccessibilityChecks
 {
@@ -15,6 +16,16 @@ internal static class NewProjectAccessibilityChecks
         {
             await Task.Delay(100);
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+            var template = dialog.FindControl<ComboBox>("TemplateBox")!;
+            var preview = dialog.FindControl<TextBlock>("TopologyPreview")!;
+            check(theme + " new project defaults to explicit TP line 1.1",
+                template.SelectedIndex == 0 && preview.Text?.Contains("1.1.1") == true
+                && ControlAutomationPeer.CreatePeerForElement(template)?.GetName() == WorkbenchStrings.Get("NewTopologyTemplate"));
+            template.SelectedIndex = 1;
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+            check(theme + " new project legacy template updates address preview and limits",
+                preview.Text?.Contains("0.0.1") == true && dialog.FindControl<NumericUpDown>("AreasBox")!.Maximum == 16);
+            template.SelectedIndex = 0;
             foreach (var (name, key) in new[]
             {
                 ("NameBox", "ColName"), ("CommentBox", "NewProjectComment"),

@@ -15,6 +15,7 @@ public sealed record ParameterChangePreview(DeviceInstance? Device, IReadOnlyLis
     public int RemovedObjects { get; init; }
     public int ActivatedObjects { get; init; }
     public int DeactivatedObjects { get; init; }
+    public int AffectedLinks { get; init; }
 }
 
 /// <summary>A navigable range of visible parameter rows; <see cref="FirstRow"/> indexes <see cref="ParameterEditingSession.Rows"/>.</summary>
@@ -33,6 +34,9 @@ public sealed class ParameterEditingSession
     private Action<IReadOnlyDictionary<string, string?>, IEnumerable<ParameterInstance>, string?>? _evaluate;
     private Func<IReadOnlyDictionary<string, string?>, string?, ApplicationSnapshot>? _evaluateStructure;
     private ApplicationSnapshot? _structure, _baselineStructure;
+    private ParameterPresentation _presentation = ParameterPresentation.Empty;
+    private ParameterResourceReader? _resources;
+    public ParameterPresentation Presentation => _structure?.Evaluation.Presentation ?? _presentation;
     private List<ParameterInstance> _baselineInstances = [];
     private List<ParameterType> _baselineTypes = [];
     private Dictionary<string, ParameterInstance> _knownInstances = [];
@@ -50,7 +54,7 @@ public sealed class ParameterEditingSession
         string? ProductRefId, string? Hardware2ProgramRefId, string Message, Dictionary<string, string?> UserValues,
         ApplicationSnapshot? Structure, ApplicationSnapshot? BaselineStructure, List<ParameterInstance> BaselineInstances,
         List<ParameterType> BaselineTypes, Dictionary<string, ParameterInstance> KnownInstances, string? Definition,
-        string? EvaluationError, string? SelectedSection);
+        string? EvaluationError, string? SelectedSection, ParameterPresentation Presentation);
 
     public ParameterEditingSession() { }
     public ParameterEditingSession(MainWindowViewModel vm) => _vm = vm;
@@ -190,7 +194,7 @@ public sealed class ParameterEditingSession
                 new Dictionary<string, string>(_savedValues),
                 _productRefId, _hardwareRefId, Message, new(_userValues),
                 _structure, _baselineStructure, _baselineInstances, _baselineTypes, new(_knownInstances), _definition,
-                _evaluationError, SelectedSection);
+                _evaluationError, SelectedSection, _presentation);
         else if (_row is not null) _drafts.Remove(_row.Device);
         PruneDrafts();
         _row = device;
@@ -222,6 +226,8 @@ public sealed class ParameterEditingSession
         _structure = restored ? draft!.Structure : _vm.LoadedStructureSnapshot;
         _baselineStructure = restored ? draft!.BaselineStructure : _vm.LoadedStructureSnapshot;
         _definition = _vm.LoadedStructureDefinition;
+        _presentation = restored ? draft!.Presentation : _vm.LoadedParameterPresentation;
+        _resources = _vm.LoadedParameterResources;
         _savedValues = new(device.Device.ParameterValues);
         _knownInstances = restored ? new(draft!.KnownInstances) : instances.ToDictionary(i => i.Id);
         _evaluationError = restored ? draft!.EvaluationError : _vm.ParameterEvaluationFailed ? Strings.Get("StatusParameterUnreadable", _vm.ParameterWarning) : null;
@@ -320,6 +326,7 @@ public sealed class ParameterEditingSession
             RemovedObjects = _baselineStructure?.ObjectReferenceNumbers.Keys.Except(_structure?.ObjectReferenceNumbers.Keys ?? []).Count() ?? 0,
             ActivatedObjects = _structure?.ActiveObjects.Except(_baselineStructure?.ActiveObjects ?? new HashSet<string>()).Count() ?? 0,
             DeactivatedObjects = _baselineStructure?.ActiveObjects.Except(_structure?.ActiveObjects ?? new HashSet<string>()).Count() ?? 0,
+            AffectedLinks = AffectedLinkCount(),
         };
         Preview = preview;
         Message = preview.Error ?? string.Join(Environment.NewLine, changes.Where(c => c.Error is not null).Select(c => $"{c.Name}: {c.Error}"));
@@ -328,6 +335,14 @@ public sealed class ParameterEditingSession
     }
 
     public void CancelReview() { Preview = null; Changed?.Invoke(this, EventArgs.Empty); }
+
+    private int AffectedLinkCount()
+    {
+        if (_structure is null || _baselineStructure is null || Device is null) return 0;
+        var affected = _baselineStructure.ActiveObjects.Except(_structure.ActiveObjects).ToHashSet(StringComparer.Ordinal);
+        return Device.ComObjectRefs.Where(o => affected.Contains(_baselineStructure.ObjectReferenceKey(o.Id)))
+            .Sum(o => o.Links.Distinct(StringComparer.Ordinal).Count());
+    }
 
     public bool Apply()
     {
@@ -366,6 +381,7 @@ public sealed class ParameterEditingSession
         _drafts.Clear(); _row = null; _apply = apply; _manualReadOnlyReason = readOnlyReason;
         _evaluate = null; _evaluationError = null; _userValues = []; _evaluatedValues = [];
         _evaluateStructure = null; _structure = _baselineStructure = null; _definition = null;
+        _presentation = ParameterPresentation.Empty; _resources = null;
         _instances = parameters.ToList(); _types = types.ToList();
         _knownInstances = _instances.ToDictionary(i => i.Id);
         _baseline = _instances.ToDictionary(i => i.Id, i => i.Value);
@@ -378,6 +394,7 @@ public sealed class ParameterEditingSession
     {
         _evaluate = null; _evaluationError = null; _userValues = []; _evaluatedValues = [];
         _evaluateStructure = null; _structure = _baselineStructure = null; _knownInstances = []; _definition = null;
+        _presentation = ParameterPresentation.Empty; _resources = null;
         _instances = []; _types = []; _baseline = []; _apply = null;
         Rows = []; Sections = []; SelectedSection = null; Title = null; Warning = ""; EmptyText = empty; Message = "";
         ApplyReadOnly();
@@ -394,6 +411,7 @@ public sealed class ParameterEditingSession
             var built = ParameterItemViewModel.Build(_instances, _types, OnRowsChanged);
             var nextRows = built.Select(row => previousRows.TryGetValue(row.Instance.Id, out var old) && old.Kind == row.Kind
                 ? old.Rebind(row.Instance, row.Type) : row).ToArray();
+            foreach (var row in nextRows) row.Resources = _resources;
             if (!Rows.SequenceEqual(nextRows)) Rows = nextRows;
         }
         finally { _evaluating = wasEvaluating; }
@@ -455,6 +473,7 @@ public sealed class ParameterEditingSession
                 try
                 {
                     _evaluate(_userValues, _instances, edited);
+                    _presentation = _vm?.LoadedParameterPresentation ?? _presentation;
                     Warning = _vm?.ParameterWarning ?? Warning;
                     var previousError = _evaluationError;
                     _evaluationError = _vm?.ParameterEvaluationFailed == true ? Strings.Get("StatusParameterUnreadable", Warning) : null;
@@ -555,6 +574,7 @@ public sealed class ParameterEditingSession
         && a.AddressType == b.AddressType && a.AddressVersion == b.AddressVersion
         && a.TimeUnit == b.TimeUnit && a.TimeUIHint == b.TimeUIHint
         && a.RawDataMaxSize == b.RawDataMaxSize
+        && a.PictureResourceId == b.PictureResourceId && a.PictureAlignment == b.PictureAlignment
         && a.UIHint == b.UIHint && a.Unit == b.Unit && a.Description == b.Description && a.IsVisible == b.IsVisible
         && a.Restrictions.Count == b.Restrictions.Count
         && a.Restrictions.Zip(b.Restrictions).All(pair => SameDeclaration(pair.First, pair.Second));

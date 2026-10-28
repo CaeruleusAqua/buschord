@@ -82,6 +82,13 @@
 
         <Border Classes="settings-card">
           <StackPanel Spacing="10">
+            <TextBlock Text="{loc:Up Title}" Classes="settings-heading" Margin="0" />
+            <Button Content="{loc:Up Title}" Click="OnUpdates" Classes="wb-button" HorizontalAlignment="Left"
+                    AutomationProperties.Name="{loc:Up Title}" />
+          </StackPanel>
+        </Border>
+        <Border Classes="settings-card">
+          <StackPanel Spacing="10">
             <TextBlock Text="{loc:Tr OptionsArchiveProtection}" Classes="settings-heading" Margin="0" />
             <TextBlock Text="{loc:Tr OptionsArchiveProtectionHint}" Classes="wb-muted" TextWrapping="Wrap" />
             <TextBlock Text="{loc:Tr OptionsArchiveProtectionSalt}" Classes="settings-label" />

@@ -666,6 +666,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     internal Func<IReadOnlyDictionary<string, string?>, string?, ApplicationSnapshot>? LoadedStructureEvaluation { get; private set; }
     internal ApplicationSnapshot? LoadedStructureSnapshot { get; private set; }
     internal string? LoadedStructureDefinition { get; private set; }
+    internal ParameterResourceReader? LoadedParameterResources { get; private set; }
+    internal ParameterPresentation LoadedParameterPresentation { get; private set; } = ParameterPresentation.Empty;
 
     public (List<ParameterInstance> Instances, List<ParameterType> Types) LoadParametersFor(DeviceRow device)
     {
@@ -675,6 +677,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         LoadedStructureEvaluation = null;
         LoadedStructureSnapshot = null;
         LoadedStructureDefinition = null;
+        LoadedParameterResources = null;
+        LoadedParameterPresentation = ParameterPresentation.Empty;
         var refId = device.Device.Hardware2ProgramRefId ?? device.Device.ProductRefId;
         if (string.IsNullOrWhiteSpace(refId)) return ([], []);
         try
@@ -685,6 +689,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             List<ComObject> comObjects;
             if (doc is not null)
             {
+                LoadedParameterResources = new ParameterResourceReader(Project!, doc);
                 var profile = ArchiveMaskProfile(Project!, doc);
                 LoadedStructureDefinition = ParameterDefinitionFingerprint(Project!, doc);
                 var savedValues = device.Device.ParameterValues.ToDictionary(p => p.Key, p => (string?)p.Value);
@@ -704,11 +709,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 {
                     var state = DynamicParameters.Evaluate(doc.Root!, values, Knx.Scripting.IsolatedScriptRuntime.Shared, edited);
                     DynamicParameters.Apply(state, rows);
+                    LoadedParameterPresentation = state.Presentation;
                     ParameterWarning = string.Join(", ", state.Unsupported);
                     if (state.InvalidAssignments.Count > 0) ParameterWarning += " Invalid dynamic assignment.";
                     ParameterEvaluationFailed = state.StructureFailed || !state.ObjectActivityComplete || !state.Converged || state.ScriptFailures > 0 || state.DepthLimitReached || state.InvalidAssignments.Count > 0;
                 };
                 ParameterWarning = string.Join(", ", evaluation.Unsupported);
+                LoadedParameterPresentation = evaluation.Presentation;
                 if (evaluation.InvalidAssignments.Count > 0) ParameterWarning += " Invalid dynamic assignment.";
                 ParameterEvaluationFailed = evaluation.StructureFailed || !evaluation.ObjectActivityComplete || !evaluation.Converged || evaluation.ScriptFailures > 0 || evaluation.DepthLimitReached || evaluation.InvalidAssignments.Count > 0;
             }

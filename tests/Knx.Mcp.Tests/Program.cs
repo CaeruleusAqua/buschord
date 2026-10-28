@@ -47,7 +47,7 @@ Check("ping answers with an object", ping["result"] is JsonObject, ping.ToJsonSt
 
 var listed = await Call(3, "tools/list");
 var tools = listed["result"]?["tools"]?.AsArray() ?? new JsonArray();
-Check("tools/list returns 55 tools", tools.Count == 55, tools.Count.ToString());
+Check($"tools/list returns {McpToolContract.ExpectedToolCount} tools", tools.Count == McpToolContract.ExpectedToolCount, tools.Count.ToString());
 Check("every tool has a snake_case name",
     tools.All(t => (string?)t?["name"] is { Length: > 0 } name &&
                    name.All(c => char.IsLower(c) || char.IsDigit(c) || c == '_')));
@@ -927,6 +927,8 @@ Console.WriteLine($"NativeImageFoldMcp: {nativeFoldChecks} checks, {nativeFoldFa
 await ApplicationBuildToolChecks.Run(Check);
 await ResolvedProcedureToolChecks.Run(Check);
 await GeneratedTablesToolChecks.Run(Check);
+await MassLinkToolChecks.Run((name, ok) => Check(name, ok));
+await TopologyTemplateToolChecks.Run((name, ok) => Check(name, ok));
 
 Console.WriteLine();
 if (failures.Count == 0)

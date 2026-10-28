@@ -12,6 +12,15 @@ namespace Knx.App;
 /// <summary>Extras → Optionen: settings, theme and language (applied immediately).</summary>
 public partial class SettingsWindow : Window
 {
+    private async void OnUpdates(object? sender, Avalonia.Interactivity.RoutedEventArgs args)
+    {
+        try { await new UpdateWindow().ShowDialog(this); }
+        catch (Exception error) when (IsSettingsError(error))
+        {
+            SettingsErrorText.Text = Localization.UpdateUiStrings.Get("OperationFailed", error.Message);
+            SettingsErrorText.IsVisible = true;
+        }
+    }
     private readonly AppSettings _settings;
     private readonly double _minimumWidth;
     private readonly double _minimumHeight;

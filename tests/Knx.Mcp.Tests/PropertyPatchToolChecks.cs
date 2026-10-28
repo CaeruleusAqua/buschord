@@ -56,7 +56,7 @@ internal static class PropertyPatchToolChecks
             var history = Data(await Tool("project_info", new { })).ToJsonString();
             var ordinary = Data(await Tool("download_plan", new { device_address = "1.1.1" })).ToJsonString();
             var schema = server.Tools.Single(t => t.Name == "download_plan").InputSchema;
-            check("property option is a boolean on the existing 55-tool contract", server.Tools.Count == 55
+            check("property option is a boolean on the current tool contract", server.Tools.Count == McpToolContract.ExpectedToolCount
                 && (string?)schema["properties"]?["property_preview"]?["type"] == "boolean"
                 && schema["allOf"]?[1]?["then"]?["required"]?.AsArray().Count == 2
                 && schema["allOf"]?[1]?["then"]?["not"]?["properties"]?["resource_preview"]?["const"]?.GetValue<bool>() == true, null);

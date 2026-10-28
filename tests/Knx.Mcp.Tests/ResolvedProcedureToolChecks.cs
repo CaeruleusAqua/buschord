@@ -58,7 +58,7 @@ internal static class ResolvedProcedureToolChecks
             var xml = Knxproj.ToXml(project).ToString(SaveOptions.DisableFormatting); var revision = project.ApplicationDataRevision;
             var history = new UndoStack(); history.Reset(project);
             var schema = server.Tools.Single(t => t.Name == "download_plan").InputSchema["properties"]!["load_procedure_preview"]!;
-            check("condition resolution is an optional boolean within the existing tool", server.Tools.Count == 55
+            check("condition resolution is an optional boolean within the existing tool", server.Tools.Count == McpToolContract.ExpectedToolCount
                 && (string?)schema["properties"]?["resolve_conditions"]?["type"] == "boolean"
                 && !schema["required"]!.AsArray().Any(n => (string?)n == "resolve_conditions") && schema["allOf"]?.AsArray().Count == 2, schema.ToJsonString());
             var ordinary = Data(await Raw(Options)); var explicitFalse = Data(await Raw(Options + ",\"resolve_conditions\":false"));

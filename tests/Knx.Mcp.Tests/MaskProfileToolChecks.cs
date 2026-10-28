@@ -35,7 +35,7 @@ internal static class MaskProfileToolChecks
             var master = Master(); var raw = Encoding.UTF8.GetBytes(master.ToString());
             var path = Fixture(directory, "supported", raw);
             var original = File.ReadAllBytes(path); var content = await OpenAndPlan(path); var profile = content["archiveMaskProfile"]!;
-            check("mask tool remains additive to the existing 55 tools", server.Tools.Count == 55 && server.Tools.Count(t => t.Name == "download_plan") == 1
+            check("mask tool remains additive to the current tool contract", server.Tools.Count == McpToolContract.ExpectedToolCount && server.Tools.Count(t => t.Name == "download_plan") == 1
                 && !server.Tools.Any(t => t.Name == "archive_mask_profile"), null);
             check("download plan selects exact archived current-zero profile without scripts", (string?)profile["source"] == "archive:knx_master.xml"
                 && profile["readOnly"]?.GetValue<bool>() == true && (string?)profile["status"] == "supported"

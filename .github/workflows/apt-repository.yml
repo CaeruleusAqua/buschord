@@ -1,0 +1,80 @@
+name: Publish authenticated BusChord APT repository
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '47 5 */3 * *'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: buschord-apt-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    # Explicitly enabled only after an approved signed production release exists.
+    if: vars.BUSCHORD_APT_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production-release
+    permissions:
+      contents: read
+      actions: read
+      pages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Require trusted source checks at this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+        run: |
+          set -eu
+          for workflow in ci.yml codeql.yml; do
+            count=$(gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?head_sha=$REVISION&status=completed" --jq '[.workflow_runs[] | select(.conclusion=="success")] | length')
+            test "$count" -gt 0 || exit 1
+          done
+      - name: Install repository build tools on the disposable runner
+        run: sudo apt-get update && sudo apt-get install --yes apt-utils
+      - name: Download only an existing stable release and construct a signed repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          BUSCHORD_APT_SIGNING_KEY: ${{ secrets.BUSCHORD_APT_SIGNING_KEY }}
+          BUSCHORD_APT_SIGNING_PASSPHRASE: ${{ secrets.BUSCHORD_APT_SIGNING_PASSPHRASE }}
+          BUSCHORD_APT_FINGERPRINT: ${{ vars.BUSCHORD_APT_FINGERPRINT }}
+        run: |
+          set -eu
+          test -n "$BUSCHORD_APT_SIGNING_KEY" && test -n "$BUSCHORD_APT_FINGERPRINT"
+          export GNUPGHOME="$RUNNER_TEMP/buschord-private-signing"
+          mkdir -m 0700 "$GNUPGHOME"
+          printf '%s' "$BUSCHORD_APT_SIGNING_KEY" | gpg --batch --import
+          mkdir -p "$RUNNER_TEMP/buschord-approved-release"
+          gh release download --repo "$REPOSITORY" --dir "$RUNNER_TEMP/buschord-approved-release" --pattern updates.linux-x64.stable.json --pattern '*linux-x64-stable-full.nupkg'
+          package=$(find "$RUNNER_TEMP/buschord-approved-release" -maxdepth 1 -name '*linux-x64-stable-full.nupkg' -print -quit)
+          test -n "$package"
+          sh packaging/linux/build-authenticated-apt.sh "$RUNNER_TEMP/buschord-approved-release/updates.linux-x64.stable.json" "$package" packaging/trust/ProductionUpdateTrust.g.cs artifacts/site "$BUSCHORD_APT_FINGERPRINT" src/Knx.App/Assets/brand/buschord-house-transparent-tile-256.png
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: artifacts/site
+      - name: Remove ephemeral signing material
+        if: always()
+        run: gpgconf --homedir "$RUNNER_TEMP/buschord-private-signing" --kill gpg-agent || true
+  deploy:
+    needs: build
+    if: vars.BUSCHORD_APT_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

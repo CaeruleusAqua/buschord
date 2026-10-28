@@ -3,18 +3,24 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("BusChord.ScriptWorkerProbe")]
+
 namespace Knx.Scripting;
 
 public sealed class IsolatedScriptRuntime : IParameterFunctionScriptRuntime, IDisposable
 {
     public static IsolatedScriptRuntime Shared { get; } = new();
     private readonly object _gate = new();
+    private readonly string _baseDirectory;
     private readonly HashSet<string> _registered = new(StringComparer.Ordinal);
     private Process? _worker;
     private BoundedScriptLineReader? _responses;
     private FunctionScriptStatistics _statistics = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
     public FunctionScriptStatistics FunctionStatistics { get { lock (_gate) return _statistics; } }
     static IsolatedScriptRuntime() => AppDomain.CurrentDomain.ProcessExit += (_, _) => Shared.Dispose();
+
+    public IsolatedScriptRuntime() : this(AppContext.BaseDirectory) { }
+    internal IsolatedScriptRuntime(string baseDirectory) => _baseDirectory = Path.GetFullPath(baseDirectory);
 
     public IReadOnlyDictionary<string, object?> Execute(string source, IReadOnlyDictionary<string, object?> inputs,
         IReadOnlyList<string> outputs)
@@ -127,17 +133,40 @@ public sealed class IsolatedScriptRuntime : IParameterFunctionScriptRuntime, IDi
     {
         if (_worker is not null && !_worker.HasExited) return;
         Stop();
-        var entry = Assembly.GetEntryAssembly()!.Location;
-        var root = new DirectoryInfo(RuntimeEnvironment.GetRuntimeDirectory()).Parent?.Parent?.Parent?.FullName;
-        var host = root is null ? "" : Path.Combine(root, OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet");
-        if (!File.Exists(host)) throw new IOException("The current .NET installation has no worker host.");
-        var start = new ProcessStartInfo(host) { UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = AppContext.BaseDirectory };
-        foreach (var argument in new[] { "exec", "--runtimeconfig", Path.ChangeExtension(entry, ".runtimeconfig.json"),
-                     "--depsfile", Path.ChangeExtension(entry, ".deps.json"), typeof(IsolatedScriptRuntime).Assembly.Location })
-            start.ArgumentList.Add(argument);
+        var directory = Path.Combine(_baseDirectory, "ScriptWorker");
+        ProcessStartInfo start;
+        if (Directory.Exists(directory) || File.Exists(Path.Combine(_baseDirectory, "buschord-code-inventory.json")))
+        {
+            // A packaged worker has its own apphost and runtime. Never search PATH or silently
+            // substitute a global runtime when an installed package is incomplete.
+            var host = Path.Combine(directory, OperatingSystem.IsWindows() ? "Knx.Scripting.exe" : "Knx.Scripting");
+            if (!new[] { host, Path.Combine(directory, "Knx.Scripting.dll"),
+                    Path.Combine(directory, "Knx.Scripting.runtimeconfig.json"), Path.Combine(directory, "Knx.Scripting.deps.json") }.All(File.Exists))
+                throw new IOException("The packaged script worker is incomplete.");
+            start = new ProcessStartInfo(host);
+        }
+        else
+        {
+            // Framework-dependent development/test runs use the exact current runtime's host,
+            // never an executable from PATH, DOTNET_ROOT or a catalog-supplied location.
+            var entry = Assembly.GetEntryAssembly()?.Location;
+            var runtime = new DirectoryInfo(RuntimeEnvironment.GetRuntimeDirectory());
+            var root = runtime.Parent?.Name == "Microsoft.NETCore.App" && runtime.Parent.Parent?.Name == "shared"
+                ? runtime.Parent.Parent.Parent?.FullName : null;
+            var host = root is null ? "" : Path.Combine(root, OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet");
+            if (string.IsNullOrEmpty(entry) || !File.Exists(host)
+                || !File.Exists(Path.ChangeExtension(entry, ".runtimeconfig.json")) || !File.Exists(Path.ChangeExtension(entry, ".deps.json")))
+                throw new IOException("The current .NET installation has no development worker host.");
+            start = new ProcessStartInfo(host);
+            foreach (var argument in new[] { "exec", "--runtimeconfig", Path.ChangeExtension(entry, ".runtimeconfig.json"),
+                         "--depsfile", Path.ChangeExtension(entry, ".deps.json"), typeof(IsolatedScriptRuntime).Assembly.Location })
+                start.ArgumentList.Add(argument);
+        }
+        start.UseShellExecute = false; start.CreateNoWindow = true;
+        start.RedirectStandardInput = true; start.RedirectStandardOutput = true; start.RedirectStandardError = true;
+        start.WorkingDirectory = _baseDirectory;
         start.Environment.Clear();
-        foreach (var name in new[] { "PATH", "DOTNET_ROOT", "SystemRoot", "WINDIR", "TEMP", "TMP", "HOME", "LANG" })
+        foreach (var name in new[] { "PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "HOME", "LANG", "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT" })
             if (Environment.GetEnvironmentVariable(name) is { } value) start.Environment[name] = value;
         start.Environment["DOTNET_GCHeapHardLimit"] = "0x10000000";
         _worker = Process.Start(start) ?? throw new IOException("Script worker could not start.");

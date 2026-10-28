@@ -39,7 +39,7 @@ internal static class RootResolvedImageBuildToolChecks
             var info = Data(await Tool("project_info", new { })).ToJsonString();
             var ordinary = Data(await Tool("download_plan", new { device_address = "1.1.1" })).ToJsonString();
             var schema = server.Tools.Single(tool => tool.Name == "download_plan").InputSchema;
-            check("resolved root is one closed option within the existing 55 tools", server.Tools.Count == 55
+            check("resolved root is one closed option within the current tool contract", server.Tools.Count == McpToolContract.ExpectedToolCount
                 && schema["properties"]?["root_resolved_image_build_preview"]?["additionalProperties"]?.GetValue<bool>() == false
                 && schema["properties"]?["root_resolved_image_build_preview"]?["properties"]?["procedure"]?["required"]?.AsArray().Count == 5
                 && schema["properties"]?["load_procedure_preview"]?["allOf"]?.AsArray().Count == 2, null);

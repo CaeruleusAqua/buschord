@@ -64,6 +64,8 @@ internal static class LiveStructureChecks
         Count("1");
         Check("Shrinking retains removed drafts for review", session.Rows.Length == 3
             && session.ReviewChanges().Changes.Any(c => c.Id == ParameterId(2) && c.After == "9"));
+        Check("Structural review counts preserved links on deactivated objects", session.ReviewChanges().AffectedLinks == 1
+            && device.ComObjectRefs.Single(o => o.Id == ObjectId(2)).Links.Count == 1);
         session.Load(new DeviceRow(secondDevice)); Count("3");
         session.Load(new DeviceRow(device));
         Check("Structural drafts survive switching between independently edited devices", Row("R-count").Value == "1"

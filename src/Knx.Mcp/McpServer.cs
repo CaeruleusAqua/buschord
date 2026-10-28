@@ -26,9 +26,10 @@ public sealed partial class McpServer : IAsyncDisposable
         "BusChord tooling for building automation projects. Open a project with project_open (existing " +
         ".knxproj) or create one with project_new, then inspect it with project_info and project_dashboard. " +
         "Passwords for protected project_open/project_save calls are never retained; execute_scripts is an explicit per-call capability. " +
-        "Mutations (group_address_*, group_link_*, device_*, smart_link_apply, product_replace, jung_ksp_import_apply) only change the in-memory " +
+        "Mutations (group_address_*, group_link_*, device_*, smart_link_apply, mass_link_apply, product_replace, jung_ksp_import_apply) only change the in-memory " +
         "project and can be reverted with undo/redo; call project_save to write the .knxproj. Use " +
-        "project_check and smart_link_suggest for analysis, export_csv/export_semantic/export_labels/report_export/" +
+        "mass_link_review then mass_link_apply for strictly validated batch links; manual legacy link calls return unknown compatibility explicitly unverified. Use " +
+        "project_check and smart_link_suggest for diagnostics, export_csv/export_semantic/export_labels/report_export/" +
         "acceptance_protocol_export/handover_package_export for " +
         "exports, project_compare for diffs and catalog_* for manufacturer product databases. For live bus " +
         "access call bus_connect first (mode tunnel searches for a gateway, mode routing joins the multicast " +

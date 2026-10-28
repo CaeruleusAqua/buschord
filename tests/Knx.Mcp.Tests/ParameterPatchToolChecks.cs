@@ -37,7 +37,7 @@ internal static class ParameterPatchToolChecks
             if (Error(opened)) throw new InvalidOperationException(opened.ToJsonString());
             var before = Knxproj.ToXml(server.Project!).ToString(); var beforeInfo = Data(await Tool("project_info", new { })).ToJsonString();
             var baseline = Data(await Plan()).ToJsonString();
-            check("subset options are bounded and paired on the existing 55-tool schema", server.Tools.Count == 55
+            check("subset options are bounded and paired on the current tool schema", server.Tools.Count == McpToolContract.ExpectedToolCount
                 && server.Tools.Single(t => t.Name == "download_plan").InputSchema["properties"]?["parameter_subset"]?["maxItems"]?.GetValue<int>() == 64
                 && server.Tools.Single(t => t.Name == "download_plan").InputSchema["properties"]?["byte_order"]?["enum"]?.AsArray().Count == 2
                 && server.Tools.Single(t => t.Name == "download_plan").InputSchema["dependentRequired"] is JsonObject, null);

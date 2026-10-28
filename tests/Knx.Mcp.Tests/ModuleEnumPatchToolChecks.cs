@@ -41,7 +41,7 @@ internal static class ModuleEnumPatchToolChecks
                     && (await Plan()).ToJsonString() == ordinary && response["plan"]!.ToJsonString() == JsonNode.Parse(ordinary)!["plan"]!.ToJsonString()
                     && response["plan"]?["program"] is null && response["plan"]?["ready"]?.GetValue<bool>() == false
                     && response["plan"]?["imageBytes"]?.GetValue<int>() == 0 && response["plan"]?["chunks"]?.AsArray().Count == 0
-                    && response["writesEnabled"]?.GetValue<bool>() == false && server.Tools.Count == 55
+                    && response["writesEnabled"]?.GetValue<bool>() == false && server.Tools.Count == McpToolContract.ExpectedToolCount
                     && (string?)patch["scope"] == "ExplicitSubsetPreview" && patch["completeApplicationImage"]?.GetValue<bool>() == false && patch["downloadEligible"]?.GetValue<bool>() == false;
                 return (patch, unchanged, binding, path);
             }

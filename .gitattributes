@@ -1,0 +1,3 @@
+# Keep Linux entry points executable by their interpreters in Windows checkouts.
+packaging/linux/* text eol=lf
+*.sh text eol=lf

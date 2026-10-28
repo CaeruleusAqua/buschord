@@ -1,0 +1,117 @@
+name: Build distribution packages
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer package version
+        required: true
+        default: 0.1.0-preview.1
+      channel:
+        type: choice
+        options: [preview, stable]
+        default: preview
+      production:
+        description: Use protected production signing configuration
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  gates:
+    if: github.ref == 'refs/heads/development'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require existing source CI and CodeQL success at this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+        run: |
+          set -eu
+          for workflow in ci.yml codeql.yml; do
+            count=$(gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?head_sha=$REVISION&status=completed" --jq '[.workflow_runs[] | select(.conclusion=="success")] | length')
+            test "$count" -gt 0 || { echo "Required workflow has not passed at this commit: $workflow"; exit 1; }
+          done
+  packages:
+    needs: gates
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    environment: ${{ inputs.production && 'production-release' || 'package-validation' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Verify update protocol and cross-process safety
+        run: dotnet run --project tests/Knx.Updates.Tests -c Release
+      - name: Restore pinned package tool
+        run: dotnet tool restore
+      - name: Install AppImage build dependency on the disposable Linux runner
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends squashfs-tools
+      - name: Build packages without installation or publication
+        shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+          PACKAGE_CHANNEL: ${{ inputs.channel }}
+          PRODUCTION: ${{ inputs.production }}
+          BUSCHORD_UPDATE_PUBLIC_KEY_ID: ${{ vars.BUSCHORD_UPDATE_PUBLIC_KEY_ID }}
+          BUSCHORD_UPDATE_PUBLIC_KEY_PEM: ${{ vars.BUSCHORD_UPDATE_PUBLIC_KEY_PEM }}
+          BUSCHORD_UPDATE_FEED_BASE: ${{ vars.BUSCHORD_UPDATE_FEED_BASE }}
+          BUSCHORD_SIGN_TEMPLATE: ${{ secrets.BUSCHORD_SIGN_TEMPLATE }}
+        run: |
+          if ($env:PACKAGE_VERSION -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw 'Invalid SemVer' }
+          ./packaging/Build-Packages.ps1 -Project ./src/Knx.App/Knx.App.csproj -Version $env:PACKAGE_VERSION -Channel $env:PACKAGE_CHANNEL `
+            -Icon ./src/Knx.App/Assets/brand/buschord-house-transparent-tile-256.png -WindowsIcon ./src/Knx.App/Assets/brand/buschord-house-transparent-tile.ico `
+            -Commit '${{ github.sha }}' -Runtimes @($(if($IsWindows){'win-x64'}else{'linux-x64'})) -Production:($env:PRODUCTION -eq 'true')
+      - name: Sign scoped update feed
+        if: inputs.production
+        shell: pwsh
+        env:
+          BUSCHORD_UPDATE_SIGNING_KEY: ${{ secrets.BUSCHORD_UPDATE_SIGNING_KEY }}
+          BUSCHORD_UPDATE_PUBLIC_KEY_ID: ${{ vars.BUSCHORD_UPDATE_PUBLIC_KEY_ID }}
+          PACKAGE_VERSION: ${{ inputs.version }}
+          PACKAGE_CHANNEL: ${{ inputs.channel }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          if (!$env:BUSCHORD_UPDATE_SIGNING_KEY) { throw 'Production feed signing is not configured.' }
+          $rid=if($IsWindows){'win-x64'}else{'linux-x64'}
+          $package=Get-ChildItem "artifacts/releases/$rid/*-full.nupkg" | Select-Object -Last 1
+          $sequence=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+          $base="https://github.com/$env:RELEASE_REPOSITORY/releases/download/v$env:PACKAGE_VERSION/"
+          $trust=[IO.Path]::GetFullPath('artifacts/ProductionUpdateTrust.g.cs')
+          dotnet run --project tools-src/BusChord.Release "-p:BusChordUpdateTrustSource=$trust" -- sign $package.FullName $env:PACKAGE_VERSION $rid $env:PACKAGE_CHANNEL $sequence $base `
+            $env:BUSCHORD_UPDATE_PUBLIC_KEY_ID env:BUSCHORD_UPDATE_SIGNING_KEY "artifacts/releases/$rid/updates.$rid.$env:PACKAGE_CHANNEL.json"
+          if($LASTEXITCODE -ne 0){throw 'Update feed signing failed.'}
+      - name: Build and inspect Debian package
+        if: runner.os == 'Linux'
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+          PACKAGE_CHANNEL: ${{ inputs.channel }}
+        run: |
+          sh packaging/linux/build-deb.sh artifacts/publish/linux-x64 "$PACKAGE_VERSION" src/Knx.App/Assets/brand/buschord-house-transparent-tile-256.png artifacts/releases/linux-x64/BusChord_amd64.deb
+          sh packaging/linux/inspect-packages.sh "artifacts/releases/linux-x64/BusChord-linux-x64-$PACKAGE_CHANNEL.AppImage" artifacts/releases/linux-x64/BusChord_amd64.deb artifacts/inspection artifacts/worker-probe/linux-x64/BusChord.ScriptWorkerProbe
+          python3 packaging/linux/test-transaction-hook.py
+          PYTHONOPTIMIZE=1 python3 packaging/linux/test-transaction-hook.py
+          PYTHONOPTIMIZE=2 python3 packaging/linux/test-transaction-hook.py
+          PYTHONOPTIMIZE=1 python3 packaging/linux/test-apt-source.py
+          PYTHONOPTIMIZE=2 python3 packaging/linux/test-apt-source.py
+      - name: Keep packages as CI artifacts only
+        # No release/upload command is present. Publishing requires a separate reviewed action.
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: BusChord-packages-${{ runner.os }}
+          path: |
+            artifacts/releases/
+            artifacts/package-hashes.json
+            artifacts/inspection/
+          retention-days: 14

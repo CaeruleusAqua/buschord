@@ -14,6 +14,7 @@ try
     foreach (var name in new[] { "M-0001/M-0001_A-large.xml\n", "M-0002/M-0001_A-large.xml", "M-0001/images/M-0001_A-large.xml", "M-0001/opaque.bin" })
         Check(ArchiveEntryLimits.For(name) == 64 * 1024 * 1024, "noncanonical paths keep the ordinary entry budget");
     ConfigurationChecks.Run(directory, Check, (entries, password) => AesZip(entries, password), entries => PlainZip(entries));
+    AesCtrChunkChecks.Run(Check);
 
     // 2. Synthetic ETS6-shaped project (schema /21, WinZip AES-256 AE-1), password "test".
     //    Generated here so no ETS, manufacturer, customer or credential data is tracked.
@@ -749,17 +750,14 @@ static byte[] AesCtr(byte[] key, byte[] input)
     using var aes = Aes.Create();
     // Independent WinZip CTR fixture: AES receives counter blocks, never input data.
     // https://www.winzip.com/en/support/aes-encryption/ (III.4-5)
-    aes.Mode = CipherMode.ECB;
-    aes.Padding = PaddingMode.None;
     aes.Key = key;
-    using var transform = aes.CreateEncryptor();
     var output = new byte[input.Length];
     var counter = new byte[16];
     var keyStream = new byte[16];
     counter[0] = 1;
     for (int position = 0; position < input.Length; position += 16)
     {
-        transform.TransformBlock(counter, 0, 16, keyStream, 0);
+        aes.EncryptEcb(counter, keyStream, PaddingMode.None);
         for (int i = 0; i < Math.Min(16, input.Length - position); i++)
             output[position + i] = (byte)(input[position + i] ^ keyStream[i]);
         for (int i = 0; i < counter.Length; i++) if (++counter[i] != 0) break;

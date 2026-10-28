@@ -1737,5 +1737,8 @@ if (Native22CoreChecks.Run() != 0) failures.Add("Native /22 projects");
 }
 
 Knx.Core.Tests.WizardIdentityChecks.Run(Check);
+Knx.Core.Tests.TopologyTemplateChecks.Run(Check);
+Knx.Core.Tests.ParameterPresentationChecks.Run(Check);
+MassLinkReviewChecks.Run((name, ok) => Check(name, ok));
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER: {string.Join("; ", failures)}");
 return failures.Count == 0 ? 0 : 1;

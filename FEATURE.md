@@ -7,6 +7,7 @@ Projektmodell und einem MCP-Server. Projektänderungen erfolgen offline.
 - [Gesamtplan](plans/00-gesamtplan.md)
 - [Benutzerhandbuch](docs/manual.md)
 - [MCP-Vertrag](mcp.md)
+- [Installation und automatische Updates](docs/distribution.md) — lokale Paketprüfung bestanden; Plattformfreigabe offen.
 
 Implementiert sind Projektarchive, Kataloge, Topologie, Gebäude und Gruppenadressen,
 Kommunikationsobjekte und Kanäle, validierte Parameterentwürfe, dynamische Strukturen,

@@ -1,7 +1,7 @@
 # buschord-mcp – MCP server for BusChord
 
 Headless [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the
-`Knx.Core`, `Knx.Bus`, `Knx.Reports` and `Knx.ProjectCompare` functionality as 55 MCP tools.
+`Knx.Core`, `Knx.Bus`, `Knx.Reports` and `Knx.ProjectCompare` functionality as 57 MCP tools.
 It is a .NET 10 console app; JSON-RPC 2.0 runs over stdio,
 one JSON message per line. stdout carries protocol messages only, all logging goes to stderr.
 
@@ -11,7 +11,7 @@ one JSON message per line. stdout carries protocol messages only, all logging go
 dotnet build
 dotnet run --project src/Knx.Mcp --no-build              # stdio server (for MCP clients)
 dotnet run --project src/Knx.Mcp -- --selftest           # end-to-end check, exit 0/1
-dotnet run --project src/Knx.Mcp -- --list-tools         # 55 tool names only
+dotnet run --project src/Knx.Mcp -- --list-tools         # 57 tool names only
 dotnet run --project src/Knx.Mcp -- --scan-catalogs=<folder>   # parse .knxprod files, read-only
 dotnet run --project src/Knx.Mcp -- --import-catalogs=<folder> # copy them into the local library
 ```
@@ -81,7 +81,7 @@ one undo step and retains required manufacturer data for later export.
 
 ## Tools
 
-The server exposes 55 tools in the groups below.
+The server exposes 57 tools in the groups below.
 
 ### Manufacturer metadata and Jung SP8 import
 
@@ -142,7 +142,17 @@ without adding undo history. Errors never mutate the project. These tools work o
 No DPT compatibility is inferred when reference metadata is unavailable.
 
 **Analysis** — `project_check`, `smart_link_suggest`, `smart_link_apply`,
+`mass_link_review(review_token?, device_address?, targets?)`,
+`mass_link_apply(review_token, row_ids?)`,
 `product_replace(old_ref, new_ref, new_program?, dry_run, review_token?, parameter_map?, object_map?, channel_map?, target_secure_capable?, execute_scripts?)`
+
+`mass_link_review` returns all unlinked rows, candidate targets and explicit ready,
+ambiguous, incompatible, unmatched or unverified states without changing the
+project. Pass existing row/group IDs in `targets` to revise the review. The bound
+token expires after ten minutes. `mass_link_apply` revalidates the source and
+compatibility before applying selected ready rows as one undo step; stale or
+incompatible requests leave the project unchanged. Unverified rows cannot be
+applied through these tools.
 
 **Export** — `export_csv(kind, path)`, `export_semantic(format, path)`,
 `export_labels(kind, format, path)`, `report_export(path, title?, include_*)`,

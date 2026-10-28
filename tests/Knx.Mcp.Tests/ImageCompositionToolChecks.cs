@@ -37,7 +37,7 @@ internal static class ImageCompositionToolChecks
             var ordinary = Data(await Tool("download_plan", new { device_address = "1.1.1" })).ToJsonString();
             check("absent composition leaves the ordinary response without a new null field", !ordinary.Contains("offlineImageComposition", StringComparison.Ordinal), ordinary);
             var schema = server.Tools.Single(tool => tool.Name == "download_plan").InputSchema;
-            check("composition is an explicit closed policy object on the existing 55 tools", server.Tools.Count == 55
+            check("composition is an explicit closed policy object on the current tool contract", server.Tools.Count == McpToolContract.ExpectedToolCount
                 && (string?)schema["properties"]?["image_composition_preview"]?["type"] == "object"
                 && schema["properties"]?["image_composition_preview"]?["additionalProperties"]?.GetValue<bool>() == false
                 && schema["properties"]?["image_composition_preview"]?["properties"]?["mask_policy"]?["enum"]?.AsArray().Count == 2, null);

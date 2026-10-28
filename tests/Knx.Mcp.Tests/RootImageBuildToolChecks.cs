@@ -51,7 +51,7 @@ internal static class RootImageBuildToolChecks
             var ordinary = Data(await Tool("download_plan", new { device_address = "1.1.1" })).ToJsonString();
             check("absent root build preserves the ordinary response", !ordinary.Contains("offlineRootImageBuild", StringComparison.Ordinal), ordinary);
             var schema = server.Tools.Single(tool => tool.Name == "download_plan").InputSchema;
-            check("root build is a closed explicit policy on the existing 55 tools", server.Tools.Count == 55
+            check("root build is a closed explicit policy on the current tool contract", server.Tools.Count == McpToolContract.ExpectedToolCount
                 && (string?)schema["properties"]?["root_image_build_preview"]?["type"] == "object"
                 && schema["properties"]?["root_image_build_preview"]?["additionalProperties"]?.GetValue<bool>() == false
                 && schema["dependentRequired"]?["root_image_build_preview"]?.AsArray().Select(x => (string?)x).SequenceEqual(["load_procedure_preview"]) == true, null);

@@ -74,7 +74,7 @@ internal static class ApplicationBuildToolChecks
                 && legacySubset["offlineParameterPatch"]?["available"]?.GetValue<bool>() == true, legacySubset.ToJsonString());
 
             var schema = server.Tools.Single(t => t.Name == "download_plan").InputSchema; var option = schema["properties"]!["load_procedure_preview"]!;
-            check("load preview adds no tool and requires one explicit object", server.Tools.Count == 55 && (string?)option["type"] == "object"
+            check("load preview adds no tool and requires one explicit object", server.Tools.Count == McpToolContract.ExpectedToolCount && (string?)option["type"] == "object"
                 && option["additionalProperties"]?.GetValue<bool>() == false && option["required"]!.AsArray().Select(n => n!.GetValue<string>()).Order().SequenceEqual(new[] { "access", "full", "groups", "parameters", "subtype" }), option.ToJsonString());
             check("all three schema flags are booleans", new[] { "full", "parameters", "groups" }.All(n => (string?)option["properties"]?[n]?["type"] == "boolean"), option.ToJsonString());
             var tableOption = option["properties"]!["generated_tables"]!;

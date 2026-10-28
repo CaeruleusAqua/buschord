@@ -64,7 +64,7 @@ internal static class ResourcePatchToolChecks
             var beforeInfo = Data(await Tool("project_info")).ToJsonString();
             var ordinary = Data(await Tool("download_plan", new { device_address = "1.1.1" })).ToJsonString();
             var schema = server.Tools.Single(tool => tool.Name == "download_plan").InputSchema;
-            check("resource mode is an explicit optional boolean on the existing tool", server.Tools.Count == 55
+            check("resource mode is an explicit optional boolean on the existing tool", server.Tools.Count == McpToolContract.ExpectedToolCount
                 && (string?)schema["properties"]?["resource_preview"]?["type"] == "boolean"
                 && schema["allOf"]?[0]?["then"]?["required"]?.AsArray().Count == 2, null);
             check("false without a subset preserves the ordinary plan",

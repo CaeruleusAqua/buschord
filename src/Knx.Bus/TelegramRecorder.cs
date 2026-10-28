@@ -15,6 +15,17 @@ public sealed class RecordedTelegram
     public bool IsGroupAddress { get; set; }
     public string Apci { get; set; } = "";
     public string Data { get; set; } = "";
+    private byte? _hopCount;
+    /// <summary>Captured hop count; null when the source recording did not retain it.</summary>
+    public byte? HopCount
+    {
+        get => _hopCount;
+        set
+        {
+            if (value is > 7) throw new ArgumentOutOfRangeException(nameof(value), "Hop count must be between zero and seven.");
+            _hopCount = value;
+        }
+    }
 
     public static RecordedTelegram From(BusTelegram telegram) => new()
     {
@@ -26,6 +37,7 @@ public sealed class RecordedTelegram
         IsGroupAddress = telegram.Telegram.IsGroupAddress,
         Apci = telegram.Telegram.Apci.ToString(),
         Data = Convert.ToHexString(telegram.Telegram.Data),
+        HopCount = telegram.Telegram.HopCount,
     };
 
     public string ToDisplayLine()
@@ -120,7 +132,8 @@ public sealed class TelegramRecorder
                     new XAttribute("SourceAddress", e.Source),
                     new XAttribute("DestinationAddress", e.Destination),
                     new XAttribute("IsGroupAddress", e.IsGroupAddress),
-                    new XAttribute("Data", e.Data)))));
+                    new XAttribute("Data", e.Data),
+                    e.HopCount is { } hopCount ? new XAttribute("HopCount", hopCount) : null))));
         doc.Save(path);
     }
 
@@ -141,6 +154,7 @@ public sealed class TelegramRecorder
                 Destination = (string?)element.Attribute("DestinationAddress") ?? "",
                 IsGroupAddress = bool.TryParse((string?)element.Attribute("IsGroupAddress"), out var group) && group,
                 Data = (string?)element.Attribute("Data") ?? "",
+                HopCount = ReadHopCount((string?)element.Attribute("HopCount")),
             });
         }
         return result;
@@ -149,7 +163,8 @@ public sealed class TelegramRecorder
     /// <summary>
     /// CSV export with 13 monitor columns
     /// (Time, Service, Flags, Prio, Source/Destination address and name, Hop Count, Type, DPT, Iack, Info).
-    /// Flags, priority, hop count and Iack are not decoded by our cEMI parser yet.
+    /// Flags, priority and Iack are left blank when not retained by the recorder.
+    /// Hop count is emitted only when the source supplied it.
     /// </summary>
     public string ToEtsCsv(Project? project = null)
     {
@@ -165,12 +180,19 @@ public sealed class TelegramRecorder
             var dpt = entry.IsGroupAddress ? GroupAddressDpt(project, entry.Destination) : "";
             sb.AppendLine(Csv.Row(';',
                 entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
-                entry.Apci, "T", "Low",
+                entry.Apci, "", "",
                 entry.Source, sourceName,
                 entry.Destination, destinationName,
-                "6", entry.Apci, dpt, "1", ""));
+                entry.HopCount?.ToString(CultureInfo.InvariantCulture) ?? "", entry.Apci, dpt, "", ""));
         }
         return sb.ToString();
+    }
+
+    private static byte? ReadHopCount(string? text)
+    {
+        if (text is null) return null;
+        return byte.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var count) && count <= 7
+            ? count : throw new InvalidDataException("The recording contains an invalid hop count.");
     }
 
     private static string DeviceName(Project? project, string address)

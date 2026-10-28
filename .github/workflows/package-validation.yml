@@ -1,0 +1,78 @@
+name: Validate desktop packages
+
+on:
+  pull_request:
+    branches: [development, main]
+    paths:
+      - 'src/**'
+      - 'tools-src/**'
+      - 'packaging/**'
+      - '.config/**'
+      - 'Directory.Build.props'
+      - 'global.json'
+      - '.github/workflows/package*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: package-${{ matrix.rid }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: ubuntu-22.04
+            rid: linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore pinned packaging tool
+        run: dotnet tool restore
+      - name: Install AppImage build dependency on the disposable Linux runner
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends squashfs-tools
+      - name: Validate update protocol
+        run: dotnet run --project tests/Knx.Updates.Tests -c Release
+      - name: Build complete application packages and verify packaged worker
+        shell: pwsh
+        env:
+          PACKAGE_RID: ${{ matrix.rid }}
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          ./packaging/Build-Packages.ps1 -Project ./src/Knx.App/Knx.App.csproj -Version 0.1.0-preview.0 -Channel preview `
+            -Icon ./src/Knx.App/Assets/brand/buschord-house-transparent-tile-256.png `
+            -WindowsIcon ./src/Knx.App/Assets/brand/buschord-house-transparent-tile.ico `
+            -Commit $env:SOURCE_REVISION -Runtimes @($env:PACKAGE_RID)
+      - name: Inspect Linux packages and execute both packaged workers
+        if: runner.os == 'Linux'
+        run: |
+          set -eu
+          sh packaging/linux/build-deb.sh artifacts/publish/linux-x64 0.1.0-preview.0 src/Knx.App/Assets/brand/buschord-house-transparent-tile-256.png artifacts/releases/linux-x64/BusChord_amd64.deb
+          sh packaging/linux/inspect-packages.sh artifacts/releases/linux-x64/BusChord-linux-x64-preview.AppImage artifacts/releases/linux-x64/BusChord_amd64.deb artifacts/inspection artifacts/worker-probe/linux-x64/BusChord.ScriptWorkerProbe
+          for optimize in 0 1 2; do
+            PYTHONOPTIMIZE=$optimize python3 packaging/linux/test-transaction-hook.py
+            PYTHONOPTIMIZE=$optimize python3 packaging/linux/test-apt-source.py
+          done
+      - name: Keep validation artifacts without publishing a release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: BusChord-validation-${{ matrix.rid }}
+          path: |
+            artifacts/releases/
+            artifacts/package-hashes.json
+            artifacts/inspection/
+          retention-days: 7

@@ -113,19 +113,20 @@ public static class WorkbenchProject
         var m = row.Metadata;
         var g = project.Workbench.Groups.GetValueOrDefault(groupId);
         if (m?.Active == false) return new(LinkValidationReason.Inactive, "Communication object is inactive.");
-        if (m?.Dpt is null || m.Bits is null || ga.DatapointType is null || g?.Bits is null || g.Secure is null)
-            return new(LinkValidationReason.UnknownCapability,
-                "DPT, size or security capability is unknown; native compatibility cannot be inferred.");
-        if (m.Bits != g.Bits) return new(LinkValidationReason.BitSize, "Bit lengths differ.");
-        if (DptId.Normalize(m.Dpt) is not { } objectDpt || DptId.Normalize(ga.DatapointType) is not { } groupDpt)
-            return new(LinkValidationReason.UnknownCapability, "DPT is unknown; native compatibility cannot be inferred.");
-        if (objectDpt != groupDpt)
+        if (m?.Bits is { } objectBits && g?.Bits is { } groupBits && objectBits != groupBits)
+            return new(LinkValidationReason.BitSize, "Bit lengths differ.");
+        var objectDpt = DptId.Normalize(m?.Dpt);
+        var groupDpt = DptId.Normalize(ga.DatapointType);
+        if (objectDpt is not null && groupDpt is not null && objectDpt != groupDpt)
             return objectDpt.Split('.')[0] != groupDpt.Split('.')[0]
                 ? new(LinkValidationReason.LongMainType, "Long main types differ.")
                 : new(LinkValidationReason.DatapointType, "Full DPTs differ.");
-        if (g.Secure == true && project.Workbench.Devices.GetValueOrDefault(key.DeviceId)?.SecureCapable != true)
+        if (g?.Secure == true && project.Workbench.Devices.GetValueOrDefault(key.DeviceId)?.SecureCapable != true)
             return new(LinkValidationReason.SecureCapability,
                 "Secure group address requires an explicitly Secure-capable device.");
+        if (objectDpt is null || groupDpt is null || m?.Bits is null || g?.Bits is null || g?.Secure is null)
+            return new(LinkValidationReason.UnknownCapability,
+                "DPT, size or security capability is unknown; native compatibility cannot be inferred.");
         return LinkValidation.Valid;
     }
 
@@ -151,14 +152,22 @@ public static class WorkbenchProject
     /// Like GroupLinks.Link, an existing link is a no-op and connector/sending metadata is untouched.
     /// </summary>
     public static MutationResult AddLinkPairs(Project project, IEnumerable<LinkCheckRequest> requests, UndoStack? undo = null)
+        => AddLinkPairs(project, requests, undo, allowUnverified: false);
+
+    /// <summary>Explicit manual policy; only missing facts may be permitted, with warnings.</summary>
+    public static MutationResult AddLinkPairs(Project project, IEnumerable<LinkCheckRequest> requests, UndoStack? undo,
+        bool allowUnverified)
     {
         ArgumentNullException.ThrowIfNull(project); ArgumentNullException.ThrowIfNull(requests);
         var selected = requests.Distinct().ToArray();
         if (selected.Length == 0) return new(false, 0, [new(default, "No communication objects selected.", LinkValidationReason.NoSelection)], []);
         var index = new LinkIndex(project);
         var checks = index.Check(selected);
-        var errors = checks.Where(c => !c.Validation.Ok).Select(c => new LinkError(c.Key, c.Validation.Message, c.Validation.Reason)).ToArray();
+        var errors = checks.Where(c => !c.Validation.Ok && !(allowUnverified && c.Validation.Reason == LinkValidationReason.UnknownCapability))
+            .Select(c => new LinkError(c.Key, c.Validation.Message, c.Validation.Reason)).ToArray();
         if (errors.Length > 0) return new(false, 0, errors, []);
+        var warnings = checks.Where(c => c.Validation.Reason == LinkValidationReason.UnknownCapability)
+            .Select(c => $"Compatibility unverified for {c.Key} -> {c.GroupId}: {c.Validation.Message}").ToArray();
         var added = new List<(List<string> Links, int Position)>(checks.Count);
         try
         {
@@ -170,7 +179,7 @@ public static class WorkbenchProject
                     links.Add(check.GroupId); added.Add((links, position));
                 }
             if (added.Count > 0) undo?.Push(project);
-            return new(true, added.Count, [], []);
+            return new(true, added.Count, [], warnings);
         }
         catch
         {

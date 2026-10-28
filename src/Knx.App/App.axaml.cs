@@ -90,6 +90,7 @@ public partial class App : Application
                 : new WorkbenchWindow();
             desktop.MainWindow = window;
             desktop.ShutdownRequested += (_, _) => window.RequestShutdown();
+            window.Opened += (_, _) => Services.AppUpdateService.Current?.Start();
 
             if (WorkbenchCheck.Enabled)
             {

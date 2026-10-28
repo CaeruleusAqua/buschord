@@ -3,6 +3,7 @@
 ## Steps
 
 - [x] Projektmodell, Archive, Kataloge und native Workbench implementieren.
+- [x] .NET 10, lokale Windows-/Linux-Pakete und signaturgeprüfte Updatepfade ergänzen.
 - [x] Expliziten Herstellerverzeichnis-Abruf, quellspezifischen Download und erhaltenden Katalogimport mit nativer Oberfläche integrieren.
 - [x] Native Werte, Namen, Kanalidentitäten und Objektverknüpfungen erhalten.
 - [x] Validierte Parameterentwürfe mit dynamischer Struktur, Apply und Undo ergänzen.
@@ -35,6 +36,8 @@ Implementiert bedeutet keine allgemeine Kompatibilitäts- oder Gerätefreigabe.
 - [Kern, Archive und Hersteller](01-kern.md)
 - [Bus, Download und Secure](02-bus.md)
 - [Native Workbench und Abnahme](03-ui.md)
+- [Arbeitsabläufe und lokale Historie](04-workflows.md)
+- [Installation und automatische Updates](05-distribution.md)
 
 ## Nächste Aufgaben
 

@@ -75,7 +75,8 @@ internal static class NativeDraftChecks
             ParameterItemViewModel Row() => ((IEnumerable<ParameterItemViewModel>)pane.FindControl<ItemsControl>("ParameterList")!.ItemsSource!).Single();
             pane.Load(a);
             await Task.Delay(300);
-            var editor = pane.GetVisualDescendants().OfType<TextBox>().First();
+            var editor = pane.GetVisualDescendants().OfType<NumericUpDown>().Single(control => control.IsEffectivelyVisible)
+                .GetVisualDescendants().OfType<TextBox>().Single(control => control.IsEffectivelyVisible);
             editor.Focus(); editor.SelectAll();
             editor.SelectedText = "44";
             await Task.Delay(100);

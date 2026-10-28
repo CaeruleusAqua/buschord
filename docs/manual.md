@@ -203,6 +203,26 @@ keine umschaltbaren Zustände.
   Berichtsspezifische Tabellen und MCP-Exporte
   bleiben vorerst Deutsch/Englisch. Eine RTL-Darstellung wird nicht unterstützt.
 
+**Optionen → Updates** öffnet die globalen Updateeinstellungen. Für Setup-/Portable-
+und AppImage-Installationen stehen **Automatisch herunterladen und installieren**,
+**Nur nach Updates suchen** und **Automatische Suche aus** zur Wahl. Der erste
+Modus ist voreingestellt; **Vorabversionen** müssen bewusst als Kanal gewählt
+werden. **Jetzt prüfen** führt auch bei ausgeschalteter Automatik eine reine
+Prüfung aus. Die Einstellungen werden unabhängig vom Projekt gespeichert.
+
+Automatische Prüfungen laufen beim Start und alle sechs Stunden. Verifizierte
+Updates wechseln die Version vor dem nächsten Start oder nach normalem Beenden;
+offene Instanzen, ungespeicherte Entwürfe und abwickelnde Sitzungen behalten ihre
+bestehenden Schutzmechanismen. Zusätzliche oder veränderte Dateien im Windows-
+Programmordner stellen den Austausch zurück. Ein fehlgeschlagenes Update lässt
+sich über **Fehlgeschlagenes Update erneut versuchen** bewusst wieder freigeben.
+
+Ein Linux-deb wird über den systemweiten Paketdienst aktualisiert; dessen
+Richtlinie verwaltet die Administration. Ein AppImage benötigt einen vom Nutzer
+beschreibbaren Speicherort. Entwicklungsstarts ohne eingerichtete Updatequelle
+zeigen dies im Dialog an. Paketbau, Linux-Abhängigkeiten und die noch laufende
+Distributionsabnahme stehen unter [Installation und Updates](distribution.md).
+
 ### 2.8 Hilfe und Dokumentation
 
 Die Schaltfläche mit dem Fragezeichen unten in der Aktionsleiste (Tooltip

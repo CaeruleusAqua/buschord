@@ -51,6 +51,7 @@ public sealed partial class ParameterPane : UserControl, IDisposable
         Session.Refresh();
         Subscribe();
         Render();
+        InitializePresentation();
         AttachedToVisualTree += (_, _) => { if (!_disposed) { Subscribe(); Render(); } };
         DetachedFromVisualTree += (_, _) => Unsubscribe();
     }
@@ -83,9 +84,9 @@ public sealed partial class ParameterPane : UserControl, IDisposable
         Session.Changed -= OnChanged; Strings.Instance.PropertyChanged -= OnLanguageChanged; _subscribed = false;
     }
     private void OnLanguageChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    { if (e.PropertyName == "Item[]") foreach (var row in Session.Rows) row.RefreshStorage(); }
+    { if (e.PropertyName == "Item[]") { foreach (var row in Session.Rows) row.RefreshStorage(); RefreshHelp(); } }
     private void OnChanged(object? sender, EventArgs e) => Render();
-    public void Dispose() { _disposed = true; Unsubscribe(); ParameterList.ItemsSource = Array.Empty<ParameterItemViewModel>(); }
+    public void Dispose() { _disposed = true; Unsubscribe(); ParameterList.ItemsSource = Array.Empty<ParameterItemViewModel>(); TablePages.Children.Clear(); }
 
     private void Render()
     {
@@ -159,10 +160,13 @@ public sealed partial class ParameterPane : UserControl, IDisposable
                     ? " · " + WorkbenchStrings.Get("ParameterStructureObjects", preview.AddedObjects, preview.RemovedObjects) : "")
                 + (preview.ActivatedObjects + preview.DeactivatedObjects > 0
                     ? " · " + WorkbenchStrings.Get("ParameterActivityObjects", preview.ActivatedObjects, preview.DeactivatedObjects) : "")
+                + (preview.AffectedLinks > 0 ? " · " + WorkbenchStrings.Get("ParameterAffectedLinks", preview.AffectedLinks) : "")
             : "";
         PreviewLimitations.Text = Session.Preview?.Limitations;
         ApplyButton.IsEnabled = Session.CanApply && hasDraft && !Session.HasValidationErrors
             && Session.Preview?.IsValid != false;
+        RenderPresentation();
+        RefreshHelp();
     }
 
     private void OnReview(object? sender, RoutedEventArgs e) => Session.ReviewChanges();
@@ -178,6 +182,12 @@ public sealed partial class ParameterPane : UserControl, IDisposable
     {
         if (sender is not Button { Tag: string title }) return;
         Session.SelectSection(title);
+        if (TableScroll.IsVisible && Session.Sections.FirstOrDefault(s => s.Title == title) is { } tableSection
+            && Session.Rows.ElementAtOrDefault(tableSection.FirstRow)?.Instance.Placement?.BlockId is { } blockId)
+        {
+            TablePages.Children.FirstOrDefault(c => c.Tag as string == blockId)?.BringIntoView();
+            return;
+        }
         if (Session.Sections.FirstOrDefault(s => s.Title == title) is not { } section) return;
         // ScrollIntoView works with the virtualized list, where far rows have no container yet.
         ParameterList.ScrollIntoView(section.FirstRow);

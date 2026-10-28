@@ -20,10 +20,17 @@ public sealed partial class ParameterItemViewModel : ObservableObject
 
     public ParameterInstance Instance { get; private set; }
     public ParameterType? Type { get; private set; }
+    private ParameterResourceReader? _resources;
+    internal ParameterResourceReader? Resources { get => _resources; set => SetProperty(ref _resources, value); }
+    public bool HasContextHelp => Instance.Placement?.HelpContext is { Length: > 0 } || Description is { Length: > 0 };
+    public string HelpAutomationName => WorkbenchStrings.Get("ParameterHelpFor", Name);
+    public ParameterHelpContent ReadHelp() => Resources?.ReadHelp(Instance.Placement?.HelpContext) ?? new(ParameterResourceStatus.Missing);
+    public ParameterImageContent ReadImage() => Resources?.ReadImage(Type?.PictureResourceId) ?? new(ParameterResourceStatus.Missing);
 
     internal ParameterItemViewModel Rebind(ParameterInstance instance, ParameterType? type)
     {
         Instance = instance; Type = type;
+        OnPropertyChanged(nameof(Type));
         var choices = type?.Restrictions.Where(r => r.EnumerationValue is not null)
             .Select(r => new ParameterChoice(r.EnumerationValue!, r.EnumerationText ?? r.EnumerationValue!)).ToArray() ?? [];
         if (!Choices.SequenceEqual(choices))
@@ -178,7 +185,7 @@ public sealed partial class ParameterItemViewModel : ObservableObject
         && Type?.DataType is ParameterDataType.Number or ParameterDataType.Float or ParameterDataType.Text
             or ParameterDataType.Enumeration or ParameterDataType.Boolean or ParameterDataType.Time or ParameterDataType.IPAddress;
 
-    public ParameterKind Kind => !IsEnabled ? ParameterKind.ReadOnly : Type?.DataType switch
+    public ParameterKind Kind => Type?.DataType == ParameterDataType.Picture ? ParameterKind.Picture : !IsEnabled ? ParameterKind.ReadOnly : Type?.DataType switch
     {
         ParameterDataType.Number => ParameterKind.Number,
         ParameterDataType.Float => ParameterKind.Float,
@@ -212,6 +219,7 @@ public sealed partial class ParameterItemViewModel : ObservableObject
         OnPropertyChanged(nameof(IsEnabled));
         OnPropertyChanged(nameof(Kind));
         OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(HasContextHelp)); OnPropertyChanged(nameof(HelpAutomationName));
         RefreshStorage();
     }
 

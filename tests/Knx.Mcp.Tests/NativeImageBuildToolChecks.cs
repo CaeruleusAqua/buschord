@@ -169,7 +169,7 @@ internal static class NativeImageBuildToolChecks
             var device = ProjectQuery.DeviceList(project).Single(); var model = Knxproj.ToXml(project).ToString(SaveOptions.DisableFormatting); var revision = project.ApplicationDataRevision;
             var ordinary = Data(await Tool("download_plan", new { device_address = "1.1.1" })).ToJsonString();
             var schema = server.Tools.Single(t => t.Name == "download_plan").InputSchema["properties"]![OptionName]!;
-            check("native image remains one closed option within 55 tools", server.Tools.Count == 55 && schema["additionalProperties"]?.GetValue<bool>() == false
+            check("native image remains one closed option within the current tool contract", server.Tools.Count == McpToolContract.ExpectedToolCount && schema["additionalProperties"]?.GetValue<bool>() == false
                 && schema["properties"]?["option_words"]?["uniqueItems"]?.GetValue<bool>() == true && schema["properties"]?["option_words"]?["maxItems"]?.GetValue<int>() == 16
                 && schema["properties"]?["option_words"]?["items"]?["maximum"]?.GetValue<ulong>() == uint.MaxValue
                 && schema["properties"]?["tables"]?["additionalProperties"]?.GetValue<bool>() == false, schema.ToJsonString());

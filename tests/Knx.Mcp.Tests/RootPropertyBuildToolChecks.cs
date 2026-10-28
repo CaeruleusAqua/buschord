@@ -116,7 +116,7 @@ internal static class RootPropertyBuildToolChecks
             var ordinary = Data(await Tool("download_plan", new { device_address = F.DeviceAddress })).ToJsonString();
             var schema = server.Tools.Single(t => t.Name == "download_plan").InputSchema;
             var optionSchema = schema["properties"]?[F.OptionName];
-            check("root property closed option uses the existing 55-tool contract", server.Tools.Count == 55
+            check("root property closed option uses the current tool contract", server.Tools.Count == McpToolContract.ExpectedToolCount
                 && optionSchema?["additionalProperties"]?.GetValue<bool>() == false
                 && optionSchema?["required"]?.AsArray().Select(n => n!.GetValue<string>()).SequenceEqual(["procedure"]) == true
                 && optionSchema?["properties"]?["procedure"]?["additionalProperties"]?.GetValue<bool>() == false

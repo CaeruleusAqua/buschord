@@ -3,7 +3,7 @@
         xmlns:loc="using:Knx.App.Localization"
         x:Class="Knx.App.NewProjectWindow"
         Classes="wb-dialog"
-        Title="{loc:Tr NewProjectTitle}" Width="560" Height="440" MinWidth="460" MinHeight="380"
+        Title="{loc:Tr NewProjectTitle}" Width="600" Height="600" MinWidth="460" MinHeight="380"
         Icon="/Assets/brand/buschord-house-transparent-tile-256.png">
   <Window.Styles>
     <Style Selector="NumericUpDown /template/ TextBox#PART_TextBox">
@@ -31,6 +31,17 @@
           </Grid>
 
           <TextBlock Text="{loc:Tr NewProjectTopology}" Classes="wb-heading" Margin="0,4,0,0" />
+          <TextBlock Text="{loc:Wb NewTopologyHint}" TextWrapping="Wrap" Classes="wb-label" />
+          <Grid ColumnDefinitions="150,*" ColumnSpacing="8">
+            <TextBlock Text="{loc:Wb NewTopologyTemplate}" Classes="wb-label" />
+            <ComboBox Grid.Column="1" x:Name="TemplateBox" Classes="wb-field" SelectedIndex="0"
+                      AutomationProperties.Name="{loc:Wb NewTopologyTemplate}" HorizontalAlignment="Stretch">
+              <ComboBoxItem Content="{loc:Wb NewTopologyTp}" />
+              <ComboBoxItem Content="{loc:Wb NewTopologyLegacy}" />
+            </ComboBox>
+          </Grid>
+          <TextBlock x:Name="TopologyPreview" TextWrapping="Wrap" Classes="wb-label"
+                     AutomationProperties.LiveSetting="Polite" />
           <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
             <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr NewProjectStyle}" Classes="wb-label" />
             <ComboBox Grid.Row="0" Grid.Column="1" x:Name="StyleBox" Classes="wb-field"

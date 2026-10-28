@@ -42,6 +42,7 @@ public sealed class DynamicEvaluation
     public IReadOnlyDictionary<string, string> Renames { get; internal set; } = new Dictionary<string, string>();
     public IReadOnlyDictionary<string, string> ResolvedNames { get; internal set; } = new Dictionary<string, string>();
     public IReadOnlyDictionary<string, string> ParameterSections { get; internal set; } = new Dictionary<string, string>();
+    public ParameterPresentation Presentation { get; internal set; } = ParameterPresentation.Empty;
 
     /// <summary>Constructs the evaluator saw and did not implement (deterministic, sorted, deduplicated).</summary>
     public IReadOnlyList<string> Unsupported { get; internal set; } = [];
@@ -204,6 +205,7 @@ public static class DynamicParameters
             VisibleBlocks = tracksVisibility ? pass.Blocks : knownBlocks,
             Renames = pass.Renames,
             ResolvedNames = names,
+            Presentation = ParameterPresentation.Read(root, pass.Placements, names),
             ParameterSections = pass.ParameterBlocks.Where(p => blockNames.TryGetValue(p.Value, out var title) && title.Length > 0)
                 .ToDictionary(p => p.Key, p => blockNames[p.Value]),
             Unsupported = unsupported.Order(StringComparer.Ordinal).ToList(),
@@ -238,6 +240,7 @@ public static class DynamicParameters
             instance.Name = evaluation.ResolvedNames.GetValueOrDefault(instance.Id)
                 ?? (instance.ParameterId is { } parameterId ? evaluation.ResolvedNames.GetValueOrDefault(parameterId) : null) ?? instance.DeclaredName;
             instance.SectionTitle = evaluation.ParameterSections.GetValueOrDefault(instance.Id);
+            instance.Placement = evaluation.Presentation.Placements.GetValueOrDefault(instance.Id);
             if (evaluation.Parameters.TryGetValue(instance.Id, out var state))
             {
                 var value = state.Value;
@@ -327,6 +330,7 @@ public static class DynamicParameters
         public IReadOnlySet<string> RenameTargets { get; } = renameTargets;
         public Dictionary<string, string> Renames { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, string> ParameterBlocks { get; } = new(StringComparer.Ordinal);
+        public List<XElement> Placements { get; } = [];
         public Stack<string> BlockStack { get; } = new();
         public int Chooses;
 
@@ -360,6 +364,7 @@ public static class DynamicParameters
         switch (element.Name.LocalName)
         {
             case "ParameterRefRef":
+                pass.Placements.Add(element);
                 var refId = (string?)element.Attribute("RefId");
                 if (refId is null) pass.Unsupported.Add("ParameterRefRef without RefId.");
                 else if (!pass.Declared.ContainsKey(refId)) pass.Unsupported.Add("Unknown parameter reference: " + refId);

@@ -1,0 +1,69 @@
+name: Refresh authenticated update metadata
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '31 4 */3 * *'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: update-feed-signing
+  cancel-in-progress: false
+jobs:
+  refresh:
+    # Enable only after the first expressly approved production release exists.
+    if: vars.BUSCHORD_UPDATE_FEED_REFRESH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production-release
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Require trusted source checks at this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+        run: |
+          set -eu
+          for workflow in ci.yml codeql.yml; do
+            count=$(gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?head_sha=$REVISION&status=completed" --jq '[.workflow_runs[] | select(.conclusion=="success")] | length')
+            test "$count" -gt 0 || exit 1
+          done
+      - name: Refresh only unchanged packages with an already trusted publisher signature
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          BUSCHORD_UPDATE_SIGNING_KEY: ${{ secrets.BUSCHORD_UPDATE_SIGNING_KEY }}
+          BUSCHORD_UPDATE_PUBLIC_KEY_ID: ${{ vars.BUSCHORD_UPDATE_PUBLIC_KEY_ID }}
+        run: |
+          if(!$env:BUSCHORD_UPDATE_SIGNING_KEY -or !$env:BUSCHORD_UPDATE_PUBLIC_KEY_ID){throw 'Production signing is not configured.'}
+          $releases=gh release list --repo $env:REPOSITORY --limit 20 --json tagName,isDraft,isPrerelease | ConvertFrom-Json
+          $targets=@($releases | Where-Object {!$_.isDraft -and !$_.isPrerelease} | Select-Object -First 1) + @($releases | Where-Object {!$_.isDraft -and $_.isPrerelease} | Select-Object -First 1)
+          foreach($release in $targets){
+            if(!$release){continue}
+            $directory=Join-Path $env:RUNNER_TEMP ('update-refresh-'+[guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory $directory | Out-Null
+            gh release download $release.tagName --repo $env:REPOSITORY --dir $directory --pattern 'updates.*.*.json' --pattern '*-full.nupkg'
+            if($LASTEXITCODE -ne 0){continue}
+            foreach($feed in Get-ChildItem $directory -Filter 'updates.*.*.json'){
+              $envelope=Get-Content $feed.FullName -Raw | ConvertFrom-Json
+              $payload=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($envelope.Payload)) | ConvertFrom-Json
+              $package=[IO.Path]::GetFullPath((Join-Path $directory $payload.Asset.FileName))
+              if(!$package.StartsWith($directory+[IO.Path]::DirectorySeparatorChar,[StringComparison]::Ordinal)){throw 'Unsafe package filename.'}
+              $fresh=Join-Path $directory ('fresh-'+$feed.Name)
+              $trust=[IO.Path]::GetFullPath('packaging/trust/ProductionUpdateTrust.g.cs')
+              dotnet run --project tools-src/BusChord.Release "-p:BusChordUpdateTrustSource=$trust" -- refresh $feed.FullName $package $env:BUSCHORD_UPDATE_PUBLIC_KEY_ID env:BUSCHORD_UPDATE_SIGNING_KEY $fresh
+              if($LASTEXITCODE -ne 0){throw 'Original publisher signature/package verification failed.'}
+              Move-Item $fresh $feed.FullName -Force
+              gh release upload $release.tagName $feed.FullName --repo $env:REPOSITORY --clobber
+              if($LASTEXITCODE -ne 0){throw 'Metadata refresh upload failed.'}
+            }
+          }

@@ -874,6 +874,8 @@ var keysOtherDac = SecureKeys.DeriveKeys("geheim", dacOther);
     }
 }
 
+TelegramMetadataChecks.Run((name, ok) => Check(name, ok));
+TelegramHistoryChecks.Run((name, ok) => Check(name, ok));
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 

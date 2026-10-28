@@ -327,6 +327,9 @@ public partial class WorkbenchWindow
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
+        if (e.CloseReason == WindowCloseReason.OSShutdown && AppUpdateService.Current is { } updates)
+            updates.SuppressApply = true;
+        if (_closingSessionsForExit) { e.Cancel = true; return; }
         if (!_shuttingDown && (ViewModel.IsDirty || HasParameterDrafts))
         {
             e.Cancel = true;
@@ -339,6 +342,28 @@ public partial class WorkbenchWindow
             });
             return;
         }
+        _closingSessionsForExit = true;
+        _ = DisposeSessionsAsync();
+        var sessionsEnded = Task.WhenAll(_pendingSessionDisposals);
+        if (!sessionsEnded.IsCompleted)
+        {
+            // Keep the dispatcher and application lease alive while cancellation unwinds.
+            // Closing the native lifetime first could strand UI-bound continuations.
+            e.Cancel = true;
+            IsEnabled = false;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { await sessionsEnded; }
+                finally
+                {
+                    _closingSessionsForExit = false;
+                    _shuttingDown = true;
+                    Close();
+                }
+            });
+            return;
+        }
+        _closingSessionsForExit = false;
         if (_layoutPath is not null)
         {
             try

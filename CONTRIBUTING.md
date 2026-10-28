@@ -61,6 +61,7 @@ dotnet run --project tests/Knx.WorkbenchSessions.Tests
 dotnet run --project tests/Knx.WorkbenchTheme.Tests
 dotnet run --project tests/Knx.WorkbenchUiState.Tests
 dotnet run --project tests/Knx.Localization.Tests
+dotnet run --project tests/Knx.Updates.Tests
 dotnet run --project src/Knx.App.Tests
 dotnet run --project src/Knx.Mcp -- --selftest
 ```
@@ -127,6 +128,12 @@ CI and CodeQL run on pull requests and pushes to `development` or `main`.
 Feature branches use PR checks or a manual dispatch, avoiding duplicate push/PR runs.
 Both workflows cancel superseded runs on the same ref; action versions are pinned
 to upstream commit SHAs and Dependabot maintains their update pull requests.
+
+`package-validation.yml` also builds actual Windows and Linux packages for source
+and packaging pull requests. It checks the packaged script worker, update protocol,
+Linux package contents and APT policy with no production secrets or publication.
+The separate [distribution workflow](docs/distribution.md) handles reviewed
+production signing and retains explicit publication gates.
 
 Expectations:
 

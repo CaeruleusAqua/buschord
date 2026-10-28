@@ -76,6 +76,8 @@ public sealed class ParameterType
         UIHint = other.UIHint;
         Unit = other.Unit;
         Description = other.Description;
+        PictureResourceId = other.PictureResourceId;
+        PictureAlignment = other.PictureAlignment;
         IsVisible = other.IsVisible;
         foreach (var restriction in other.Restrictions) Restrictions.Add(new ParameterRestriction(restriction));
     }
@@ -100,6 +102,8 @@ public sealed class ParameterType
     public string? Unit { get; set; }
     public string? Description { get; set; }
     public bool IsVisible { get; set; } = true;
+    public string? PictureResourceId { get; set; }
+    public string? PictureAlignment { get; set; }
 }
 
 /// <summary>Parameter-Block (KSXML: ParameterBlock) — Container mit Zeilen/Spalten.</summary>
@@ -149,6 +153,7 @@ public sealed class ParameterInstance
         ParameterId = other.ParameterId;
         DeclaredName = other.DeclaredName;
         SectionTitle = other.SectionTitle;
+        Placement = other.Placement;
         IsDerivedValue = other.IsDerivedValue;
         Unit = other.Unit;
         UnsupportedReason = other.UnsupportedReason;
@@ -172,6 +177,7 @@ public sealed class ParameterInstance
     public required string Name { get; set; }
     public string? DeclaredName { get; internal set; }
     public string? SectionTitle { get; internal set; }
+    public ParameterPlacement? Placement { get; internal set; }
     public bool IsDerivedValue { get; internal set; }
     /// <summary>Static Parameter id when this row represents a ParameterRef.</summary>
     public string? ParameterId { get; set; }

@@ -126,6 +126,11 @@ internal static class DialogChecks
             await ArchiveProtectionDialogChecks.Run(shell, theme, Check);
             await DialogChromeChecks.Run(shell, theme, Check);
             await CatalogDownloadsDialogChecks.Run(shell, theme, Check);
+            await MassLinkDialogChecks.Run(shell, theme, Check);
+            await UpdateDialogChecks.Run(shell, theme, Check);
+            await ParameterPresentationDialogChecks.Run(shell, theme, Check);
+            await ParameterImageBudgetChecks.Run(shell, theme, Check);
+            await UpdateShutdownChecks.Run(shell, theme, Check);
             await SettingsViewportChecks.Run(shell, lifetime, theme, Check);
             var groupCount = ProjectQuery.GroupAddresses(shell.ViewModel.Project!).Count();
             Invoke(shell, "ShowNewGroupAddressDialog");

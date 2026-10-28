@@ -49,6 +49,8 @@ public partial class WorkbenchWindow : Window
     private bool _refreshing;
     private bool _shuttingDown;
     private bool _confirmingClose;
+    private bool _closingSessionsForExit;
+    private readonly List<Task> _pendingSessionDisposals = [];
     private readonly string? _layoutPath;
     private readonly CatalogLibrary _catalogLibrary;
     private Project? _shownProject;
@@ -448,6 +450,7 @@ public partial class WorkbenchWindow : Window
 
     private void EnsureSessions()
     {
+        if (_closingSessionsForExit) return;
         var project = ViewModel.Project;
         if (project is null)
         {
@@ -496,7 +499,7 @@ public partial class WorkbenchWindow : Window
         finally { _closingSessionWindows = false; }
     }
 
-    private async Task DisposeSessionsAsync()
+    private Task DisposeSessionsAsync()
     {
         // Detach every observer before cancellation publishes the final job state.
         CloseSessionWindows();
@@ -509,7 +512,15 @@ public partial class WorkbenchWindow : Window
         // Flush and detach synchronously: a replacement session may already use the same store
         // while an old executor is still unwinding cancellation. Cancellation adds no attempt facts.
         persistence?.Dispose();
-        if (sessions is null) return;
+        _pendingSessionDisposals.RemoveAll(task => task.IsCompleted);
+        if (sessions is null) return Task.CompletedTask;
+        var disposal = CompleteSessionDisposalAsync(sessions);
+        if (!disposal.IsCompleted) _pendingSessionDisposals.Add(disposal);
+        return disposal;
+    }
+
+    private async Task CompleteSessionDisposalAsync(WorkbenchSessions sessions)
+    {
         try { await sessions.DisposeAsync(); }
         catch (Exception ex) { ViewModel.Status = W("ToolSessionEnded", ex.Message); }
     }

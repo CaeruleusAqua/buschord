@@ -3,7 +3,9 @@
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <UseAppHost>false</UseAppHost>
+    <!-- Referenced development builds use dotnet exec; a self-contained publish needs its native host. -->
+    <UseAppHost Condition="'$(SelfContained)' != 'true'">false</UseAppHost>
+    <UseAppHost Condition="'$(SelfContained)' == 'true'">true</UseAppHost>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Knx.Core\Knx.Core.csproj" />
