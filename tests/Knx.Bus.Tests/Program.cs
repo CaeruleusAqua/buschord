@@ -7,6 +7,12 @@ using Knx;
 using Knx.Bus;
 using Knx.Bus.Security;
 
+if (await DataSecureChecks.TryRunChildAsync(args) is { } childResult)
+{
+    Environment.Exit(childResult);
+    return;
+}
+
 // ============ Self-Checks für das Bus-Protokoll und den Download ============
 // Byte-Vektoren aus der KNXnet/IP-Spezifikation (KNX Association, v1.0) und
 // End-to-End-Läufe gegen einen Loopback-Fake.
@@ -762,6 +768,9 @@ await ReadOnlyLineScanChecks.RunAsync(Check);
 Check("cEMI frame checks", CemiExtendedChecks.Run() == 0);
 Check("tunnel lifetime checks", await TunnelLifetimeChecks.RunAsync() == 0);
 Check("tunnel peer checks", await TunnelPeerChecks.RunAsync() == 0);
+Check("protected keyring checks", ProtectedKnxKeyringChecks.Run() == 0);
+Check("data secure codec and durable state checks", await DataSecureChecks.RunAsync() == 0);
+Check("data secure tunnel hook checks", await DataSecureTunnelChecks.RunAsync() == 0);
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 

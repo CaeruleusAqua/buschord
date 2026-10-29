@@ -50,6 +50,7 @@ public sealed class KnxTunnel : IAsyncDisposable
     private const int HeartbeatAttempts = 3; // Core 3/8/2 §5.4
 
     private readonly IUdpTransport _transport;
+    private readonly ICemiSecurityProcessor? _cemiSecurity;
     private readonly IPEndPoint _controlEndpoint;
     private readonly IndividualAddress _individualAddress;
     private readonly IPEndPoint? _configuredLocalEndpoint;
@@ -69,6 +70,7 @@ public sealed class KnxTunnel : IAsyncDisposable
     private TaskCompletionSource _operationsDrained = CompletedDrain();
     private int _activeOperations;
     private bool _disposeRequested;
+    private bool _securityUnavailable;
     private volatile BusConnectionState _state;
     private IPEndPoint _localEndpoint = new(IPAddress.Any, 0);
     private IPEndPoint _dataEndpoint = new(IPAddress.Any, 0);
@@ -78,8 +80,14 @@ public sealed class KnxTunnel : IAsyncDisposable
 
     public KnxTunnel(IUdpTransport transport, IPEndPoint controlEndpoint, IndividualAddress individualAddress,
         IPEndPoint? localEndpoint = null, TimeSpan? heartbeatInterval = null)
+        : this(transport, controlEndpoint, individualAddress, localEndpoint, heartbeatInterval, null) { }
+
+    /// <summary>The tunnel owns its optional security processor and disposes it after joined I/O shutdown.</summary>
+    public KnxTunnel(IUdpTransport transport, IPEndPoint controlEndpoint, IndividualAddress individualAddress,
+        IPEndPoint? localEndpoint, TimeSpan? heartbeatInterval, ICemiSecurityProcessor? cemiSecurity)
     {
         _transport = transport;
+        _cemiSecurity = cemiSecurity;
         _controlEndpoint = CopyEndpoint(controlEndpoint);
         _individualAddress = individualAddress;
         _configuredLocalEndpoint = localEndpoint is null ? null : CopyEndpoint(localEndpoint);
@@ -116,7 +124,7 @@ public sealed class KnxTunnel : IAsyncDisposable
         Operation operation;
         lock (_gate)
         {
-            if (_disposeRequested || State != BusConnectionState.Disconnected || _closeTask is { IsCompleted: false })
+            if (_disposeRequested || _securityUnavailable || State != BusConnectionState.Disconnected || _closeTask is { IsCompleted: false })
                 throw new InvalidOperationException("The tunnel is connected, closing or disposed.");
             _cts.Dispose(); _operationsCts.Dispose();
             _cts = new CancellationTokenSource(); _operationsCts = new CancellationTokenSource();
@@ -281,8 +289,19 @@ public sealed class KnxTunnel : IAsyncDisposable
     private async Task SendCemiAsync(byte[] cemi, CancellationToken ct)
     {
         using var operation = BeginOperation(ct);
+        var prepared = cemi.ToArray();
         await _sendGate.WaitAsync(operation.Token);
-        try { await SendCemiLockedAsync(cemi, operation.Token); }
+        try
+        {
+            if (_cemiSecurity is not null)
+            {
+                var secured = await _cemiSecurity.PrepareOutgoingAsync(prepared, AssignedAddress, operation.Token).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException("The cEMI security processor returned no outgoing frame.");
+                prepared = secured.ToArray();
+            }
+            operation.Token.ThrowIfCancellationRequested();
+            await SendCemiLockedAsync(prepared, operation.Token);
+        }
         finally { _sendGate.Release(); }
     }
 
@@ -454,7 +473,15 @@ public sealed class KnxTunnel : IAsyncDisposable
                 {
                     _expectedSequence = (byte)(_expectedSequence + 1);
                     await SendTunnellingAckAsync(channel, sequence);
-                    Dispatch(cemi);
+                    byte[]? admitted = cemi.ToArray();
+                    if (_cemiSecurity is not null)
+                    {
+                        try { admitted = await _cemiSecurity.ProcessIncomingAsync(admitted, AssignedAddress, _cts.Token).ConfigureAwait(false); }
+                        catch (OperationCanceledException) { throw; }
+                        catch { lock (_gate) _securityUnavailable = true; throw; }
+                    }
+                    if (admitted is not null) Dispatch(admitted.ToArray());
+                    else Log("cEMI rejected by the configured security policy");
                 }
                 else if (sequence == (byte)(_expectedSequence - 1))
                 {
@@ -698,6 +725,8 @@ public sealed class KnxTunnel : IAsyncDisposable
         await DrainAsync(operations);
         if (receive is not null) await DrainAsync(receive);
         if (heartbeat is not null) await DrainAsync(heartbeat);
+        try { _cemiSecurity?.ResetConnection(); }
+        catch { lock (_gate) _securityUnavailable = true; Log("cEMI security reset failed; this tunnel cannot reconnect"); }
         lock (_gate) State = BusConnectionState.Disconnected;
         if (notify) Notify(Disconnected);
     }
@@ -712,12 +741,15 @@ public sealed class KnxTunnel : IAsyncDisposable
             var close = BeginClose();
             _disposeTask = Task.Run(async () =>
             {
-                await close;
-                try { _transport.Dispose(); }
+                try { await close; }
                 finally
                 {
-                    _operationsCts.Dispose(); _cts.Dispose(); _sendGate.Dispose();
-                    lock (_gate) State = BusConnectionState.Closed;
+                    try { if (_cemiSecurity is not null) await _cemiSecurity.DisposeAsync().ConfigureAwait(false); }
+                    finally
+                    {
+                        try { _transport.Dispose(); }
+                        finally { _operationsCts.Dispose(); _cts.Dispose(); _sendGate.Dispose(); lock (_gate) State = BusConnectionState.Closed; }
+                    }
                 }
             });
             return new(_disposeTask);

@@ -13,6 +13,8 @@
 - [x] Explizite lesende Workbench-Verbindung, Gruppenmonitor und adressierten Scan mit gejointem Verbindungsabbau integrieren.
 - [x] Authentisierte Secure-UDP-Sitzungen mit OS-X25519 und unabhängigen Windows-/Linux-Protokoll- und Loopbackprüfungen als Bibliothek ergänzen.
 - [x] Extended-cEMI-Längen und gemeinsame Raw-Frames mit veröffentlichten Vektoren prüfen.
+- [x] Geschützte Keyrings mit Signaturprüfung und exakter Interface-Auswahl importieren.
+- [x] Data-Secure-Gruppenpfad mit expliziter Policy, dauerhaften Zählern und optionalem Tunnel-Hook als Bibliothek ergänzen; Sync und sichere Erstinbetriebnahme getrennt halten.
 - [ ] Positiven Linien-Scan und reale Transport-Interoperabilität prüfen.
 - [ ] Herstellerimage, Management, Download, Verify und Neustart durchgängig abnehmen.
 - [ ] Secure-Tunnel, Data Security und sichere Inbetriebnahme vollständig integrieren.
