@@ -600,7 +600,7 @@ beschrieben. Dauerhafte Aufnahme wird ausdrücklich eingeschaltet.
 
 ### 7.2 Programmierung
 
-Die Programmierwarteschlange ist eine **Simulation**: „SIMULATION · kein realer
+Die standardmäßig gewählte Ansicht **Simulation** meldet: „SIMULATION · kein realer
 Download und keine Geräteprogrammierung“.
 
 - Gerät wählen und **Auftrag einreihen**; dabei wird der Gerätestand eingefroren.
@@ -636,6 +636,23 @@ Für das Teilprofil MV-0701/M112 gibt es **Werkzeuge → M112-Änderung prüfen*
    Eine fehlgeschlagene Wiederherstellung muss vor dem Verlassen eigens bestätigt werden.
 
 Umfang, Konsolenbefehle und Gerätebelege stehen in [Inbetriebnahme](commissioning.md).
+
+Für mehrere unterstützte Geräte im Programmierbereich **Echte M112-Pläne** wählen:
+
+1. Zielprojekt als private Kopie speichern und **M112-Warteschlange öffnen** wählen.
+   Verbindung ausdrücklich auswählen, Ausgangsprojekt und Journalordner angeben,
+   dann die Geräte einzeln vorbereiten. Die Vorbereitung sendet nichts.
+2. Für jeden Auftrag **Gerät lesen**, physische Identität und Plan prüfen,
+   Zieladresse eintippen und den einzelnen Auftrag bestätigen.
+3. Ausstehende Geräte und Batch-Fingerabdruck prüfen und den gesamten Lauf
+   ausdrücklich bestätigen. Die Geräte laufen nacheinander; Fehler oder Abbruch
+   stoppen weitere Aufträge und warten eine notwendige Wiederherstellung ab.
+
+Nur vollständig geprüfte Aufträge erhalten echte Prg-/Par-/Grp-Belege. Diese
+beschreiben eine frühere Prüfung und keinen aktuellen Gerätezustand. Ungültige
+Quellen oder Belege stellen keine alten Flags wieder her. Adressierung,
+Erstinbetriebnahme und allgemeine Herstellerprofile sind damit nicht freigegeben.
+[Ablauf, Wiederanlauf und Grenzen](real-programming-queue.md).
 
 ### 7.3 Scan
 
@@ -932,7 +949,7 @@ belegt; belegt ist `Strg+Shift+G`.
 
 - **Projektänderungen senden nichts.** Echte Workbench-Verbindung, Monitor und
   Scan werden ausdrücklich gewählt und arbeiten lesend. Programmieraufträge
-  bleiben als allgemeine Warteschlange simuliert; der gesonderte M112-Dialog
+  bleiben in der allgemeinen Ansicht simuliert; die separate M112-Warteschlange und der M112-Dialog
   erfordert einen geprüften Plan und ausdrückliche Gerätebestätigung. `bus_write` ist gesperrt.
 - **Allgemeine Downloads und Adressschreibungen bleiben gesperrt.** Der Schreibpfad ist
   deaktiviert (`WritesEnabled = false`), `bus_write` wird abgewiesen, ein realer
