@@ -801,8 +801,12 @@ one gateway reservation and one credential capability across fresh M112/recovery
 connections. Exact assigned IA and source pins are enforced; known protected groups
 cannot silently become plaintext. Native selection and password controls have
 German/English checks; typed errors omit private source paths and credentials.
-Protected OS storage, authenticated Sync, individual Tool Access and secure first
-commissioning remain open.
+The separate [individual Tool/P2P library](individual-secure.md) adds explicitly
+provisioned unicast data, authenticated client Sync, durable max merging and a
+joined tunnel initializer. Twenty-one state/codec and five tunnel checks cover
+synthetic vectors and actual UDP loopback. It retains missing-state and key-domain
+gates; no real Secure device has been accepted. Protected OS storage,
+provisioning integration and secure first commissioning remain open.
 Extended cEMI uses one NPDU length octet and the control-field frame selector;
 81 checks cover published vectors, strict lengths and the shared raw-frame API.
 

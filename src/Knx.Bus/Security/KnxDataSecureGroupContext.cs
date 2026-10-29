@@ -119,16 +119,21 @@ public sealed class KnxDataSecureGroupContext : IAsyncDisposable
     {
         TaskCompletionSource? owner = null; Task task;
         lock (_gate) { if (_disposal is null) { _disposed = true; owner = new(TaskCreationOptions.RunContinuationsAsynchronously); _disposal = owner.Task; } task = _disposal; }
-        if (owner is not null) { _lifetime.Cancel(); _ = FinishDisposeAsync(owner); } return new(task);
+        if (owner is not null)
+        {
+            Exception? cancellationFailure = null; try { _lifetime.Cancel(); } catch (Exception ex) { cancellationFailure = ex; }
+            _ = FinishDisposeAsync(owner, cancellationFailure);
+        }
+        return new(task);
     }
-    private async Task FinishDisposeAsync(TaskCompletionSource completion)
+    private async Task FinishDisposeAsync(TaskCompletionSource completion, Exception? cancellationFailure)
     {
         try
         {
             await _serial.WaitAsync().ConfigureAwait(false);
             try { foreach (var binding in _groups.Values) CryptographicOperations.ZeroMemory(binding.Key); _groups.Clear(); }
             finally { _serial.Release(); _lifetime.Dispose(); }
-            completion.TrySetResult();
+            if (cancellationFailure is not null) completion.TrySetException(cancellationFailure); else completion.TrySetResult();
         }
         catch (Exception ex) { completion.TrySetException(ex); }
     }

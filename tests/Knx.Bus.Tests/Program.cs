@@ -782,6 +782,9 @@ Check("protected keyring checks", ProtectedKnxKeyringChecks.Run() == 0);
 Check("data secure codec and durable state checks", await DataSecureChecks.RunAsync() == 0);
 Check("data secure tunnel hook checks", await DataSecureTunnelChecks.RunAsync() == 0);
 Check("client serial publication checks", await SerialPublicationChecks.RunAsync([]) == 0);
+Check("group secure lifetime checks", await GroupSecureLifetimeChecks.RunAsync() == 0);
+Check("individual secure checks", await IndividualSecureChecks.RunAsync() == 0);
+Check("individual secure tunnel checks", await IndividualSecureTunnelChecks.RunAsync() == 0);
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 

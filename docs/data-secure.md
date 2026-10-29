@@ -1,5 +1,10 @@
 # KNX Data Secure group communication
 
+Explicitly provisioned individual Tool/P2P communication and authenticated client
+synchronization have a separate [library profile](individual-secure.md). Its
+tunnel initializer must complete before management access is published. It does
+not enable unprovisioned application connections or secure first commissioning.
+
 `KnxDataSecureCodec` implements ordinary group S-A_Data. It supports authentication
 only and authentication with confidentiality, uses a four-byte authentication tag,
 and retains the distinction in its result. Authentication-only intentionally

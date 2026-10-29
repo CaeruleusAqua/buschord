@@ -16,6 +16,7 @@
 - [x] Geschützte Keyrings mit Signaturprüfung und exakter Interface-Auswahl importieren.
 - [x] Data-Secure-Gruppenpfad mit expliziter Policy, dauerhaften Zählern und optionalem Tunnel-Hook als Bibliothek ergänzen; Sync und sichere Erstinbetriebnahme getrennt halten.
 - [x] Explizite IP-Secure-Verbindungswahl in Workbench/MCP/CLI mit gemeinsamem Gateway-/Credentialbesitzer und geschützter Gruppenabgrenzung integrieren.
+- [x] Explizit provisionierten individuellen Tool-/P2P-Pfad mit authentisiertem Client-Sync, dauerhafter Zählerzusammenführung und gejointem Tunnel-Initializer als Bibliothek ergänzen; Anwendungseinbindung und sichere Erstinbetriebnahme bleiben getrennt.
 - [ ] Positiven Linien-Scan und reale Transport-Interoperabilität prüfen.
 - [ ] Herstellerimage, Management, Download, Verify und Neustart durchgängig abnehmen.
 - [ ] Secure-Tunnel, Data Security und sichere Inbetriebnahme vollständig integrieren.
