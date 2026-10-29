@@ -10,6 +10,15 @@ using Knx.App.Views;
 using Knx.Catalog;
 
 if (args.Contains("--native")) return NativeDraftChecks.Run(args.Contains("--shots"));
+if (args.Contains("--binary-module-controller"))
+{
+    var target = Path.Combine(Path.GetTempPath(), "buschord-binary-controller-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(target);
+    var output = args.FirstOrDefault(a => a.StartsWith("--binary-golden-output=", StringComparison.Ordinal))?["--binary-golden-output=".Length..];
+    if (output is not null && !Path.IsPathFullyQualified(output)) throw new ArgumentException("Synthetic golden output requires an absolute path.");
+    try { return BinaryModuleControllerImageChecks.Run(target, output); }
+    finally { Directory.Delete(target, true); }
+}
 if (args.Contains("--conditional-module-image"))
 {
     var target = Path.Combine(Path.GetTempPath(), "buschord-conditional-image-" + Guid.NewGuid().ToString("N"));
@@ -111,6 +120,7 @@ try
     failures += NativeGeneralImageBuildChecks.Run(directory);
     failures += NativeModuleImageBuildChecks.Run(directory);
     failures += ConditionalModuleImageChecks.Run(directory);
+    failures += BinaryModuleControllerImageChecks.Run(directory);
     failures += NativeImageRawDataBuildChecks.Run(directory);
     failures += NativeImageBuildPublicChecks.Run(directory);
     failures += M112UnionBuildChecks.Run(directory);

@@ -243,8 +243,7 @@ internal sealed class NativeStructuralActivationProof
                 || parameter.Parent?.Name != ns + "Parameters" || !ReferenceEquals(parameter.Parent.Parent, rootStatic)
                 || type.Parent?.Name != ns + "ParameterTypes" || !ReferenceEquals(type.Parent.Parent, rootStatic)
                 || reference.HasElements
-                || type.Elements().Take(2).Count() != 1 || type.Elements().Single().Name != ns + "TypeRestriction"
-                || (string?)type.Elements().Single().Attribute("Base") != "Value")
+                || type.Elements().Take(2).Count() != 1 || !ModuleControllerType(type.Elements().Single(), ns))
                 Fail(GeneratedTableIssueCode.UnsupportedStructureActivation, id);
             var placements = rootPlacements[id!].Take(2).ToArray();
             if (placements.Length != 1 || !Unconditional(placements[0])) Fail(GeneratedTableIssueCode.UnsupportedStructureActivation, id);
@@ -371,6 +370,19 @@ internal sealed class NativeStructuralActivationProof
             new System.Collections.ObjectModel.ReadOnlyDictionary<int, int>(definitionOwners),
             new System.Collections.ObjectModel.ReadOnlyDictionary<int, IReadOnlyList<int>>(conditionalWhenKeys),
             Array.AsReadOnly(controllers.Order(StringComparer.Ordinal).ToArray()));
+    }
+
+    // A binary integer carries its declared 0/1 domain, not an inferred enumeration.
+    // Dependency and independently evaluated activity checks remain mandatory.
+    private static bool ModuleControllerType(XElement shape, XNamespace ns)
+    {
+        if(shape.Name==ns+"TypeRestriction")return (string?)shape.Attribute("Base")=="Value";
+        return shape.Name==ns+"TypeNumber" && !shape.HasElements && string.IsNullOrWhiteSpace(shape.Value)
+            && shape.Attributes().All(a=>a.IsNamespaceDeclaration || a.Name.Namespace==XNamespace.None
+                && a.Name.LocalName is "Type" or "SizeInBit" or "minInclusive" or "maxInclusive" or "UIHint")
+            && (string?)shape.Attribute("Type")=="unsignedInt" && (string?)shape.Attribute("SizeInBit")=="1"
+            && (string?)shape.Attribute("minInclusive")=="0" && (string?)shape.Attribute("maxInclusive")=="1"
+            && (string?)shape.Attribute("UIHint") is null or "CheckBox";
     }
 
     private static bool IsDeclaration(XElement element)

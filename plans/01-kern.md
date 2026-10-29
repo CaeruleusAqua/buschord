@@ -72,7 +72,14 @@ Ein zusätzlicher Root-Arbeitslauf erfasst die vollständige Referenzpopulation
 seines festen Speicherprofils einschließlich inaktiver, Always- und NoStorage-
 Dispositionen. Er kombiniert Code, Parameter und passende Tabellen mit einer
 gemeinsamen Auswertung; abweichende Tabellen-Ausgangsbytes verweigern den gesamten
-Arbeitsstand. Module, weitere Writer und Imagefinalisierung bleiben offen.
+Arbeitsstand. Der gemeinsame Modulpfad deckt zusätzlich ein begrenztes festes
+Speicherprofil ab, einschließlich direkter Aufrufe unter bis zu zwei bewiesenen
+Root-Enum- oder streng begrenzten 0/1-Binärauswahlen. Berechnete Controller
+bleiben ohne zusätzlichen quellengebundenen Nachweis gesperrt.
+Potenzielle Besitzer werden vor der Aktivität vollständig geprüft; ungewählte
+Instanzen schreiben nichts. Genauere Grenzen stehen im
+[Status](../docs/status.md#combined-logical-working-stage).
+Weitere Modulprofile, Writer und Imagefinalisierung bleiben offen.
 Explizite M112-/SystemB-Tabellenfragmente besitzen eigene Quellenbindungen und
 ersetzen kein vollständiges Image; genaue Grenzen stehen im Status.
 Der separate Compiler unterstützt primäre Product-, Default-

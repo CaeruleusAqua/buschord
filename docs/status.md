@@ -364,7 +364,7 @@ toward these budgets. Previous inspection and no-module profiles retain their
 existing contracts. The M112 union/download route does not admit these modules.
 
 A bounded direct-call case in the same stage supports up to two independently
-proved root Value-enum choices, literal global Memory offsets and no Repeat or
+proved root Value-enum or bounded binary-integer choices, literal global Memory offsets and no Repeat or
 allocator. It validates every potential instance and latent owner before selecting
 the instantiated subset from one shared evaluation. Uninstantiated references emit
 no write or native record; their saved values remain retained and source-bound for
@@ -373,6 +373,14 @@ This case requires an absent or empty native ModuleInstances carrier and refuses
 module LegacyPatchAlways. Eighteen independent full-buffer reference comparisons,
 108 focused checks and nine nonzero-backing preservation cases cover the profile;
 they do not establish manufacturer or complete-image compatibility.
+Binary module controllers require an unsigned one-bit number with explicit bounds
+0 and 1, no display transform and only an optional CheckBox UI hint. Their type
+elements must belong to the validated project namespace. Calculated or assigned
+selectors remain refused; declared defaults are never taken as transformation
+results. Another 125 focused checks cover the binary profile, full role buffers,
+foreign type namespaces and preserved dependency gates. The public Gira 2gang
+source uses this binary declaration, but its relevant calculations and further
+source profiles still prevent a positive manufacturer image claim.
 
 Sources, initial Data/validity, working Data, desired validity and canonical bytes
 remain separate. Factory masks and Count words are not adopted. Contained and
@@ -487,6 +495,7 @@ refuse until their configuration state is accounted for, even without a binary b
 
 Module admission covers flat literal calls, either unconditional or under up to
 two root choices. Each controller must be an independently checked Value-enum
+or the exact bounded binary-integer profile described above,
 with exactly one unconditional root reference owner. Every possible call, argument and used
 definition body is checked before evaluation, including unselected calls.
 Repeat, nested module calls, allocators and deeper conditional calls remain unsupported.
