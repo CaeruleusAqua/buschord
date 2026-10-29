@@ -31,6 +31,36 @@ internal static class VerifiedM112ReceiptChecks
         var history = await store.ReadHistoryAsync(f.Project);
         check("reopened receipt store restores historical Prg/Par/Grp without network", history.Count == 2 && history.All(s => s.Origin == ProgrammingOrigin.Real
             && s.Flags == (DeviceLoadFlags.ApplicationProgram | DeviceLoadFlags.Parameters | DeviceLoadFlags.GroupAddresses)) && f.Backends.All(b => b.Reads == 1 && b.Applies == 1));
+        // A legitimate receipt may predate a wall-clock correction. Its timestamp cannot order live attempts.
+        var clockPath = store.PathFor(f.Devices[0].Id); var clockOriginal = await File.ReadAllBytesAsync(clockPath);
+        try
+        {
+            var future = JsonNode.Parse(clockOriginal)!.AsObject();
+            future["Payload"]!["Receipt"]!["VerifiedAt"] = DateTimeOffset.UtcNow.AddDays(1);
+            using var clockPayload = System.Text.Json.JsonDocument.Parse(future["Payload"]!.ToJsonString());
+            future["Sha256"] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(clockPayload.RootElement)));
+            await File.WriteAllTextAsync(clockPath, future.ToJsonString());
+            var failAfterClockChange = true;
+            await using var clockSession = new ProgrammingSession(new(), () => f.Project,
+                realExecutor: (_, _) => failAfterClockChange ? Task.FromException(new IOException("Live failure after clock correction")) : Task.CompletedTask);
+            await using var clockQueue = new RealM112ProgrammingQueue(() => new(f.Project, f.Lifetime, false, false), clockSession, receipts: store);
+            await clockQueue.ReadHistoryAsync();
+            check("future-dated verified history is admitted before a new live attempt", clockSession.DeviceState(f.Devices[0].Id)?.LastSuccessAt > DateTimeOffset.UtcNow);
+            clockSession.Enqueue(f.Devices[0].Id, "parameters", "synthetic-real-executor", SessionOrigin.Real); await clockSession.RunAsync();
+            var liveFailure = clockSession.DeviceState(f.Devices[0].Id); await clockQueue.ReadHistoryAsync();
+            check("history cannot replace a later live failure after a wall-clock correction", ReferenceEquals(liveFailure, clockSession.DeviceState(f.Devices[0].Id))
+                && liveFailure?.LastError is not null);
+            failAfterClockChange = false;
+            clockSession.Enqueue(f.Devices[0].Id, "parameters", "synthetic-real-executor", SessionOrigin.Real); await clockSession.RunAsync();
+            var liveSuccess = clockSession.DeviceState(f.Devices[0].Id); await clockQueue.ReadHistoryAsync();
+            check("history cannot replace a later live success after a wall-clock correction", ReferenceEquals(liveSuccess, clockSession.DeviceState(f.Devices[0].Id))
+                && liveSuccess?.LastError is null);
+            clockSession.ResetForChange(f.Devices[0].Id, DeviceChangeKind.Parameters);
+            var liveReset = clockSession.DeviceState(f.Devices[0].Id); await clockQueue.ReadHistoryAsync();
+            check("history cannot undo a later flag reset after a wall-clock correction", ReferenceEquals(liveReset, clockSession.DeviceState(f.Devices[0].Id))
+                && liveReset is not null && !liveReset.Flags.HasFlag(DeviceLoadFlags.Parameters));
+        }
+        finally { await File.WriteAllBytesAsync(clockPath, clockOriginal); }
         var failLive = true;
         await using (var session = new ProgrammingSession(new(), () => f.Project,
             realExecutor: (_, _) => failLive ? Task.FromException(new IOException("Synthetic newer live attempt")) : Task.CompletedTask))

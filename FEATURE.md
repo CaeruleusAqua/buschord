@@ -67,6 +67,8 @@ adressierter Scanner liefert auch für Koppler explizite Teil-/Unbekannt-Ergebni
 Die Workbench bietet eine ausdrücklich gewählte lesende UDP-Verbindung, echten
 Gruppenmonitor und Linienscan. Projektwechsel und Schließen warten den tatsächlichen
 Verbindungsabbau ab; allgemeine Programmieraufträge bleiben simuliert.
+Eine separate [echte M112-Warteschlange](docs/real-programming-queue.md) verbindet
+gebundene Einzelaufträge, Bestätigung, dauerhafte Belege und gejointe Wiederherstellung.
 Ein separater Property-Arbeitslauf initialisiert alle tatsächlich ausgewählten
 Allokationen seines festen Root-Profils und formatiert die vollständige
 Referenzpopulation aus derselben Auswertung. Initialdaten, Gültigkeit und

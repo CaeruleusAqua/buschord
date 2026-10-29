@@ -41,8 +41,11 @@ Einzelgeräteversuche ersetzen diese Endabnahme nicht.
   dem vollständigen Lauf unveränderte Tastenfunktion. Das gilt für ein freigegebenes Gerät.
 - [Workbench-Verbindungen](../docs/secure-connections.md), Monitor, adressierter
   Scan und der [M112-Review-/Recoverydialog](../docs/commissioning.md) besitzen
-  gemeinsame, bis zum I/O-Ende gehaltene Verbindungsbesitzer. Allgemeine
-  Programmierwarteschlange, Adressierung und weitere Ladeprofile bleiben offen.
+  gemeinsame, bis zum I/O-Ende gehaltene Verbindungsbesitzer. Eine separate
+  [Plain-M112-Warteschlange](../docs/real-programming-queue.md) bindet bestätigte
+  Einzelaufträge, dauerhafte Belege und Wiederherstellung; Quellenänderungen und
+  ungültige Historie erhalten keine alten Flags. Allgemeine Ladeprofile und
+  vollständige Adressierung bleiben offen.
 - [Geschützte Keyrings](../docs/protected-keyrings.md),
   [Tool/P2P mit Sync](../docs/individual-secure.md),
   [Tool-Konsolen-/MCP-Zugang](../docs/tool-access-console.md) und

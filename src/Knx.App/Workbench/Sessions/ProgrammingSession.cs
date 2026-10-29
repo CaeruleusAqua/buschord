@@ -377,7 +377,9 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
             if (device is null || state.Origin != ProgrammingOrigin.Real || state.LastAttemptOrigin != ProgrammingOrigin.Real
                 || state.Flags != (DeviceLoadFlags.ApplicationProgram | DeviceLoadFlags.Parameters | DeviceLoadFlags.GroupAddresses)
                 || state.ImageHash != _freeze(project, device).Signature) continue;
-            if (_states.TryGetValue(state.DeviceId, out var existing) && existing.LastAttemptAt >= state.LastSuccessAt) continue;
+            // Live state supersedes imported history by session order, even after a wall-clock correction.
+            if (_states.TryGetValue(state.DeviceId, out var existing) && (existing.Origin == ProgrammingOrigin.Real
+                || existing.LastAttemptOrigin == ProgrammingOrigin.Real || existing.LastAttemptAt >= state.LastSuccessAt)) continue;
             state.Validate(); _states[state.DeviceId] = state; _m112HistoryProjections[state.DeviceId] = state; changed = true;
         }
         if (!changed) return;

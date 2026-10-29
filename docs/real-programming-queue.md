@@ -71,6 +71,9 @@ normalization is retained. The source inventory is bounded to 10,000 devices,
 
 Receipts describe past local verification, not current device health. Missing,
 corrupt, changed or mismatched sources restore no flags. Before another queued
+history read, unchanged receipt-derived flags are withdrawn. New live attempts,
+successes and explicit flag resets retain precedence even after the system clock
+has moved backwards; receipt timestamps cannot overwrite them. Before another queued
 attempt the old receipt is durably invalidated; an explicit original restoration
 clears desired flags. Metadata failure after a device verify has a separate
 unrecorded result and stops later jobs. The Core recovery path remains independent
