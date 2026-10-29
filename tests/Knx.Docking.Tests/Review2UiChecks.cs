@@ -101,7 +101,7 @@ internal static class Review2UiChecks
                 .Any(list => list.IsVisible && list.ItemCount == sessions.LineScan.Results.Count));
         Check("D2 scan completion does not overwrite another active docked tool", main.Workspace.ActiveTool == "changes"
             && ReferenceEquals(host.Content, changes));
-        var lineChoices = floating.GetLogicalDescendants().OfType<ComboBox>().Single();
+        var lineChoices = floating.GetLogicalDescendants().OfType<ComboBox>().Single(c => c.SelectedItem is Line);
         lineChoices.SelectedIndex = 1;
         var chosenLine = (Line)lineChoices.SelectedItem!;
         var oldTitle = floating.Title;
@@ -110,7 +110,7 @@ internal static class Review2UiChecks
         Check("D4 float refresh captures original scan kind, not active changes", floating.Title == W("Scan")
             && floating.Title != oldTitle && floating.GetLogicalDescendants().OfType<Button>().Any(b => Equals(b.Content, W("ScanStart")))
             && ReferenceEquals(sessions, Field<WorkbenchSessions>(main, "_sessions")) && sessions.LineScan.Results.Count > 0);
-        Check("D4 language keeps the selected noninitial scan line", floating.GetLogicalDescendants().OfType<ComboBox>().Single()
+        Check("D4 language keeps the selected noninitial scan line", floating.GetLogicalDescendants().OfType<ComboBox>().Single(c => c.SelectedItem is Line)
             .SelectedItem is Line selectedLine && selectedLine.Id == chosenLine.Id);
         floating.Close();
         Check("D4 redock uses original floated tool kind", main.Workspace.ActiveTool == "scan");
