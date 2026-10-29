@@ -188,13 +188,7 @@ public static class Diagnostics
         session.TelegramReceived += OnTelegram;
         try
         {
-            await session.SendAsync(new Telegram
-            {
-                Source = IndividualAddress.Zero,
-                Destination = IndividualAddress.Zero, // 0.0.0 is the broadcast address of an IA read
-                Apci = Apci.IndividualAddressRead,
-                Data = [],
-            }, ct);
+            await session.SendAsync(Management.IndividualAddressReadTelegram(), ct);
             await Task.Delay(opts.ResponseTimeout, ct);
         }
         finally

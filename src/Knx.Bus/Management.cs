@@ -32,22 +32,53 @@ public static class Management
     }
 
     public static byte[] IndividualAddressRead()
-        => Cemi.LDataRequest(new Telegram
+        => Cemi.LDataRequest(IndividualAddressReadTelegram());
+
+    public static Telegram IndividualAddressReadTelegram()
+        => new()
         {
             Source = IndividualAddress.Zero,
-            Destination = new IndividualAddress(0xFFFF),
+            Destination = IndividualAddress.Zero,
+            IsGroupAddress = true,
+            Priority = TelegramPriority.System,
             Apci = Apci.IndividualAddressRead,
             Data = [],
-        });
+        };
 
     public static byte[] IndividualAddressWrite(IndividualAddress target)
-        => Cemi.LDataRequest(new Telegram
+        => Cemi.LDataRequest(IndividualAddressWriteTelegram(target));
+
+    public static Telegram IndividualAddressWriteTelegram(IndividualAddress target)
+        => new()
         {
             Source = IndividualAddress.Zero,
-            Destination = target,
+            Destination = IndividualAddress.Zero,
+            IsGroupAddress = true,
+            Priority = TelegramPriority.System,
             Apci = Apci.IndividualAddressWrite,
             Data = [(byte)(target.Raw >> 8), (byte)target.Raw],
-        });
+        };
+
+    public static Telegram IndividualAddressSerialReadTelegram(ReadOnlySpan<byte> serial)
+    {
+        ValidateSerial(serial);
+        return new() { Source = IndividualAddress.Zero, Destination = IndividualAddress.Zero, IsGroupAddress = true,
+            Priority = TelegramPriority.System, Apci = Apci.IndividualAddressSerialRead, Data = serial.ToArray() };
+    }
+
+    public static Telegram IndividualAddressSerialWriteTelegram(ReadOnlySpan<byte> serial, IndividualAddress target)
+    {
+        ValidateSerial(serial);
+        return new() { Source = IndividualAddress.Zero, Destination = IndividualAddress.Zero, IsGroupAddress = true,
+            Priority = TelegramPriority.System, Apci = Apci.IndividualAddressSerialWrite,
+            Data = [.. serial, (byte)(target.Raw >> 8), (byte)target.Raw, 0, 0, 0, 0] };
+    }
+
+    private static void ValidateSerial(ReadOnlySpan<byte> serial)
+    {
+        if (serial.Length != 6 || serial.SequenceEqual(new byte[6]) || serial.SequenceEqual(new byte[] { 255, 255, 255, 255, 255, 255 }))
+            throw new ArgumentException("An exact non-placeholder six-byte serial number is required.", nameof(serial));
+    }
 
     public static byte[] Restart(IndividualAddress target, bool erase, byte eraseCode = 0x01)
         => Cemi.LDataRequest(new Telegram

@@ -25,8 +25,13 @@ public enum Apci
     DeviceDescriptorRead = 0x300,
     DeviceDescriptorResponse = 0x340,
     Restart = 0x380,
+    IndividualAddressSerialRead = 0x3DC,
+    IndividualAddressSerialResponse = 0x3DD,
+    IndividualAddressSerialWrite = 0x3DE,
     Escape = 0xF00,
 }
+
+public enum TelegramPriority : byte { System, Normal, Urgent, Low }
 
 /// <summary>A bus telegram (general purpose, applies to tunnel and routing).</summary>
 public sealed class Telegram
@@ -34,6 +39,7 @@ public sealed class Telegram
     public required IndividualAddress Source { get; init; }
     public required IndividualAddress Destination { get; init; }
     public bool IsGroupAddress { get; init; }
+    public TelegramPriority Priority { get; init; } = TelegramPriority.Low;
 
     /// <summary>Hop count from ctrl2 bits 6..4; routers decrement it (6 on the sender, 4 after two hops).</summary>
     public byte HopCount { get; init; } = 6;
@@ -55,6 +61,7 @@ public sealed class Telegram
         Source = source,
         Destination = Destination,
         IsGroupAddress = IsGroupAddress,
+        Priority = Priority,
         HopCount = HopCount,
         Apci = Apci,
         DataBits = DataBits,
@@ -115,7 +122,8 @@ public static class Cemi
     public static byte[] LDataRequest(Telegram telegram)
     {
         ArgumentNullException.ThrowIfNull(telegram); ArgumentNullException.ThrowIfNull(telegram.Data);
-        return EncodeLDataFrame(new(CemiMessageCode.LDataReq, Ctrl1Standard,
+        if ((byte)telegram.Priority > 3) throw new ArgumentOutOfRangeException(nameof(telegram), "Priority is two bits.");
+        return EncodeLDataFrame(new(CemiMessageCode.LDataReq, (byte)((Ctrl1Standard & ~0x0C) | ((byte)telegram.Priority << 2)),
             Control2(telegram.IsGroupAddress, telegram.HopCount), telegram.Source, telegram.Destination.Raw, BuildApdu(telegram)));
     }
 
@@ -183,9 +191,11 @@ public static class Cemi
     /// <summary>Builds the APDU (TPCI/APCI octets and payload).</summary>
     private static byte[] BuildApdu(Telegram telegram)
     {
-        var apci = (ushort)telegram.Apci;
-        if (apci > 0x3FF)
+        var apci = (int)telegram.Apci;
+        if (apci < 0 || apci > 0x3FF)
             throw new ArgumentOutOfRangeException(nameof(telegram), $"APCI 0x{apci:X} needs an escaped APDU");
+        if (apci < 0x3C0 && (apci & 0x3F) != 0)
+            throw new ArgumentOutOfRangeException(nameof(telegram), "This APCI family requires its explicit raw management codec.");
         var data = telegram.Data;
         var inlineBits = telegram.Apci switch
         {
@@ -195,6 +205,9 @@ public static class Cemi
         if (inlineBits is < 1 or > 6)
             throw new ArgumentOutOfRangeException(nameof(telegram), "inline data width must be 1..6 bits");
         var inline = inlineBits is not null;
+        var fullService = apci >= 0x3C0;
+        if (fullService && inline)
+            throw new ArgumentException("A ten-bit APCI service has no inline data bits.", nameof(telegram));
         if (inline && data.Length > 1)
             throw new ArgumentException("an inline APDU value is one octet", nameof(telegram));
         var value = data.Length == 1 ? data[0] : 0;
@@ -207,7 +220,7 @@ public static class Cemi
             throw new ArgumentOutOfRangeException(nameof(telegram), "APDU longer than the extended frame limit");
         var apdu = new byte[apduOctets];
         apdu[0] = (byte)((apci >> 8) & 0x03); // TPCI 0, APCI bits 9..8
-        apdu[1] = (byte)(apci & 0xC0);        // APCI bits 7..6
+        apdu[1] = (byte)(apci & (fullService ? 0xFF : 0xC0));
         if (inline)
         {
             apdu[1] |= (byte)(value & 0x3F);
@@ -226,10 +239,12 @@ public static class Cemi
         var apdu = raw.ApduSpan;
         if (apdu.Length < 2) throw new FormatException("APDU shorter than two octets");
 
-        var apci = (Apci)(((apdu[0] & 0x03) << 8) | (apdu[1] & 0xC0));
+        var baseService = ((apdu[0] & 0x03) << 8) | (apdu[1] & 0xC0);
+        var fullService = baseService == 0x3C0;
+        var apci = (Apci)(baseService | (fullService ? apdu[1] & 0x3F : 0));
         byte[] data;
         int? dataBits = null;
-        if (apdu.Length == 2)
+        if (apdu.Length == 2 && !fullService)
         {
             switch (apci)
             {
@@ -257,6 +272,7 @@ public static class Cemi
             Source = raw.Source,
             Destination = new IndividualAddress(raw.DestinationRaw),
             IsGroupAddress = (ctrl2 & GroupAddressFlag) != 0,
+            Priority = (TelegramPriority)((raw.Control1 >> 2) & 3),
             HopCount = (byte)((ctrl2 >> 4) & 0x07),
             Apci = apci,
             DataBits = dataBits,
