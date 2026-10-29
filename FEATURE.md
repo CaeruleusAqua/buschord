@@ -8,7 +8,7 @@ Projektmodell und einem MCP-Server. Projektänderungen erfolgen offline.
 - [Vollständige Projekte und Produktionsfreigabe](plans/07-production-readiness.md)
 - [Benutzerhandbuch](docs/manual.md)
 - [MCP-Vertrag](mcp.md)
-- [Installation und automatische Updates](docs/distribution.md) — lokale Paketprüfung bestanden; Plattformfreigabe offen.
+- [Installation und automatische Updates](docs/distribution.md) — installierter Ubuntu-Upgrade und native Abläufe geprüft; allgemeine Plattformfreigabe offen.
 
 Implementiert sind Projektarchive, Kataloge, Topologie, Gebäude und Gruppenadressen,
 Kommunikationsobjekte und Kanäle, validierte Parameterentwürfe, dynamische Strukturen,

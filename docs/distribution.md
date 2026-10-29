@@ -232,10 +232,26 @@ with the full preview.41 payload, preserved administrator sources and timer
 disable/deletion policy, and deferred app-running and foreign-dependency cases.
 Actual APT V2 streams and frontend-lock checks also rejected foreign pending
 configure actions. These synthetic 41.x package-policy versions reuse application
-bytes; they are not new application releases. A complete preview.42 application
-upgrade with the corrected package, other supported platforms/APT versions,
-AppImage installation and power-loss acceptance remain open. Private acceptance
-keys, package fixtures and logs stay outside the repository.
+bytes; they are not new application releases.
+
+The subsequent full acceptance build `0.1.0-preview.42` uses the checked Secure
+connection source (`ad9f38a`, identical tree to merged `7fc0fc0`) and the corrected
+package scripts. Its AppImage and deb passed structure and extracted script-worker
+execution checks. The installed service deferred the signed local update while
+the actual ordinary-user application was running. After that test instance closed,
+the same installed service upgraded the complete `41.3` application to `42`, ending
+in `install ok installed` with an empty dpkg audit. Application, Bus library and
+updater bytes matched the new payload; foreign package states, administrator sources,
+enabled marker and the stopped timer policy were unchanged.
+
+The installed `42` application then passed smoke, screenshot and German/light plus
+English/dark Workbench workflows as an ordinary user. A temporary runtime-only
+schedule also made the actual installed timer invoke its installed update service;
+the current package and dpkg log stayed unchanged. The override was removed and
+the previous timer state restored. This is a local acceptance build, not a published
+release. Other supported desktops/platforms/APT versions, AppImage installation
+and power-loss acceptance remain open. Private acceptance keys, package fixtures,
+screenshots and logs stay outside the repository.
 
 Primary documentation checked 2026-10-28:
 - [Velopack packaging](https://docs.velopack.io/packaging/overview),
