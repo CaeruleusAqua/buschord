@@ -50,8 +50,13 @@ owner is released. [Storage contract and provider limits](credential-vault.md).
 
 IP Secure authenticates the gateway transport. The default profile does not
 authenticate or decrypt Data Secure group values. An explicitly provisioned
-[group policy](group-secure-connections.md) can be attached through the library or
-configured MCP host. All groups with signed keys in the imported export are
+[group policy](group-secure-connections.md) can be attached through the library,
+configured MCP host, or the Workbench's **Data Secure groups…** selection. The
+Workbench reads one private host-profile file, shows its complete pin and policy,
+and binds the selected ID to the already verified keyring/password source. It
+does not adopt the registry's password ENV reference. Each new unanchored-state
+operation requires explicit current-state confirmation; reconnect, scan and M112
+offer a short renewal for the same immutable selection. All groups with signed keys in the imported export are
 withheld from plaintext read/write/response, including groups outside the selected
 interface's assignments. Incoming clear values for those groups and unverified
 S-A_Data are withheld. A separately provisioned durable Data Secure context is

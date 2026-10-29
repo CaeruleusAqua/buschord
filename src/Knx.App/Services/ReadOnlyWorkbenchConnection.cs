@@ -2,12 +2,14 @@ using System.Net;
 using System.Net.Sockets;
 using Knx.Bus;
 using Knx.Bus.Connections;
+using Knx.App.Services;
 
 namespace Knx.App.Workbench;
 
 public sealed class ReadOnlyConnectionOptions
 {
     public KnxConnectionProfile Profile { get; }
+    [System.Text.Json.Serialization.JsonIgnore] public WorkbenchGroupSelection? GroupSelection { get; }
     private readonly byte[] _address;
     public int Port { get; }
     public IndividualAddress RequestedAddress { get; }
@@ -25,6 +27,13 @@ public sealed class ReadOnlyConnectionOptions
     }
     public ReadOnlyConnectionOptions(KnxConnectionProfile profile)
     { Profile = profile; _address = profile.Gateway.Address.GetAddressBytes(); Port = profile.Port; RequestedAddress = profile.RequestedAddress; }
+    public ReadOnlyConnectionOptions(KnxConnectionProfile profile, WorkbenchGroupSelection groupSelection) : this(profile)
+    {
+        if (!profile.RequiresAuthentication || profile.Keyring is null || !ReferenceEquals(profile.GroupSecurity, groupSelection.BoundProfile.GroupSecurity)
+            || !groupSelection.Matches(KnxConnectionProfile.IpSecure(profile.Gateway, profile.Keyring, profile.PasswordSource, profile.LocalAddress)))
+            throw new KnxConnectionException(KnxConnectionFailure.CredentialBindingMismatch);
+        GroupSelection = groupSelection;
+    }
 }
 
 public enum ReadOnlyConnectionPhase { Disconnected, Connecting, Connected, Disconnecting, Failed }

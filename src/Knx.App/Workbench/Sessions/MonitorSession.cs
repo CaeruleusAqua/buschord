@@ -15,6 +15,7 @@ public sealed record WorkbenchTelegram(DateTimeOffset Timestamp, string Source, 
     string? GroupAddressId = null, string? DeviceId = null, string DataHex = "", bool IsGroup = true)
 {
     public byte? HopCount { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public BusDataSecurity DataSecurity { get; init; } = BusDataSecurity.Unverified;
 }
 
 /// <summary>Receive-only seam; implementations must not start a network connection implicitly.</summary>
@@ -275,7 +276,7 @@ public sealed class MonitorSession : SessionState, IDisposable
             Append(new(telegram.Timestamp, frame.Source.ToString(), frame.IsGroupAddress
                 ? GroupMonitor.GroupText(frame.Destination.Raw) : frame.Destination.ToString(),
                 frame.Apci.ToString(), group.Dpt, value + (unit.Length == 0 ? "" : " " + unit), SessionOrigin.Real,
-                group.Id, _devices.GetValueOrDefault(frame.Source.ToString()), Convert.ToHexString(data), frame.IsGroupAddress) {HopCount=frame.HopCount});
+                group.Id, _devices.GetValueOrDefault(frame.Source.ToString()), Convert.ToHexString(data), frame.IsGroupAddress) {HopCount=frame.HopCount, DataSecurity=telegram.DataSecurity});
         }
     }
 
@@ -287,7 +288,7 @@ public sealed class MonitorSession : SessionState, IDisposable
         {
             if (!_running || Origin != SessionOrigin.Demo) throw new InvalidOperationException("Demo monitor is not running.");
             if (telegram.Origin != SessionOrigin.Demo) throw new ArgumentException("Demo ticks must be marked Demo.", nameof(telegram));
-            Append(telegram);
+            Append(telegram with { DataSecurity = BusDataSecurity.Unverified });
         }
     }
 

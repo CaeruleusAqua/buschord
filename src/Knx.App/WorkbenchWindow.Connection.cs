@@ -10,6 +10,7 @@ public partial class WorkbenchWindow
 {
     private readonly Func<ReadOnlyConnectionOptions, IReadOnlyWorkbenchBackend>? _realConnectionFactory;
     private readonly WorkbenchCredentialVaultOwner _credentialVaultOwner;
+    private WorkbenchGroupSecurityOwner _groupSecurityOwner = new();
     private ReadOnlyWorkbenchConnection? _liveConnection;
     private ReadOnlyConnectionOptions? _liveOptions;
     private ConnectionWindow? _connectionWindow;
@@ -72,7 +73,7 @@ public partial class WorkbenchWindow
         if (_connectionWindow is not null) { _connectionWindow.Activate(); return; }
         var connection = _liveConnection;
         var window = _connectionWindow = new(connection, _liveOptions, ViewModel.Project?.Name ?? "",
-            WorkbenchCredentialVaultOwner.ProjectScope(ViewModel.Project, ViewModel.ProjectPath), _credentialVaultOwner);
+            WorkbenchCredentialVaultOwner.ProjectScope(ViewModel.Project, ViewModel.ProjectPath), _credentialVaultOwner, _groupSecurityOwner, lifetime);
         try
         {
             await window.ShowDialog(this);
@@ -83,7 +84,7 @@ public partial class WorkbenchWindow
         finally { if (ReferenceEquals(_connectionWindow, window)) _connectionWindow = null; }
     }
     private async Task CloseCredentialVaultAfterSessionsAsync(Task sessionsEnded)
-    { await sessionsEnded; await _credentialVaultOwner.DisposeAsync(); }
+    { await sessionsEnded; await _groupSecurityOwner.DisposeAsync(); await _credentialVaultOwner.DisposeAsync(); }
     private void ConfigureMonitorSource(WorkbenchSessions sessions, bool real, WorkbenchMonitorMode mode)
     {
         if (sessions.Monitor.IsRunning) sessions.Monitor.Stop();

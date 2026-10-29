@@ -541,6 +541,19 @@ Tunneladresse eingeben. Für IP Secure UDP den geschützten Keyring lokal prüfe
 Gateway-KNX-Adresse, Benutzer und Tunneladresse daraus auswählen und das Kennwort
 mit **Passwort eingeben und prüfen** im maskierten Dialog eingeben oder ausdrücklich
 den passenden gespeicherten Eintrag verwenden. **Verbinden** stellt die gewählte Verbindung her.
+Für bereits provisionierte Data-Secure-Gruppen zusätzlich **Data Secure Gruppen**
+öffnen, eine private Gruppensicherheitsdatei und darin ein Profil auswählen.
+Fingerabdruck, Installation, Schlüsselbereich, Zählerquelle, Gruppen und Sender
+werden vor der Übernahme angezeigt; die Kandidaten sind zunächst ungeprüft.
+Die vorhandene geprüfte Passwortquelle bleibt erhalten. Die Datei richtet keine
+Zähler oder Geräteschlüssel ein. Ohne unabhängigen Anker muss der aktuelle
+Zählerstand für jeden neuen Verbindungsauftrag ausdrücklich bestätigt werden.
+Bei erneutem Verbinden, Scan oder M112 genügt die kurze erneute Bestätigung der
+gleichen Auswahl; Dateiänderungen erfordern eine neue Auswahl. Unzulässige Ziele
+bleiben gesperrt. **Gruppenprofil entfernen** ist eine ausdrückliche Entscheidung.
+Die Monitorspalte **Herkunft / Datensicherheit** nennt die tatsächlich geprüfte
+eingehende Nachricht; Gateway-Anmeldung, Demo und importierte Aufzeichnungen
+erhalten dadurch keine Bestätigung. Details: [Gruppenprofile](group-secure-connections.md).
 Die Anzeige nennt den Verbindungszustand und die tatsächlich zugewiesene
 Adresse. Schließen des Dialogs erhält eine erfolgreiche Verbindung; **Trennen**
 beendet sie. Abbrechen während des Aufbaus wartet dessen Beendigung ab.
