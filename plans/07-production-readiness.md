@@ -49,8 +49,13 @@ Einzelgeräteversuche ersetzen diese Endabnahme nicht.
 - Geschützte Keyrings und dauerhafte Data-Secure-Gruppenzustände bestehen separat
   101 Import-, 31 Codec-/Zähler- und 11 Tunnelprüfungen sowie die gemeinsame
   Bus-Regression auf Windows und Ubuntu 26.04; PR #9 ist mit neun grünen Prüfungen
-  in `development` integriert. Die anschließende gemeinsame Secure-Verbindungswahl
-  für Workbench/MCP wird geprüft; provisioniertes Tool-Access/Sync läuft separat.
+  in `development` integriert. Die gemeinsame Secure-Verbindungswahl für Workbench,
+  M112 und MCP ist mit PR #11 und neun grünen Prüfungen integriert; provisioniertes
+  Tool-Access/Sync läuft separat.
+- Der vollständige installierte APT-Upgrade auf die lokale Abnahmeversion preview.42
+  besteht in Ubuntu 26.04/WSLg, einschließlich tatsächlichem Timeraufruf, Laufzeitschutz,
+  vollständiger Paketkonfiguration und nativen DE-/EN-Abläufen. Weitere Plattformen,
+  Stromausfallpfade und eine signierte Veröffentlichung bleiben offen.
 - Echte lesende Workbench-Verbindung, Gruppenmonitor und adressierter Scan sind
   erreichbar; gemeinsame Verbindungsbesitzer beenden I/O vor erneuter Nutzung.
   Allgemeine Programmierung, Adressierung und weitere Geräteprofile bleiben offen.

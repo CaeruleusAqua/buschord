@@ -58,12 +58,14 @@ dotnet build BusChord.sln -c Release
 dotnet run --project src/Knx.App -c Release --no-build
 ```
 
-Windows is the primary native-test platform. Linux CI covers portable suites;
-manual desktop acceptance on Linux and macOS remains open.
+Windows is the primary native-test platform. A dedicated Ubuntu 26.04/WSLg
+installation also passes installed-deb startup and German/English Workbench checks.
+Other desktop/platform and power-loss acceptance remain open.
 
 Windows setup/portable ZIP and Linux AppImage/deb packages pass local package and
 script-worker checks. Signed update feeds and automatic update integration have
-separate regression coverage; no installer release has been published. See
+separate regression coverage; a complete installed APT upgrade and actual timer
+invocation pass in the dedicated Linux system. No installer release has been published. See
 [distribution and updates](docs/distribution.md) for build
 commands, Linux requirements and administrator-managed APT updates.
 
