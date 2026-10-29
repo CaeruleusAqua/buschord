@@ -182,7 +182,7 @@ public sealed partial class WorkbenchWorkspace : ObservableObject
         {
             if (stored?.Target is not { IsValid: true } target || targetExists?.Invoke(target) == false) continue;
             var tab = Open(target, stored.Title ?? target.Id,
-                stored.View is "objects" or "params" or "relations" or "overview" ? stored.View : "objects");
+                stored.View is "objects" or "params" or "relations" or "overview" or "diagram" ? stored.View : "objects");
             tab.Filter = stored.Filter ?? ""; tab.IncludeRelated = stored.IncludeRelated;
             tab.UnlinkedOnly = stored.UnlinkedOnly; tab.ScrollOffset = Size(stored.ScrollOffset, 0, 1e8, 0);
             tab.CollapsedDeviceIds.UnionWith((stored.CollapsedDeviceIds ?? []).Where(x => !string.IsNullOrEmpty(x)));

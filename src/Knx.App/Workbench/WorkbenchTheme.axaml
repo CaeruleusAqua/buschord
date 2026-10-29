@@ -475,4 +475,14 @@
   <Style Selector="Button.wb-button:disabled views|Icon">
     <Setter Property="Foreground" Value="{DynamicResource WbDisabledText}" />
   </Style>
+  <Style Selector="Button.wb-diagram-node /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbPaper}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource WbLine}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+  </Style>
+  <Style Selector="Button.wb-diagram-node.active /template/ ContentPresenter#PART_ContentPresenter, Button.wb-diagram-node:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource WbTint}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource WbAccent}"/>
+    <Setter Property="BorderThickness" Value="2"/>
+  </Style>
 </Styles>

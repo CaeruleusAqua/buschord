@@ -621,6 +621,19 @@ inputs. See [CONTRIBUTING](../CONTRIBUTING.md).
 
 The native Workbench supports eight UI languages, Light/Dark, a project portfolio,
 object-centred tabs, catalogue, inspector, reviewed linking and mail-merge TSV.
+The native Bus diagram representation reads the current installation/area/line/
+segment/device containment tree, including empty containers and area-level devices.
+It offers native accessible node buttons, editor navigation, arrow-key traversal,
+bounded zoom, background panning and a readable fit with scrolling for large trees.
+Coupler badges require manufacturer hardware evidence; connectors describe project
+containment, without claiming physical wiring or live status. Per-tab selection,
+zoom and scrolling survive editor switches; edits and undo/redo rebuild the read
+projection from the current model. A synthetic 4,102-device case realizes only the
+viewport's node controls. The standalone Windows `--bus-diagram` regression mode
+passes 27 checks in each of German and English, including actual arranged focus
+bounds, queued refreshes, language changes and the compact inspector layout.
+Light/Dark native renders have been visually inspected; this does not close the
+remaining manual DPI, pointer-device or acoustic screenreader acceptance.
 Local DEMO comparison state is stored separately from project/undo and does not
 prove that a device was programmed.
 
@@ -641,7 +654,7 @@ unmaximized Settings window with both action buttons visible, its last editor
 reachable by scrolling and Tab, and correct Cancel/Save keyboard focus. Native
 dialog suites pass 854 checks in each of German and English; the item-Enter
 regression failed in both themes before the correction. The ordinary UI-state
-suite passes 226 checks. Navigator expansion/collapse and selection retain the
+suite passes 236 checks. Navigator expansion/collapse and selection retain the
 current row's focus across queued refreshes without taking focus from another
 editor. Eight initial native failures exposed the focus loss; two remaining
 failures exposed a second refresh before focus restoration. Both themes now

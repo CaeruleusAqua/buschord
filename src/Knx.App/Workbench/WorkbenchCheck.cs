@@ -413,7 +413,8 @@ internal static class WorkbenchCheck
                 var toolStrip = window.FindControl<StackPanel>("ToolTabs")!;
                 Check("doc/view/tool tab strips expose named TabItem semantics",
                     docStrip.Children.OfType<TabItem>().Any(t => AutomationProperties.GetName(t)?.Length > 0)
-                    && viewStrip.Children.OfType<TabItem>().Count() == 4
+                    && viewStrip.Children.OfType<TabItem>().Select(t => t.Tag as string)
+                        .SequenceEqual(["objects", "params", "relations", "overview", "diagram"])
                     && toolStrip.Children.OfType<TabItem>().Count() >= 6
                     && docStrip.Children.OfType<TabItem>().Concat(viewStrip.Children.OfType<TabItem>())
                         .Concat(toolStrip.Children.OfType<TabItem>())
