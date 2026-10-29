@@ -201,7 +201,7 @@ internal static class M112DownloadChecks
         }
     }
 
-    private sealed class FakeDevice
+    internal sealed class FakeDevice
     {
         internal readonly byte[] Memory = new byte[65536];
         internal readonly List<byte[]> Controls = [];
@@ -210,6 +210,8 @@ internal static class M112DownloadChecks
         internal int Opens, Writes, Disposals;
         internal string? Fault;
         internal bool WrongHardware;
+        internal bool RejectApplicationWhileUnloaded;
+        internal int UnloadedApplicationReadAttempts;
         internal bool WrongIdentityOnRecovery, AutoVerify, Transitions;
         internal int PollsDuringTransition;
         internal CancellationTokenSource? CancelOnWrite;
@@ -299,6 +301,8 @@ internal static class M112DownloadChecks
                 else if (service == 0x380) { device._restarted = true; Emit([0x81]); }
                 else if (service == ManagementApdu.PropertyRead)
                 {
+                    if (tpdu[2] == 3 && tpdu[3] == 13 && device.RejectApplicationWhileUnloaded && !device.Loaded)
+                    { device.UnloadedApplicationReadAttempts++; throw new IOException("Application identity is unavailable while unloaded."); }
                     var oi = tpdu[2]; var pid = tpdu[3]; byte[] value = (oi, pid) switch
                     {
                         (0, 12) => [0,1], (0,11) => device.WrongIdentityOnRecovery && device.Opens > 2 ? [0,1,0,0,0,2] : [0,1,0,0,0,1],

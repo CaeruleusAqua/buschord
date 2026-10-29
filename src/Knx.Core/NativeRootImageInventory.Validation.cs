@@ -14,8 +14,8 @@ internal sealed partial class NativeRootImageInventory
         || element.Name.LocalName == "Extension" && (element.Attributes().Any(a => a.Name.LocalName.StartsWith("Ets", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(a.Value))
             || element.Elements().Any(e => e.Name.LocalName.StartsWith("Ets", StringComparison.Ordinal)))
         || element.Name.LocalName is "Parameter" or "ParameterRef" or "ParameterType" && !string.IsNullOrWhiteSpace((string?)element.Attribute("Plugin"));
-    private static void CheckValue(string? value, string id)
-    { if (value is not null && (value.Length > 64 || value.Any(char.IsControl))) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidValue, id); }
+    private static void CheckValue(string? value, string id, bool raw = false)
+    { if (value is not null && (value.Length > (raw ? 65536 : 64) || !raw && value.Any(char.IsControl))) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidValue, id); }
     private static void CheckSavedBudget<T>(IReadOnlyDictionary<string, T> values) where T : class?
     {
         if (values.Count > 100000) NativeGeneralHash.Fail(NativeGeneralIssueCode.LimitExceeded);
@@ -24,7 +24,8 @@ internal sealed partial class NativeRootImageInventory
         {
             var raw = value as string;
             if (!RootBuildGuard.Safe(key) || raw is null) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidValue);
-            CheckValue(raw, key); if ((text += key.Length + raw.Length) > TextLimit) NativeGeneralHash.Fail(NativeGeneralIssueCode.LimitExceeded);
+            if (raw.Length > 65536) NativeGeneralHash.Fail(NativeGeneralIssueCode.LimitExceeded);
+            if ((text += key.Length + raw.Length) > TextLimit) NativeGeneralHash.Fail(NativeGeneralIssueCode.LimitExceeded);
         }
     }
     private static Dictionary<string, XElement> Index(XElement? container, XName child, bool unicodeIds = false)
@@ -55,6 +56,13 @@ internal sealed partial class NativeRootImageInventory
             if (shapes.Length != 1 || shapes[0].Name.Namespace != ns || declaration.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value)))
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration, id);
             var shape = shapes[0];
+            if (shape.Name.LocalName == "TypeRawData")
+            {
+                var raw = Ksxml.ParseParameterType(declaration);
+                if (raw is null) NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedType, id);
+                NativeRootRawDataCodec.ValidateDeclaration(shape, raw!, id);
+                result.Add(id, raw!); continue;
+            }
             if (admitNone && shape.Name.LocalName == "TypeNone")
             {
                 RootBuildGuard.Leaf(shape);

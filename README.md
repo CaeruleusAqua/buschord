@@ -29,13 +29,13 @@ review; the badges track `development`.
 | Manufacturer catalogues | `.knxprod` import, local library, searchable products, cached metadata and lazy application loading; explicit directory refresh and source-specific download authorization, cancellation and preserved existing catalogues on identity conflicts. See [catalogue acquisition](docs/catalog-downloads.md). |
 | Parameters | Typed drafts, dynamic texts/visibility, bounded calculations, conditional module/Repeat scopes, review, Apply and undo. Unsupported external plug-ins remain read-only. |
 | Offline byte previews | Explicit Number, Value-enum, IEEE-Single and Time subsets; optional absolute/root-relative buffers and bounded root property buffers with source binding, ownership checks and unresolved image requirements. |
-| Offline image planning | Combined logical memory/property initialization, admitted numeric/Single/Time root writers, source policy and current-working-seed M112/SystemB tables under explicit option assumptions; source bindings and unresolved image requirements. |
+| Offline image planning | Combined logical memory/property initialization, admitted numeric/Single/Time and direct-memory RawData root writers, source policy and current-working-seed M112/SystemB tables under explicit option assumptions; source bindings and unresolved image requirements. |
 | Migration | Reviewed parameter/object/channel mappings, link decisions, stale-preview checks and atomic undo. |
 | Reports | CSV, HTML labels, mail-merge TSV, project comparison, acceptance protocol and a deterministic handover ZIP. |
 | Local history | Opt-in telegram recording with time/filter/context queries, export, backup and retention; optional model/undo checkpoints, independent audit and explicit recovery review. See [workflows](docs/workflows.md) and [recovery](docs/recovery.md). |
 | Native UI | Object-centred tabs, project portfolio, inspector, catalogue and independent tools; keyboard command search, high contrast, light/dark themes and eight UI languages. |
 | MCP | 57 stdio tools, protected open/save, reviewed mass linking, explicit script capability, migration and a bounded Jung SP8 KSP import. |
-| Network | KNXnet/IP discovery, tunnel/routing and addressed management; explicit Workbench read-only connection, real group monitor and line scan. A separate [M112 console profile](docs/commissioning.md) supports matching-image reload and reviewed configuration changes with captured-configuration recovery. General Workbench programming remains disabled. |
+| Network | KNXnet/IP discovery, tunnel/routing and addressed management; explicit Workbench read-only connection, real group monitor and line scan. A dedicated [M112 dialog and console profile](docs/commissioning.md) supports reviewed configuration changes and captured-configuration recovery. The library also provides [authenticated Secure UDP sessions](docs/secure-session.md); Secure UI/MCP controls remain open. |
 
 The [status document](docs/status.md) defines exact format, manufacturer, codec,
 script and commissioning boundaries. Supported partial profiles are not a complete
@@ -80,6 +80,7 @@ dotnet run --project src/Knx.Mcp -c Release --no-build -- --selftest
 
 - [User manual](docs/manual.md)
 - [Capabilities, validation and limits](docs/status.md)
+- [Authenticated Secure UDP sessions](docs/secure-session.md)
 - [Product catalogues](catalog.md)
 - [MCP setup and tool contract](mcp.md)
 - [Local project backups](docs/project-backup.md)

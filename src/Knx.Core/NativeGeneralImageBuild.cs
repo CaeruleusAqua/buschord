@@ -142,7 +142,7 @@ internal static class NativeGeneralImageBuild
             var inventory = NativeRootImageInventory.ReadProfile(project!, device!, inputs, admitRootUnions);
             if (!inventory.IsAvailable) throw new NativeGeneralRejected(inventory.Issues.First());
             var ledger = new NativeImagePayloadLedger();
-            ledger.Reserve(inventory.CodeSourcePeakPayloadBytes);
+            ledger.Reserve(inventory.PeakPayloadBytes);
             var preparation = NativeImagePreparation.Prepare(project!, device!, inputs, inventory, options);
             if (!preparation.IsAvailable) throw new NativeGeneralRejected(preparation.Issues.First());
             var application = NativeApplicationEvaluationContext.CreateProfile(project!, device!, inputs,

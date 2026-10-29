@@ -1,10 +1,32 @@
 # Targeted commissioning diagnostics
 
-Normal Workbench and MCP programming actions remain simulations or read-only.
-The separate console probe supports an explicitly selected M112 programming-mode
-test and a separately confirmed, narrow same-configuration application reload for
-mask `0x0701`. These modes do not enable general Workbench or MCP writes, address
+The dedicated Workbench M112 dialog supports reviewed configuration changes and
+captured-configuration recovery for mask `0x0701`. The separate console probe also
+supports a programming-mode test and same-configuration reload. The general
+programming queue remains simulated; these profiles do not enable address
 assignment, factory reset or group-value writes.
+
+## Guided Workbench operation
+
+Select a project device and open **Tools → Review M112 change**. Choose the private
+baseline project and journal directory, then review the offline parameter/table
+proposal. The baseline and current project must use the same application and load
+geometry. A protected baseline uses the existing password prompt; no password is
+saved in the journal. The review itself opens no network connection.
+
+**Read identity** joins monitor shutdown, reserves the gateway and reads the selected
+device. Compare the physical identity, confirm it explicitly, review the immutable
+plan fingerprint and type the target address before applying. Cancellation during
+a destructive operation waits for independent recovery. Results distinguish verified
+download, restored original configuration and recovery requiring attention.
+
+After a process restart, open the same command without a project or selected device
+to use recovery-only mode. Select the private before-image, review its validated
+checksum and identity, read and confirm the physical device, then restore. This path
+does not require a running application, a project password or an offline preview.
+The exact inspected file is checked again before opening a recovery connection.
+Unresolved recovery remains visible and blocks routine owner-window close; leaving
+it requires a separate explicit acknowledgement. Keep its file for the next attempt.
 
 ## Read identity
 

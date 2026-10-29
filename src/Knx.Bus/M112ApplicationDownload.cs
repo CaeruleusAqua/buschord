@@ -138,13 +138,67 @@ public static class M112ApplicationDownload
         CancellationToken ct = default)
     {
         ValidateTarget(expected, confirmedTarget);
-        var info = new FileInfo(recoveryPath);
-        if (!info.Exists || info.Length > 2 * 1024 * 1024) throw new InvalidDataException("Missing or oversized recovery image.");
-        var envelope = JsonSerializer.Deserialize<Envelope>(await File.ReadAllTextAsync(recoveryPath, ct))
-            ?? throw new InvalidDataException("Invalid recovery image.");
-        var saved = envelope.Snapshot;
-        ValidateSnapshot(saved);
-        if (saved.Identity != expected || Hash(saved) != envelope.Sha256) throw new InvalidDataException("Recovery identity or checksum mismatch.");
+        var (saved, _) = await ReadRecoveryFileAsync(recoveryPath, ct);
+        if (saved.Identity != expected) throw new InvalidDataException("Recovery identity mismatch.");
+        return await RecoverValidatedAsync(openConnection, Path.GetFullPath(recoveryPath), saved, confirmedTarget, progress, ct);
+    }
+
+    public static async Task<M112RecoveryInspection> InspectRecoveryAsync(string recoveryPath, CancellationToken ct = default)
+    {
+        var (saved, fileHash) = await ReadRecoveryFileAsync(recoveryPath, ct);
+        return new(Path.GetFullPath(recoveryPath), fileHash, saved.Identity, saved.ImageFingerprint,
+            Convert.ToHexString(SHA256.HashData(saved.Hardware)), Array.AsReadOnly(saved.Segments.Select(segment => new M112RecoverySegmentSummary(
+                segment.ObjectIndex, segment.MemoryType, segment.Address, segment.Size, Convert.ToHexString(SHA256.HashData(segment.Before)))).ToArray()));
+    }
+
+    /// <summary>Restores exactly the reviewed local file; physical device checks are repeated before loading.</summary>
+    public static async Task<M112DownloadResult> RecoverInspectedAsync(Func<CancellationToken, Task<IManagementConnection>> openConnection,
+        M112RecoveryInspection inspection, string confirmedTarget, Action<string>? progress = null, CancellationToken ct = default)
+    {
+        ValidateTarget(inspection.Identity, confirmedTarget);
+        var (saved, fileHash) = await ReadRecoveryFileAsync(inspection.RecoveryPath, ct);
+        if (fileHash != inspection.FileSha256 || saved.Identity != inspection.Identity || saved.ImageFingerprint != inspection.ImageFingerprint)
+            throw new InvalidDataException("The inspected recovery file changed.");
+        return await RecoverValidatedAsync(openConnection, inspection.RecoveryPath, saved, confirmedTarget, progress, ct);
+    }
+
+    private static async Task<(Snapshot Saved, string FileHash)> ReadRecoveryFileAsync(string path, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        const int maximum = 2 * 1024 * 1024;
+        if (!Path.IsPathFullyQualified(path)) throw new InvalidDataException("An absolute recovery path is required.");
+        for (var entry = Path.GetFullPath(path); entry is not null; entry = Path.GetDirectoryName(entry))
+            if ((File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0) throw new InvalidDataException("Recovery links are unsupported.");
+        await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        if (file.Length is < 1 or > maximum) throw new InvalidDataException("Missing or oversized recovery image.");
+        using var bytes = new MemoryStream(); var buffer = new byte[65536];
+        while (true)
+        {
+            var read = await file.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, maximum + 1 - bytes.Length)), ct);
+            if (read == 0) break;
+            bytes.Write(buffer, 0, read);
+            if (bytes.Length > maximum) throw new InvalidDataException("Oversized recovery image.");
+        }
+        var payload = bytes.ToArray();
+        try
+        {
+            var envelope = JsonSerializer.Deserialize<Envelope>(payload, new JsonSerializerOptions { MaxDepth = 32 })
+                ?? throw new InvalidDataException("Invalid recovery image.");
+            var saved = envelope.Snapshot;
+            if (saved is null || saved.Identity is null || saved.Hardware is null || saved.ImageFingerprint is null || saved.Segments is null
+                || saved.Segments.Any(segment => segment is null || segment.Before is null || segment.Desired is null))
+                throw new InvalidDataException("Incomplete recovery image.");
+            ValidateSnapshot(saved);
+            if (Hash(saved) != envelope.Sha256) throw new InvalidDataException("Recovery checksum mismatch.");
+            return (saved, Convert.ToHexString(SHA256.HashData(payload)));
+        }
+        catch (Exception error) when (error is JsonException or ArgumentException or FormatException or OverflowException)
+        { throw new InvalidDataException("Invalid recovery image.", error); }
+    }
+
+    private static async Task<M112DownloadResult> RecoverValidatedAsync(Func<CancellationToken, Task<IManagementConnection>> openConnection,
+        string recoveryPath, Snapshot saved, string confirmedTarget, Action<string>? progress, CancellationToken ct)
+    {
         var directory = Path.GetDirectoryName(Path.GetFullPath(recoveryPath))!;
         using var lease = Lease(Path.GetDirectoryName(directory)!, confirmedTarget);
         using var journal = new Journal(Path.Combine(directory, $"recovery-{Guid.NewGuid():N}.jsonl"), progress);
@@ -307,7 +361,8 @@ public static class M112ApplicationDownload
     private static string ApplicationId(M112ApplicationImage image) => $"{image.Manufacturer:X4}{image.ApplicationNumber:X4}{image.ApplicationVersion:X2}";
     private static void ValidateTarget(ManagementDeviceIdentity expected, string target)
     {
-        if (expected.Address != target || IndividualAddress.Parse(target).ToString() != target || expected.MaskVersion != 0x0701
+        if (expected is null || expected.Address is null || expected.Manufacturer is null || expected.Serial is null || expected.Application is null
+            || expected.Address != target || IndividualAddress.Parse(target).ToString() != target || expected.MaskVersion != 0x0701
             || expected.Manufacturer.Length != 4 || expected.Serial.Length != 12 || expected.Application.Length != 10
             || !expected.Serial.StartsWith(expected.Manufacturer, StringComparison.Ordinal)
             || !expected.Application.StartsWith(expected.Manufacturer, StringComparison.Ordinal))

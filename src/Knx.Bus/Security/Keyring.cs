@@ -48,7 +48,7 @@ public sealed class SecureKey
     /// <summary>16-byte AES-128 user key.</summary>
     public byte[] Key { get; set; } = new byte[16];
 
-    /// <summary>16-byte device authentication code (salt of the key derivation).</summary>
+    /// <summary>Optional stored device authentication material; its interpretation depends on the selected secure profile.</summary>
     public byte[]? DeviceAuthenticationCode { get; set; }
 
     /// <summary>16-byte tool key (secure management of a device); individual keys only.</summary>
@@ -57,17 +57,30 @@ public sealed class SecureKey
     public KeyAddressRange? GroupAddressRange { get; set; }
     public KeyAddressRange? IndividualAddressRange { get; set; }
 
-    /// <summary>Last used 48-bit secure sequence number.</summary>
-    public ulong SequenceNumber { get; set; }
+    private readonly object _sequenceGate = new();
+    private ulong _sequenceNumber;
+    /// <summary>Last allocated 48-bit sequence number. This model is not a durable counter store.</summary>
+    public ulong SequenceNumber
+    {
+        get { lock (_sequenceGate) return _sequenceNumber; }
+        set
+        {
+            if (value > MaxSequenceNumber) throw new ArgumentOutOfRangeException(nameof(value), "A secure sequence is at most 48 bits.");
+            lock (_sequenceGate) _sequenceNumber = value;
+        }
+    }
 
     /// <summary>Expected latency of the secured medium in milliseconds.</summary>
     public int Latency { get; set; } = 1000;
 
-    /// <summary>Returns the next sequence number and stores it (monotone, wraps at 48 bits).</summary>
+    /// <summary>Atomically allocates the next sequence; exhaustion refuses allocation and never wraps. Persistence is a separate requirement.</summary>
     public ulong NextSequenceNumber()
     {
-        SequenceNumber = SequenceNumber >= MaxSequenceNumber ? 0 : SequenceNumber + 1;
-        return SequenceNumber;
+        lock (_sequenceGate)
+        {
+            if (_sequenceNumber >= MaxSequenceNumber) throw new InvalidOperationException("Secure sequence exhausted; replace the key before sending again.");
+            return ++_sequenceNumber;
+        }
     }
 }
 
@@ -79,7 +92,7 @@ public sealed class InterfaceKey
     public string? User { get; set; }
     public string? Password { get; set; }
 
-    /// <summary>16-byte user key derived from password + device authentication code.</summary>
+    /// <summary>16-byte user key for the selected transport profile.</summary>
     public byte[]? Key { get; set; }
 
     public byte[]? DeviceAuthenticationCode { get; set; }

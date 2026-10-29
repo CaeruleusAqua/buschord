@@ -337,6 +337,17 @@ including latent fields, even when the parameter task is skipped. Single uses
 the explicit .NET 10 XML Double-to-Single parser profile. Existing numeric-only
 plan, binding and byte hashes remain unchanged.
 
+Direct byte-aligned root Memory `TypeRawData` fields share this same pipeline,
+including the M112 image/change builder. The reserved extent is `MaxSize + 4`;
+the writer emits a 32-bit payload length in the program byte order and unchanged
+opaque payload bytes. Only `4 + actual length` bytes acquire parameter write bits;
+the tail retains the existing seed/validity policy. Strict Base64, capacity, aliases,
+source binding and payload budgets remain enforced. Raw property, Union, module,
+NoStorage and unaligned fields remain refused. Raw inputs retain the shared
+65,536-character limit. Policy codec profile 4 reports raw field count/framing;
+profiles without RawData retain their previous fingerprints. Forty-four core and
+ten MCP checks cover this extension, including full M112/change-plan integration.
+
 Sources, initial Data/validity, working Data, desired validity and canonical bytes
 remain separate. Factory masks and Count words are not adopted. Contained and
 strictly overlapping region/code and pointer/factory contributions use an ordered
@@ -742,13 +753,13 @@ and window shutdown join network cleanup before an endpoint can be reused. Real
 monitoring supports the existing recording, filters, CSV and optional local history;
 it is not a complete hardware bus monitor. Scans require disconnecting the monitor
 connection and report unknown/unprobed addresses without claiming absence.
-Workbench programming remains a labelled simulation. General device writes and
+The general Workbench programming queue remains a labelled simulation. General device writes and
 application downloads remain disabled. An explicit console-only MDT M112 programming-mode test
 has live identity, write, readback and restoration evidence for one released device;
-see [targeted commissioning](commissioning.md). Secure tunnelling, complete images,
+see [targeted commissioning](commissioning.md). Secure connection controls, complete images,
 complete load flows and general management/Verify/commissioning remain incomplete.
 
-A separate console-only M112 profile now builds bounded root unions and an absolute
+A separate M112 profile builds bounded root unions and an absolute
 full-load recipe for reloading an already matching configuration. Known persistent
 bits, identity, required PEI and table pointers must match before unloading.
 Durable recovery combines captured configuration bytes with the source recipe;
@@ -756,12 +767,30 @@ unobservable allocation metadata and volatile runtime state are outside that cla
 The [commissioning page](commissioning.md) records its exact validation and live status.
 
 A reviewed M112 change plan separately binds baseline and desired projects with the
-same application/layout. The console change mode compiles changed parameters and
+same application/layout. The change mode compiles changed parameters and
 tables, validates actual baseline and active-object RAM geometry, and recovers the
 captured original configuration after failure. This does not enable first provisioning,
 other mask profiles or general Workbench programming. A separate read-only line scanner
 supports explicitly selected device/coupler addresses, joined cancellation and honest
 unknown/unprobed outcomes; it cannot issue configuration writes or restart.
+
+The dedicated M112 Workbench dialog exposes offline review, explicit physical
+identity/target/plan confirmation, guarded apply and inspected-file recovery.
+Recovery-only mode works without a project or running device application.
+Close/project replacement join active recovery; an unresolved recovery requires
+explicit acknowledgement before leaving. The shared recovery inspector and executor
+validate the same bounded snapshot and recheck its exact file hash before opening.
+The extension has 38 state checks, 12 actual compiler/recovery fixtures and 25 native
+checks each in German and English. These are separate from the real device evidence above.
+
+The library's [authenticated Secure UDP session](secure-session.md) uses OS X25519,
+verified gateway/user authentication, bounded framing, replay/counter checks and
+joined cleanup. Twenty-eight focused Secure and 16 legacy-refusal checks pass on
+Windows and Ubuntu 26.04; the complete bus suite passes on both. The previous
+non-interoperable legacy Secure encoders/parsers are fail closed. Protected keyring
+integration, Secure Workbench/MCP controls, Data Secure and commissioning remain open.
+Extended cEMI uses one NPDU length octet and the control-field frame selector;
+81 checks cover published vectors, strict lengths and the shared raw-frame API.
 
 The combined connection implementation has 29 focused state/lifetime checks and
 19 native dialog checks per German/English run. Eleven additional tunnel checks

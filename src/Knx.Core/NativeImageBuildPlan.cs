@@ -46,6 +46,8 @@ public sealed class NativeImageBuildPolicy
     public int SingleFieldCount { get; }
     public int PackedTimeFieldCount { get; }
     public int DenseTimeFieldCount { get; }
+    public int RawDataFieldCount { get; }
+    public string? RawDataEncodingProfile { get; }
     public string SourcePolicyFingerprint { get; }
     public string CodecFactsFingerprint { get; }
     public string Fingerprint { get; }
@@ -58,6 +60,7 @@ public sealed class NativeImageBuildPolicy
         PackedTimeEncodingProfile = codecs.PackedTimeEncodingProfile; DenseTimeEncodingProfile = codecs.DenseTimeEncodingProfile;
         PhysicalFieldCount = codecs.PhysicalFieldCount; SingleFieldCount = codecs.SingleFieldCount;
         PackedTimeFieldCount = codecs.PackedTimeFieldCount; DenseTimeFieldCount = codecs.DenseTimeFieldCount;
+        RawDataFieldCount = codecs.RawDataFieldCount; RawDataEncodingProfile = codecs.RawDataEncodingProfile;
         SourcePolicyFingerprint = policy.Fingerprint; CodecFactsFingerprint = codecs.Fingerprint;
         Fingerprint = NativeGeneralHash.Of(new { version = 1, SourcePolicyFingerprint, CodecFactsFingerprint });
     }

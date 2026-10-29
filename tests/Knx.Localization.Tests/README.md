@@ -3,7 +3,8 @@
 Offline localization gates for the string facades (`Knx.Strings`,
 `Knx.App.Localization.WorkbenchStrings`, `Knx.App.Services.CatalogUiText`,
 `Knx.App.Localization.CatalogDownloadStrings`, `Knx.App.Localization.UpdateUiStrings`,
-`Knx.App.Localization.RecoveryUiStrings` and `Knx.App.Localization.LiveConnectionStrings`).
+`Knx.App.Localization.RecoveryUiStrings`, `Knx.App.Localization.LiveConnectionStrings`
+and `Knx.App.Localization.M112CommissioningStrings`).
 No network or Roslyn: the gates read the runtime reference maps and supported
 JSON catalogs, then scan `src/` and `tests/` as text.
 Runs on Windows and Linux through `TEST_PROJECTS` in `.github/workflows/ci.yml`.
@@ -30,7 +31,7 @@ I18N_GATE_VERBOSE=1 dotnet run --project tests/Knx.Localization.Tests   # print 
 
 Dev-log and selftest output (`src/Knx.Bus`, `src/Knx.Mcp`, `Smoke.cs`, `Screenshot.cs`,
 `WorkbenchCheck.cs`) and the dictionaries themselves are outside the German guard.
-The inline recovery and live-connection catalogs are checked through their own
+The inline recovery, live-connection and M112 commissioning catalogs are checked through their own
 registered language/key lists, including complete values and placeholder validity.
 
 ## Add a key

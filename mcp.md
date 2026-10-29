@@ -418,6 +418,14 @@ controllers remain unsupported. The profile
 retains explicit refusals and unresolved image requirements; see the
 [exact combined scope](docs/status.md#combined-logical-working-stage).
 
+The same native logical pipeline also accepts direct byte-aligned root Memory
+RawData: strict Base64, declared `MaxSize + 4` capacity, a program-byte-order
+32-bit length prefix and opaque payload. The writer touches only the actual frame;
+the tail retains the source seed/validity policy. RawData in properties, unions,
+modules or NoStorage remains refused. `policy.rawDataFieldCount` and
+`rawDataEncodingProfile` describe this extension; codec profile 4 applies when a
+RawData owner is present. Existing profiles retain their previous fingerprints.
+
 For an explicit numeric byte preview, supply both `parameter_subset` (1–64 unique
 `{ "refId": "...", "rawValue": "10" }` items) and `byte_order` (`big_endian` or
 `little_endian`). The additive `offlineParameterPatch` contains small original,

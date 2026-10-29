@@ -307,7 +307,7 @@ internal static class DialogChecks
 
         foreach (var (method, arguments) in new (string, object[])[]
         {
-            ("PromptPasswordAsync", ["Synthetic password prompt", false]),
+            ("PromptPasswordAsync", ["Synthetic password prompt", false, shell]),
             ("PromptPortfolioNameAsync", [shell, "Synthetic portfolio"])
         })
         {
