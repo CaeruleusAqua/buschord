@@ -44,8 +44,10 @@ Einzelgeräteversuche ersetzen diese Endabnahme nicht.
   gemeinsame, bis zum I/O-Ende gehaltene Verbindungsbesitzer. Eine separate
   [Plain-M112-Warteschlange](../docs/real-programming-queue.md) bindet bestätigte
   Einzelaufträge, dauerhafte Belege und Wiederherstellung; Quellenänderungen und
-  ungültige Historie erhalten keine alten Flags. Allgemeine Ladeprofile und
-  vollständige Adressierung bleiben offen.
+  ungültige Historie erhalten keine alten Flags. Die separate
+  [Adressvergabe](../docs/individual-addressing.md) besitzt physische Zielbindung,
+  dauerhaften Intent/Versuchsmarker und lesende Kalt-Reconciliation; ihre
+  Hardwareabnahme, weitere Ladeprofile und sichere Broadcast-Provisionierung bleiben offen.
 - [Geschützte Keyrings](../docs/protected-keyrings.md),
   [Tool/P2P mit Sync](../docs/individual-secure.md),
   [Tool-Konsolen-/MCP-Zugang](../docs/tool-access-console.md) und

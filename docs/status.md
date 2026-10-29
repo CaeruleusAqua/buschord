@@ -905,3 +905,17 @@ General hardware acceptance remains open. Since 2026-10-29, the user has explici
 released one device in the existing installation for targeted programming/write tests.
 This does not authorize other targets or replace broader hardware acceptance. See the
 [targeted test plan](../plans/06-commissioning.md).
+
+Individual-address assignment now has a separate Library/Workbench/MCP workflow:
+exact serial or an explicitly isolated physical device, read-only review,
+independent target reservation, persisted intent/exclusive attempt and one
+address-specific request without NetIP retry. Cancellation/close joins fresh
+read-only reconciliation; cold intents can never resend. Real Adr requires the
+bound current project and a freshly verified, recorded outcome. Legitimate
+coupler targets require hardware-role evidence; device255 is distinguished from
+reserved rawFFFF, and read-only line scans include all256 numbers. Secure
+broadcast provisioning remains refused. The six MCP tools use accepted jobs with
+exact status/cancel IDs, leaving generic group-write/download gates unchanged.
+Synthetic protocol, adverse state/claim, cold-resume, stdio and fake native DE/EN
+checks cover these paths; no real addressing/hardware acceptance is claimed.
+See [workflow and limitations](individual-addressing.md).

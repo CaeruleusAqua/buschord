@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Knx.Bus;
 using Knx.Bus.Connections;
+using Knx.Bus.Commissioning;
 
 namespace Knx.Mcp;
 
@@ -20,11 +21,12 @@ public sealed partial class McpServer
     private static readonly string[] ConnectionFields = ["mode", "gateway", "port", "device", "own_address", "interface",
         "keyring_path", "keyring_password_env", "keyring_project", "host_address", "user_id", "expected_keyring_sha256", "group_security_profile"];
 
-    private static bool IsConnectionTool(string name) => name is "bus_discover" or "bus_connect" or "bus_disconnect" or "bus_read" or "bus_scan" or "bus_device_info" or "bus_tool_identity_read" or "download_plan";
+    private static bool IsConnectionTool(string name) => name.StartsWith("address_assignment_", StringComparison.Ordinal) || name is "bus_discover" or "bus_connect" or "bus_disconnect" or "bus_read" or "bus_scan" or "bus_device_info" or "bus_tool_identity_read" or "download_plan";
     private static string SafeConnectionFailure(Exception error) => "KNX connection operation failed: " + (error switch
     {
         KnxConnectionException connection => connection.Failure.ToString(),
         ToolConsoleException tool => tool.Failure.ToString(),
+        AddressAssignmentException address => address.Failure.ToString(),
         OperationCanceledException => "Cancelled",
         _ => "ConnectionFailed",
     });
@@ -57,6 +59,7 @@ public sealed partial class McpServer
     private async Task<object> ReplaceProjectAsync(JsonElement args, Func<JsonElement, object> action)
     {
         using var job = await EnterConnectionJobAsync();
+        await CloseAddressAssignmentAsync().ConfigureAwait(false);
         await _bus.DisposeAsync().ConfigureAwait(false);
         _selectedConnectionProfile = null; _secureConnectionRequested = false;
         return action(args);

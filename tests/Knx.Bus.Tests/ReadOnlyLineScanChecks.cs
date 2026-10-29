@@ -17,7 +17,8 @@ internal static class ReadOnlyLineScanChecks
             ("empty targets", () => new ReadOnlyLineScanPlan(Plan().Gateway, new(1,0,250), [])),
             ("duplicate targets", () => new ReadOnlyLineScanPlan(Plan().Gateway, new(1,0,250), [Address(1), Address(1)])),
             ("different lines", () => new ReadOnlyLineScanPlan(Plan().Gateway, new(1,0,250), [Address(1), new(1,2,1)])),
-            ("reserved target", () => new ReadOnlyLineScanPlan(Plan().Gateway, new(1,0,250), [Address(255)])),
+            ("reserved target", () => new ReadOnlyLineScanPlan(Plan().Gateway, new(1,0,250), [new(ushort.MaxValue)])),
+            ("zero target", () => new ReadOnlyLineScanPlan(Plan().Gateway, new(1,0,250), [IndividualAddress.Zero])),
             ("unbounded targets", () => new ReadOnlyLineScanPlan(Plan().Gateway, new(1,0,250), Enumerable.Repeat(Address(1), int.MaxValue))),
             ("multicast gateway", () => new ReadOnlyLineScanPlan(new(IPAddress.Parse("224.0.23.12"), 3671), new(1,0,250), [Address(1)])),
             ("broadcast gateway", () => new ReadOnlyLineScanPlan(new(IPAddress.Broadcast, 3671), new(1,0,250), [Address(1)])),
@@ -63,7 +64,11 @@ internal static class ReadOnlyLineScanChecks
             && coupler.Observations[0].Address == Address(0) && coupler.Observations[0].MaskVersion == 0x0701
             && couplerFixture.Peers.Single().DataRequests.Count == 1 && couplerFixture.Disposed == 1);
 
-        foreach (var target in new[] { Address(0), Address(1) })
+        var last = await new ReadOnlyLineScanner(couplerFixture.Open).ScanAsync(new(Plan().Gateway, new(1,0,250), [Address(255)], TimeSpan.FromMilliseconds(400), TimeSpan.Zero));
+        Check("line target255 remains a legitimate readable unicast address", last.RespondedCount == 1 && last.Observations[0].Address == Address(255));
+        var completePlan = new ReadOnlyLineScanPlan(Plan().Gateway, new(1,0,250), Enumerable.Range(0, 256).Select(Address));
+        Check("full line includes both coupler0 and device255", completePlan.Targets.Count == 256 && completePlan.Targets[^1] == Address(255));
+        foreach (var target in new[] { Address(0), Address(1), Address(255) })
         {
             var peer = new ScanPeer(target, new(1,0,250), null, null);
             await using var readOnlyClient = new KnxManagementClient(peer, target, readOnly: true, TimeSpan.FromMilliseconds(100));
@@ -99,7 +104,7 @@ internal static class ReadOnlyLineScanChecks
         try { _ = new KnxManagementClient(new ScanPeer(Address(0), new(1,0,250), null, null), Address(0)); }
         catch (ArgumentOutOfRangeException) { legacyCouplerRejected = true; }
         var readOnlyReservedRejected = false;
-        try { _ = new KnxManagementClient(new ScanPeer(Address(255), new(1,0,250), null, null), Address(255), readOnly: true); }
+        try { _ = new KnxManagementClient(new ScanPeer(new(ushort.MaxValue), new(1,0,250), null, null), new(ushort.MaxValue), readOnly: true); }
         catch (ArgumentOutOfRangeException) { readOnlyReservedRejected = true; }
         Check("legacy writer coupler restriction and reserved address restriction remain", legacyCouplerRejected && readOnlyReservedRejected);
 
@@ -202,10 +207,10 @@ internal static class ReadOnlyLineScanChecks
 
         var fullLineFixture = new ScanFixture();
         var fullLine = await new ReadOnlyLineScanner(fullLineFixture.Open).ScanAsync(
-            new(Plan().Gateway, new(1,0,250), Enumerable.Range(0, 255).Select(Address), TimeSpan.FromMilliseconds(400), TimeSpan.Zero));
-        Check("full 255-target line including coupler remains read-only sequential and disposed", fullLine.RespondedCount == 255
-            && fullLineFixture.Opened == 255 && fullLineFixture.Disposed == 255 && fullLineFixture.MaxActive == 1 && fullLineFixture.Active == 0
-            && fullLine.Observations[0].Address == Address(0) && fullLine.Observations[^1].Address == Address(254)
+            new(Plan().Gateway, new(1,0,250), Enumerable.Range(0, 256).Select(Address), TimeSpan.FromMilliseconds(400), TimeSpan.Zero));
+        Check("full 256-target line including coupler and255 remains read-only sequential and disposed", fullLine.RespondedCount == 256
+            && fullLineFixture.Opened == 256 && fullLineFixture.Disposed == 256 && fullLineFixture.MaxActive == 1 && fullLineFixture.Active == 0
+            && fullLine.Observations[0].Address == Address(0) && fullLine.Observations[^1].Address == Address(255)
             && fullLineFixture.Peers.All(p => p.DataRequests.Count == 1 && ManagementApdu.Service(p.DataRequests[0]) == 0x300));
 
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

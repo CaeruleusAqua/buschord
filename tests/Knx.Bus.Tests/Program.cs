@@ -7,6 +7,9 @@ using Knx;
 using Knx.Bus;
 using Knx.Bus.Security;
 
+if (args.Contains("--individual-address-assignment"))
+{ Environment.Exit(await IndividualAddressAssignmentChecks.RunAsync()); return; }
+
 if (args.Contains("--individual-address-wire"))
 {
     Environment.Exit(await IndividualAddressWireChecks.RunAsync());
@@ -818,6 +821,7 @@ Check("provisioned secure group connection checks", await GroupConnectionChecks.
 Check("individual address wire checks", await IndividualAddressWireChecks.RunAsync() == 0);
 Check("individual address discovery checks", await IndividualAddressDiscoveryChecks.RunAsync() == 0);
 Check("explicit password-source group host checks", await GroupHostExplicitSourceChecks.RunAsync() == 0);
+Check("reviewed individual address assignment checks", await IndividualAddressAssignmentChecks.RunAsync() == 0);
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 

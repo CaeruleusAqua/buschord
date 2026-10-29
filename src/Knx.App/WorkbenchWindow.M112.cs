@@ -17,6 +17,7 @@ public partial class WorkbenchWindow
     private async Task ShowM112Async()
     {
         if (_realProgrammingWindow is { } queue) { queue.Activate(); return; }
+        if (_addressAssignmentWindow is { } addressing) { addressing.Activate(); return; }
         if (_m112Window is not null) { _m112Window.Activate(); return; }
         EnsureSessions();
         var selected = ViewModel.SelectedDevice;

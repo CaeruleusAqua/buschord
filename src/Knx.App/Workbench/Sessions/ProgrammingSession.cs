@@ -393,6 +393,30 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
         _states[job.DeviceId] = state.ApplyFailure(error, DateTimeOffset.UtcNow, job.InterfaceId, OriginOf(job.Origin));
     }
 
+    /// <summary>Only the freshly verified bound address is proved; no old DEMO/application/configuration flags are promoted.</summary>
+    internal bool RecordVerifiedIndividualAddress(string deviceId, string frozenSignature, Knx.Bus.Commissioning.AddressAssignmentResult result)
+    {
+        VerifyAccess(); ThrowIfDisposed(); if (IsRunning || !result.AddressVerified || result.Identity is null) return false;
+        var project = _project(); var device = project is null ? null : ProjectQuery.DeviceList(project).SingleOrDefault(item => item.Id == deviceId);
+        if (device is null || device.Address.ToString() != result.NewAddress || _freeze(project!, device).Signature != frozenSignature) return false;
+        var previous = (_states.GetValueOrDefault(deviceId) ?? DeviceProgrammingState.Empty(deviceId)) with { Flags = DeviceLoadFlags.None };
+        _states[deviceId] = previous.ApplySuccess(DeviceLoadFlags.IndividualAddress, frozenSignature,
+            DateTimeOffset.UtcNow, "address-intent:" + result.ReviewFingerprint, ProgrammingOrigin.Real);
+        PublishDownloaded(); return true;
+    }
+    internal void InvalidateIndividualAddressEvidence(string deviceId)
+    {
+        VerifyAccess(); ThrowIfDisposed();
+        if (_states.TryGetValue(deviceId, out var state)) { _states[deviceId] = state with { Flags = DeviceLoadFlags.None }; PublishDownloaded(); }
+    }
+    internal void RecordIndividualAddressFailure(string deviceId, Knx.Bus.Commissioning.AddressAssignmentResult result)
+    {
+        VerifyAccess(); ThrowIfDisposed(); if (IsRunning || result.AddressVerified || !result.WriteAttemptClaimed) return;
+        var state = (_states.GetValueOrDefault(deviceId) ?? DeviceProgrammingState.Empty(deviceId)) with { Flags = DeviceLoadFlags.None };
+        _states[deviceId] = state.ApplyFailure(result.State.ToString(), DateTimeOffset.UtcNow, "address-intent:" + result.ReviewFingerprint, ProgrammingOrigin.Real);
+        PublishDownloaded();
+    }
+
     // Only explicitly named partial operations are partial; an unknown label stays a full demo load.
     private static DeviceLoadFlags LoadFlags(ProgrammingJobType type) => type switch
     {

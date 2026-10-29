@@ -28,11 +28,11 @@ public sealed class ReadOnlyLineScanPlan
             throw new ArgumentException("An explicit unicast IPv4 gateway endpoint is required.", nameof(gateway));
         if (requestedTunnelAddress.Device is 0 or 255)
             throw new ArgumentOutOfRangeException(nameof(requestedTunnelAddress));
-        var selected = targets.Take(256).ToArray();
-        if (selected.Length is < 1 or > 255 || selected.Any(a => a.Device == 255)
+        var selected = targets.Take(257).ToArray();
+        if (selected.Length is < 1 or > 256 || selected.Any(a => a.Raw is 0 or ushort.MaxValue)
             || selected.Any(a => (a.Raw >> 8) != (selected[0].Raw >> 8))
             || selected.Distinct().Count() != selected.Length)
-            throw new ArgumentException("Select 1..255 distinct targets on one line with device numbers 0..254.", nameof(targets));
+            throw new ArgumentException("Select 1..256 distinct unicast targets on one line; 0.0.0 and the 15.15.255 factory address are not targets.", nameof(targets));
         ProbeTimeout = probeTimeout ?? TimeSpan.FromSeconds(3);
         InterTargetDelay = interTargetDelay ?? TimeSpan.FromMilliseconds(100);
         if (ProbeTimeout < TimeSpan.FromMilliseconds(50) || ProbeTimeout > TimeSpan.FromSeconds(30))

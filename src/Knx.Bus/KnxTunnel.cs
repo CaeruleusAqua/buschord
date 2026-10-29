@@ -243,6 +243,15 @@ public sealed class KnxTunnel : IAsyncDisposable
     public async Task SendTelegramAsync(Telegram telegram, CancellationToken ct = default)
         => await SendCemiAsync(Cemi.LDataRequest(telegram.WithSource(AssignedAddress)), ct);
 
+    /// <summary>One address-assignment request without KNXnet/IP retransmission. A missing ACK is uncertain and must be reconciled read-only; never resend automatically.</summary>
+    public Task SendIndividualAddressOnceAsync(IndividualAddress address, ReadOnlyMemory<byte> exactSerial = default, CancellationToken ct = default, bool confirmCouplerAddress = false)
+    {
+        if (address.Raw is 0 or ushort.MaxValue || address == AssignedAddress || address.Device == 0 && (!confirmCouplerAddress || address.Area == 0)) throw new ArgumentOutOfRangeException(nameof(address));
+        if (_cemiSecurity is not null) throw new NotSupportedException("Secure broadcast provisioning is not supported by this profile.");
+        var telegram = exactSerial.IsEmpty ? Management.IndividualAddressWriteTelegram(address) : Management.IndividualAddressSerialWriteTelegram(exactSerial.Span, address);
+        return SendCemiAsync(Cemi.LDataRequest(telegram.WithSource(AssignedAddress)), ct, allowRetry: false);
+    }
+
     /// <summary>
     /// Sends one group value read and waits for the matching GroupValueResponse from a device.
     /// Returns null on timeout; the tunnel's own L_Data.con echo never satisfies the wait.
@@ -309,7 +318,7 @@ public sealed class KnxTunnel : IAsyncDisposable
     /// send fails. The sequence counter advances once per telegram, as the specification
     /// requires.
     /// </summary>
-    private async Task SendCemiAsync(byte[] cemi, CancellationToken ct)
+    private async Task SendCemiAsync(byte[] cemi, CancellationToken ct, bool allowRetry = true)
     {
         using var operation = BeginOperation(ct);
         var prepared = cemi.ToArray();
@@ -323,12 +332,12 @@ public sealed class KnxTunnel : IAsyncDisposable
                 prepared = secured.ToArray();
             }
             operation.Token.ThrowIfCancellationRequested();
-            await SendCemiLockedAsync(prepared, operation.Token);
+            await SendCemiLockedAsync(prepared, operation.Token, allowRetry);
         }
         finally { _sendGate.Release(); }
     }
 
-    private async Task SendCemiLockedAsync(byte[] cemi, CancellationToken ct)
+    private async Task SendCemiLockedAsync(byte[] cemi, CancellationToken ct, bool allowRetry = true)
     {
         if (State != BusConnectionState.Connected)
             throw new OperationCanceledException("The admitted send was cancelled by tunnel shutdown.", ct);
@@ -362,7 +371,7 @@ public sealed class KnxTunnel : IAsyncDisposable
                     }
                     catch (OperationCanceledException) when (!ct.IsCancellationRequested && !_cts.IsCancellationRequested)
                     {
-                        if (attempt > 0) throw new TimeoutException($"no TUNNELLING_ACK for sequence {sequence}");
+                        if (!allowRetry || attempt > 0) throw new TimeoutException($"no TUNNELLING_ACK for sequence {sequence}");
                         Log($"no ACK for sequence {sequence}, repeating once");
                         continue;
                     }
