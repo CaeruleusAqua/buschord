@@ -19,19 +19,23 @@ public sealed partial class McpServer
     private static readonly string[] ConnectionFields = ["mode", "gateway", "port", "device", "own_address", "interface",
         "keyring_path", "keyring_password_env", "keyring_project", "host_address", "user_id", "expected_keyring_sha256"];
 
-    private static bool IsConnectionTool(string name) => name is "bus_discover" or "bus_connect" or "bus_disconnect" or "bus_read" or "bus_scan" or "bus_device_info" or "download_plan";
+    private static bool IsConnectionTool(string name) => name is "bus_discover" or "bus_connect" or "bus_disconnect" or "bus_read" or "bus_scan" or "bus_device_info" or "bus_tool_identity_read" or "download_plan";
     private static string SafeConnectionFailure(Exception error) => "KNX connection operation failed: " + (error switch
     {
         KnxConnectionException connection => connection.Failure.ToString(),
+        ToolConsoleException tool => tool.Failure.ToString(),
         OperationCanceledException => "Cancelled",
         _ => "ConnectionFailed",
     });
-    private static void RefuseSecretArguments(JsonElement args)
+    private static void RefuseSecretArguments(JsonElement args, bool allowToolReferences = false)
     {
         if (args.ValueKind != JsonValueKind.Object) return;
         foreach (var property in args.EnumerateObject())
         {
             var name = property.Name.ToLowerInvariant();
+            if (!allowToolReferences && (name.StartsWith("tool_", StringComparison.Ordinal) || name.StartsWith("counter_", StringComparison.Ordinal)
+                || name is "confirm_current_state" or "state_trust" or "wire_tpdu_capacity" or "ordinary_p2p_key_sha256"))
+                throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
             if (name is "key" or "tool_key" or "user_key" or "device_key" or "authentication" or "authentication_code" or "device_authentication_code"
                 || name.Contains("password", StringComparison.Ordinal) && name != "keyring_password_env")
                 throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);

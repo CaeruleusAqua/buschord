@@ -86,6 +86,13 @@ The explicit M112 CLI supports corresponding `--transport ip_secure_udp`,
 sends no network traffic. Existing physical identity, plan confirmation and
 private recovery requirements still apply.
 
+The [explicit Tool-Access console profile](tool-access-console.md) adds target-bound
+Tool Sync over the authenticated gateway using one signed import and an existing
+provisioned counter store. It has separate private configuration and explicit
+current-unanchored-state confirmation. `bus_tool_identity_read` exposes only a
+standalone read-only use of that profile. It requires a free gateway reservation;
+other bus tools refuse Tool/counter fields before I/O.
+
 ## Acceptance limits
 
 Independent synthetic gateways check the protocol and selection, authentication
@@ -93,8 +100,9 @@ failure, assigned-address mismatch, exact source pin, downgrade refusal, shared
 ownership and joined cleanup. Native German/English tests check the real selection
 and password controls. The combined maintained suites provide integration checks;
 they do not establish interoperability with a physical Secure gateway or a Secure
-application download. Ordinary group security, provisioned
-Tool Access/Sync and secure first commissioning remain separate profiles/work.
+application download. Ordinary group security and secure first commissioning
+remain separate profiles/work. Tool-Access console software
+tests do not supply a physical-device interoperability claim.
 
 See [IP Secure protocol](secure-session.md), [protected exports](protected-keyrings.md)
 and [Data Secure counters](data-secure.md).

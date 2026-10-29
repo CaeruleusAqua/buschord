@@ -15,6 +15,7 @@ public sealed record M112DownloadResult(bool DownloadedAndVerified, bool Rollbac
 /// <summary>Explicit M112 reload or reviewed configuration change, with a durable before-image and independent rollback.</summary>
 public static class M112ApplicationDownload
 {
+    public const int MemoryTransferBlockLength = 12;
     private sealed class VerificationMismatch(string message) : IOException(message);
     private sealed record SavedSegment(byte ObjectIndex, byte SegmentType, ushort Address, ushort Size,
         byte Access, byte MemoryType, byte Flags, byte[] Before, byte[] Desired);
@@ -239,9 +240,9 @@ public static class M112ApplicationDownload
             {
                 journal.TryRecord("writing_segment", new { oi, segment.Address, segment.Size, original });
                 var bytes = original ? segment.Before : segment.Desired;
-                for (var offset = 0; offset < bytes.Length; offset += 12)
+                for (var offset = 0; offset < bytes.Length; offset += MemoryTransferBlockLength)
                     await client.WriteMemoryAsync(checked((ushort)(segment.Address + offset)),
-                        bytes.AsMemory(offset, Math.Min(12, bytes.Length - offset)), (saved.DeviceControl & 4) != 0, ct);
+                        bytes.AsMemory(offset, Math.Min(MemoryTransferBlockLength, bytes.Length - offset)), (saved.DeviceControl & 4) != 0, ct);
                 var verify = await ReadRangeAsync(client, segment.Address, segment.Size, ct);
                 if (!verify.AsSpan().SequenceEqual(bytes)) throw new IOException($"Segment verification failed at 0x{segment.Address:X4}.");
             }
@@ -335,8 +336,8 @@ public static class M112ApplicationDownload
     private static async Task<byte[]> ReadRangeAsync(KnxManagementClient client, ushort address, ushort size, CancellationToken ct)
     {
         var bytes = new byte[size];
-        for (var offset = 0; offset < size; offset += 12)
-            (await client.ReadMemoryAsync(checked((ushort)(address + offset)), (byte)Math.Min(12, size - offset), ct)).CopyTo(bytes, offset);
+        for (var offset = 0; offset < size; offset += MemoryTransferBlockLength)
+            (await client.ReadMemoryAsync(checked((ushort)(address + offset)), (byte)Math.Min(MemoryTransferBlockLength, size - offset), ct)).CopyTo(bytes, offset);
         return bytes;
     }
 

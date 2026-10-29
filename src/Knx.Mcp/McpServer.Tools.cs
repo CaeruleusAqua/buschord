@@ -359,6 +359,15 @@ public sealed partial class McpServer
                 IntProp("timeout_ms", "Gateway search duration in ms (100..10000, default 1500)."),
                 IntProp("response_timeout_ms", "Collect and probe timeout in ms (100..5000, default 1000).")),
             BusScanTool),
+        new("bus_tool_identity_read",
+            "Read one device identity/status through explicitly provisioned Tool Access. Uses a pinned private configuration reference and one " +
+            "fresh authenticated management owner; never writes the device or disconnects an existing session. A free gateway reservation is required. " +
+            "confirm_current_state is the provisioning owner's explicit assertion of current unanchored counters, not rollback protection or write consent.",
+            Schema(StrProp("gateway", "Canonical explicit gateway IPv4 matching the configuration.", true),
+                StrProp("target", "Canonical target IA matching the configuration.", true),
+                StrProp("tool_access_config", "Absolute private Tool configuration reference; no key/password values.", true),
+                StrProp("confirm_current_state", "Repeat the exact target IA to assert current unanchored state; older valid backups cannot be detected.", true)),
+            BusToolIdentityRead),
         new("bus_device_info",
             "Read the device descriptor of one individual address (mask version and descriptor type) over the active " +
             "tunnel or one reserved short-lived factory operation. Explicit Secure selectors never fall back to plain. " +
