@@ -1,6 +1,7 @@
 using Avalonia.Threading;
 using Knx.App.Localization;
 using Knx.App.Workbench;
+using Knx.App.Services;
 using Knx.Bus;
 
 namespace Knx.App;
@@ -8,6 +9,7 @@ namespace Knx.App;
 public partial class WorkbenchWindow
 {
     private readonly Func<ReadOnlyConnectionOptions, IReadOnlyWorkbenchBackend>? _realConnectionFactory;
+    private readonly WorkbenchCredentialVaultOwner _credentialVaultOwner;
     private ReadOnlyWorkbenchConnection? _liveConnection;
     private ReadOnlyConnectionOptions? _liveOptions;
     private ConnectionWindow? _connectionWindow;
@@ -69,7 +71,8 @@ public partial class WorkbenchWindow
         if (_liveConnection is null) return;
         if (_connectionWindow is not null) { _connectionWindow.Activate(); return; }
         var connection = _liveConnection;
-        var window = _connectionWindow = new(connection, _liveOptions, ViewModel.Project?.Name ?? "");
+        var window = _connectionWindow = new(connection, _liveOptions, ViewModel.Project?.Name ?? "",
+            WorkbenchCredentialVaultOwner.ProjectScope(ViewModel.Project, ViewModel.ProjectPath), _credentialVaultOwner);
         try
         {
             await window.ShowDialog(this);
@@ -79,6 +82,8 @@ public partial class WorkbenchWindow
         }
         finally { if (ReferenceEquals(_connectionWindow, window)) _connectionWindow = null; }
     }
+    private async Task CloseCredentialVaultAfterSessionsAsync(Task sessionsEnded)
+    { await sessionsEnded; await _credentialVaultOwner.DisposeAsync(); }
     private void ConfigureMonitorSource(WorkbenchSessions sessions, bool real, WorkbenchMonitorMode mode)
     {
         if (sessions.Monitor.IsRunning) sessions.Monitor.Stop();

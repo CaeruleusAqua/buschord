@@ -681,6 +681,7 @@ var keys = (UserKey: Convert.FromHexString("00112233445566778899AABBCCDDEEFF"),
 // ---- 10. Authenticated IP sessions and legacy refusal ----
 Check("authenticated secure tunnel checks", await SecureTunnelChecks.RunAsync() == 0);
 Check("connection profile factory checks", await ConnectionProfileChecks.RunAsync() == 0);
+Check("protected OS credential vault synthetic checks", await CredentialVaultChecks.RunAsync() == 0);
 Check("legacy secure APIs fail closed", LegacySecurityChecks.Run() == 0);
 
 // ---- 15. CSV-Export: RFC 4180 und Formel-Neutralisierung ----

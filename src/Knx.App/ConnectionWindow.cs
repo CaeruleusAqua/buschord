@@ -7,6 +7,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Knx.App.Localization;
+using Knx.App.Services;
 using Knx.App.Workbench;
 using Knx.Bus.Connections;
 using Knx.Bus.Security;
@@ -30,6 +31,8 @@ public sealed class ConnectionWindow : Window
     private readonly Button _keyring = new() { Name = "LiveConfigureSecure", Classes = { "wb-button", "wb-quiet" } };
     private readonly TextBlock _binding = new() { Name = "LiveSecureBinding", TextWrapping = TextWrapping.Wrap };
     private readonly string _expectedKeyringProject;
+    private readonly string? _credentialScope;
+    private readonly WorkbenchCredentialVaultOwner? _credentialOwner;
     private SecureKeyringReference? _secureReference;
     private ISecurePasswordSource? _passwordSource;
     private SecureConnectionWindow? _secureDialog;
@@ -38,15 +41,18 @@ public sealed class ConnectionWindow : Window
     public ReadOnlyConnectionOptions? Options { get; private set; }
     public Task OperationCompletion => _operation ?? Task.CompletedTask;
 
-    public ConnectionWindow(ReadOnlyWorkbenchConnection connection, ReadOnlyConnectionOptions? initial = null, string expectedKeyringProject = "")
+    public ConnectionWindow(ReadOnlyWorkbenchConnection connection, ReadOnlyConnectionOptions? initial = null, string expectedKeyringProject = "",
+        string? credentialScope = null, WorkbenchCredentialVaultOwner? credentialOwner = null)
     {
         _connection = connection;
         _expectedKeyringProject = expectedKeyringProject;
+        _credentialScope = credentialScope; _credentialOwner = credentialOwner;
         Width = 640; Height = 610; MinWidth = 400; MinHeight = 350;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Classes.Add("wb-dialog");
         Options = initial;
         if (initial is not null) { _gateway.Text = initial.Gateway.Address.ToString(); _port.Text = initial.Port.ToString(); _address.Text = initial.RequestedAddress.ToString(); }
         if (initial?.Profile.Kind == KnxTransportKind.IpSecureUdp) { _mode.SelectedIndex = 1; _secureReference = initial.Profile.Keyring; _passwordSource = initial.Profile.PasswordSource; }
+        if (!CredentialSelectionSession.MatchesStoredBinding(_credentialScope, _secureReference, _passwordSource)) { _secureReference = null; _passwordSource = null; Options = null; }
         var body = new StackPanel { Spacing = 10, Margin = new Thickness(20) };
         void Field(string key, TextBox input)
         {
@@ -129,12 +135,12 @@ public sealed class ConnectionWindow : Window
         => _mode.SelectedIndex switch
         {
             0 => new(gateway, port, address),
-            1 when _secureReference is not null => new(KnxConnectionProfile.IpSecure(new(gateway, port), _secureReference, _passwordSource)),
+            1 when _secureReference is not null && CredentialSelectionSession.MatchesStoredBinding(_credentialScope, _secureReference, _passwordSource) => new(KnxConnectionProfile.IpSecure(new(gateway, port), _secureReference, _passwordSource)),
             _ => throw new ArgumentException("Invalid explicit transport selection.")
         };
     private async Task ConfigureSecureAsync()
     {
-        var dialog = _secureDialog = new SecureConnectionWindow(Owner as Window ?? this, _expectedKeyringProject);
+        var dialog = _secureDialog = new SecureConnectionWindow(Owner as Window ?? this, _expectedKeyringProject, _credentialScope, _credentialOwner);
         try { await dialog.ShowDialog(this); await dialog.OperationCompletion;
             if (dialog.Selection is { } selected) { _secureReference = selected; _passwordSource = dialog.PasswordSource; _address.Text = selected.TunnelAddress.ToString(); } }
         finally { _secureDialog = null; }

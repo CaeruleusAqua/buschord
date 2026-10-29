@@ -9,6 +9,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Knx.App.Localization;
+using Knx.App.Services;
 using Knx.App.Workbench;
 using Knx.Bus.Connections;
 using Knx.Bus.Security;
@@ -34,6 +35,8 @@ public sealed class M112CommissioningWindow : Window
     private ISecurePasswordSource? _passwordSource;
     private SecureConnectionWindow? _secureDialog;
     private readonly string _expectedKeyringProject;
+    private readonly string? _credentialScope;
+    private readonly WorkbenchCredentialVaultOwner? _credentialOwner;
     private readonly TextBox _target = new() { Name = "M112ConfirmTarget", Classes = { "wb-field" } };
     private readonly TextBlock _scope = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _status = new() { Name = "M112Status", TextWrapping = TextWrapping.Wrap };
@@ -52,15 +55,18 @@ public sealed class M112CommissioningWindow : Window
     public bool MayClose => !_session.RecoveryRequired || _closeUnverified.IsChecked == true;
 
     public M112CommissioningWindow(M112CommissioningSession session, Func<Window, Task<M112BaselineSelection?>> loadBaseline,
-        ReadOnlyConnectionOptions? initial = null, Func<Task>? prepareNetwork = null, string expectedKeyringProject = "")
+        ReadOnlyConnectionOptions? initial = null, Func<Task>? prepareNetwork = null, string expectedKeyringProject = "",
+        string? credentialScope = null, WorkbenchCredentialVaultOwner? credentialOwner = null)
     {
         _session = session; _loadBaseline = loadBaseline; _prepareNetwork = prepareNetwork ?? (() => Task.CompletedTask);
         _expectedKeyringProject = expectedKeyringProject;
+        _credentialScope = credentialScope; _credentialOwner = credentialOwner;
         Width = 900; Height = 820; MinWidth = 480; MinHeight = 420;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Classes.Add("wb-dialog");
         if (initial is not null) { _gateway.Text = initial.Gateway.Address.ToString(); _port.Text = initial.Port.ToString(); _source.Text = initial.RequestedAddress.ToString(); }
         if (initial is not null) _mode.SelectedIndex = initial.Profile.Kind == KnxTransportKind.IpSecureUdp ? 1 : 0;
         if (initial?.Profile.Kind == KnxTransportKind.IpSecureUdp) { _secureReference = initial.Profile.Keyring; _passwordSource = initial.Profile.PasswordSource; }
+        if (!CredentialSelectionSession.MatchesStoredBinding(_credentialScope, _secureReference, _passwordSource)) { _secureReference = null; _passwordSource = null; }
         var body = new StackPanel { Spacing = 10, Margin = new Thickness(20) };
         body.Children.Add(_scope);
         void Field(string key, TextBox input, bool live = false)
@@ -169,13 +175,13 @@ public sealed class M112CommissioningWindow : Window
         return _mode.SelectedIndex switch
         {
             0 => new(address, port, source),
-            1 when _secureReference is not null => new(KnxConnectionProfile.IpSecure(new(address, port), _secureReference, _passwordSource)),
+            1 when _secureReference is not null && CredentialSelectionSession.MatchesStoredBinding(_credentialScope, _secureReference, _passwordSource) => new(KnxConnectionProfile.IpSecure(new(address, port), _secureReference, _passwordSource)),
             _ => throw new InvalidOperationException("Target")
         };
     }
     private async Task ConfigureSecureAsync()
     {
-        ResetReview(); var dialog = _secureDialog = new SecureConnectionWindow(this, _expectedKeyringProject);
+        ResetReview(); var dialog = _secureDialog = new SecureConnectionWindow(this, _expectedKeyringProject, _credentialScope, _credentialOwner);
         try
         {
             await dialog.ShowDialog(this); await dialog.OperationCompletion;
