@@ -9,8 +9,10 @@
 exports building automation projects, manages manufacturer catalogues and provides
 a headless MCP server for agent workflows. It uses .NET 10 and Avalonia 12.1.4.
 
-The Workbench edits projects offline. Monitor, scan and programming sessions use
-labelled simulations. Hardware commissioning has not been accepted. See the
+The Workbench edits projects offline and offers an explicit read-only UDP tunnel,
+real group monitor and addressed line scan alongside labelled demonstrations.
+A separate M112 console profile has targeted download/change/recovery evidence;
+general commissioning and production acceptance remain open. See the
 [current capabilities and limits](docs/status.md) and [overall plan](plans/00-gesamtplan.md).
 
 Use `development` for integrated source. Feature branches contain work awaiting
@@ -33,7 +35,7 @@ review; the badges track `development`.
 | Local history | Opt-in telegram recording with time/filter/context queries, export, backup and retention; optional model/undo checkpoints, independent audit and explicit recovery review. See [workflows](docs/workflows.md) and [recovery](docs/recovery.md). |
 | Native UI | Object-centred tabs, project portfolio, inspector, catalogue and independent tools; keyboard command search, high contrast, light/dark themes and eight UI languages. |
 | MCP | 57 stdio tools, protected open/save, reviewed mass linking, explicit script capability, migration and a bounded Jung SP8 KSP import. |
-| Network | KNXnet/IP discovery, tunnel/routing and addressed management; an explicit [MDT M112 programming-mode console test](docs/commissioning.md) with restoration. General device writes and application downloads remain disabled. |
+| Network | KNXnet/IP discovery, tunnel/routing and addressed management; explicit Workbench read-only connection, real group monitor and line scan. A separate [M112 console profile](docs/commissioning.md) supports matching-image reload and reviewed configuration changes with captured-configuration recovery. General Workbench programming remains disabled. |
 
 The [status document](docs/status.md) defines exact format, manufacturer, codec,
 script and commissioning boundaries. Supported partial profiles are not a complete

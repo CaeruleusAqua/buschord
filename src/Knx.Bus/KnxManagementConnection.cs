@@ -3,6 +3,11 @@ using Knx;
 
 namespace Knx.Bus;
 
+public sealed class ManagementAddressCollisionException(IndividualAddress address) : IOException("The gateway assigned the selected target as its tunnel address.")
+{
+    public IndividualAddress AssignedAddress { get; } = address;
+}
+
 /// <summary>Owns both the management session and its dedicated KNXnet/IP tunnel.</summary>
 public sealed class KnxManagementConnection : IManagementConnection
 {
@@ -13,6 +18,14 @@ public sealed class KnxManagementConnection : IManagementConnection
 
     public static async Task<KnxManagementConnection> OpenAsync(IPEndPoint gateway, IndividualAddress target,
         IndividualAddress requestedAddress, Action<string>? wireLog = null, CancellationToken ct = default)
+        => await OpenCoreAsync(gateway, target, requestedAddress, readOnly: false, wireLog, ct);
+
+    public static async Task<KnxManagementConnection> OpenReadOnlyAsync(IPEndPoint gateway, IndividualAddress target,
+        IndividualAddress requestedAddress, Action<string>? wireLog = null, CancellationToken ct = default)
+        => await OpenCoreAsync(gateway, target, requestedAddress, readOnly: true, wireLog, ct);
+
+    private static async Task<KnxManagementConnection> OpenCoreAsync(IPEndPoint gateway, IndividualAddress target,
+        IndividualAddress requestedAddress, bool readOnly, Action<string>? wireLog, CancellationToken ct)
     {
         var tunnel = new KnxTunnel(new UdpTransport(0), gateway, requestedAddress);
         if (wireLog is not null) tunnel.LogLine += wireLog;
@@ -20,7 +33,8 @@ public sealed class KnxManagementConnection : IManagementConnection
         try
         {
             await tunnel.ConnectAsync(ct);
-            client = new(tunnel, target);
+            if (tunnel.AssignedAddress == target) throw new ManagementAddressCollisionException(target);
+            client = new(tunnel, target, readOnly);
             await client.ConnectAsync(ct);
             return new(tunnel, client);
         }

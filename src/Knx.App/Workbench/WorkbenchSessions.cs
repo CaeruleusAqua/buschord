@@ -48,7 +48,7 @@ public sealed class WorkbenchSessions : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         try { try { Monitor.Dispose(); } finally { await Monitor.HistoryCompletion; } }
-        finally { await Programming.DisposeAsync(); }
+        finally { try { await LineScan.DisposeAsync(); } finally { await Programming.DisposeAsync(); } }
     }
 }
 

@@ -7,6 +7,12 @@ using Knx.App.Workbench;
 using Knx.Bus;
 using Knx.Workbench;
 
+if (args.Contains("--native-connection"))
+{
+    Environment.ExitCode = LiveConnectionNativeChecks.Run(args.Contains("--de") ? "de" : "en");
+    return;
+}
+
 var checks = 0;
 void Check(string name, bool condition)
 {
@@ -17,6 +23,13 @@ void Reject(string name, Action action)
 {
     try { action(); } catch (InvalidOperationException) { Check(name, true); return; }
     throw new Exception("FAIL " + name);
+}
+
+if(args.Contains("--live-connection"))
+{
+    await LiveConnectionChecks.Run(Check);
+    Console.WriteLine($"{checks} live connection checks passed.");
+    return;
 }
 
 if(args.Contains("--history-adapter"))
@@ -631,6 +644,7 @@ catch (ObjectDisposedException) { Check("disposed programming queue rejects new 
 
 await ProgrammingPersistenceChecks.Run(Check);
 await MonitorHistoryCaptureChecks.Run(Check);
+await LiveConnectionChecks.Run(Check);
 Check("configuration location identity checks", ConfigurationLocationChecks.Run() == 0);
 Console.WriteLine($"{checks} checks passed.");
 

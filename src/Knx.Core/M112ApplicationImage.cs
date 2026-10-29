@@ -6,12 +6,16 @@ namespace Knx;
 /// <summary>A declared absolute load segment. Unknown bits must be filled from the same device before loading.</summary>
 public sealed record M112LoadSegment(byte ObjectIndex, byte SegmentType, ushort Address, ushort Size,
     byte Access, byte MemoryType, byte Flags, ImmutablePatchBytes Data, ImmutablePatchBytes Validity);
+public sealed record M112ObjectStorage(ushort Number, bool Active, uint SizeInBit, bool ReadOnInitEnabled);
 
 /// <summary>Detached, bounded M112 full-load recipe; it requires identity and before-image checks on the bus.</summary>
 public sealed class M112ApplicationImage
 {
     private readonly NativeImageBuildBinding _binding;
+    private readonly ArchivedImageSourceBinding _sources;
+    private readonly string _inputHash;
     public string Fingerprint { get; }
+    public string LayoutFingerprint { get; }
     public string Address { get; }
     public ushort Manufacturer { get; }
     public ushort ApplicationNumber { get; }
@@ -23,10 +27,19 @@ public sealed class M112ApplicationImage
     public IReadOnlyList<M112LoadSegment> Segments { get; }
     public IReadOnlyList<LoadProcedureControl> Controls { get; }
     public int UnionCount { get; }
+    public ushort CommunicationTableAddress { get; }
+    public IReadOnlyList<M112ObjectStorage> Objects { get; }
     public bool IsCurrent(Project project, DeviceInstance device) => _binding.IsCurrent(project, device);
-
-    internal M112ApplicationImage(NativeImageBuildPlan image, DeviceInstance device, XElement application, XDocument master)
+    public bool AreInputsCurrent(Project project, DeviceInstance device)
     {
+        try { return _sources.IsCurrent(project, device) && NativeCommunicationInputs.Capture(project, device).Fingerprint == _inputHash; }
+        catch (Exception ex) when (ex is NativeCommunicationRejected or InvalidOperationException or ArgumentException or IOException or FormatException or OverflowException) { return false; }
+    }
+
+    internal M112ApplicationImage(NativeImageBuildPlan image, DeviceInstance device, XElement application, XDocument master,
+        IReadOnlyList<NativeCommunicationSlot> slots, bool preserveUnlinkedTypes, ArchivedImageSourceBinding sources, string inputHash)
+    {
+        _sources = sources; _inputHash = inputHash;
         if (!image.AllRequestedAssumptionsAvailable || image.MaskVersionId != "MV-0701"
             || image.Policy?.ByteOrder != ParameterPatchByteOrder.BigEndian || image.Binding is null)
             throw new InvalidOperationException("A complete supported M112 working image is required.");
@@ -35,6 +48,10 @@ public sealed class M112ApplicationImage
             || variant.Tables.ProcedureAdjustments.Count != 0 || variant.Procedure?.State != NativeImageBuildProcedureState.Compiled
             || variant.Chunks.Any(c => c.Target.Space != NativeImageBuildSpace.StandardMemory))
             throw new InvalidOperationException("Unsupported M112 image or table geometry.");
+        var objectTable = variant.Tables.Payloads.Single(p => p.Role == GeneratedTableRole.CommunicationObject);
+        if (slots.Count != objectTable.Data[0]) throw new InvalidOperationException("Communication storage facts do not match the compiled table.");
+        CommunicationTableAddress = checked((ushort)objectTable.ByteOffset);
+        Objects = Array.AsReadOnly(slots.Select(s => new M112ObjectStorage(s.Number, s.Active && !s.IsPlaceholder, s.SizeInBit, s.ReadOnInitEnabled)).ToArray());
         var ns = application.Name.Namespace;
         var sourceMask = master.Descendants().Single(e => e.Name.LocalName == "MaskVersion" && (string?)e.Attribute("Id") == "MV-0701");
         if (sourceMask.Descendants().Single(e => e.Name.LocalName == "Feature" && (string?)e.Attribute("Name") == "PropertyMappedLsms").Attribute("Value")?.Value != "0")
@@ -129,7 +146,7 @@ public sealed class M112ApplicationImage
                     for (var entry = 0; entry < objects.Data[0]; entry++)
                     {
                         var descriptor = checked((int)(objects.ByteOffset - address) + 3 + 4 * entry);
-                        if (!linked.Contains(entry)) mask[descriptor + 3] &= 0xC0;
+                        if (!linked.Contains(entry) && (preserveUnlinkedTypes || !Objects[entry].Active)) mask[descriptor + 3] &= 0xC0;
                     }
                 segments.Add(new(oi, kind, address, size, access, memory, flags, new(data), new(mask))); count++;
             }
@@ -158,10 +175,14 @@ public sealed class M112ApplicationImage
         var addressTable = variant.Tables.Payloads.Single(p => p.Role == GeneratedTableRole.GroupAddress);
         if (addressTable.ByteOffset != Segments.Single(s => s.ObjectIndex == 1).Address)
             throw new InvalidOperationException("Unsupported individual-address table placement.");
+        LayoutFingerprint = NativeGeneralHash.Of(new { profile = "M112AbsoluteLayout1", image.ApplicationDefinitionHash,
+            image.HardwareDefinitionHash, image.MaskVersionId, Manufacturer, ApplicationNumber, ApplicationVersion, PeiType,
+            hardware = HardwareType.Sha256, LoadControlAddress, LoadStatusAddresses, CommunicationTableAddress,
+            segments = Segments.Select(s => new { s.ObjectIndex, s.SegmentType, s.Address, s.Size, s.Access, s.MemoryType, s.Flags }) });
         Fingerprint = NativeGeneralHash.Of(new { profile = "M112AbsoluteFullLoad1", source = image.Binding.Fingerprint,
             Address, Manufacturer, ApplicationNumber, ApplicationVersion, PeiType, hardware = HardwareType.Sha256,
             segments = Segments.Select(s => new { s.ObjectIndex, s.SegmentType, s.Address, s.Size, s.Access, s.MemoryType,
-                s.Flags, data = s.Data.Sha256, validity = s.Validity.Sha256 }), UnionCount });
+                s.Flags, data = s.Data.Sha256, validity = s.Validity.Sha256 }), UnionCount, Objects, preserveUnlinkedTypes });
 
         LoadProcedureControl Expect(LoadControlKind kind, byte oi)
         {
@@ -180,14 +201,23 @@ public sealed class M112ApplicationImage
 public static class OfflineM112ApplicationBuild
 {
     public static M112ApplicationImage Build(Project project, DeviceInstance device)
+        => BuildCore(project, device, preserveUnlinkedTypes: true);
+
+    internal static M112ApplicationImage BuildTarget(Project project, DeviceInstance device)
+        => BuildCore(project, device, preserveUnlinkedTypes: false);
+
+    private static M112ApplicationImage BuildCore(Project project, DeviceInstance device, bool preserveUnlinkedTypes)
     {
         var inputs = ArchivedImageSources.ReadInputs(project, device);
         var application = inputs.Application?.Descendants().Single(e => e.Name.LocalName == "ApplicationProgram")
             ?? throw new InvalidOperationException("Application source is unavailable.");
-        var image = OfflineM112ImageBuild.Preview(project, device);
+        var working = NativeGeneralImageBuild.BuildProfile(project, device, [255], new(GeneratedTableFormat.M112), admitRootUnions: true);
+        var image = new NativeImageBuildPlan(working, [255]);
         if (inputs.Manifest.ApplicationDefinitionHash != image.ApplicationDefinitionHash || inputs.Manifest.Binding?.IsCurrent(project, device) != true)
             throw new InvalidOperationException("Application source changed during image preparation.");
         return new(image, device, application,
-            inputs.Master ?? throw new InvalidOperationException("The mask profile is unavailable."));
+            inputs.Master ?? throw new InvalidOperationException("The mask profile is unavailable."),
+            working.Variants.SingleOrDefault()?.Tables?.Slots ?? Array.Empty<NativeCommunicationSlot>(), preserveUnlinkedTypes,
+            inputs.Manifest.Binding!, working.ProjectInputHash ?? throw new InvalidOperationException("Image inputs have no binding."));
     }
 }

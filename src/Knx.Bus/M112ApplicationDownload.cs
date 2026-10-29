@@ -12,7 +12,7 @@ public sealed record M112DownloadResult(bool DownloadedAndVerified, bool Rollbac
     public string RecoveryScope => "CapturedConfigurationWithSourceLoadRecipe";
 }
 
-/// <summary>Explicit full load of an already matching M112 application, with a durable before-image and independent rollback.</summary>
+/// <summary>Explicit M112 reload or reviewed configuration change, with a durable before-image and independent rollback.</summary>
 public static class M112ApplicationDownload
 {
     private sealed class VerificationMismatch(string message) : IOException(message);
@@ -26,9 +26,26 @@ public static class M112ApplicationDownload
     public static async Task<M112DownloadResult> RunAsync(Func<CancellationToken, Task<IManagementConnection>> openConnection,
         Project project, DeviceInstance device, M112ApplicationImage image, ManagementDeviceIdentity expected,
         string confirmedTarget, string journalDirectory, Action<string>? progress = null, CancellationToken ct = default)
+        => await RunCoreAsync(openConnection, image, image, () => image.IsCurrent(project, device), () => image.AreInputsCurrent(project, device), null,
+            expected, confirmedTarget, journalDirectory, progress, ct);
+
+    /// <summary>Applies a reviewed changed configuration only after its separately bound baseline matches the device.</summary>
+    public static async Task<M112DownloadResult> ApplyChangesAsync(Func<CancellationToken, Task<IManagementConnection>> openConnection,
+        M112ApplicationChangePlan plan, string confirmedPlanFingerprint, ManagementDeviceIdentity expected,
+        string confirmedTarget, string journalDirectory, Action<string>? progress = null, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        if (confirmedPlanFingerprint != plan.Fingerprint) throw new InvalidOperationException("The reviewed configuration change does not match its confirmation.");
+        return await RunCoreAsync(openConnection, plan.Baseline, plan.Desired, plan.IsCurrent, plan.AreInputsCurrent, plan.Fingerprint,
+            expected, confirmedTarget, journalDirectory, progress, ct);
+    }
+
+    private static async Task<M112DownloadResult> RunCoreAsync(Func<CancellationToken, Task<IManagementConnection>> openConnection,
+        M112ApplicationImage baseline, M112ApplicationImage image, Func<bool> isCurrent, Func<bool> areInputsCurrent, string? changeFingerprint,
+        ManagementDeviceIdentity expected, string confirmedTarget, string journalDirectory, Action<string>? progress, CancellationToken ct)
     {
         ValidateTarget(expected, confirmedTarget);
-        if (image.Address != confirmedTarget || !image.IsCurrent(project, device)
+        if (image.Address != confirmedTarget || baseline.Address != confirmedTarget || baseline.LayoutFingerprint != image.LayoutFingerprint || !isCurrent()
             || expected.Application != ApplicationId(image)) throw new InvalidOperationException("Image or application identity is stale or mismatched.");
         var directory = NewJournalDirectory(journalDirectory);
         using var lease = Lease(journalDirectory, confirmedTarget);
@@ -38,7 +55,7 @@ public static class M112ApplicationDownload
         var pending = false; var success = false; var attempted = false; var restored = false; string? error = null;
         try
         {
-            journal.Record("preflight", new { image.Fingerprint, expected });
+            journal.Record("preflight", new { image.Fingerprint, baseline = baseline.Fingerprint, changeFingerprint, expected });
             connection = await openConnection(ct);
             var client = connection.Client;
             await ValidateBeforeAsync(client, expected, image.HardwareType.ToArray(), ct);
@@ -53,8 +70,9 @@ public static class M112ApplicationDownload
             {
                 var before = await ReadRangeAsync(client, segment.Address, segment.Size, ct);
                 var desired = segment.Data.ToArray(); var mask = segment.Validity.ToArray();
-                if (segment.MemoryType == 3 && Enumerable.Range(0, desired.Length).Any(i => ((desired[i] ^ before[i]) & mask[i]) != 0))
-                    throw new IOException("This commissioning profile requires an already matching persistent configuration.");
+                var baselineSegment = baseline.Segments.Single(s => s.ObjectIndex == segment.ObjectIndex && s.Address == segment.Address);
+                if (segment.MemoryType == 3 && Enumerable.Range(0, desired.Length).Any(i => ((baselineSegment.Data[i] ^ before[i]) & baselineSegment.Validity[i]) != 0))
+                    throw new IOException("The device configuration differs from the reviewed baseline; no unload is allowed.");
                 for (var i = 0; i < desired.Length; i++) desired[i] = (byte)((desired[i] & mask[i]) | (before[i] & ~mask[i]));
                 if (segment.ObjectIndex == 1)
                 {
@@ -66,13 +84,27 @@ public static class M112ApplicationDownload
                 segments.Add(new(segment.ObjectIndex, segment.SegmentType, segment.Address, segment.Size,
                     segment.Access, segment.MemoryType, segment.Flags, before, desired));
             }
+            if (changeFingerprint is not null)
+                M112CommunicationMemory.Validate(baseline, image, segments.Select(s => (s.Address, s.Before, s.Desired)).ToArray());
             saved = new(1, image.Fingerprint, expected, image.PeiType, image.HardwareType.ToArray(), status, deviceControl, segments.ToArray());
             ValidateSnapshot(saved);
             SaveSnapshot(recoveryPath, saved);
+            journal.Record("baseline_captured");
             // The captured persistent before-image must still be current immediately before destructive controls.
+            // Full source evaluation may exceed a device's management idle timeout. Reconnect after it, never keep an idle session across it.
+            await connection.DisposeAsync(); connection = null;
+            journal.Record("source_revalidation");
+            if (!isCurrent()) throw new IOException("The baseline or desired project changed during device preflight.");
+            journal.Record("device_revalidation");
+            connection = await openConnection(ct); client = connection.Client;
             await ValidateBeforeAsync(client, expected, saved.Hardware, ct);
+            await ValidateTaskMetadataAsync(client, saved.PeiType, saved.Segments.Single(s => s.ObjectIndex == 1).Address,
+                saved.Segments.Single(s => s.ObjectIndex == 2).Address, ct);
+            if ((await client.ReadMemoryAsync(0x60, 1, ct)) is not [var currentStatus] || currentStatus != saved.Status
+                || (await client.ReadPropertyAsync(0, 14, ct: ct)) is not [var currentControl] || currentControl != saved.DeviceControl)
+                throw new VerificationMismatch("Device status or control changed during preflight.");
             await VerifyAsync(client, saved, original: true, ct);
-            if (!image.IsCurrent(project, device)) throw new IOException("Project changed during device preflight.");
+            if (!areInputsCurrent()) throw new VerificationMismatch("The reviewed project inputs changed during final device verification.");
             ct.ThrowIfCancellationRequested();
             journal.Record("restore_required", new { recoveryPath, checksum = Hash(saved) });
             pending = true;

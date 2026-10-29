@@ -13,6 +13,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Knx.App.Services;
+using Knx.App.Localization;
 using Knx.App.Views;
 using Knx.App.Workbench;
 using Knx.Catalog;
@@ -92,9 +93,11 @@ public partial class WorkbenchWindow : Window
     public WorkbenchWindow() : this(new MainWindowViewModel(), new WorkbenchWorkspace(), DefaultLayoutPath) { }
 
     public WorkbenchWindow(MainWindowViewModel viewModel, WorkbenchWorkspace workspace, string? layoutPath = null, CatalogLibrary? catalogLibrary = null,
-        ProgrammingStateStore? programmingStateStore = null)
+        ProgrammingStateStore? programmingStateStore = null, Func<ReadOnlyConnectionOptions, IReadOnlyWorkbenchBackend>? connectionFactory = null)
     {
         ViewModel = viewModel;
+        _realConnectionFactory = connectionFactory;
+        ViewModel.WorkbenchMonitorOwnsCapture = true;
         ViewModel.HistoryBlocked = () => _sessions?.Programming.IsRunning == true;
         Workspace = workspace;
         _layoutPath = layoutPath;
@@ -102,6 +105,7 @@ public partial class WorkbenchWindow : Window
             Path.GetDirectoryName(Path.GetFullPath(layoutPath ?? DefaultLayoutPath))!, "demo-programming-state"));
         _catalogLibrary = catalogLibrary ?? CatalogLibrary.Shared;
         InitializeComponent();
+        UpdateConnectionChrome();
         InitializeWindowChrome();
         DataContext = ViewModel;
         ClosingBehavior = WindowClosingBehavior.OwnerWindowOnly;
@@ -363,6 +367,7 @@ public partial class WorkbenchWindow : Window
     private void ApplyLanguage()
     {
         if (_shuttingDown) return;
+        UpdateConnectionChrome();
         BuildMenus();
         BuildWindowMenu();
         UpdateWindowChrome();
@@ -480,6 +485,7 @@ public partial class WorkbenchWindow : Window
                 await Task.Delay(120, token);
                 if (_simulateProgrammingFailure) throw new InvalidOperationException(W("SimulatedFailure"));
             });
+        EnsureLiveConnection();
         BindProgrammingState(_sessions, project);
         _sessionTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _sessionTimer.Tick -= OnSessionTick;
@@ -507,6 +513,14 @@ public partial class WorkbenchWindow : Window
         CloseSessionWindows();
         ToolHost.Content = null;
         var sessions = _sessions;
+        var previousLifetime = _sessionIdentity;
+        var connection = _liveConnection;
+        _liveConnection = null;
+        UpdateConnectionChrome();
+        ViewModel.BusState = Knx.Bus.BusConnectionState.Disconnected;
+        ViewModel.BusName = "";
+        if (connection is not null && !_closingConnections.Contains(connection)) _closingConnections.Add(connection);
+        _connectionWindow?.Close();
         var persistence = _programmingPersistence;
         _programmingPersistence = null;
         _sessions = null;
@@ -515,16 +529,23 @@ public partial class WorkbenchWindow : Window
         // while an old executor is still unwinding cancellation. Cancellation adds no attempt facts.
         persistence?.Dispose();
         _pendingSessionDisposals.RemoveAll(task => task.IsCompleted);
-        if (sessions is null) return Task.CompletedTask;
-        var disposal = CompleteSessionDisposalAsync(sessions);
-        if (!disposal.IsCompleted) _pendingSessionDisposals.Add(disposal);
+        if (sessions is null && _closingConnections.Count == 0) return Task.CompletedTask;
+        var disposal = CompleteSessionDisposalAsync(sessions, _closingConnections.ToArray(), previousLifetime);
+        if (!disposal.IsCompletedSuccessfully) _pendingSessionDisposals.Add(disposal);
         return disposal;
     }
 
-    private async Task CompleteSessionDisposalAsync(WorkbenchSessions sessions)
+    private async Task CompleteSessionDisposalAsync(WorkbenchSessions? sessions, ReadOnlyWorkbenchConnection[] connections, object? previousLifetime)
     {
-        try { await sessions.DisposeAsync(); }
-        catch (Exception ex) { ViewModel.Status = W("ToolSessionEnded", ex.Message); }
+        sessions?.Monitor.Stop();
+        var closing = connections.Select(connection => connection.DisposeAsync().AsTask()).ToArray();
+        var sessionClose = sessions?.DisposeAsync().AsTask() ?? Task.CompletedTask;
+        try
+        {
+            await Task.WhenAll(closing.Append(sessionClose));
+            foreach (var connection in connections) _closingConnections.Remove(connection);
+        }
+        catch { if (ReferenceEquals(previousLifetime, ViewModel.ProjectSessionIdentity)) ViewModel.Status = LiveConnectionStrings.Get("CleanupFailed"); throw; }
     }
 
     private async Task ResetSessionsForReplacementAsync()
@@ -533,6 +554,10 @@ public partial class WorkbenchWindow : Window
         ToolHost.Content = null;
         _audit.Clear();
         await DisposeSessionsAsync();
+        await Task.WhenAll(_pendingSessionDisposals.ToArray());
+        _liveOptions = null;
+        _realMonitorSelected = false;
+        _realScanSelected = false;
     }
 
     private IReadOnlySet<string> ResolveMonitorIds(MonitorFilter filter)
@@ -2292,13 +2317,28 @@ public partial class WorkbenchWindow : Window
         if (_sessions is not { } sessions)
             return Note(W("MonitorNeedsProject"));
         var toolbar = new WrapPanel { Margin = new(12, 6) };
+        var source = new ComboBox { Name = "MonitorSourceChoice", MinWidth = 130,
+            ItemsSource = new[] { LiveConnectionStrings.Get("Demo"), LiveConnectionStrings.Get("Real") },
+            SelectedIndex = _realMonitorSelected || sessions.Monitor.Origin == SessionOrigin.Real ? 1 : 0 };
+        AutomationProperties.SetName(source, LiveConnectionStrings.Get("Origin"));
+        toolbar.Children.Add(source);
+        var connectionStatus = new TextBlock { FontSize = 11, MaxWidth = 460, TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new(6, 0) };
+        toolbar.Children.Add(connectionStatus);
+        toolbar.Children.Add(ActionButton(LiveConnectionStrings.Get("Configure"), () => _ = GuardAsync(ShowConnectionAsync), "quiet"));
         var live = new TextBlock { FontSize = 11, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new(12, 0) };
         var filter = new ComboBox { MinWidth = 190, SelectedIndex = 0 };
         filter.ItemsSource = new[] { W("AllTelegrams"), W("WholeProject"), W("CurrentWorkItem"), W("FollowSelection") };
         var pinned = Note("");
         var syncingFilter = false;
+        TextBlock? sourceNote = null;
+        Button? valueAction = null;
         void RefreshState()
         {
+            connectionStatus.IsVisible = source.SelectedIndex == 1;
+            connectionStatus.Text = _liveConnection is { } connection ? ConnectionWindow.Status(connection.Snapshot) : LiveConnectionStrings.Get("Disconnected");
+            if (valueAction is not null) valueAction.IsEnabled = source.SelectedIndex != 1;
+            if (sourceNote is not null) sourceNote.Text = source.SelectedIndex == 1 ? LiveConnectionStrings.Get("GroupOnly") : W("MonitorDemoNote");
             var running = sessions.Monitor.IsRunning;
             live.Text = running
                 ? W("MonitorRunning", sessions.Monitor.RecordedCount, sessions.Monitor.FilteredRows.Count)
@@ -2332,24 +2372,39 @@ public partial class WorkbenchWindow : Window
         toolbar.Children.Add(ActionButton(W("Pause"), () => { sessions.Monitor.Pause(); RefreshState(); }, "quiet"));
         toolbar.Children.Add(ActionButton(W("Resume"), () => { sessions.Monitor.Resume(); RefreshState(); }, "quiet"));
         toolbar.Children.Add(ActionButton(W("ClearDisplay"), () => { sessions.Monitor.ClearDisplay(); RefreshState(); }, "quiet"));
-        toolbar.Children.Add(ActionButton(W("MonitorValue"), ShowMonitorValueDialog, "quiet"));
+        valueAction = ActionButton(W("MonitorValue"), ShowMonitorValueDialog, "quiet");
+        toolbar.Children.Add(valueAction);
         var mode = new ComboBox { ItemsSource = new[] { W("GroupMonitor"), W("BusMonitor") }, SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0, MinWidth = 130 };
         AutomationProperties.SetName(mode, W("MonitorMode"));
         mode.SelectionChanged += (_, _) =>
         {
+            if (!ReferenceEquals(sessions, _sessions)) return;
             if (sessions.Monitor.IsRunning) { mode.SelectedIndex = sessions.Monitor.Mode == WorkbenchMonitorMode.Bus ? 1 : 0; ViewModel.Status = W("MonitorModeLocked"); return; }
-            sessions.Monitor.Configure(mode.SelectedIndex == 1 ? WorkbenchMonitorMode.Bus : WorkbenchMonitorMode.Group, SessionOrigin.Demo, "demo-ip");
+            if (source.SelectedIndex == 1 && mode.SelectedIndex == 1)
+            { mode.SelectedIndex = 0; ViewModel.Status = LiveConnectionStrings.Get("GroupOnly"); return; }
+            try { ConfigureMonitorSource(sessions, source.SelectedIndex == 1, mode.SelectedIndex == 1 ? WorkbenchMonitorMode.Bus : WorkbenchMonitorMode.Group); }
+            catch (Exception ex) { ViewModel.Status = ex.Message; }
+        };
+        source.SelectionChanged += (_, _) =>
+        {
+            if (!ReferenceEquals(sessions, _sessions)) return;
+            _realMonitorSelected = source.SelectedIndex == 1;
+            if (sessions.Monitor.IsRunning) sessions.Monitor.Stop();
+            if (source.SelectedIndex == 1) mode.SelectedIndex = 0;
+            try { ConfigureMonitorSource(sessions, source.SelectedIndex == 1, mode.SelectedIndex == 1 ? WorkbenchMonitorMode.Bus : WorkbenchMonitorMode.Group); }
+            catch (Exception ex) { ViewModel.Status = ex.Message; }
+            RefreshState();
         };
         toolbar.Children.Add(mode);
         var start = ActionButton(W("Start"), () =>
         {
+            if (!ReferenceEquals(sessions, _sessions)) return;
             try
             {
                 if (!sessions.Monitor.IsRunning)
                 {
                     var desired = mode.SelectedIndex == 1 ? WorkbenchMonitorMode.Bus : WorkbenchMonitorMode.Group;
-                    if (sessions.Monitor.Mode != desired || sessions.Monitor.Origin != SessionOrigin.Demo)
-                        sessions.Monitor.Configure(desired, SessionOrigin.Demo, "demo-ip");
+                    ConfigureMonitorSource(sessions, source.SelectedIndex == 1, desired);
                     sessions.Monitor.Start();
                 }
                 RefreshState();
@@ -2392,7 +2447,9 @@ public partial class WorkbenchWindow : Window
         toolbar.Children.Add(ActionButton(W("ExportFullCsv"), () => _ = GuardAsync(ExportFullMonitorAsync), "quiet"));
         toolbar.Children.Add(CreateTelegramHistoryButton(sessions.Monitor));
         toolbar.Children.Add(live);
-        var demoBadge = Label(W("MonitorDemoNote")); demoBadge.FontSize = 10;
+        var demoBadge = Label(source.SelectedIndex == 1
+            ? LiveConnectionStrings.Get("GroupOnly") : W("MonitorDemoNote")); demoBadge.FontSize = 10;
+        sourceNote = demoBadge;
         demoBadge.Classes.Add("wb-warning");
         toolbar.Children.Add(demoBadge);
         CommitToolbar(panel, toolbar);
@@ -2626,22 +2683,44 @@ public partial class WorkbenchWindow : Window
             ? project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).ToList()
             : [];
         var picker = new ComboBox { ItemsSource = lines, MinWidth = 240, SelectedIndex = lines.Count > 0 ? 0 : -1 };
+        var origin = new ComboBox { Name = "ScanSourceChoice", MinWidth = 130,
+            ItemsSource = new[] { LiveConnectionStrings.Get("Demo"), LiveConnectionStrings.Get("Real") }, SelectedIndex = _realScanSelected ? 1 : 0 };
+        AutomationProperties.SetName(origin, LiveConnectionStrings.Get("Origin"));
+        origin.SelectionChanged += (_, _) => { if (ReferenceEquals(sessions, _sessions)) _realScanSelected = origin.SelectedIndex == 1; };
+        AutomationProperties.SetName(picker, W("Line"));
         picker.ItemTemplate = new FuncDataTemplate<Line>((line, _) => Label(line is null ? ""
             : $"{line.Address} · {line.Name ?? W("Line")}"));
         toolbar.Children.Add(picker);
+        toolbar.Children.Add(origin);
+        toolbar.Children.Add(ActionButton(LiveConnectionStrings.Get("Configure"), () => _ = GuardAsync(ShowConnectionAsync), "quiet"));
         var run = ActionButton(W("ScanStart"), () => _ = GuardAsync(async () =>
         {
+            if (!ReferenceEquals(sessions, _sessions)) return;
             if (picker.SelectedItem is not Line line) { ViewModel.Status = W("ScanNeedsProject"); return; }
+            var lifetime = ViewModel.ProjectSessionIdentity;
             try
             {
                 ViewModel.Status = W("ScanRunning");
-                await sessions.LineScan.RunDemoAsync(line.Id);
-                ViewModel.Status = sessions.LineScan.LastError ?? W("ScanNote");
+                if (origin.SelectedIndex == 1)
+                {
+                    if (_liveOptions is null) { ViewModel.Status = LiveConnectionStrings.Get("Configure"); return; }
+                    if (_liveConnection?.Snapshot.Phase is ReadOnlyConnectionPhase.Connected or ReadOnlyConnectionPhase.Connecting or ReadOnlyConnectionPhase.Disconnecting)
+                    { ViewModel.Status = LiveConnectionStrings.Get("ScanDisconnect"); return; }
+                    var area = ViewModel.Project!.Installations.SelectMany(i => i.Areas).Single(a => a.Lines.Contains(line));
+                    var targets = Enumerable.Range(0, 255).Select(device => new IndividualAddress(area.Address, line.Address, (byte)device));
+                    var plan = new Knx.Bus.ReadOnlyLineScanPlan(_liveOptions.Gateway, _liveOptions.RequestedAddress, targets);
+                    await sessions.LineScan.RunRealAsync(line.Id, plan);
+                }
+                else await sessions.LineScan.RunDemoAsync(line.Id);
+                if (ReferenceEquals(lifetime, ViewModel.ProjectSessionIdentity) && ReferenceEquals(sessions, _sessions))
+                    ViewModel.Status = sessions.LineScan.LastError ?? (origin.SelectedIndex == 1 ? LiveConnectionStrings.Get("ReadOnly") : W("ScanNote"));
             }
-            catch (Exception ex) { ViewModel.Status = W("ScanError", ex.Message); }
+            catch (Exception ex)
+            { if (ReferenceEquals(lifetime, ViewModel.ProjectSessionIdentity) && ReferenceEquals(sessions, _sessions)) ViewModel.Status = W("ScanError", ex.Message); }
         }), "primary");
         toolbar.Children.Add(run);
-        toolbar.Children.Add(Note(W("ScanNote")));
+        var cancelScan = ActionButton(W("Cancel"), sessions.LineScan.Cancel, "quiet"); toolbar.Children.Add(cancelScan);
+        var scanProgress = Note(W("ScanNote")); toolbar.Children.Add(scanProgress);
         CommitToolbar(panel, toolbar);
         var header = new Grid { ColumnDefinitions = new("100,*,100,*"), Height = 28 };
         header.Classes.Add("wb-table-header");
@@ -2674,6 +2753,11 @@ public partial class WorkbenchWindow : Window
         {
             empty.IsVisible = sessions.LineScan.Results.Count == 0;
             run.IsEnabled = !sessions.LineScan.IsRunning;
+            cancelScan.IsEnabled = sessions.LineScan.IsRunning;
+            origin.IsEnabled = picker.IsEnabled = !sessions.LineScan.IsRunning;
+            scanProgress.Text = sessions.LineScan.IsRunning && origin.SelectedIndex == 1
+                ? $"{W("ScanRunning")} {sessions.LineScan.CompletedTargets}/{sessions.LineScan.TotalTargets}"
+                : origin.SelectedIndex == 1 ? LiveConnectionStrings.Get("ReadOnly") : W("ScanNote");
         }
         void OnResultsChanged(object? _, NotifyCollectionChangedEventArgs __) => RefreshState();
         panel.AttachedToVisualTree += (_, _) =>
@@ -2691,6 +2775,8 @@ public partial class WorkbenchWindow : Window
     {
         if (_sessions is not { } sessions || ViewModel.Project is not { } project)
         { ViewModel.Status = W("ScanNeedsProject"); return; }
+        if (_realMonitorSelected || sessions.Monitor.Origin == SessionOrigin.Real)
+        { ViewModel.Status = LiveConnectionStrings.Get("ReadOnly"); return; }
         var dialog = CreateDialog(W("ValueTitle"), 480, 320);
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
         var groups = ProjectQuery.GroupAddresses(project).OrderBy(g => g.Address.Raw).ToList();

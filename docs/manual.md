@@ -24,11 +24,11 @@ Geräteparameter und spricht KNXnet/IP im Netzwerk.
   Association freigegeben. *KNX* und *ETS* sind
   Marken der KNX Association und werden hier nur beschreibend verwendet.
 - **Projektbearbeitung ist offline.** Adressen, Verknüpfungen und Parameter ändern
-  nur das Projekt im Arbeitsspeicher. Die Workbench sendet keine Bustelegramme und
-  startet keinen Download.
-- **Simulationen sind gekennzeichnet.** Monitor, Scan und Programmierwarteschlange
-  laufen in dieser Fassung als Demo-Sitzungen. Ein echter Download, eine
-  Secure-Inbetriebnahme oder ein DCA-Host sind nicht enthalten.
+  nur das Projekt im Arbeitsspeicher. Eine Busverbindung wird ausdrücklich gewählt.
+- **Echte und Demo-Sitzungen sind gekennzeichnet.** Monitor und lesender Scan
+  können eine reale Verbindung nutzen. Die Programmierwarteschlange bleibt eine
+  Demo-Sitzung; der separate [M112-Konsolenpfad](commissioning.md) hat eigene
+  Anforderungen. Secure-Inbetriebnahme und allgemeines DCA-Hosting bleiben offen.
 
 Was BusChord bewusst nicht ist: ein vollständiger ETS-Ersatz und kein Ersatz für
 eine fachliche Inbetriebnahme. Offene Grenzen stehen in Abschnitt 11.
@@ -534,15 +534,21 @@ Ansicht wieder an. `Strg+J` blendet den Werkzeugbereich ein oder aus.
 
 ### 7.1 Monitor
 
-Der Monitor zeichnet in dieser Fassung **simulierte** Telegramme auf; die Ansicht
-trägt den Hinweis „DEMO-Simulation · keine reale Busaufzeichnung“.
+Der Monitor bietet die Quellen **Demo** und **Echter Bus**. Für echte Telegramme
+zunächst **Werkzeuge → Busverbindung** oder **Verbindung wählen…** öffnen,
+Gateway-IPv4, UDP-Port und angeforderte Tunneladresse eingeben und **Verbinden**
+wählen. Die Anzeige nennt den Verbindungszustand und die tatsächlich zugewiesene
+Adresse. Schließen des Dialogs erhält eine erfolgreiche Verbindung; **Trennen**
+beendet sie. Abbrechen während des Aufbaus wartet dessen Beendigung ab.
 
 - **Starten**, **Stoppen**, **Pause**, **Fortsetzen**, **Anzeige leeren**.
 - **Monitorart**: Gruppenmonitor oder Busmonitor; der Wechsel ist nur im
-  gestoppten Zustand möglich.
+  gestoppten Zustand möglich. Der echte Standard-UDP-Tunnel unterstützt hier den
+  Gruppenmonitor; ein vollständiger Hardware-Busmonitor ist nicht enthalten.
 - **Telegrammfilter**: Alle Telegramme, Ganzes Projekt, Aktueller
   Arbeitsgegenstand, Auswahl folgen.
-- **Wert** öffnet einen Dialog für simulierte Lese-/Schreibvorgänge.
+- **Wert** bleibt ein Demo-Vorgang; echte Lese-/Schreibaktionen aus diesem Dialog
+  sind gesperrt.
 - **CSV Filter** / **CSV alle** exportieren die gefilterte Ansicht bzw. die
   vollständige Aufzeichnung.
 - Die Anzeige hält die letzten 500 Zeilen; die vollständige Aufzeichnung liegt
@@ -580,10 +586,14 @@ Download und keine Geräteprogrammierung“.
 
 ### 7.3 Scan
 
-Der Linienscan ist ebenfalls eine Simulation („SIMULATION · keine reale
-Geräteantwort“). Linie wählen und **Linie scannen**; die Liste zeigt die
-projektierten Geräte und einen Demo-Status. Es werden keine Geräte am Bus
-abgefragt.
+Der Linienscan bietet **Demo** und **Echter Bus**. Linie und Quelle wählen, dann
+**Linie scannen**. Vor einem echten Scan muss die Monitorverbindung getrennt
+werden; der Scan reserviert das gewählte Gateway bis zum vollständigen Abschluss.
+Er fragt die Adressen der gewählten Linie einzeln lesend ab und zeigt bestätigte
+Antworten mit Maske. **Unbekannt** bedeutet keine bestätigte Antwort,
+**Nicht geprüft** eine noch nicht abgefragte Adresse; beides ist kein Beweis,
+dass ein Gerät fehlt. **Abbrechen** erhält Teilergebnisse. Ein Demo-Scan zeigt
+weiterhin ausschließlich simulierte Ergebnisse projektierter Geräte.
 
 ### 7.4 Änderungen und Prüfmeldungen
 
@@ -595,9 +605,10 @@ abgefragt.
 
 ### 7.5 Bus, Secure und was live belegt ist
 
-- Die Workbench öffnet keine Busverbindung. Die Felder **Schnittstelle** und
-  **Eigene Adresse** unter **Optionen → Bus** werden gespeichert, aber von keiner
-  Workbench-Aktion verwendet.
+- **Werkzeuge → Busverbindung** öffnet den ausdrücklich gewählten Standard-UDP-
+  Tunnel für den lesenden Monitor. Die Angaben gelten für die aktuelle
+  Projektinstanz; ein Projektwechsel schließt die alte Verbindung vollständig.
+  Die alten Felder unter **Optionen → Bus** öffnen keine Verbindung automatisch.
 - **Werkzeuge → Secure-Übersicht** zählt Geräte und Gruppenadressen mit
   ausdrücklich belegter Secure-Fähigkeit. Die Übersicht verwaltet keine Schlüssel
   oder Zertifikate und behauptet keine sichere Inbetriebnahme.
@@ -607,11 +618,12 @@ abgefragt.
   mit Tunnelling-ACK und `L_Data.con`, danach ein sauberes DISCONNECT. Es wurden
   keine Gruppenwerte geschrieben und keine Geräte programmiert. Details:
   [Router-Discovery](status.md).
-- **Nicht verifiziert** sind Gruppenwert-Antworten, Descriptor-/Scan-Antworten,
-  Secure-Tunnel und längere Sitzungen gegen echte Hardware. `bus_read` existiert,
-  sein Wire-Verhalten ist aber nicht gegen eine echte Anlage abgenommen.
-  `bus_write` ist gesperrt und sendet nichts; ein echter Download ist nicht
-  implementiert. Die Vorprüfung `download_plan` sendet ebenfalls nichts.
+- Ein gezielter M112-Geräteversuch hat Identifikation, lesende Koppler-/Geräte-
+  Abfrage, vollständiges Wiederholungsladen und eine tatsächliche Parameteränderung
+  mit anschließend unabhängig bestätigter Wiederherstellung belegt. Umfang und
+  Grenzen stehen in [Inbetriebnahme](commissioning.md). Allgemeine Downloads,
+  Secure-Tunnel und längere Workbench-Sitzungen gegen verschiedene Geräte bleiben
+  offen. `bus_write` ist gesperrt; `download_plan` sendet kein Programmiertelegramm.
 - **Werkzeuge → Aufzeichnung exportieren …** greift auf die alte
   Recorder-Aufzeichnung zurück. Die Workbench-Monitoraufzeichnung wird über
   **CSV Filter** / **CSV alle** exportiert.
@@ -861,19 +873,20 @@ belegt; belegt ist `Strg+Shift+G`.
 
 ## 11. Grenzen und Sicherheit
 
-- **Keine Busaktion aus der Workbench.** Projektänderungen senden nichts. Monitor,
-  Scan und Programmierung sind gekennzeichnete Simulationen, kein realer Download.
-  Echte Busaufrufe gibt es nur als ausdrückliche, lesende MCP-Werkzeuge;
-  `bus_write` ist gesperrt.
-- **Keine echten Downloads oder Adressschreibungen.** Der Schreibpfad ist
+- **Projektänderungen senden nichts.** Echte Workbench-Verbindung, Monitor und
+  Scan werden ausdrücklich gewählt und arbeiten lesend. Programmieraufträge
+  bleiben simuliert; `bus_write` ist gesperrt.
+- **Allgemeine Downloads und Adressschreibungen bleiben gesperrt.** Der Schreibpfad ist
   deaktiviert (`WritesEnabled = false`), `bus_write` wird abgewiesen, ein realer
   Programmierauftrag hat keinen Executor, und `download_plan` sendet kein
   Programmiertelegramm. Der Plan ist immer offen, weil Programmiermodus und
-  Vor-Ort-Bestätigungen nicht abfragbar sind.
+  Vor-Ort-Bestätigungen nicht abfragbar sind. Der separate, explizit bestätigte
+  [M112-Konsolenpfad](commissioning.md) besitzt ein enges Lade-/Änderungsprofil
+  mit dauerhafter Konfigurationssicherung und Geräteprüfungen.
 - **Keine Firewall- oder Netzwerkänderungen.** BusChord öffnet UDP-Sockets für
   Discovery/Tunnel; es ändert keine System- oder Routerkonfiguration.
 - **Keine Passwortumgehung.** Verschlüsselte Projekte werden nur mit dem
-  ETS-Projektpasswort gelesen und nie verschlüsselt zurückgeschrieben.
+  Projektpasswort gelesen und mit passendem Schutzprofil gespeichert.
 - **Keine KNX Data Security im Tunnel.** Keyring und Secure-Formate sind eine
   Grundlage, aber nicht in den Tunnel verdrahtet; die Secure-Übersicht verwaltet
   keine Schlüssel.
@@ -934,14 +947,13 @@ bleiben schreibgeschützt.
 Folgende Punkte sind bewusst als offen markiert und nicht durch dieses Handbuch
 verifiziert:
 
-- Interoperabilität von Gruppenwert-Antworten, Descriptor-/Scan-Antworten und
-  Secure-Tunneln mit echter Hardware (live belegt sind Discovery, Routing und
-  Tunnel-Handshake, siehe 7.5). Schreibzugriffe und Download sind gesperrt und
-  wurden nicht ausgeführt.
+- Breite Interoperabilität von Gruppenwert-Antworten, Descriptor-/Scan-Antworten
+  und Secure-Tunneln mit verschiedenen Geräten. Die gezielten Gerätebelege aus
+  7.5 und dem Inbetriebnahmeplan ersetzen keine allgemeine Hardware-Abnahme.
 - ETS-Roundtrip und Signaturgültigkeit nach Änderungen.
 - ETS-Interpretation der BusChord-Parameter-Overrides.
-- Ausführung von DCA/Plug-in-Code, Secure-Inbetriebnahme und echte
-  Geräteprogrammierung.
+- Ausführung von DCA/Plug-in-Code, Secure-Inbetriebnahme und allgemeine
+  Geräteprogrammierung über verschiedene Masken-/Herstellerprofile.
 - Vollständige visuelle und interaktive Abnahme: Der Screenshot-Befehl und die
   Workbench-Selbstprüfung belegen gerenderte Ansichten und geroutete Abläufe,
   keine Screenreader-, 150-/200-%-DPI- oder vollständige Klicktest-Abnahme.

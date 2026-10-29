@@ -61,8 +61,15 @@ public sealed class KnxTunnel : IAsyncDisposable
     private TaskCompletionSource<byte>? _stateWaiter;
     private TaskCompletionSource<byte>? _disconnectWaiter;
     private CancellationTokenSource _cts = new();
+    private CancellationTokenSource _operationsCts = new();
     private Task? _receiveLoop;
     private Task? _heartbeatLoop;
+    private Task? _closeTask;
+    private Task? _disposeTask;
+    private TaskCompletionSource _operationsDrained = CompletedDrain();
+    private int _activeOperations;
+    private bool _disposeRequested;
+    private volatile BusConnectionState _state;
     private IPEndPoint _localEndpoint = new(IPAddress.Any, 0);
     private IPEndPoint _dataEndpoint = new(IPAddress.Any, 0);
     private byte _sequence;
@@ -73,20 +80,20 @@ public sealed class KnxTunnel : IAsyncDisposable
         IPEndPoint? localEndpoint = null, TimeSpan? heartbeatInterval = null)
     {
         _transport = transport;
-        _controlEndpoint = controlEndpoint;
+        _controlEndpoint = CopyEndpoint(controlEndpoint);
         _individualAddress = individualAddress;
-        _configuredLocalEndpoint = localEndpoint;
+        _configuredLocalEndpoint = localEndpoint is null ? null : CopyEndpoint(localEndpoint);
         _heartbeatInterval = heartbeatInterval ?? TimeSpan.FromSeconds(60);
     }
 
-    public BusConnectionState State { get; private set; } = BusConnectionState.Disconnected;
+    public BusConnectionState State { get => _state; private set => _state = value; }
     public byte Channel { get; private set; }
 
     /// <summary>Individual address the server assigned to this tunnel (source of our telegrams).</summary>
     public IndividualAddress AssignedAddress { get; private set; }
 
     /// <summary>Endpoints of the tunnelling data channel advertised by the server.</summary>
-    public IPEndPoint DataEndpoint => _dataEndpoint;
+    public IPEndPoint DataEndpoint => CopyEndpoint(_dataEndpoint);
 
     public event Action<BusTelegram>? TelegramReceived;
 
@@ -106,54 +113,78 @@ public sealed class KnxTunnel : IAsyncDisposable
 
     public async Task ConnectAsync(CancellationToken ct = default)
     {
-        if (State != BusConnectionState.Disconnected) throw new InvalidOperationException("already connected");
-        State = BusConnectionState.Connecting;
-        _cts.Dispose();
-        _cts = new CancellationTokenSource();
-        _localEndpoint = _configuredLocalEndpoint ?? ResolveLocalEndpoint();
-        _dataEndpoint = _controlEndpoint;
+        Operation operation;
+        lock (_gate)
+        {
+            if (_disposeRequested || State != BusConnectionState.Disconnected || _closeTask is { IsCompleted: false })
+                throw new InvalidOperationException("The tunnel is connected, closing or disposed.");
+            _cts.Dispose(); _operationsCts.Dispose();
+            _cts = new CancellationTokenSource(); _operationsCts = new CancellationTokenSource();
+            _closeTask = null; _receiveLoop = _heartbeatLoop = null;
+            State = BusConnectionState.Connecting;
+            operation = BeginOperationLocked(ct);
+        }
+        using var connectOperation = operation;
 
         try
         {
+            _localEndpoint = _configuredLocalEndpoint ?? ResolveLocalEndpoint();
+            _dataEndpoint = _controlEndpoint;
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(operation.Token);
+            timeout.CancelAfter(ConnectTimeout);
             var request = KnxNetIpFrame.Encode(ServiceType.ConnectRequest,
                 Connection.ConnectRequest(_localEndpoint, _localEndpoint));
             Log("-> " + Convert.ToHexString(request));
-            await _transport.SendAsync(_controlEndpoint, request, ct);
+            Task sending;
+            lock (_gate)
+            {
+                timeout.Token.ThrowIfCancellationRequested();
+                if (State != BusConnectionState.Connecting) throw new OperationCanceledException(operation.Token);
+                sending = _transport.SendAsync(_controlEndpoint, request, timeout.Token);
+            }
+            await sending;
 
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
-            timeout.CancelAfter(ConnectTimeout);
             KnxNetIpFrame response;
             do
             {
-                response = await ReceiveFrameAsync(timeout.Token);
+                response = await ReceiveFrameAsync(_controlEndpoint, timeout.Token);
                 if (response.Service != ServiceType.ConnectResponse)
                     Log($"ignored {response.Service} while connecting");
             } while (response.Service != ServiceType.ConnectResponse);
 
             Log("<- " + Convert.ToHexString(KnxNetIpFrame.Encode(response.Service, response.Body)));
             var parsed = ConnectResponse.Parse(response.Body);
+            if (response.Body.Length != (parsed.Succeeded ? 2 + Hpai.Length + Crd.TunnelLength : 2)
+                || parsed.Succeeded && parsed.ConnectionData is not { IsTunnelling: true })
+                throw new FormatException("CONNECT_RESPONSE does not match the requested standard tunnel profile");
             if (!parsed.Succeeded)
                 throw new IOException($"CONNECT_RESPONSE status 0x{parsed.Status:X2}");
 
-            Channel = parsed.Channel;
-            AssignedAddress = parsed.ConnectionData?.AssignedAddress ?? _individualAddress;
-            if (parsed.DataEndpoint is { } server && !server.Address.Equals(IPAddress.Any) && server.Port != 0)
-                _dataEndpoint = server;
-            _sequence = 0;
-            _expectedSequence = 0;
-            _established = true;
-            State = BusConnectionState.Connected;
+            lock (_gate)
+            {
+                operation.Token.ThrowIfCancellationRequested();
+                if (State != BusConnectionState.Connecting) throw new OperationCanceledException(operation.Token);
+                Channel = parsed.Channel;
+                AssignedAddress = parsed.ConnectionData?.AssignedAddress ?? _individualAddress;
+                if (parsed.DataEndpoint is { } server && !server.Address.Equals(IPAddress.Any) && server.Port != 0)
+                    _dataEndpoint = server;
+                _sequence = 0; _expectedSequence = 0; _established = true;
+                State = BusConnectionState.Connected;
+                var lifetime = _cts.Token;
+                _receiveLoop = Task.Run(() => ReceiveLoopAsync(lifetime));
+                _heartbeatLoop = Task.Run(() => HeartbeatLoopAsync(lifetime));
+            }
             Log($"connected: channel {Channel}, address {AssignedAddress}, data endpoint {_dataEndpoint}");
         }
         catch
         {
-            State = BusConnectionState.Disconnected;
-            _established = false;
+            lock (_gate)
+            {
+                if (State == BusConnectionState.Connecting) State = BusConnectionState.Disconnected;
+                _established = false;
+            }
             throw;
         }
-
-        _receiveLoop = Task.Run(() => ReceiveLoopAsync(_cts.Token));
-        _heartbeatLoop = Task.Run(() => HeartbeatLoopAsync(_cts.Token));
     }
 
     public Task GroupValueWriteAsync(Knx.GroupAddress address, byte[] data, int? dataBits = null,
@@ -188,6 +219,7 @@ public sealed class KnxTunnel : IAsyncDisposable
     public async Task<BusTelegram?> ReadGroupValueAsync(Knx.GroupAddress address, TimeSpan timeout,
         CancellationToken ct = default)
     {
+        using var operation = BeginOperation(ct);
         var completion = new TaskCompletionSource<BusTelegram>(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnTelegram(BusTelegram telegram)
         {
@@ -198,8 +230,8 @@ public sealed class KnxTunnel : IAsyncDisposable
         TelegramReceived += OnTelegram;
         try
         {
-            await GroupValueReadAsync(address, ct);
-            return await completion.Task.WaitAsync(timeout, ct);
+            await GroupValueReadAsync(address, operation.Token);
+            return await completion.Task.WaitAsync(timeout, operation.Token);
         }
         catch (TimeoutException)
         {
@@ -215,8 +247,9 @@ public sealed class KnxTunnel : IAsyncDisposable
     public async Task<Telegram?> RequestAsync(byte[] cemi, Apci expectedResponse, IndividualAddress device,
         TimeSpan timeout, CancellationToken ct = default)
     {
+        using var operation = BeginOperation(ct);
         var tcs = new TaskCompletionSource<Telegram>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(operation.Token);
         cts.CancelAfter(timeout);
         void OnTelegram(BusTelegram t)
         {
@@ -247,15 +280,16 @@ public sealed class KnxTunnel : IAsyncDisposable
     /// </summary>
     private async Task SendCemiAsync(byte[] cemi, CancellationToken ct)
     {
-        await _sendGate.WaitAsync(ct);
-        try { await SendCemiLockedAsync(cemi, ct); }
+        using var operation = BeginOperation(ct);
+        await _sendGate.WaitAsync(operation.Token);
+        try { await SendCemiLockedAsync(cemi, operation.Token); }
         finally { _sendGate.Release(); }
     }
 
     private async Task SendCemiLockedAsync(byte[] cemi, CancellationToken ct)
     {
         if (State != BusConnectionState.Connected)
-            throw new InvalidOperationException($"tunnel is {State}, not connected");
+            throw new OperationCanceledException("The admitted send was cancelled by tunnel shutdown.", ct);
 
         var sequence = _sequence;
         try
@@ -268,10 +302,17 @@ public sealed class KnxTunnel : IAsyncDisposable
                 lock (_gate) _ackWaiters[sequence] = waiter;
                 try
                 {
-                    Log("-> " + Convert.ToHexString(frame));
-                    await _transport.SendAsync(_dataEndpoint, frame, ct);
                     using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
                     timeout.CancelAfter(AckTimeout);
+                    Log("-> " + Convert.ToHexString(frame));
+                    Task sending;
+                    lock (_gate)
+                    {
+                        timeout.Token.ThrowIfCancellationRequested();
+                        if (State != BusConnectionState.Connected) throw new OperationCanceledException(ct);
+                        sending = _transport.SendAsync(_dataEndpoint, frame, timeout.Token);
+                    }
+                    await sending;
                     byte status;
                     try
                     {
@@ -313,11 +354,24 @@ public sealed class KnxTunnel : IAsyncDisposable
         return new IPEndPoint(IPAddress.Any, 0);
     }
 
-    private async Task<KnxNetIpFrame> ReceiveFrameAsync(CancellationToken ct)
+    private static IPEndPoint CopyEndpoint(IPEndPoint endpoint) => new(
+        endpoint.Address.AddressFamily == AddressFamily.InterNetworkV6
+            ? new IPAddress(endpoint.Address.GetAddressBytes(), endpoint.Address.ScopeId)
+            : new IPAddress(endpoint.Address.GetAddressBytes()), endpoint.Port);
+
+    private async Task<KnxNetIpFrame> ReceiveFrameAsync(IPEndPoint expectedPeer, CancellationToken ct)
     {
-        var result = await _transport.ReceiveAsync(ct);
-        return KnxNetIpFrame.Decode(result.Buffer);
+        while (true)
+        {
+            var result = await _transport.ReceiveAsync(ct);
+            if (result.RemoteEndPoint.Equals(expectedPeer)) return KnxNetIpFrame.Decode(result.Buffer);
+            Log($"ignored datagram from {result.RemoteEndPoint}; expected {expectedPeer}");
+        }
     }
+
+    private bool IsExpectedPeer(ServiceType service, IPEndPoint peer)
+        => peer.Equals(service is ServiceType.TunnellingRequest or ServiceType.TunnellingAck
+            ? _dataEndpoint : _controlEndpoint);
 
     private async Task ReceiveLoopAsync(CancellationToken ct)
     {
@@ -358,6 +412,11 @@ public sealed class KnxTunnel : IAsyncDisposable
 
                 try
                 {
+                    if (!IsExpectedPeer(frame.Service, result.RemoteEndPoint))
+                    {
+                        Log($"ignored {frame.Service} from unexpected endpoint {result.RemoteEndPoint}");
+                        continue;
+                    }
                     await HandleFrameAsync(frame);
                 }
                 catch (FormatException ex)
@@ -372,7 +431,7 @@ public sealed class KnxTunnel : IAsyncDisposable
         catch (Exception ex)
         {
             Log($"receive loop: {ex.Message}");
-            await CloseAsync();
+            _ = BeginClose();
         }
     }
 
@@ -382,6 +441,8 @@ public sealed class KnxTunnel : IAsyncDisposable
         {
             case ServiceType.TunnellingRequest:
             {
+                if (frame.Body.Length < Tunnelling.HeaderLength || frame.Body[3] != 0)
+                    throw new FormatException("TUNNELLING_REQUEST has an invalid reserved octet or header");
                 var (channel, sequence, cemi) = Tunnelling.ReadRequest(frame.Body);
                 Log("<- " + Convert.ToHexString(KnxNetIpFrame.Encode(frame.Service, frame.Body)));
                 if (channel != Channel)
@@ -410,6 +471,8 @@ public sealed class KnxTunnel : IAsyncDisposable
             }
             case ServiceType.TunnellingAck:
             {
+                if (frame.Body.Length != Tunnelling.HeaderLength)
+                    throw new FormatException("TUNNELLING_ACK must contain exactly 4 bytes");
                 var (channel, sequence, status) = Tunnelling.ReadAck(frame.Body);
                 Log($"<- TUNNELLING_ACK channel {channel} sequence {sequence} status 0x{status:X2}");
                 if (channel != Channel)
@@ -425,26 +488,36 @@ public sealed class KnxTunnel : IAsyncDisposable
             }
             case ServiceType.ConnectionStateResponse:
             {
-                if (frame.Body.Length < 2) throw new FormatException("CONNECTIONSTATE_RESPONSE shorter than 2 bytes");
+                if (frame.Body.Length != 2) throw new FormatException("CONNECTIONSTATE_RESPONSE must contain exactly 2 bytes");
+                if (frame.Body[0] != Channel)
+                {
+                    Log($"ignored CONNECTIONSTATE_RESPONSE for channel {frame.Body[0]}");
+                    return;
+                }
                 Log($"<- CONNECTIONSTATE_RESPONSE status 0x{frame.Body[1]:X2}");
                 lock (_gate) _stateWaiter?.TrySetResult(frame.Body[1]);
                 return;
             }
             case ServiceType.DisconnectRequest:
             {
-                if (frame.Body.Length < 1) throw new FormatException("DISCONNECT_REQUEST shorter than 1 byte");
+                if (frame.Body.Length != 2 + Hpai.Length || frame.Body[1] != 0)
+                    throw new FormatException("DISCONNECT_REQUEST has an invalid length or reserved octet");
+                _ = Hpai.Read(frame.Body.AsSpan(2));
                 var channel = frame.Body[0];
                 Log($"server sent DISCONNECT_REQUEST for channel {channel}");
-                await _transport.SendAsync(_dataEndpoint,
-                    KnxNetIpFrame.Encode(ServiceType.DisconnectResponse, Connection.Response(channel)));
-                // The server already dropped the channel; do not send a DISCONNECT_REQUEST back.
-                _established = false;
-                await CloseAsync();
+                if (channel != Channel) return;
+                // The owner sends the response, then drains us. Never await our own receive task.
+                _ = BeginClose(channel);
                 return;
             }
             case ServiceType.DisconnectResponse:
             {
-                if (frame.Body.Length < 2) throw new FormatException("DISCONNECT_RESPONSE shorter than 2 bytes");
+                if (frame.Body.Length != 2) throw new FormatException("DISCONNECT_RESPONSE must contain exactly 2 bytes");
+                if (frame.Body[0] != Channel)
+                {
+                    Log($"ignored DISCONNECT_RESPONSE for channel {frame.Body[0]}");
+                    return;
+                }
                 Log($"<- DISCONNECT_RESPONSE status 0x{frame.Body[1]:X2}");
                 lock (_gate) _disconnectWaiter?.TrySetResult(frame.Body[1]);
                 return;
@@ -457,7 +530,7 @@ public sealed class KnxTunnel : IAsyncDisposable
 
     private void Dispatch(byte[] cemi)
     {
-        if (cemi.Length == 0) return;
+        if (cemi.Length == 0 || State != BusConnectionState.Connected) return;
         try
         {
             switch (cemi[0])
@@ -465,10 +538,10 @@ public sealed class KnxTunnel : IAsyncDisposable
                 case (byte)CemiMessageCode.LDataInd:
                     if (ManagementTransportFrame.TryParseIndication(cemi, out var management))
                     {
-                        ManagementFrameReceived?.Invoke(management!);
+                        Notify(ManagementFrameReceived, management!);
                         if (management!.Tpdu.Length == 1) return;
                     }
-                    TelegramReceived?.Invoke(new BusTelegram
+                    Notify(TelegramReceived, new BusTelegram
                     {
                         Telegram = Cemi.ParseLData(cemi),
                         Source = "tunnel",
@@ -478,7 +551,7 @@ public sealed class KnxTunnel : IAsyncDisposable
                     // A transport control has no APCI and cannot be represented as a Telegram.
                     if (cemi.Length >= 10 && cemi.Length == 10 + cemi[1] && cemi[8 + cemi[1]] == 0) return;
                     // Our own frame was confirmed on the bus; a monitor must not show it as traffic.
-                    ConfirmationReceived?.Invoke(new BusTelegram
+                    Notify(ConfirmationReceived, new BusTelegram
                     {
                         Telegram = Cemi.ParseLData(cemi),
                         Source = "tunnel",
@@ -496,8 +569,11 @@ public sealed class KnxTunnel : IAsyncDisposable
     }
 
     private Task SendTunnellingAckAsync(byte channel, byte sequence)
-        => _transport.SendAsync(_dataEndpoint,
-            KnxNetIpFrame.Encode(ServiceType.TunnellingAck, Tunnelling.Ack(channel, sequence)));
+    {
+        _cts.Token.ThrowIfCancellationRequested();
+        return _transport.SendAsync(_dataEndpoint,
+            KnxNetIpFrame.Encode(ServiceType.TunnellingAck, Tunnelling.Ack(channel, sequence)), _cts.Token);
+    }
 
     /// <summary>Heartbeat: CONNECTIONSTATE_REQUEST, repeated three times before closing (Core §5.4).</summary>
     private async Task HeartbeatLoopAsync(CancellationToken ct)
@@ -512,7 +588,7 @@ public sealed class KnxTunnel : IAsyncDisposable
                     ok = await ConnectionStateAsync(ct) == 0x00;
                 if (ok) continue;
                 Log("heartbeat failed, closing the tunnel");
-                await CloseAsync();
+                _ = BeginClose();
                 return;
             }
         }
@@ -522,6 +598,11 @@ public sealed class KnxTunnel : IAsyncDisposable
         catch (ObjectDisposedException)
         {
         }
+        catch (Exception ex)
+        {
+            Log($"heartbeat failed: {ex.Message}");
+            _ = BeginClose();
+        }
     }
 
     private async Task<byte?> ConnectionStateAsync(CancellationToken ct)
@@ -530,12 +611,19 @@ public sealed class KnxTunnel : IAsyncDisposable
         lock (_gate) _stateWaiter = waiter;
         try
         {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct, _operationsCts.Token);
+            timeout.CancelAfter(RequestTimeout);
             var frame = KnxNetIpFrame.Encode(ServiceType.ConnectionStateRequest,
                 Connection.ConnectionStateRequest(Channel, _localEndpoint));
             Log("-> " + Convert.ToHexString(frame));
-            await _transport.SendAsync(_dataEndpoint, frame, ct);
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(RequestTimeout);
+            Task sending;
+            lock (_gate)
+            {
+                timeout.Token.ThrowIfCancellationRequested();
+                if (State != BusConnectionState.Connected) throw new OperationCanceledException(ct);
+                sending = _transport.SendAsync(_controlEndpoint, frame, timeout.Token);
+            }
+            await sending;
             return await waiter.Task.WaitAsync(timeout.Token);
         }
         catch (OperationCanceledException)
@@ -548,25 +636,45 @@ public sealed class KnxTunnel : IAsyncDisposable
         }
     }
 
-    public async Task CloseAsync()
-    {
-        if (State is BusConnectionState.Closing or BusConnectionState.Closed or BusConnectionState.Disconnected) return;
-        State = BusConnectionState.Closing;
+    /// <summary>Closes the channel and drains all receive, heartbeat and admitted public operations.</summary>
+    public Task CloseAsync() => BeginClose();
 
-        if (_established)
+    // Internal loop paths signal the owner and return; only callers outside the loops await the drain.
+    private Task BeginClose(byte? remoteChannel = null)
+    {
+        lock (_gate)
         {
+            if (_closeTask is not null) return _closeTask;
+            var notify = State is BusConnectionState.Connecting or BusConnectionState.Connected;
+            var disconnect = _established && remoteChannel is null;
             _established = false;
+            State = BusConnectionState.Closing;
+            return _closeTask = Task.Run(() => CloseCoreAsync(disconnect, remoteChannel, notify));
+        }
+    }
+
+    private async Task CloseCoreAsync(bool disconnect, byte? remoteChannel, bool notify)
+    {
+        // Stop sends and response waiters immediately; keep receive alive for the close handshake.
+        try { await _operationsCts.CancelAsync(); }
+        catch (Exception ex) { Log($"operation cancellation: {ex.Message}"); }
+        if (disconnect || remoteChannel is not null)
+        {
             var waiter = new TaskCompletionSource<byte>(TaskCreationOptions.RunContinuationsAsynchronously);
             lock (_gate) _disconnectWaiter = waiter;
             try
             {
-                var frame = KnxNetIpFrame.Encode(ServiceType.DisconnectRequest,
-                    Connection.DisconnectRequest(Channel, _localEndpoint));
-                Log("-> " + Convert.ToHexString(frame));
-                await _transport.SendAsync(_dataEndpoint, frame);
                 using var timeout = new CancellationTokenSource(DisconnectTimeout);
-                var status = await waiter.Task.WaitAsync(timeout.Token);
-                Log($"disconnect acknowledged (status 0x{status:X2})");
+                var frame = remoteChannel is { } channel
+                    ? KnxNetIpFrame.Encode(ServiceType.DisconnectResponse, Connection.Response(channel))
+                    : KnxNetIpFrame.Encode(ServiceType.DisconnectRequest, Connection.DisconnectRequest(Channel, _localEndpoint));
+                Log("-> " + Convert.ToHexString(frame));
+                await _transport.SendAsync(_controlEndpoint, frame, timeout.Token);
+                if (disconnect)
+                {
+                    var status = await waiter.Task.WaitAsync(timeout.Token);
+                    Log($"disconnect acknowledged (status 0x{status:X2})");
+                }
             }
             catch (OperationCanceledException)
             {
@@ -582,30 +690,96 @@ public sealed class KnxTunnel : IAsyncDisposable
             }
         }
 
-        await _cts.CancelAsync();
-        State = BusConnectionState.Disconnected;
-        Disconnected?.Invoke();
+        try { await _cts.CancelAsync(); }
+        catch (Exception ex) { Log($"receive cancellation: {ex.Message}"); }
+        Task operations; Task? receive; Task? heartbeat;
+        lock (_gate) { operations = _operationsDrained.Task; receive = _receiveLoop; heartbeat = _heartbeatLoop; }
+        // Connect may still be unwinding, but cannot publish new loops once State is Closing.
+        await DrainAsync(operations);
+        if (receive is not null) await DrainAsync(receive);
+        if (heartbeat is not null) await DrainAsync(heartbeat);
+        lock (_gate) State = BusConnectionState.Disconnected;
+        if (notify) Notify(Disconnected);
     }
 
-    public async ValueTask DisposeAsync()
+    /// <summary>Shares one close/drain and releases transport resources only after every user has stopped.</summary>
+    public ValueTask DisposeAsync()
     {
-        await CloseAsync();
-        await _cts.CancelAsync();
-        _cts.Dispose();
-        _transport.Dispose();
-        State = BusConnectionState.Closed;
+        lock (_gate)
+        {
+            if (_disposeTask is not null) return new(_disposeTask);
+            _disposeRequested = true;
+            var close = BeginClose();
+            _disposeTask = Task.Run(async () =>
+            {
+                await close;
+                try { _transport.Dispose(); }
+                finally
+                {
+                    _operationsCts.Dispose(); _cts.Dispose(); _sendGate.Dispose();
+                    lock (_gate) State = BusConnectionState.Closed;
+                }
+            });
+            return new(_disposeTask);
+        }
+    }
+
+    private async Task DrainAsync(Task task)
+    {
+        try { await task; }
+        catch (Exception ex) { Log($"tunnel drain: {ex.Message}"); }
+    }
+
+    private Operation BeginOperation(CancellationToken caller)
+    {
+        lock (_gate)
+        {
+            if (_disposeRequested || State != BusConnectionState.Connected)
+                throw new InvalidOperationException($"tunnel is {State}, not connected");
+            return BeginOperationLocked(caller);
+        }
+    }
+
+    private Operation BeginOperationLocked(CancellationToken caller)
+    {
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(caller, _operationsCts.Token);
+        if (_activeOperations++ == 0) _operationsDrained = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        return new Operation(this, cancellation);
+    }
+
+    private sealed class Operation(KnxTunnel owner, CancellationTokenSource cancellation) : IDisposable
+    {
+        public CancellationToken Token => cancellation.Token;
+        public void Dispose()
+        {
+            cancellation.Dispose();
+            lock (owner._gate) if (--owner._activeOperations == 0) owner._operationsDrained.TrySetResult();
+        }
+    }
+
+    private static TaskCompletionSource CompletedDrain()
+    {
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        completed.SetResult(); return completed;
+    }
+
+    private static void Notify<T>(Action<T>? handlers, T value)
+    {
+        if (handlers is null) return;
+        foreach (Action<T> handler in handlers.GetInvocationList())
+            try { handler(value); } catch (Exception) { /* Observers do not own transport lifetime. */ }
+    }
+
+    private static void Notify(Action? handlers)
+    {
+        if (handlers is null) return;
+        foreach (Action handler in handlers.GetInvocationList())
+            try { handler(); } catch (Exception) { /* All subscribers still receive shutdown. */ }
     }
 
     /// <summary>Logs every wire frame as hex; the first 6 bytes are the KNXnet/IP header.</summary>
     private void Log(string line)
     {
-        try
-        {
-            LogLine?.Invoke(line);
-        }
-        catch
-        {
-            // A broken log handler must not break the protocol state machine.
-        }
+        Notify(LogLine, line);
     }
 }

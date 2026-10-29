@@ -175,6 +175,11 @@ jobs:
         run: |
           dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --bus-diagram
           dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --bus-diagram --de
+      - name: Native bus connection regressions (Windows only)
+        shell: bash
+        run: |
+          dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-connection
+          dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-connection --de
       - name: Recovery lifecycle regressions (Windows only)
         shell: bash
         run: |

@@ -60,6 +60,7 @@ internal sealed class NativeGeneralImageBuildPlan
     internal string? HardwareDefinitionHash { get; }
     internal string? PreparationHash { get; }
     internal string? SharedContextHash { get; }
+    internal string? ProjectInputHash { get; }
     internal NativeRootSourcePolicy? SourcePolicy { get; }
     internal NativeRootCodecFacts? CodecFacts { get; }
     internal int DeclaredReferenceCount { get; }
@@ -78,6 +79,7 @@ internal sealed class NativeGeneralImageBuildPlan
         MaskVersionId = inventory.MaskVersionId;
         ApplicationDefinitionHash = inventory.ApplicationDefinitionHash; HardwareDefinitionHash = inventory.HardwareDefinitionHash;
         PreparationHash = preparation.Fingerprint; SharedContextHash = application.Fingerprint;
+        ProjectInputHash = application.ProjectInputHash;
         SourcePolicy = inventory.Policy; CodecFacts = inventory.CodecFacts;
         DeclaredReferenceCount = inventory.References.Count; DeclaredOwnerCount = inventory.Owners.Count;
         AllocatedImagePayloadBytes = allocated; ReservedWorstCaseImagePayloadBytes = reserved;

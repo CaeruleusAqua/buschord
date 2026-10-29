@@ -74,6 +74,7 @@ public partial class WorkbenchWindow
             new() { Header = W("MenuTools"), ItemsSource = new object[]
             {
                 Item(W("ToolsOverview"), ShowToolsOverview),
+                Async(LiveConnectionStrings.Get("Title"), ShowConnectionAsync),
                 Item(W("ProjectCheck"), () => ShowTool("problems")), Item(W("Monitor"), () => ShowTool("monitor")),
                 Item(W("HistoryTitle"), ShowTelegramHistory),
                 Item(W("Scan"), () => ShowTool("scan")), Item(W("Changes"), () => ShowTool("changes")),
@@ -382,7 +383,7 @@ public partial class WorkbenchWindow
         _closingSessionsForExit = true;
         _ = DisposeSessionsAsync();
         var sessionsEnded = Task.WhenAll(_pendingSessionDisposals);
-        if (!sessionsEnded.IsCompleted)
+        if (!sessionsEnded.IsCompletedSuccessfully)
         {
             // Keep the dispatcher and application lease alive while cancellation unwinds.
             // Closing the native lifetime first could strand UI-bound continuations.
@@ -391,12 +392,15 @@ public partial class WorkbenchWindow
             Dispatcher.UIThread.Post(async () =>
             {
                 try { await sessionsEnded; }
-                finally
+                catch
                 {
                     _closingSessionsForExit = false;
-                    _shuttingDown = true;
-                    Close();
+                    _shuttingDown = false; IsEnabled = true;
+                    ViewModel.Status = LiveConnectionStrings.Get("CleanupFailed");
+                    return;
                 }
+                _closingSessionsForExit = false;
+                _shuttingDown = true; Close();
             });
             return;
         }
@@ -433,6 +437,8 @@ public partial class WorkbenchWindow
 
     private async Task ExportRecordingAsync()
     {
+        if (_sessions is { } sessions && sessions.Monitor.RecordedCount > 0)
+        { await ExportFullMonitorAsync(); return; }
         if (ViewModel.Recorder.Count == 0) { ViewModel.Status = W("NoRecording"); return; }
         var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = "telegramme.csv", DefaultExtension = "csv" });
         if (file?.TryGetLocalPath() is { } path) ViewModel.Recorder.SaveCsv(path);

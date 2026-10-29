@@ -735,9 +735,15 @@ manual input or acoustic screenreader acceptance.
 ## Network and commissioning
 
 KNXnet/IP discovery, tunnel/routing and management foundations have synthetic and
-loopback checks, with a bounded read-only connection path. Workbench monitor, scan
-and programming sessions are labelled simulations. General device writes and application
-downloads remain disabled. An explicit console-only MDT M112 programming-mode test
+loopback checks. The Workbench offers an explicit read-only standard UDP tunnel,
+real group monitor and addressed line scan alongside labelled demonstrations.
+Connection options belong to one project lifetime; project replacement, cancellation
+and window shutdown join network cleanup before an endpoint can be reused. Real
+monitoring supports the existing recording, filters, CSV and optional local history;
+it is not a complete hardware bus monitor. Scans require disconnecting the monitor
+connection and report unknown/unprobed addresses without claiming absence.
+Workbench programming remains a labelled simulation. General device writes and
+application downloads remain disabled. An explicit console-only MDT M112 programming-mode test
 has live identity, write, readback and restoration evidence for one released device;
 see [targeted commissioning](commissioning.md). Secure tunnelling, complete images,
 complete load flows and general management/Verify/commissioning remain incomplete.
@@ -748,6 +754,21 @@ bits, identity, required PEI and table pointers must match before unloading.
 Durable recovery combines captured configuration bytes with the source recipe;
 unobservable allocation metadata and volatile runtime state are outside that claim.
 The [commissioning page](commissioning.md) records its exact validation and live status.
+
+A reviewed M112 change plan separately binds baseline and desired projects with the
+same application/layout. The console change mode compiles changed parameters and
+tables, validates actual baseline and active-object RAM geometry, and recovers the
+captured original configuration after failure. This does not enable first provisioning,
+other mask profiles or general Workbench programming. A separate read-only line scanner
+supports explicitly selected device/coupler addresses, joined cancellation and honest
+unknown/unprobed outcomes; it cannot issue configuration writes or restart.
+
+The combined connection implementation has 29 focused state/lifetime checks and
+19 native dialog checks per German/English run. Eleven additional tunnel checks
+cover drained receive/send/connect operations, remote disconnect, heartbeat failure,
+throwing observers, concurrent/idempotent close/dispose and actual UDP endpoint reuse.
+Native dialogs use the shared Workbench chrome. These software checks do not replace
+broader hardware, platform or accessibility acceptance.
 
 General hardware acceptance remains open. Since 2026-10-29, the user has explicitly
 released one device in the existing installation for targeted programming/write tests.

@@ -59,6 +59,8 @@ var maps = new (string Module, string File, IReadOnlyDictionary<string, (string 
     ("updates", "src/Knx.App/Localization/UpdateUiStrings.cs", MapOf(typeof(UpdateUiStrings))),
     ("recovery", "src/Knx.App/Localization/RecoveryUiStrings.cs", RecoveryUiStrings.Keys.ToDictionary(
         key => key, key => (RecoveryUiStrings.GetForLanguage("de", key), RecoveryUiStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
+    ("live-connection", "src/Knx.App/Localization/LiveConnectionStrings.cs", LiveConnectionStrings.Keys.ToDictionary(
+        key => key, key => (LiveConnectionStrings.GetForLanguage("de", key), LiveConnectionStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
 };
 var mapByModule = maps.ToDictionary(m => m.Module, m => m.Map, StringComparer.Ordinal);
 Info($"i18n: {maps.Sum(m => m.Map.Count)} keys ({string.Join(", ", maps.Select(m => m.Module + " " + m.Map.Count))})");
@@ -169,6 +171,32 @@ foreach (var language in RecoveryUiStrings.Languages)
     Check($"i18n[{language}:recovery]: every value and placeholder is valid", mismatches.Count == 0, Join(mismatches));
 }
 
+Check("i18n[live-connection]: exactly the supported languages are registered",
+    LiveConnectionStrings.Languages.Count == Strings.Available.Count
+    && LiveConnectionStrings.Languages.ToHashSet(StringComparer.Ordinal).SetEquals(Strings.Available));
+var liveValues = typeof(LiveConnectionStrings).GetField("Text", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null)
+    as IReadOnlyDictionary<string, string[]>
+    ?? throw new InvalidOperationException("LiveConnectionStrings.Text not found; update the localization gates");
+Check("i18n[live-connection]: every key has exactly one value per language",
+    liveValues.Values.All(values => values.Length == LiveConnectionStrings.Languages.Count));
+foreach (var language in LiveConnectionStrings.Languages)
+{
+    var mismatches = new List<string>();
+    foreach (var key in LiveConnectionStrings.Keys)
+    {
+        var source = LiveConnectionStrings.GetForLanguage("de", key);
+        var translated = LiveConnectionStrings.GetForLanguage(language, key);
+        string Shape(string text) => string.Join(",", placeholderShape.Matches(text)
+            .Select(match => match.Groups[1].Value).OrderBy(index => index, StringComparer.Ordinal));
+        if (string.IsNullOrWhiteSpace(translated) || Shape(source) != Shape(translated)) mismatches.Add(key);
+        var count = placeholderShape.Matches(source).Select(match => int.Parse(match.Groups[1].Value)).DefaultIfEmpty(-1).Max() + 1;
+        try { _ = string.Format(CultureInfo.InvariantCulture, translated,
+            Enumerable.Range(0, count).Select(index => (object)$"v{index}").ToArray()); }
+        catch (FormatException) { mismatches.Add(key + ": invalid format"); }
+    }
+    Check($"i18n[{language}:live-connection]: every value and placeholder is valid", mismatches.Count == 0, Join(mismatches));
+}
+
 var originalCatalogLanguage = Strings.Language;
 foreach (var language in supportedLanguages)
 {
@@ -207,6 +235,8 @@ var callCat = new Regex("\\bCatalogUiText\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"
 var callDownloads = new Regex("\\bCatalogDownloadStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callUpdates = new Regex("\\bUpdateUiStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callRecovery = new Regex("\\bRecoveryUiStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
+var callLive = new Regex("\\bLiveConnectionStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
+var callLiveWrap = new Regex("\\bL\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callUpdateWrap = new Regex("\\bU\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callWrap = new Regex("\\b(W|Wb)\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var dynCore = new Regex("\\b(Strings|WorkbenchStrings|CatalogUiText|CatalogDownloadStrings|UpdateUiStrings)\\.Get\\(\\s*(?!\"[A-Za-z])", RegexOptions.CultureInvariant);
@@ -220,6 +250,7 @@ var referenced = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
     ["catalog-downloads"] = new(StringComparer.Ordinal),
     ["updates"] = new(StringComparer.Ordinal),
     ["recovery"] = new(StringComparer.Ordinal),
+    ["live-connection"] = new(StringComparer.Ordinal),
 };
 var missing = new List<(string Site, string Detail)>();
 var dynamicLookups = 0;
@@ -241,6 +272,9 @@ foreach (var file in SourceScan.Files(root, ["src", "tests"], "*.cs"))
     foreach (Match m in callDownloads.Matches(text)) Use(file, LineAt(text, m.Index), "catalog-downloads", m.Groups[1].Value, "CatalogDownloadStrings.Get");
     foreach (Match m in callUpdates.Matches(text)) Use(file, LineAt(text, m.Index), "updates", m.Groups[1].Value, "UpdateUiStrings.Get");
     foreach (Match m in callRecovery.Matches(text)) Use(file, LineAt(text, m.Index), "recovery", m.Groups[1].Value, "RecoveryUiStrings.Get");
+    foreach (Match m in callLive.Matches(text)) Use(file, LineAt(text, m.Index), "live-connection", m.Groups[1].Value, "LiveConnectionStrings.Get");
+    if (file.Equals("src/Knx.App/ConnectionWindow.cs", StringComparison.Ordinal))
+        foreach (Match m in callLiveWrap.Matches(text)) Use(file, LineAt(text, m.Index), "live-connection", m.Groups[1].Value, "L(...)");
     if (file.StartsWith("src/Knx.App/UpdateWindow", StringComparison.Ordinal))
         foreach (Match m in callUpdateWrap.Matches(text)) Use(file, LineAt(text, m.Index), "updates", m.Groups[1].Value, "U(...)");
     foreach (Match m in callWrap.Matches(text)) Use(file, LineAt(text, m.Index), "workbench", m.Groups[2].Value, m.Groups[1].Value + "(...)");
@@ -323,6 +357,7 @@ foreach (var (module, _, map) in maps)
         "src/Knx.App/Localization/CatalogDownloadStrings.cs",
         "src/Knx.App/Localization/UpdateUiStrings.cs",
         "src/Knx.App/Localization/RecoveryUiStrings.cs",
+        "src/Knx.App/Localization/LiveConnectionStrings.cs",
     ];
     var files = SourceScan.Files(root, ["src"], "*.cs", skip)
         .Concat(SourceScan.Files(root, ["src"], "*.axaml", skip)).OrderBy(f => f, StringComparer.Ordinal);

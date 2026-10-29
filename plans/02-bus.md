@@ -9,6 +9,8 @@
 - [x] Abbruch, Ressourcenfreigabe und erneuten Tunnelaufbau absichern.
 - [x] Monitor-, Scan- und Programmier-Demos klar kennzeichnen.
 - [x] Adressiertes MDT-M112-Management und expliziten Programmiermodus-Schreibtest mit Rücklesen und frischer Wiederherstellungsverbindung am freigegebenen Einzelgerät prüfen.
+- [x] Lesende Koppler-/Geräteabfrage sowie enges M112-Wiederholungsladen und tatsächliche Parameteränderung mit unabhängig bestätigter Konfigurationswiederherstellung prüfen.
+- [x] Explizite lesende Workbench-Verbindung, Gruppenmonitor und adressierten Scan mit gejointem Verbindungsabbau integrieren.
 - [ ] Positiven Linien-Scan und reale Transport-Interoperabilität prüfen.
 - [ ] Herstellerimage, Management, Download, Verify und Neustart durchgängig abnehmen.
 - [ ] Secure-Tunnel, Data Security und sichere Inbetriebnahme vollständig integrieren.

@@ -58,6 +58,7 @@ internal sealed class NativeGeneralTableEmission
     internal GeneratedTableFormat Format { get; }
     internal string? CurrentSeedHash { get; }
     internal string? NativeWitnessHash { get; }
+    internal IReadOnlyList<NativeCommunicationSlot> Slots { get; } = Array.Empty<NativeCommunicationSlot>();
     private NativeGeneralTableEmission(NativeGeneralIssue issue)
     {
         Issues = Array.AsReadOnly(new[] { issue }); Payloads = Array.AsReadOnly(Array.Empty<GeneratedTablePayload>());
@@ -69,6 +70,7 @@ internal sealed class NativeGeneralTableEmission
     {
         _plan = plan; _seed = seed; Issues = Array.AsReadOnly(Array.Empty<NativeGeneralIssue>());
         Format = preparation.Format; CurrentSeedHash = seed.Fingerprint; NativeWitnessHash = preparation.Witness!.Fingerprint;
+        Slots = preparation.Witness.Slots;
         Payloads = Array.AsReadOnly(payloads); ProcedureAdjustments = Array.AsReadOnly(adjustments);
         Requirements = Array.AsReadOnly(new[] { "TablePhysicalMappingUnverified", "TableProcedureAdjustmentsNotApplied",
             "TableUnusedTailMaskUnresolved", "TableSecurityAndRfNotApplied" });

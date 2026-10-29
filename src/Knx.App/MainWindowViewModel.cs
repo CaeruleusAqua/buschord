@@ -203,6 +203,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     // ---------- recorder ----------
 
     public TelegramRecorder Recorder { get; }
+    private volatile bool _workbenchMonitorOwnsCapture;
+    internal bool WorkbenchMonitorOwnsCapture { get => _workbenchMonitorOwnsCapture; set => _workbenchMonitorOwnsCapture = value; }
 
     public ObservableCollectionEx<RecordedTelegram> Recorded { get; } = [];
 
@@ -224,8 +226,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public ObservableCollectionEx<NamedCount> DashboardDpt { get; } = [];
     public ObservableCollectionEx<NameValueRow> Details { get; } = [];
 
-    public bool CanSend => BusState == BusConnectionState.Connected && SelectedGroupAddress is not null;
-    public bool CanDownload => BusState == BusConnectionState.Connected && SelectedDevice is not null && SelectedDeviceOnBus is not null;
+    public bool CanSend => KnxBus.WritesEnabled && BusState == BusConnectionState.Connected && SelectedGroupAddress is not null;
+    public bool CanDownload => KnxBus.WritesEnabled && BusState == BusConnectionState.Connected && SelectedDevice is not null && SelectedDeviceOnBus is not null;
     public bool CanUndo => _undo.CanUndo;
     public bool CanRedo => _undo.CanRedo;
 
@@ -1033,6 +1035,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private void OnTelegram(BusTelegram telegram)
     {
+        if (WorkbenchMonitorOwnsCapture) return;
         Recorder.Add(telegram);
         void Update()
         {

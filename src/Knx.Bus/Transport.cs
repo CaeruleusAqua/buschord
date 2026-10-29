@@ -94,7 +94,7 @@ public sealed class UdpTransport : IUdpTransport, IMulticastUdpTransport
     }
 
     public Task SendAsync(IPEndPoint destination, byte[] data, CancellationToken ct = default)
-        => _client.SendAsync(data, data.Length, destination).WaitAsync(ct);
+        => _client.SendAsync(data.AsMemory(), destination, ct).AsTask();
 
     public Task<UdpReceiveResult> ReceiveAsync(CancellationToken ct = default)
         => _client.ReceiveAsync(ct).AsTask();

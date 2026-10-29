@@ -10,6 +10,12 @@ using Knx.App.Views;
 using Knx.Catalog;
 
 if (args.Contains("--native")) return NativeDraftChecks.Run(args.Contains("--shots"));
+if (args.Contains("--m112-changes"))
+{
+    var target = Path.Combine(Path.GetTempPath(), "buschord-m112-changes-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(target);
+    return await M112DownloadChecks.RunChangesAsync(target);
+}
 if (args.Contains("--m112-download"))
 {
     var target = Path.Combine(Path.GetTempPath(), "buschord-m112-download-" + Guid.NewGuid().ToString("N"));

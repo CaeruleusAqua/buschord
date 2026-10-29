@@ -28,13 +28,21 @@ public sealed class KnxManagementClient : IAsyncDisposable
 
     public IndividualAddress Target { get; }
     public TimeSpan ResponseTimeout { get; }
+    public bool IsReadOnly { get; }
 
     public KnxManagementClient(KnxTunnel tunnel, IndividualAddress target, TimeSpan? responseTimeout = null)
         : this(new TunnelTransport(tunnel), target, responseTimeout) { }
 
+    public KnxManagementClient(KnxTunnel tunnel, IndividualAddress target, bool readOnly, TimeSpan? responseTimeout = null)
+        : this(new TunnelTransport(tunnel), target, readOnly, responseTimeout) { }
+
     public KnxManagementClient(IManagementTransport transport, IndividualAddress target, TimeSpan? responseTimeout = null)
+        : this(transport, target, readOnly: false, responseTimeout) { }
+
+    public KnxManagementClient(IManagementTransport transport, IndividualAddress target, bool readOnly, TimeSpan? responseTimeout = null)
     {
-        if (target.Device is 0 or 255) throw new ArgumentOutOfRangeException(nameof(target));
+        if (target.Device == 255 || target.Device == 0 && !readOnly) throw new ArgumentOutOfRangeException(nameof(target));
+        IsReadOnly = readOnly;
         _transport = transport;
         Target = target;
         ResponseTimeout = responseTimeout ?? TimeSpan.FromSeconds(3);
@@ -91,6 +99,7 @@ public sealed class KnxManagementClient : IAsyncDisposable
     public async Task WriteMemoryAsync(ushort address, ReadOnlyMemory<byte> bytes, bool serverVerify,
         CancellationToken ct = default)
     {
+        RequireWrites();
         var request = ManagementApdu.WriteMemory(address, bytes.Span);
         await RequestAsync(request, serverVerify ? ManagementApdu.MemoryResponse : null, a =>
         {
@@ -108,6 +117,7 @@ public sealed class KnxManagementClient : IAsyncDisposable
     public async Task<byte[]> WritePropertyAsync(byte objectIndex, byte propertyId, ushort start, byte count,
         ReadOnlyMemory<byte> bytes, CancellationToken ct = default)
     {
+        RequireWrites();
         var request = ManagementApdu.WriteProperty(objectIndex, propertyId, start, count, bytes.Span);
         var response = await RequestAsync(request, ManagementApdu.PropertyResponse, a =>
         {
@@ -126,7 +136,15 @@ public sealed class KnxManagementClient : IAsyncDisposable
     /// <remarks>Completion means only that the transport send completed. Dispose sends one best-effort disconnect;
     /// the caller must verify boot through a fresh session.</remarks>
     public async Task RestartAsync(CancellationToken ct = default)
-        => await RequestAsync([0x03, 0x80], null, _ => false, ct, restarting: true);
+    {
+        RequireWrites();
+        await RequestAsync([0x03, 0x80], null, _ => false, ct, restarting: true);
+    }
+
+    private void RequireWrites()
+    {
+        if (IsReadOnly) throw new NotSupportedException("This management session is read-only; writes and restarts are disabled.");
+    }
 
     public async Task<ManagementDeviceIdentity> ReadIdentityAsync(CancellationToken ct = default)
     {
