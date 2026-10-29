@@ -10,7 +10,7 @@ using Knx.Bus.Security;
 namespace Knx.App.Services;
 
 /// <summary>Ephemeral masked input; the returned owned character buffer belongs to the importer.</summary>
-public sealed class PromptSecurePasswordSource(Window fallbackOwner) : ISecurePasswordSource
+public sealed class PromptSecurePasswordSource(Window fallbackOwner, string? explanation = null, string? confirmation = null) : ISecurePasswordSource
 {
     public ValueTask<char[]> ReadOwnedAsync(CancellationToken token)
     {
@@ -30,25 +30,34 @@ public sealed class PromptSecurePasswordSource(Window fallbackOwner) : ISecurePa
             .LastOrDefault(window => window.IsVisible && window.IsActive) ?? fallbackOwner;
         var input = new TextBox { PasswordChar = '●', Classes = { "wb-field" } };
         AutomationProperties.SetName(input, Localization.SecureConnectionStrings.Get("Password"));
-        var dialog = new Window { Title = Localization.SecureConnectionStrings.Get("Password"), Width = 460, Height = 230, MinWidth = 350, MinHeight = 200,
+        var dialog = new Window { Title = Localization.SecureConnectionStrings.Get("Password"), Width = 460, Height = explanation is null ? 260 : 300, MinWidth = 350, MinHeight = 220,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, Classes = { "wb-dialog" } };
         var panel = new StackPanel { Margin = new Thickness(20), Spacing = 12 };
-        panel.Children.Add(new TextBlock { Text = Localization.SecureConnectionStrings.Get("PasswordPrompt"), TextWrapping = TextWrapping.Wrap }); panel.Children.Add(input);
+        panel.Children.Add(new TextBlock { Text = explanation ?? Localization.SecureConnectionStrings.Get("PasswordPrompt"), TextWrapping = TextWrapping.Wrap }); panel.Children.Add(input);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
         char[]? result = null;
         var cancel = new Button { Content = Strings.Get("BtnCancel"), IsCancel = true, Classes = { "wb-button", "wb-quiet" } };
-        var confirm = new Button { Content = Localization.WorkbenchStrings.Get("Open"), IsDefault = true, Classes = { "wb-button", "wb-primary" } };
+        var confirm = new Button { Content = confirmation ?? Localization.WorkbenchStrings.Get("Open"), IsDefault = true, Classes = { "wb-button", "wb-primary" } };
         cancel.Click += (_, _) => dialog.Close(); confirm.Click += (_, _) => { result = (input.Text ?? "").ToCharArray(); dialog.Close(); };
-        actions.Children.Add(cancel); actions.Children.Add(confirm); panel.Children.Add(actions); dialog.Content = panel;
+        actions.Children.Add(cancel); actions.Children.Add(confirm);
+        var root = new Grid { RowDefinitions = new("*,Auto") }; root.Children.Add(new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled });
+        var footer = new Border { Classes = { "wb-dialog-footer" }, Child = actions }; Grid.SetRow(footer, 1); root.Children.Add(footer); dialog.Content = root;
         dialog.Opened += (_, _) => input.Focus(); WorkbenchDialogChrome.Apply(dialog);
         using var registration = token.Register(() => Dispatcher.UIThread.Post(dialog.Close));
+        char[]? owned = null;
         try
         {
             await dialog.ShowDialog(owner);
-            if (token.IsCancellationRequested || result is null) { if (result is not null) Array.Clear(result); throw new OperationCanceledException(token); }
-            return result;
+            if (token.IsCancellationRequested || result is null) throw new OperationCanceledException(token);
+            owned = result; result = null;
         }
-        finally { input.Text = ""; }
+        finally
+        {
+            try { input.Text = ""; }
+            catch { if (owned is not null) Array.Clear(owned); throw; }
+            finally { if (result is not null) Array.Clear(result); }
+        }
+        return owned;
     }
     public override string ToString() => "[masked secure credential input]";
 }

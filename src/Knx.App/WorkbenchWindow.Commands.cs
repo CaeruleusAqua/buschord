@@ -387,6 +387,8 @@ public partial class WorkbenchWindow
         _closingSessionsForExit = true;
         _ = DisposeSessionsAsync();
         var sessionsEnded = Task.WhenAll(_pendingSessionDisposals);
+        sessionsEnded = CloseCredentialVaultAfterSessionsAsync(sessionsEnded);
+        if (!sessionsEnded.IsCompletedSuccessfully) _pendingSessionDisposals.Add(sessionsEnded);
         if (!sessionsEnded.IsCompletedSuccessfully)
         {
             // Keep the dispatcher and application lease alive while cancellation unwinds.

@@ -94,11 +94,12 @@ public partial class WorkbenchWindow : Window
 
     public WorkbenchWindow(MainWindowViewModel viewModel, WorkbenchWorkspace workspace, string? layoutPath = null, CatalogLibrary? catalogLibrary = null,
         ProgrammingStateStore? programmingStateStore = null, Func<ReadOnlyConnectionOptions, IReadOnlyWorkbenchBackend>? connectionFactory = null,
-        Func<string, IM112CommissioningBackend>? m112BackendFactory = null)
+        Func<string, IM112CommissioningBackend>? m112BackendFactory = null, WorkbenchCredentialVaultOwner? credentialVaultOwner = null)
     {
         ViewModel = viewModel;
         _realConnectionFactory = connectionFactory;
         _m112BackendFactory = m112BackendFactory;
+        _credentialVaultOwner = credentialVaultOwner ?? new();
         ViewModel.WorkbenchMonitorOwnsCapture = true;
         ViewModel.HistoryBlocked = () => _sessions?.Programming.IsRunning == true || M112Busy;
         Workspace = workspace;
@@ -524,7 +525,8 @@ public partial class WorkbenchWindow : Window
         ViewModel.BusState = Knx.Bus.BusConnectionState.Disconnected;
         ViewModel.BusName = "";
         if (connection is not null && !_closingConnections.Contains(connection)) _closingConnections.Add(connection);
-        _connectionWindow?.Close();
+        var selectionWindow = _connectionWindow; selectionWindow?.Close();
+        var selectionClose = selectionWindow?.OperationCompletion ?? Task.CompletedTask;
         var persistence = _programmingPersistence;
         _programmingPersistence = null;
         _sessions = null;
@@ -533,20 +535,20 @@ public partial class WorkbenchWindow : Window
         // while an old executor is still unwinding cancellation. Cancellation adds no attempt facts.
         persistence?.Dispose();
         _pendingSessionDisposals.RemoveAll(task => task.IsCompleted);
-        if (sessions is null && _closingConnections.Count == 0) return Task.CompletedTask;
-        var disposal = CompleteSessionDisposalAsync(sessions, _closingConnections.ToArray(), previousLifetime);
+        if (sessions is null && _closingConnections.Count == 0 && selectionClose.IsCompletedSuccessfully) return Task.CompletedTask;
+        var disposal = CompleteSessionDisposalAsync(sessions, _closingConnections.ToArray(), previousLifetime, selectionClose);
         if (!disposal.IsCompletedSuccessfully) _pendingSessionDisposals.Add(disposal);
         return disposal;
     }
 
-    private async Task CompleteSessionDisposalAsync(WorkbenchSessions? sessions, ReadOnlyWorkbenchConnection[] connections, object? previousLifetime)
+    private async Task CompleteSessionDisposalAsync(WorkbenchSessions? sessions, ReadOnlyWorkbenchConnection[] connections, object? previousLifetime, Task selectionClose)
     {
         sessions?.Monitor.Stop();
         var closing = connections.Select(connection => connection.DisposeAsync().AsTask()).ToArray();
         var sessionClose = sessions?.DisposeAsync().AsTask() ?? Task.CompletedTask;
         try
         {
-            await Task.WhenAll(closing.Append(sessionClose));
+            await Task.WhenAll(closing.Append(sessionClose).Append(selectionClose));
             foreach (var connection in connections) _closingConnections.Remove(connection);
         }
         catch { if (ReferenceEquals(previousLifetime, ViewModel.ProjectSessionIdentity)) ViewModel.Status = LiveConnectionStrings.Get("CleanupFailed"); throw; }
@@ -2707,7 +2709,9 @@ public partial class WorkbenchWindow : Window
                 ViewModel.Status = W("ScanRunning");
                 if (origin.SelectedIndex == 1)
                 {
-                    if (_liveOptions is null) { ViewModel.Status = LiveConnectionStrings.Get("Configure"); return; }
+                    if (_liveOptions is null || !CredentialSelectionSession.MatchesStoredBinding(
+                        WorkbenchCredentialVaultOwner.ProjectScope(ViewModel.Project, ViewModel.ProjectPath), _liveOptions.Profile.Keyring, _liveOptions.Profile.PasswordSource))
+                    { ViewModel.Status = LiveConnectionStrings.Get("Configure"); return; }
                     if (_liveConnection?.Snapshot.Phase is ReadOnlyConnectionPhase.Connected or ReadOnlyConnectionPhase.Connecting or ReadOnlyConnectionPhase.Disconnecting)
                     { ViewModel.Status = LiveConnectionStrings.Get("ScanDisconnect"); return; }
                     var area = ViewModel.Project!.Installations.SelectMany(i => i.Areas).Single(a => a.Lines.Contains(line));

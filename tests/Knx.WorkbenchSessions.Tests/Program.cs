@@ -17,6 +17,11 @@ if (args.Contains("--native-secure-connection"))
     Environment.ExitCode = SecureConnectionNativeChecks.Run(args.Contains("--de") ? "de" : "en");
     return;
 }
+if (args.Contains("--native-credential-vault"))
+{
+    Environment.ExitCode = CredentialVaultNativeChecks.Run(args.Contains("--de") ? "de" : "en");
+    return;
+}
 if (args.Contains("--native-m112-commissioning"))
 {
     Environment.ExitCode = M112CommissioningNativeChecks.Run(args.Contains("--de") ? "de" : "en");
@@ -60,6 +65,14 @@ if (args.Contains("--secure-connection"))
     Console.WriteLine($"{checks} secure connection checks passed.");
     return;
 }
+if (args.Contains("--credential-selection"))
+{
+    await CredentialSelectionChecks.Run(Check);
+    Console.WriteLine($"{checks} explicit credential selection checks passed.");
+    return;
+}
+
+await CredentialSelectionChecks.Run(Check);
 
 var project = new Project { Id = "P", Name = "Synthetic" };
 var installation = new Installation { Id = "I" };

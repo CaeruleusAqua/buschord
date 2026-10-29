@@ -5,7 +5,7 @@ UDP. Secure mode uses a protected `.knxkeys` export and its password. The local
 selection dialog verifies the signature, shows metadata and requires one exact
 gateway KNX address, user and assigned tunnel address. The selected source hash
 is read-only. Password input is masked and cleared when the prompt closes.
-No decrypted keyring or password is saved by this flow.
+No decrypted keyring is saved. Password storage requires a separate explicit action.
 
 The same profile is used by the read-only monitor, addressed scanner and dedicated
 M112 dialog. Each operation owns one gateway reservation and credential capability.
@@ -19,6 +19,34 @@ lease shared by cooperating processes. Lock contention has a five-second bound;
 existing malformed or linked state is refused. Initialization runs off the UI
 dispatcher and is joined before cancellation releases credentials or the gateway.
 Do not remove `client.serial.lock` while any application or MCP process uses it.
+
+## Optional OS password storage
+
+Choose the keyring file and its host/user/tunnel candidate. Public metadata and the
+source hash are initially unverified; they never enable a connection. **Enter
+password and verify** keeps the password source ephemeral. Complete signature and
+exact source verification must succeed before a choice can be accepted.
+
+For a project saved at a full path, **Check storage** checks OS availability without
+reading an entry. **Use saved password** explicitly looks up this exact binding and
+verifies the selected export. **Save new** and **Replace matching** have their own
+masked confirmation prompt and verify the password, signature and file pin before
+mutating storage. Saving does not silently select the stored source. **Delete saved
+password** deletes only that matching entry. There is no entry enumeration, automatic
+save, migration, unlock or password-source fallback.
+
+The binding includes actual project identity and full canonical project path,
+keyring path and exact source bytes, exported label and selected host/user/tunnel.
+Changing those inputs requires an explicit new choice; unsaved projects retain
+ephemeral input. A source change before lookup releases no password. A change or
+cancellation during an admitted mutation can leave an unknown outcome; the UI
+shows that state and never retries or compensates automatically.
+
+Windows uses the current user's Credential Manager. Linux requires installed
+libsecret/GIO and a configured Secret Service with encrypted transfer; unavailable
+or locked storage stays visible and ephemeral input remains available. Connections,
+scan, commissioning and nested password dialogs drain before the Workbench vault
+owner is released. [Storage contract and provider limits](credential-vault.md).
 
 IP Secure authenticates the gateway transport. It does not authenticate or decrypt
 Data Secure group values. All groups with signed keys in the imported export are
@@ -65,7 +93,7 @@ failure, assigned-address mismatch, exact source pin, downgrade refusal, shared
 ownership and joined cleanup. Native German/English tests check the real selection
 and password controls. The combined maintained suites provide integration checks;
 they do not establish interoperability with a physical Secure gateway or a Secure
-application download. Ordinary group security, OS password storage, provisioned
+application download. Ordinary group security, provisioned
 Tool Access/Sync and secure first commissioning remain separate profiles/work.
 
 See [IP Secure protocol](secure-session.md), [protected exports](protected-keyrings.md)
