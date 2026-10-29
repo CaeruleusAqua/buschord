@@ -839,14 +839,14 @@ internal static class WorkbenchCheck
                 Check("chrome: full search returns above 1040 DIP", fullSearch.IsVisible);
 
                 window.WindowState = WindowState.Maximized;
-                await Task.Delay(150);
+                await WaitUntil(() => window.WindowState == WindowState.Maximized, "chrome maximize native acknowledgement");
                 Check("chrome: maximize keeps the 49 px strip and swaps to the restore name",
                     window.WindowState == WindowState.Maximized
                     && Math.Abs(topbar.Bounds.Height - 49) < 0.5
                     && AutomationProperties.GetName(chromeMaximize) == WorkbenchStrings.Get("WindowRestore")
                     && Math.Abs(chromeMaximize.Bounds.Width - 46) < 0.5);
                 window.WindowState = WindowState.Normal;
-                await Task.Delay(150);
+                await WaitUntil(() => window.WindowState == WindowState.Normal, "chrome restore native acknowledgement");
                 Check("chrome: restore swaps the maximize name back",
                     window.WindowState == WindowState.Normal
                     && AutomationProperties.GetName(chromeMaximize) == WorkbenchStrings.Get("WindowMaximize"));

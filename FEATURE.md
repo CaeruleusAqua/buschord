@@ -87,7 +87,8 @@ Direkte Root-RawData-Speicherfelder nutzen denselben Arbeitslauf einschließlich
 M112-Änderungsplan; [Profil und Grenzen](docs/status.md#combined-logical-working-stage).
 Ein eigener [M112-Dialog](docs/commissioning.md) verbindet Review, Gerätebestätigung
 und Wiederherstellung nach Neustart. Die [Secure-UDP-Bibliothek](docs/secure-session.md)
-ist auf Windows und Linux geprüft; ihre Oberflächen-/Schlüsselintegration läuft.
+ist auf Windows und Linux geprüft. Die [sichere Verbindungswahl](docs/secure-connections.md)
+verbindet signierte Keyring-Auswahl, Monitor, Scan, M112 und MCP über denselben Besitzer.
 Geschützte [Keyrings](docs/protected-keyrings.md) und ein begrenzter
 [Data-Secure-Gruppenpfad](docs/data-secure.md) ergänzen die Bibliothek.
 

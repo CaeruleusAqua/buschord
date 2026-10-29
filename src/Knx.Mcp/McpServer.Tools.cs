@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Xml.Linq;
 using Knx.Bus;
+using Knx.Bus.Connections;
 using Knx.Catalog;
 using Knx.ProjectCompare;
 using Knx.Reports;
@@ -17,7 +18,7 @@ public sealed partial class McpServer
 {
     // ---------------------------------------------------------------- catalog
 
-    private List<McpTool> BuildTools() =>
+    private List<McpTool> BuildTools() => AddConnectionSchemas(
     [
         new("project_open",
             "Open an existing ETS project archive (*.knxproj) and make it the working project. " +
@@ -25,7 +26,7 @@ public sealed partial class McpServer
             Schema(StrProp("path", "Path to the .knxproj file.", true),
                 StrProp("password", "Project password for this call only; never remembered."),
                 BoolProp("execute_scripts", "Explicitly run bounded manufacturer calculations for this call (default false).")),
-            Sync(ProjectOpen)),
+            args => ReplaceProjectAsync(args, ProjectOpen)),
         new("project_new",
             "Create a new empty project in memory with the given name, group address style, area count and " +
             "lines per area. save_path only remembers where project_save should write later.",
@@ -36,7 +37,7 @@ public sealed partial class McpServer
                 IntProp("lines", "Number of lines per area (default 1)."),
                 EnumProp("topology_template", "Address origin: tp starts with line 1.1; legacy keeps line 0.0 (default legacy). TP supports 1..15, legacy 1..16 areas/lines.", ["tp", "legacy"]),
                 StrProp("save_path", "Target .knxproj path used by project_save.")),
-            Sync(ProjectNew)),
+            args => ReplaceProjectAsync(args, ProjectNew)),
         new("project_save",
             "Write the in-memory project to disk as a .knxproj archive. Uses the path from project_open or " +
             "project_new unless path is given.",
@@ -308,8 +309,9 @@ public sealed partial class McpServer
             BusDiscover),
         new("bus_connect",
             "Open a KNXnet/IP connection. mode=tunnel (default) searches for gateways and connects the first " +
-            "one matching 'device' (name fragment or individual address); mode=routing joins 224.0.23.12 on " +
-            "the KNX segment interface (bind routing port 3671). Required before bus_read.",
+            "one matching 'device' (name fragment or individual address). mode=plain_udp also accepts an explicit gateway. " +
+            "mode=ip_secure_udp requires an explicit gateway, protected keyring reference and exact host/user/tunnel address selection; " +
+            "it authenticates the gateway and never falls back to plain. mode=routing joins 224.0.23.12. Required before bus_read.",
             Schema(
                 EnumProp("mode", "Connection type.", ["tunnel", "routing"]),
                 StrProp("device", "Gateway name fragment or individual address; defaults to the first gateway found."),
@@ -343,8 +345,8 @@ public sealed partial class McpServer
             Sync(BusStatus)),
         new("bus_scan",
             "Read-only bus or line scan: broadcast IndividualAddressRead, collect the answering individual " +
-            "addresses and read each device descriptor (mask version). Opens its own short-lived tunnelling " +
-            "connection, so bus_connect is not required, and writes nothing to the bus. target restricts the " +
+            "addresses and read each device descriptor (mask version). Reuses an active tunnel or opens one reserved " +
+            "factory operation with explicit Secure selectors when requested; bus_connect is optional. Writes no configuration. target restricts the " +
             "scan to one line 'area.line'. Compared with the open project it reports duplicate, missing and " +
             "unexpected addresses.",
             Schema(
@@ -354,8 +356,9 @@ public sealed partial class McpServer
                 IntProp("response_timeout_ms", "Collect and probe timeout in ms (100..5000, default 1000).")),
             BusScanTool),
         new("bus_device_info",
-            "Read the device descriptor of one individual address (mask version and descriptor type) over a " +
-            "short-lived read-only tunnel. Sends only a well-formed DeviceDescriptorRead (descriptor type 0).",
+            "Read the device descriptor of one individual address (mask version and descriptor type) over the active " +
+            "tunnel or one reserved short-lived factory operation. Explicit Secure selectors never fall back to plain. " +
+            "Sends only a well-formed DeviceDescriptorRead (descriptor type 0).",
             Schema(
                 StrProp("address", "Individual address, e.g. 1.1.5.", true),
                 StrProp("gateway", "Gateway name fragment or IP; defaults to the first gateway found."),
@@ -373,7 +376,7 @@ public sealed partial class McpServer
             "(descriptor/mask, programming mode, confirmed address/line, program match, parameter/link " +
             "completeness, confirmations), the computed image chunks, the printable dry run and the " +
             "attempt-log status. Sends no programming frame and never downloads; with 'gateway' it reads " +
-            "the descriptor over a short-lived read-only tunnel (like bus_device_info). " +
+            "the descriptor over the active tunnel or one reserved read-only factory operation (like bus_device_info). " +
             "Adds archiveMaskProfile metadata from the loaded archive without script evaluation. " +
             "An explicit parameter_subset plus byte_order optionally adds an offline subset preview (Subset-Vorschau) for numeric fields, declared unsigned enum values, aligned IEEE32 using the explicit .NET10 XML Double-to-Single profile, bounded signed raw ordinary Time counts without unit scaling, and 24-bit PackedDaysHoursMinutesAndSeconds with BigEndian requests only; it never supplies a complete application image or download permission. " +
             "resource_preview=true explicitly uses typed absolute/LSM-relative arenas, compact resource hashes and archived image-source metadata for that subset; absent or false keeps the ordinary subset contract. " +
@@ -434,7 +437,7 @@ public sealed partial class McpServer
                 StrProp("path", "Output file path.", true),
                 EnumProp("format", "File format.", ["xml", "csv", "jsonl"], true)),
             Sync(RecorderSave)),
-    ];
+    ]);
 
     // ---------------------------------------------------------------- project
 
@@ -1201,11 +1204,12 @@ public sealed partial class McpServer
 
     private async Task<object> BusDiscover(JsonElement args)
     {
+        using var job = await EnterConnectionJobAsync();
         var timeoutMs = Math.Clamp(Int(args, "timeout_ms") ?? 1500, 100, 10000);
         try
         {
             var host = Str(args, "host");
-            var devices = await _bus.DiscoverAsync(TimeSpan.FromMilliseconds(timeoutMs), host)
+            var devices = await _bus.DiscoverAsync(TimeSpan.FromMilliseconds(timeoutMs), host, job.Token)
                 .WaitAsync(TimeSpan.FromMilliseconds(timeoutMs + 3000));
             return new
             {
@@ -1233,85 +1237,34 @@ public sealed partial class McpServer
 
     private async Task<object> BusConnect(JsonElement args)
     {
+        RefuseSecretArguments(args);
+        using var job = await EnterConnectionJobAsync();
+        if (_bus.State != BusConnectionState.Connected && _bus.Profile is not null) await _bus.DisposeAsync();
+        if (string.Equals(Str(args, "mode"), "routing", StringComparison.OrdinalIgnoreCase))
+        {
+            if (ConnectionInput.HasSecureFields(args) || Str(args, "gateway") is not null)
+                throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
+            if (_bus.State == BusConnectionState.Connected) throw new KnxConnectionException(KnxConnectionFailure.Occupied);
+            await _bus.ConnectRoutingAsync(ConnectionInput.Local(args), job.Token);
+            _selectedConnectionProfile = null; _secureConnectionRequested = false;
+            return new { connected = true, mode = "routing", gatewayAuthenticated = false };
+        }
+        var profile = await ResolveConnectionProfileAsync(args, new(1, 1, 250), job.Token);
         if (_bus.State == BusConnectionState.Connected)
-            return new
-            {
-                connected = true,
-                alreadyConnected = true,
-                device = _bus.DeviceName,
-                state = _bus.State.ToString().ToLowerInvariant(),
-            };
-
-        var mode = (Str(args, "mode") ?? "tunnel").ToLowerInvariant();
-        var ownAddress = Str(args, "own_address") ?? "1.1.250";
-        var interfaceText = Str(args, "interface");
-        IPAddress? localAddress = null;
-        if (interfaceText is not null)
         {
-            if (!IPAddress.TryParse(interfaceText, out localAddress))
-                throw new ToolException($"'{interfaceText}' is not a local IPv4 address");
+            if (_bus.Profile is not { } active || !active.EquivalentTo(profile)) throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
+            return new { connected = true, alreadyConnected = true, mode = profile.Kind.ToString(), security = _bus.Security };
         }
-        var timeoutMs = Math.Clamp(Int(args, "timeout_ms") ?? 1500, 100, 10000);
-        if (!IndividualAddress.TryParse(ownAddress, out var individualAddress))
-            throw new ToolException($"'{ownAddress}' is not a valid individual address (x.y.z)");
-
-        try
-        {
-            if (mode == "routing")
-            {
-                await _bus.ConnectRoutingAsync(localAddress);
-            }
-            else if (mode == "tunnel")
-            {
-                var devices = await _bus.DiscoverAsync(TimeSpan.FromMilliseconds(timeoutMs))
-                    .WaitAsync(TimeSpan.FromMilliseconds(timeoutMs + 3000));
-                if (devices.Count == 0)
-                    throw new ToolException($"no KNXnet/IP gateway answered within {timeoutMs} ms");
-
-                var wanted = Str(args, "device");
-                var device = wanted is null
-                    ? devices[0]
-                    : devices.FirstOrDefault(d =>
-                        d.Name.Contains(wanted, StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(d.KnxAddress, wanted, StringComparison.OrdinalIgnoreCase));
-                if (device is null)
-                    throw new ToolException(
-                        $"no gateway matched '{wanted}'; found: " +
-                        string.Join(", ", devices.Select(d => $"{d.Name} ({d.KnxAddress})")));
-
-                await _bus.ConnectTunnelAsync(device, individualAddress);
-            }
-            else
-            {
-                throw new ToolException($"unknown mode '{mode}' (tunnel|routing)");
-            }
-        }
-        catch (ToolException)
-        {
-            throw;
-        }
-        catch (TimeoutException)
-        {
-            throw new ToolException($"connecting did not finish within {timeoutMs + 3000} ms");
-        }
-        catch (Exception ex)
-        {
-            throw new ToolException($"connect failed: {ex.Message}");
-        }
-
-        return new
-        {
-            connected = _bus.State == BusConnectionState.Connected,
-            mode,
-            device = _bus.DeviceName,
-            ownAddress,
-            @interface = localAddress?.ToString(),
-            state = _bus.State.ToString().ToLowerInvariant(),
-        };
+        await _bus.ConnectAsync(profile, job.Token);
+        RememberConnection(profile, _bus.Security);
+        return new { connected = _bus.State == BusConnectionState.Connected, mode = profile.Kind.ToString(),
+            security = _bus.Security, ownAddress = profile.RequestedAddress.ToString(), state = _bus.State.ToString().ToLowerInvariant() };
     }
 
     private async Task<object> BusDisconnect(JsonElement args)
     {
+        RefuseSecretArguments(args);
+        using var job = await EnterConnectionJobAsync();
         await _bus.DisposeAsync();
         return new
         {
@@ -1322,6 +1275,8 @@ public sealed partial class McpServer
 
     private async Task<object> BusRead(JsonElement args)
     {
+        RefuseSecretArguments(args);
+        using var job = await EnterConnectionJobAsync();
         RequireConnected();
         var address = ParseAddress(Required(args, "group_address"));
         var datapointType = Str(args, "datapoint_type") ?? ProjectDatapointType(address);
@@ -1330,9 +1285,9 @@ public sealed partial class McpServer
         BusTelegram? received;
         try
         {
-            received = await _bus.ReadGroupValueAsync(address, TimeSpan.FromMilliseconds(timeoutMs));
+            received = await _bus.ReadGroupValueAsync(address, TimeSpan.FromMilliseconds(timeoutMs), job.Token);
         }
-        catch (Exception ex) when (ex is not ToolException)
+        catch (Exception ex) when (ex is not (ToolException or KnxConnectionException or OperationCanceledException))
         {
             throw new ToolException($"group read failed: {ex.Message}");
         }
@@ -1365,6 +1320,7 @@ public sealed partial class McpServer
         connected = _bus.State == BusConnectionState.Connected,
         state = _bus.State.ToString().ToLowerInvariant(),
         device = _bus.DeviceName,
+        security = _bus.Security,
         recorder = new
         {
             recording = _recorder.IsRecording,
@@ -1393,11 +1349,11 @@ public sealed partial class McpServer
         BusScan scan;
         try
         {
-            scan = await BusDiagnostics.WithSessionAsync(Str(args, "gateway"), timeoutMs, session => line is null
-                ? Diagnostics.ScanBusAsync(session, options)
-                : Diagnostics.ScanLineAsync(session, line.Value.Area, line.Value.Line, options));
+            scan = await WithDiagnosticsAsync(args, timeoutMs, (session, ct) => line is null
+                ? Diagnostics.ScanBusAsync(session, options, ct)
+                : Diagnostics.ScanLineAsync(session, line.Value.Area, line.Value.Line, options, ct));
         }
-        catch (Exception ex) when (ex is not ToolException)
+        catch (Exception ex) when (ex is not (ToolException or KnxConnectionException or OperationCanceledException))
         {
             throw new ToolException($"bus scan failed: {ex.Message}");
         }
@@ -1432,10 +1388,10 @@ public sealed partial class McpServer
         BusScan scan;
         try
         {
-            scan = await BusDiagnostics.WithSessionAsync(Str(args, "gateway"), timeoutMs,
-                session => Diagnostics.ScanAsync(session, [address], options));
+            scan = await WithDiagnosticsAsync(args, timeoutMs,
+                (session, ct) => Diagnostics.ScanAsync(session, [address], options, ct));
         }
-        catch (Exception ex) when (ex is not ToolException)
+        catch (Exception ex) when (ex is not (ToolException or KnxConnectionException or OperationCanceledException))
         {
             throw new ToolException($"device info failed: {ex.Message}");
         }
@@ -1476,6 +1432,9 @@ public sealed partial class McpServer
 
     private async Task<object> DownloadPlanTool(JsonElement args)
     {
+        RefuseSecretArguments(args);
+        if (ConnectionInput.HasSecureFields(args) && Str(args, "mode") != "ip_secure_udp") throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
+        if (Str(args, "mode") == "ip_secure_udp") _ = ConnectionInput.Explicit(args, new(1, 1, 249));
         var nativeImageOptions = ReadNativeImageBuildOptions(args);
         var rootPropertyOptions = ReadRootPropertyBuildOptions(args);
         var project = Current;
@@ -1499,10 +1458,10 @@ public sealed partial class McpServer
             BusScan scan;
             try
             {
-                scan = await BusDiagnostics.WithSessionAsync(gateway, timeoutMs,
-                    session => Diagnostics.ScanAsync(session, [address], options));
+                scan = await WithDiagnosticsAsync(args, timeoutMs,
+                    (session, ct) => Diagnostics.ScanAsync(session, [address], options, ct));
             }
-            catch (Exception ex) when (ex is not ToolException)
+            catch (Exception ex) when (ex is not (ToolException or KnxConnectionException or OperationCanceledException))
             {
                 throw new ToolException($"descriptor read failed: {ex.Message}");
             }

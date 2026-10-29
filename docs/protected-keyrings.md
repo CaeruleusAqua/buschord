@@ -24,8 +24,9 @@ private storage outside the source checkout.
 Exported device sequence numbers are historical metadata. They cannot bootstrap
 a fresh [Data Secure counter store](data-secure.md) without trusted provisioning
 or authenticated synchronization. Certificate/FDSK backups, unsigned or plaintext
-XML and an OS credential vault are outside this import profile. Workbench and
-MCP credential controls are separate integration work.
+XML and an OS credential vault are outside this import profile. The
+[Workbench/MCP selection](secure-connections.md) uses this importer without
+saving decrypted credentials.
 
 The maintained suite checks independent synthetic signed envelopes, published
 encrypted field pairs, tampering, limits, exact selection and secret ownership.

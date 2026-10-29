@@ -746,7 +746,7 @@ manual input or acoustic screenreader acceptance.
 ## Network and commissioning
 
 KNXnet/IP discovery, tunnel/routing and management foundations have synthetic and
-loopback checks. The Workbench offers an explicit read-only standard UDP tunnel,
+loopback checks. The Workbench offers explicit read-only ordinary and IP Secure UDP tunnels,
 real group monitor and addressed line scan alongside labelled demonstrations.
 Connection options belong to one project lifetime; project replacement, cancellation
 and window shutdown join network cleanup before an endpoint can be reused. Real
@@ -756,8 +756,8 @@ connection and report unknown/unprobed addresses without claiming absence.
 The general Workbench programming queue remains a labelled simulation. General device writes and
 application downloads remain disabled. An explicit console-only MDT M112 programming-mode test
 has live identity, write, readback and restoration evidence for one released device;
-see [targeted commissioning](commissioning.md). Secure connection controls, complete images,
-complete load flows and general management/Verify/commissioning remain incomplete.
+see [targeted commissioning](commissioning.md). Complete images, complete load flows
+and general management/Verify/commissioning remain incomplete.
 
 A separate M112 profile builds bounded root unions and an absolute
 full-load recipe for reloading an already matching configuration. Known persistent
@@ -796,8 +796,13 @@ verification and binds own confirmations to prepared frames. A separate optional
 monotonic anchor can detect full-file rollback; an ordinary backup cannot provide
 that guarantee. Missing/corrupt state never creates fresh counters automatically.
 See [keyring scope](protected-keyrings.md) and [counter/recovery limits](data-secure.md).
-Secure Workbench/MCP controls, protected OS storage, authenticated Sync, individual
-Tool Access and secure first commissioning remain open.
+[Workbench/MCP connection controls](secure-connections.md) use one explicit profile,
+one gateway reservation and one credential capability across fresh M112/recovery
+connections. Exact assigned IA and source pins are enforced; known protected groups
+cannot silently become plaintext. Native selection and password controls have
+German/English checks; typed errors omit private source paths and credentials.
+Protected OS storage, authenticated Sync, individual Tool Access and secure first
+commissioning remain open.
 Extended cEMI uses one NPDU length octet and the control-field frame selector;
 81 checks cover published vectors, strict lengths and the shared raw-frame API.
 

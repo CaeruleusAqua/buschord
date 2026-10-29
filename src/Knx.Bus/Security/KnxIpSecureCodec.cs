@@ -22,16 +22,24 @@ public static class KnxIpSecureCodec
 
     /// <summary>Derives a 128-bit user key. This profile accepts bounded printable ASCII passwords only.</summary>
     public static byte[] DeriveUserKey(string password) => DerivePassword(password, "user-password.1.secure.ip.knx.org");
+    public static byte[] DeriveUserKey(ReadOnlySpan<byte> password) => DerivePassword(password, "user-password.1.secure.ip.knx.org");
     /// <summary>Derives the 128-bit device-authentication key from a printable ASCII authentication password.</summary>
     public static byte[] DeriveDeviceAuthenticationKey(string password) => DerivePassword(password, "device-authentication-code.1.secure.ip.knx.org");
+    public static byte[] DeriveDeviceAuthenticationKey(ReadOnlySpan<byte> password) => DerivePassword(password, "device-authentication-code.1.secure.ip.knx.org");
     private static byte[] DerivePassword(string password, string salt)
     {
         ArgumentNullException.ThrowIfNull(password);
         if (password.Length > 256 || password.Any(c => c is < ' ' or > '~'))
             throw new ArgumentException("This password profile accepts at most 256 printable ASCII characters.", nameof(password));
         var bytes = Encoding.ASCII.GetBytes(password);
-        try { return Rfc2898DeriveBytes.Pbkdf2(bytes, Encoding.ASCII.GetBytes(salt), 65536, HashAlgorithmName.SHA256, 16); }
+        try { return DerivePassword(bytes, salt); }
         finally { CryptographicOperations.ZeroMemory(bytes); }
+    }
+    private static byte[] DerivePassword(ReadOnlySpan<byte> password, string salt)
+    {
+        if (password.Length > 256) throw new ArgumentException("Unsupported secure password profile.", nameof(password));
+        foreach (var value in password) if (value is < 0x20 or > 0x7e) throw new ArgumentException("Unsupported secure password profile.", nameof(password));
+        return Rfc2898DeriveBytes.Pbkdf2(password, Encoding.ASCII.GetBytes(salt), 65536, HashAlgorithmName.SHA256, 16);
     }
 
     public static byte[] Wrap(ushort sessionId, ulong sequence, ReadOnlySpan<byte> serialNumber,

@@ -43,7 +43,8 @@ before releasing its owned UDP transport and key material.
 - Independent synthetic CBC/CTR/PBKDF2 vectors and RFC 7748 vectors check the
   cryptographic framing; adversarial sessions and an actual local UDP pair check
   the tunnel adapter and cleanup. These are software checks, not Secure-device
-  acceptance. Workbench/MCP Secure connection controls remain separate work.
+  acceptance. [Workbench/MCP selection](secure-connections.md) uses the same
+  authenticated transport through a shared operation owner.
 - The maintained bus suite and all 28 focused session/transport checks plus 16
   legacy gates passed on Windows and Ubuntu 26.04. Linux execution includes
   the actual OpenSSL 3 RFC 7748 agreement, published protocol vectors and local
@@ -52,7 +53,7 @@ before releasing its owned UDP transport and key material.
   keyring provisioning, protected key storage or secure first commissioning.
   [Protected keyring import](protected-keyrings.md) and the
   [Data Secure group library](data-secure.md) are separate profiles; their
-  Workbench/MCP integration remains explicit follow-up work.
+  provisioning remains explicit follow-up work.
 
 ## Compatibility gates
 

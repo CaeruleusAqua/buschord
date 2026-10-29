@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Knx.Bus;
+using Knx.Bus.Connections;
 
 namespace Knx.Mcp;
 
@@ -9,14 +10,18 @@ namespace Knx.Mcp;
 internal static class ManagementProbe
 {
     public static async Task<int> RunAsync(string host, string[] args)
-        => await RunCoreAsync(host, args, null);
+        => await RunCoreAsync(host, args, null, null);
 
     internal static Task<int> RunWithConnectionsAsync(string host, string[] args,
         Func<IPEndPoint, IndividualAddress, IndividualAddress, CancellationToken, Task<IManagementConnection>> open)
-        => RunCoreAsync(host, args, open);
+        => RunCoreAsync(host, args, open, null);
+
+    internal static Task<int> RunWithFactoryAsync(string host, string[] args, KnxConnectionFactory factory)
+        => RunCoreAsync(host, args, null, factory);
 
     private static async Task<int> RunCoreAsync(string host, string[] args,
-        Func<IPEndPoint, IndividualAddress, IndividualAddress, CancellationToken, Task<IManagementConnection>>? open)
+        Func<IPEndPoint, IndividualAddress, IndividualAddress, CancellationToken, Task<IManagementConnection>>? open,
+        KnxConnectionFactory? connections)
     {
         try
         {
@@ -28,6 +33,8 @@ internal static class ManagementProbe
             var target = IndividualAddress.Parse(targetText);
             if (target.Device is 0 or 255 || target.ToString() != targetText)
                 throw new ArgumentException("--target must be one canonical area.line.device address with device 1..254.");
+            var profile = ConnectionProfile(options, host);
+            if (open is not null && profile.RequiresAuthentication) throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
             var mode = Option("--mode-cycle-confirm");
             var full = Option("--m112-full-confirm");
             var change = Option("--m112-change-confirm");
@@ -46,11 +53,17 @@ internal static class ManagementProbe
             timeout.CancelAfter(change is not null ? TimeSpan.FromMinutes(10) : full is not null || recover is not null ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(60));
             ConsoleCancelEventHandler onCancel = (_, e) => { e.Cancel = true; caller.Cancel(); };
             Console.CancelKeyPress += onCancel;
+            KnxGatewayOperation? operation = null;
             try
             {
                 async Task<IManagementConnection> Open(CancellationToken token)
-                    => open is null ? await KnxManagementConnection.OpenAsync(new IPEndPoint(address, 3671), target,
-                        new IndividualAddress(1, 1, 249), ct: token) : await open(new IPEndPoint(address, 3671), target, new IndividualAddress(1, 1, 249), token);
+                {
+                    if (open is not null) return await open(profile.Gateway, target, profile.RequestedAddress, token);
+                    // Acquisition is lazy: offline previews perform no credential/file/network work.
+                    // The capability outlives the original caller token and every independent recovery connection.
+                    operation ??= await (connections ?? new KnxConnectionFactory()).AcquireOperationAsync(profile, token);
+                    return await operation.OpenManagementAsync(target, readOnly: mode is null && full is null && change is null && recover is null, token);
+                }
                 if (mode is not null || full is not null || recover is not null || change is not null)
                 {
                     var confirmed = mode ?? full ?? change ?? Option("--m112-recovery-confirm");
@@ -74,14 +87,14 @@ internal static class ManagementProbe
                         using var recoveryTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
                         var result = await M112ApplicationDownload.RecoverAsync(Open, recoveryPath, expected, confirmed,
                             phase => Console.Error.WriteLine("m112: " + phase), recoveryTimeout.Token);
-                        Console.WriteLine(JsonSerializer.Serialize(result));
+                        WriteResult(result);
                         return result.OriginalConfigurationRestoredAndVerified && result.Error is null ? 0 : 1;
                     }
                     var journalDirectory = PrivatePath(Required(options, "--journal-directory"), existingFile: false);
                     if (mode is not null)
                     {
                         var result = await ProgrammingModeCycle.RunAsync(Open, expected, confirmed, journalDirectory, timeout.Token);
-                        Console.WriteLine(JsonSerializer.Serialize(result));
+                        Console.WriteLine(JsonSerializer.Serialize(new { result.ActivatedAndVerified, result.RestoredAndVerified, failed = result.Error is not null }));
                         return result.ActivatedAndVerified && result.RestoredAndVerified && result.Error is null ? 0 : 1;
                     }
                     var projectPath = PrivatePath(Required(options, "--project"), existingFile: true);
@@ -116,7 +129,7 @@ internal static class ManagementProbe
                         }
                         var result = await M112ApplicationDownload.ApplyChangesAsync(Open, plan, Required(options, "--review-fingerprint"), expected,
                             confirmed, journalDirectory, phase => Console.Error.WriteLine("m112: " + phase), timeout.Token);
-                        Console.WriteLine(JsonSerializer.Serialize(result));
+                        WriteResult(result);
                         return result.DownloadedAndVerified && result.Error is null ? 0 : 1;
                     }
                     var image = OfflineM112ApplicationBuild.Build(project, device);
@@ -133,7 +146,7 @@ internal static class ManagementProbe
                     }
                     var download = await M112ApplicationDownload.RunAsync(Open, project, device, image, expected, confirmed, journalDirectory,
                         phase => Console.Error.WriteLine("m112: " + phase), timeout.Token);
-                    Console.WriteLine(JsonSerializer.Serialize(download));
+                    WriteResult(download);
                     return download.DownloadedAndVerified && download.Error is null ? 0 : 1;
                 }
                 await using var connection = await Open(timeout.Token);
@@ -149,12 +162,16 @@ internal static class ManagementProbe
                 }
                 return 0;
             }
-            finally { Console.CancelKeyPress -= onCancel; }
+            finally
+            {
+                try { if (operation is not null) await operation.DisposeAsync(); }
+                finally { Console.CancelKeyPress -= onCancel; }
+            }
         }
-        catch (ArgumentException ex) { Console.Error.WriteLine("management-probe: " + ex.Message); return 2; }
+        catch (ArgumentException) { Console.Error.WriteLine("management-probe: InvalidProfile"); return 2; }
         catch (Exception ex)
         {
-            Console.Error.WriteLine("management-probe: " + ex.Message);
+            Console.Error.WriteLine("management-probe: " + (ex is KnxConnectionException error ? error.Failure.ToString() : ex is OperationCanceledException ? "Cancelled" : "OperationFailed"));
             return 1;
         }
     }
@@ -165,6 +182,7 @@ internal static class ManagementProbe
             "--expected-identity", "--journal-directory", "--m112-full-confirm", "--project", "--project-password-env",
             "--m112-recover", "--m112-recovery-confirm"], StringComparer.Ordinal);
         valued.UnionWith(["--m112-change-confirm", "--baseline-project", "--baseline-password-env", "--review-fingerprint"]);
+        valued.UnionWith(ConnectionOptions);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var arg in args)
         {
@@ -182,6 +200,7 @@ internal static class ManagementProbe
     private static void ValidateModeOptions(Dictionary<string, string> options, string mode)
     {
         var allowed = new HashSet<string>(["--management-probe", "--target"], StringComparer.Ordinal);
+        allowed.UnionWith(ConnectionOptions);
         allowed.UnionWith(mode switch
         {
             "mode" => ["--mode-cycle-confirm", "--expected-identity", "--journal-directory"],
@@ -197,6 +216,31 @@ internal static class ManagementProbe
 
     private static string Required(Dictionary<string, string> options, string name)
         => options.GetValueOrDefault(name) ?? throw new ArgumentException("Missing required option: " + name);
+
+    private static readonly string[] ConnectionOptions = ["--transport", "--gateway-port", "--own-address", "--keyring-path", "--keyring-password-env",
+        "--keyring-project", "--host-address", "--user-id", "--expected-keyring-sha256"];
+
+    private static KnxConnectionProfile ConnectionProfile(Dictionary<string, string> options, string host)
+    {
+        var values = new Dictionary<string, object?> { ["mode"] = options.GetValueOrDefault("--transport") ?? "plain_udp", ["gateway"] = host };
+        foreach (var (option, property) in new[] { ("--own-address", "own_address"), ("--keyring-path", "keyring_path"),
+            ("--keyring-password-env", "keyring_password_env"), ("--keyring-project", "keyring_project"), ("--host-address", "host_address"),
+            ("--expected-keyring-sha256", "expected_keyring_sha256") })
+            if (options.TryGetValue(option, out var text)) values[property] = text;
+        foreach (var (option, property) in new[] { ("--gateway-port", "port"), ("--user-id", "user_id") })
+            if (options.TryGetValue(option, out var text))
+            {
+                if (!int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var number))
+                    throw new ArgumentException("Invalid explicit connection number.");
+                values[property] = number;
+            }
+        return ConnectionInput.Explicit(JsonSerializer.SerializeToElement(values), new(1, 1, 249));
+    }
+    private static void WriteResult(M112DownloadResult result) => Console.WriteLine(JsonSerializer.Serialize(new
+    {
+        result.DownloadedAndVerified, result.RollbackAttempted, result.OriginalConfigurationRestoredAndVerified,
+        result.RecoveryScope, recoverySnapshotCreated = result.RecoveryPath is not null, failed = result.Error is not null,
+    }));
 
     private static string PrivatePath(string path, bool existingFile)
     {

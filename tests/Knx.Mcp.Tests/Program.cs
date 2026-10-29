@@ -21,6 +21,8 @@ Environment.SetEnvironmentVariable("KNX_CATALOG_DIR", catalogDir);
 
 await ManagementChangeCliChecks.RunAsync(Check);
 if (args.Contains("--management-cli")) return failures.Count == 0 ? 0 : 1;
+await SecureConnectionMcpChecks.RunAsync(Check);
+if (args.Contains("--secure-connections")) return failures.Count == 0 ? 0 : 1;
 
 await using var server = new McpServer();
 
@@ -177,7 +179,7 @@ Check("bus_connect rejects malformed input without network access",
     busConnect["result"]?["isError"]?.GetValue<bool>() == true, busConnect.ToJsonString());
 Check("bus_connect nennt den Grund",
     (busConnect["result"]?["content"]?[0]?["text"]?.GetValue<string>() ?? "")
-        .Contains("individual address", StringComparison.OrdinalIgnoreCase), busConnect.ToJsonString());
+        .Contains("InvalidProfile", StringComparison.OrdinalIgnoreCase), busConnect.ToJsonString());
 
 var badMode = await Tool(32, "bus_connect", new { mode = "carrier-pigeon" });
 Check("bus_connect lehnt unbekannten Modus ab",

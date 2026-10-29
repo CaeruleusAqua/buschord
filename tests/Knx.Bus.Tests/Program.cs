@@ -7,6 +7,12 @@ using Knx;
 using Knx.Bus;
 using Knx.Bus.Security;
 
+if (args.Length > 0 && args[0] == "--serial-publication-child")
+{
+    Environment.Exit(await SerialPublicationChecks.RunAsync(args));
+    return;
+}
+
 if (await DataSecureChecks.TryRunChildAsync(args) is { } childResult)
 {
     Environment.Exit(childResult);
@@ -43,8 +49,10 @@ if (args is ["--routing-live", var localIp, ..])
 
 // Failed/cancelled facade acquisition must leave a clean, retryable connection.
 await using (var local = new LocalTunnelServer(0x22, null, 0))
-await using (var bus = new KnxBus())
+await using (var bus = Activator.CreateInstance<KnxBus>())
 {
+    var connectedStateConsistent = true;
+    bus.StateChanged += state => { if (state == BusConnectionState.Connected) connectedStateConsistent &= bus.State == state; };
     var rejected = false;
     try { await bus.ConnectTunnelAsync(local.Device, new IndividualAddress(1, 1, 250)); }
     catch (IOException) { rejected = true; }
@@ -72,6 +80,7 @@ await using (var bus = new KnxBus())
         await local.TelegramAsync(); // same sequence is a retransmit, not a second telegram
         await Task.Delay(50);
         Check("failed and cancelled tunnel retries succeed with one callback", bus.State == BusConnectionState.Connected && callbacks == 1);
+        Check("connected event observes the published facade state", connectedStateConsistent);
         await bus.DisposeAsync();
         Check("disposed facade clears connection name", bus.DeviceName is null && bus.State == BusConnectionState.Disconnected);
     }
@@ -665,6 +674,7 @@ var keys = (UserKey: Convert.FromHexString("00112233445566778899AABBCCDDEEFF"),
 
 // ---- 10. Authenticated IP sessions and legacy refusal ----
 Check("authenticated secure tunnel checks", await SecureTunnelChecks.RunAsync() == 0);
+Check("connection profile factory checks", await ConnectionProfileChecks.RunAsync() == 0);
 Check("legacy secure APIs fail closed", LegacySecurityChecks.Run() == 0);
 
 // ---- 15. CSV-Export: RFC 4180 und Formel-Neutralisierung ----
@@ -771,6 +781,7 @@ Check("tunnel peer checks", await TunnelPeerChecks.RunAsync() == 0);
 Check("protected keyring checks", ProtectedKnxKeyringChecks.Run() == 0);
 Check("data secure codec and durable state checks", await DataSecureChecks.RunAsync() == 0);
 Check("data secure tunnel hook checks", await DataSecureTunnelChecks.RunAsync() == 0);
+Check("client serial publication checks", await SerialPublicationChecks.RunAsync([]) == 0);
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Knx.Bus;
+using Knx.Bus.Connections;
 
 namespace Knx.App.Workbench;
 
@@ -9,7 +10,9 @@ public sealed record M112LiveProject(Project? Project, object SessionIdentity, b
 public sealed record M112ReviewRange(ushort Address, int Length, string Baseline, string Desired, string Validity, bool RequiresDeviceRead);
 public sealed record M112CommissioningSnapshot(M112CommissioningPhase Phase, string? Fingerprint = null,
     ManagementDeviceIdentity? Identity = null, bool IdentityConfirmed = false, M112DownloadResult? Result = null, string? Issue = null,
-    M112RecoveryInspection? Resume = null, M112PhysicalIdentity? PhysicalIdentity = null);
+    M112RecoveryInspection? Resume = null, M112PhysicalIdentity? PhysicalIdentity = null, KnxConnectionFailure? ConnectionFailure = null);
+public sealed class M112ConnectionPreflightException(KnxConnectionFailure failure) : IOException("Connection preflight failed.")
+{ public KnxConnectionFailure Failure { get; } = failure; }
 public interface IM112PreparedChange
 {
     string Target { get; }
@@ -21,6 +24,7 @@ public interface IM112PreparedChange
 }
 public interface IM112CommissioningBackend
 {
+    bool OwnsGatewayReservation => false;
     Task<IM112PreparedChange> PrepareAsync(Project baseline, DeviceInstance baselineDevice, Project desired, DeviceInstance desiredDevice, CancellationToken token);
     Task<ManagementDeviceIdentity> ReadIdentityAsync(ReadOnlyConnectionOptions options, IndividualAddress target, CancellationToken token);
     Task<M112RecoveryInspection> InspectRecoveryAsync(string path, CancellationToken token);
@@ -33,6 +37,9 @@ public interface IM112CommissioningBackend
 
 public sealed class M112CommissioningBackend : IM112CommissioningBackend
 {
+    private readonly KnxConnectionFactory _connections;
+    public bool OwnsGatewayReservation => true;
+    public M112CommissioningBackend(KnxConnectionFactory? connections = null) => _connections = connections ?? new();
     private sealed class Prepared(M112ApplicationChangePlan plan) : IM112PreparedChange
     {
         public M112ApplicationChangePlan Plan { get; } = plan;
@@ -49,14 +56,16 @@ public sealed class M112CommissioningBackend : IM112CommissioningBackend
         => await Task.Run<IM112PreparedChange>(() => { token.ThrowIfCancellationRequested(); return new Prepared(M112ApplicationChangePlan.Prepare(baseline, baselineDevice, desired, desiredDevice)); }, token);
     public async Task<ManagementDeviceIdentity> ReadIdentityAsync(ReadOnlyConnectionOptions options, IndividualAddress target, CancellationToken token)
     {
-        await using var connection = await KnxManagementConnection.OpenReadOnlyAsync(options.Gateway, target, options.RequestedAddress, ct: token);
+        await using var operation = await _connections.AcquireOperationAsync(options.Profile, token);
+        await using var connection = await operation.OpenManagementAsync(target, readOnly: true, token);
         return await connection.Client.ReadIdentityAsync(token);
     }
     public Task<M112RecoveryInspection> InspectRecoveryAsync(string path, CancellationToken token)
         => M112ApplicationDownload.InspectRecoveryAsync(path, token);
     public async Task<M112PhysicalIdentity> ReadPhysicalIdentityAsync(ReadOnlyConnectionOptions options, IndividualAddress target, CancellationToken token)
     {
-        await using var connection = await KnxManagementConnection.OpenReadOnlyAsync(options.Gateway, target, options.RequestedAddress, ct: token);
+        await using var operation = await _connections.AcquireOperationAsync(options.Profile, token);
+        await using var connection = await operation.OpenManagementAsync(target, readOnly: true, token);
         var descriptor = await connection.Client.ReadDescriptorAsync(token);
         var manufacturer = await connection.Client.ReadPropertyAsync(0, 12, ct: token);
         var serial = await connection.Client.ReadPropertyAsync(0, 11, ct: token);
@@ -65,15 +74,25 @@ public sealed class M112CommissioningBackend : IM112CommissioningBackend
         return new(target.ToString(), (ushort)((descriptor[0] << 8) | descriptor[1]), Convert.ToHexString(manufacturer),
             Convert.ToHexString(serial), Convert.ToHexString(SHA256.HashData(hardware)));
     }
-    public Task<M112DownloadResult> ApplyAsync(ReadOnlyConnectionOptions options, IM112PreparedChange review, ManagementDeviceIdentity expected,
+    public async Task<M112DownloadResult> ApplyAsync(ReadOnlyConnectionOptions options, IM112PreparedChange review, ManagementDeviceIdentity expected,
         string fingerprint, string journalRoot, Action<string> progress, CancellationToken token)
-        => M112ApplicationDownload.ApplyChangesAsync(ct => OpenAsync(options, expected.Address, ct),
+    {
+        await using var operation = await AcquireForWriteAsync(options.Profile, token);
+        return await M112ApplicationDownload.ApplyChangesAsync(ct => operation.OpenManagementAsync(IndividualAddress.Parse(expected.Address), readOnly: false, ct),
             (review as Prepared ?? throw new ArgumentException("Unsupported prepared profile.")).Plan, fingerprint, expected, review.Target, journalRoot, progress, token);
-    public Task<M112DownloadResult> RecoverAsync(ReadOnlyConnectionOptions options, M112RecoveryInspection inspection,
+    }
+    public async Task<M112DownloadResult> RecoverAsync(ReadOnlyConnectionOptions options, M112RecoveryInspection inspection,
         string target, Action<string> progress, CancellationToken token)
-        => M112ApplicationDownload.RecoverInspectedAsync(ct => OpenAsync(options, target, ct), inspection, target, progress, token);
-    private static async Task<IManagementConnection> OpenAsync(ReadOnlyConnectionOptions options, string target, CancellationToken token)
-        => await KnxManagementConnection.OpenAsync(options.Gateway, IndividualAddress.Parse(target), options.RequestedAddress, ct: token);
+    {
+        await using var operation = await AcquireForWriteAsync(options.Profile, token);
+        return await M112ApplicationDownload.RecoverInspectedAsync(ct => operation.OpenManagementAsync(IndividualAddress.Parse(target), readOnly: false, ct), inspection, target, progress, token);
+    }
+    private async Task<KnxGatewayOperation> AcquireForWriteAsync(KnxConnectionProfile profile, CancellationToken token)
+    {
+        try { return await _connections.AcquireOperationAsync(profile, token); }
+        catch (OperationCanceledException) { throw new M112ConnectionPreflightException(KnxConnectionFailure.Cancelled); }
+        catch (KnxConnectionException error) { throw new M112ConnectionPreflightException(error.Failure); }
+    }
 }
 
 /// <summary>One explicit profile operation; no generic programming success flags or implicit connections.</summary>
@@ -155,6 +174,7 @@ public sealed class M112CommissioningSession : IAsyncDisposable
         using var lease = AcquireEndpoint();
         Publish(snapshot with { Phase = M112CommissioningPhase.Applying });
         try { Complete(await _backend.ApplyAsync(_options!, review, snapshot.Identity, confirmedFingerprint, _journal!, Progress, token)); }
+        catch (M112ConnectionPreflightException) { throw; }
         catch { lock (_sync) _recoveryRequired = true; throw; }
     }, TimeSpan.FromMinutes(10));
     public Task PrepareRecoveryAsync(string explicitlySelectedPath, ReadOnlyConnectionOptions options) => Start(async token =>
@@ -190,7 +210,9 @@ public sealed class M112CommissioningSession : IAsyncDisposable
         using var recovery = new CancellationTokenSource(TimeSpan.FromMinutes(5));
         Complete(await _backend.RecoverAsync(_options!, inspection, confirmedTarget, Progress, recovery.Token));
     }, allowRecovery: true);
-    private IDisposable AcquireEndpoint() => RealEndpointReservations.TryAcquire(_options!.EndpointId) ?? throw new InvalidOperationException("Occupied");
+    private IDisposable AcquireEndpoint() => _backend.OwnsGatewayReservation ? NoReservation.Instance
+        : RealEndpointReservations.TryAcquire(_options!.EndpointId) ?? throw new InvalidOperationException("Occupied");
+    private sealed class NoReservation : IDisposable { internal static NoReservation Instance { get; } = new(); public void Dispose() { } }
     private void VerifyRecoveryScope(M112RecoveryInspection inspection)
     {
         var live = _current();
@@ -252,6 +274,8 @@ public sealed class M112CommissioningSession : IAsyncDisposable
     private async Task RunAsync(Func<CancellationToken, Task> operation, CancellationTokenSource cancellation)
     {
         try { await operation(cancellation.Token); }
+        catch (M112ConnectionPreflightException error) { Publish(Snapshot with { Phase = RecoveryRequired ? M112CommissioningPhase.RecoveryRequired : error.Failure == KnxConnectionFailure.Cancelled ? M112CommissioningPhase.Cancelled : M112CommissioningPhase.Failed, ConnectionFailure = error.Failure }); }
+        catch (KnxConnectionException error) { Publish(Snapshot with { Phase = RecoveryRequired ? M112CommissioningPhase.RecoveryRequired : M112CommissioningPhase.Failed, ConnectionFailure = error.Failure }); }
         catch (OperationCanceledException) { Publish(Snapshot with { Phase = RecoveryRequired ? M112CommissioningPhase.RecoveryRequired : M112CommissioningPhase.Cancelled, Issue = "Cancelled" }); }
         catch (Exception error)
         {

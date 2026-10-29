@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Sockets;
 using Knx.Bus;
+using Knx.Bus.Connections;
 
 namespace Knx.App.Workbench;
 
 public sealed class ReadOnlyConnectionOptions
 {
+    public KnxConnectionProfile Profile { get; }
     private readonly byte[] _address;
     public int Port { get; }
     public IndividualAddress RequestedAddress { get; }
@@ -19,13 +21,17 @@ public sealed class ReadOnlyConnectionOptions
             || address.Equals(IPAddress.Broadcast) || port is < 1 or > 65535 || requestedAddress.Device is 0 or 255)
             throw new ArgumentException("Invalid explicit IPv4 tunnel endpoint or requested individual address.");
         _address = bytes.ToArray(); Port = port; RequestedAddress = requestedAddress;
+        Profile = KnxConnectionProfile.Plain(new(address, port), requestedAddress);
     }
+    public ReadOnlyConnectionOptions(KnxConnectionProfile profile)
+    { Profile = profile; _address = profile.Gateway.Address.GetAddressBytes(); Port = profile.Port; RequestedAddress = profile.RequestedAddress; }
 }
 
 public enum ReadOnlyConnectionPhase { Disconnected, Connecting, Connected, Disconnecting, Failed }
 public enum ReadOnlyConnectionIssue { None, Cancelled, LinkLost, Occupied, ConnectFailed, CleanupFailed, StaleProject }
 public sealed record ReadOnlyConnectionSnapshot(ReadOnlyConnectionPhase Phase, ReadOnlyConnectionIssue Issue,
-    string? EndpointId, IndividualAddress? AssignedAddress, long Generation)
+    string? EndpointId, IndividualAddress? AssignedAddress, long Generation, KnxTransportKind Transport = KnxTransportKind.PlainUdp,
+    bool GatewayAuthenticated = false, KnxConnectionFailure? Failure = null)
 {
     public bool IsReadOnly => true;
 }
@@ -33,6 +39,8 @@ public sealed record ReadOnlyConnectionSnapshot(ReadOnlyConnectionPhase Phase, R
 /// <summary>A receive-only adapter. Disposal must finish local I/O shutdown before returning.</summary>
 public interface IReadOnlyWorkbenchBackend : IMonitorTelegramSource, IMonitorConnectionNotifications, IAsyncDisposable
 {
+    bool OwnsGatewayReservation => false;
+    KnxConnectionSecurity? Security => null;
     IndividualAddress AssignedAddress { get; }
     Task ConnectAsync(CancellationToken ct);
 }
@@ -40,17 +48,11 @@ public interface IReadOnlyWorkbenchBackend : IMonitorTelegramSource, IMonitorCon
 /// <summary>Process-wide reservations for explicit real endpoints; released only after the previous owner joined cleanup.</summary>
 public static class RealEndpointReservations
 {
-    private static readonly object Gate = new();
-    private static readonly HashSet<string> Active = new(StringComparer.Ordinal);
     public static IDisposable? TryAcquire(string endpointId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpointId);
-        lock (Gate) return Active.Add(endpointId) ? new Reservation(endpointId) : null;
-    }
-    private sealed class Reservation(string id) : IDisposable
-    {
-        private bool _disposed;
-        public void Dispose() { lock (Gate) { if (_disposed) return; _disposed = true; Active.Remove(id); } }
+        return endpointId.StartsWith("knx-ip:", StringComparison.Ordinal) && IPEndPoint.TryParse(endpointId[7..], out var endpoint)
+            ? GatewayLeaseCoordinator.TryAcquireProcessOnly(endpoint) : throw new ArgumentException("Invalid explicit gateway identity.");
     }
 }
 
@@ -73,6 +75,7 @@ public sealed class ReadOnlyWorkbenchConnection : IMonitorTelegramSource, IMonit
     private bool _disposed;
     private Task? _disposal;
     private long _generation;
+    private KnxTransportKind _transportKind;
     private ReadOnlyConnectionSnapshot _snapshot = new(ReadOnlyConnectionPhase.Disconnected, ReadOnlyConnectionIssue.None, null, null, 0);
 
     public ReadOnlyWorkbenchConnection(object projectLifetime, Func<object> currentProjectLifetime,
@@ -111,11 +114,11 @@ public sealed class ReadOnlyWorkbenchConnection : IMonitorTelegramSource, IMonit
         try
         {
             source.Token.ThrowIfCancellationRequested();
+            _transportKind = options.Profile.Kind;
             Publish(ReadOnlyConnectionPhase.Connecting, ReadOnlyConnectionIssue.None, options.EndpointId, null, generation);
-            _endpointLease = RealEndpointReservations.TryAcquire(options.EndpointId)
-                ?? throw new EndpointOccupiedException();
             var backend = _factory(options) ?? throw new InvalidOperationException("No backend.");
             lock (_sync) _backend = backend;
+            if (!backend.OwnsGatewayReservation) _endpointLease = RealEndpointReservations.TryAcquire(options.EndpointId) ?? throw new EndpointOccupiedException();
             _receive = telegram =>
             {
                 lock (_sync)
@@ -134,7 +137,9 @@ public sealed class ReadOnlyWorkbenchConnection : IMonitorTelegramSource, IMonit
             lock (_sync)
                 if (generation != _generation || _disposed || !IsCurrentProject()) throw new OperationCanceledException("Stale connection.");
             if (!backend.IsConnected) throw new IOException("Tunnel did not connect.");
-            Publish(ReadOnlyConnectionPhase.Connected, ReadOnlyConnectionIssue.None, options.EndpointId, backend.AssignedAddress, generation);
+            if (options.Profile.RequiresAuthentication && (backend.Security is not { GatewayAuthenticated: true, Transport: KnxTransportKind.IpSecureUdp }
+                || backend.AssignedAddress != options.RequestedAddress)) throw new KnxConnectionException(KnxConnectionFailure.AuthenticationFailed);
+            Publish(ReadOnlyConnectionPhase.Connected, ReadOnlyConnectionIssue.None, options.EndpointId, backend.AssignedAddress, generation, backend.Security?.GatewayAuthenticated == true);
         }
         catch (Exception ex)
         {
@@ -142,7 +147,7 @@ public sealed class ReadOnlyWorkbenchConnection : IMonitorTelegramSource, IMonit
                 : ex is OperationCanceledException ? ReadOnlyConnectionIssue.Cancelled : ReadOnlyConnectionIssue.ConnectFailed;
             try { await CleanupAsync().ConfigureAwait(false); }
             catch { issue = ReadOnlyConnectionIssue.CleanupFailed; }
-            Publish(ReadOnlyConnectionPhase.Failed, issue, options.EndpointId, null, generation);
+            Publish(ReadOnlyConnectionPhase.Failed, issue, options.EndpointId, null, generation, failure: (ex as KnxConnectionException)?.Failure);
             throw;
         }
         finally
@@ -190,13 +195,14 @@ public sealed class ReadOnlyWorkbenchConnection : IMonitorTelegramSource, IMonit
         _receive = null; _state = null;
         _endpointLease?.Dispose(); _endpointLease = null;
     }
-    private void Publish(ReadOnlyConnectionPhase phase, ReadOnlyConnectionIssue issue, string? endpoint, IndividualAddress? assigned, long generation)
+    private void Publish(ReadOnlyConnectionPhase phase, ReadOnlyConnectionIssue issue, string? endpoint, IndividualAddress? assigned, long generation,
+        bool authenticated = false, KnxConnectionFailure? failure = null)
     {
         ReadOnlyConnectionSnapshot snapshot;
         lock (_sync)
         {
             if (generation != _generation) return;
-            snapshot = _snapshot = new(phase, issue, endpoint, assigned, generation);
+            snapshot = _snapshot = new(phase, issue, endpoint, assigned, generation, _transportKind, authenticated, failure);
         }
         Notify(Changed, snapshot);
         Notify(StateChanged, phase == ReadOnlyConnectionPhase.Connected ? BusConnectionState.Connected
@@ -222,19 +228,21 @@ public sealed class ReadOnlyWorkbenchConnection : IMonitorTelegramSource, IMonit
 
     private sealed class TunnelBackend(ReadOnlyConnectionOptions options) : IReadOnlyWorkbenchBackend
     {
+        private KnxGatewayOperation? _operation;
+        private KnxConnectedTunnel? _owned;
+        public bool OwnsGatewayReservation => true;
+        public KnxConnectionSecurity? Security => _owned?.Security;
         private KnxTunnel? _tunnel;
-        private UdpTransport? _transport;
         public bool IsConnected => _tunnel?.State == BusConnectionState.Connected;
         public IndividualAddress AssignedAddress => _tunnel?.AssignedAddress ?? default;
         public event Action<BusTelegram>? TelegramReceived;
         public event Action<BusConnectionState>? StateChanged;
         public async Task ConnectAsync(CancellationToken ct)
         {
-            _transport = new UdpTransport(0);
-            _tunnel = new(_transport, options.Gateway, options.RequestedAddress);
+            _operation = await new KnxConnectionFactory().AcquireOperationAsync(options.Profile, ct).ConfigureAwait(false);
+            _owned = await _operation.OpenTunnelAsync(ct).ConfigureAwait(false); _tunnel = _owned.Tunnel;
             _tunnel.TelegramReceived += OnTelegram;
             _tunnel.Disconnected += OnDisconnected;
-            await _tunnel.ConnectAsync(ct).ConfigureAwait(false);
         }
         private void OnTelegram(BusTelegram telegram) => TelegramReceived?.Invoke(telegram);
         private void OnDisconnected() => StateChanged?.Invoke(BusConnectionState.Disconnected);
@@ -243,10 +251,10 @@ public sealed class ReadOnlyWorkbenchConnection : IMonitorTelegramSource, IMonit
             if (_tunnel is { } tunnel)
             {
                 tunnel.TelegramReceived -= OnTelegram; tunnel.Disconnected -= OnDisconnected;
-                try { await tunnel.DisposeAsync().ConfigureAwait(false); }
-                finally { _transport?.Dispose(); _transport = null; _tunnel = null; }
+                try { if (_owned is not null) await _owned.DisposeAsync().ConfigureAwait(false); }
+                finally { if (_operation is not null) await _operation.DisposeAsync().ConfigureAwait(false); _operation = null; _owned = null; _tunnel = null; }
             }
-            else { _transport?.Dispose(); _transport = null; }
+            else if (_operation is not null) { await _operation.DisposeAsync().ConfigureAwait(false); _operation = null; }
         }
     }
 }

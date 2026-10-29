@@ -1,16 +1,25 @@
 using System.Net;
 using Knx;
 using Knx.Bus;
+using Knx.Bus.Connections;
 
 namespace Knx.Mcp;
 
 /// <summary>
-/// Short-lived read-only tunnel behind bus_scan / bus_device_info. KnxBus exposes no
-/// management-frame send, so these tools open their own KNXnet/IP tunnelling connection,
-/// send only IndividualAddressRead/DeviceDescriptorRead and close it again.
+/// Read-only diagnostics use either the active bus tunnel or one complete factory
+/// operation with its own tunnel and gateway reservation.
 /// </summary>
 internal static class BusDiagnostics
 {
+    public static async Task<T> WithSessionAsync<T>(KnxConnectionFactory factory, KnxConnectionProfile profile,
+        Func<IBusDiagnosticSession, CancellationToken, Task<T>> action, CancellationToken ct = default,
+        Action<KnxConnectionSecurity>? connected = null)
+    {
+        await using var operation = await factory.AcquireOperationAsync(profile, ct).ConfigureAwait(false);
+        await using var connection = await operation.OpenTunnelAsync(ct).ConfigureAwait(false);
+        connected?.Invoke(connection.Security);
+        return await action(new TunnelDiagnosticSession(connection.Tunnel), ct).ConfigureAwait(false);
+    }
     // A second tunnel must not reuse the address of the main bus_connect tunnel (default 1.1.250).
     private static readonly IndividualAddress OwnAddress = new(1, 1, 249);
 
@@ -23,10 +32,8 @@ internal static class BusDiagnostics
             throw new InvalidOperationException($"no KNXnet/IP gateway answered within {timeoutMs} ms");
 
         var device = Select(devices, gateway);
-        var transport = new UdpTransport(0);
-        await using var tunnel = new KnxTunnel(transport, device.ControlEndpoint, OwnAddress);
-        await tunnel.ConnectAsync(ct).WaitAsync(TimeSpan.FromMilliseconds(timeoutMs + 3000), ct);
-        return await action(new TunnelDiagnosticSession(tunnel));
+        return await WithSessionAsync(new KnxConnectionFactory(), KnxConnectionProfile.Plain(device.ControlEndpoint, OwnAddress),
+            (session, _) => action(session), ct).ConfigureAwait(false);
     }
 
     private static KnxDevice Select(IReadOnlyList<KnxDevice> devices, string? gateway)

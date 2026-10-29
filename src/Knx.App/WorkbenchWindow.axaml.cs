@@ -2713,7 +2713,7 @@ public partial class WorkbenchWindow : Window
                     var area = ViewModel.Project!.Installations.SelectMany(i => i.Areas).Single(a => a.Lines.Contains(line));
                     var targets = Enumerable.Range(0, 255).Select(device => new IndividualAddress(area.Address, line.Address, (byte)device));
                     var plan = new Knx.Bus.ReadOnlyLineScanPlan(_liveOptions.Gateway, _liveOptions.RequestedAddress, targets);
-                    await sessions.LineScan.RunRealAsync(line.Id, plan);
+                    await sessions.LineScan.RunProfileAsync(line.Id, plan, _liveOptions.Profile);
                 }
                 else await sessions.LineScan.RunDemoAsync(line.Id);
                 if (ReferenceEquals(lifetime, ViewModel.ProjectSessionIdentity) && ReferenceEquals(sessions, _sessions))
