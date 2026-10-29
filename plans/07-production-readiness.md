@@ -49,6 +49,12 @@ Einzelgeräteversuche ersetzen diese Endabnahme nicht.
 - Echte lesende Workbench-Verbindung, Gruppenmonitor und adressierter Scan sind
   erreichbar; gemeinsame Verbindungsbesitzer beenden I/O vor erneuter Nutzung.
   Allgemeine Programmierung, Adressierung und weitere Geräteprofile bleiben offen.
+- Der explizit provisionierte individuelle Tool-/P2P-Bibliothekspfad besteht
+  21 Zustands-/Codec- und fünf Tunnelprüfungen sowie die volle Bus-Regression
+  auf Windows und Ubuntu 26.04. Drei zusätzliche Lebensdauerprüfungen sichern
+  die Schlüsselbereinigung bei fehlerhaften Abbruch-Callbacks ab. Die gemeinsame
+  Factory-Anbindung, vertrauenswürdige Provisionierung und Secure-Geräteabnahme
+  bleiben eigene Aufgaben.
 - Geräteversuche bleiben an die bestehende Zielgerätefreigabe gebunden.
   Private Quellen, Identitäten, Kennwörter und Rohdaten bleiben außerhalb von Git.
 - Produktionsfreigabe bleibt offen, bis alle Anforderungen durch passende

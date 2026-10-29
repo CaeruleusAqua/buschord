@@ -140,6 +140,27 @@ public sealed class DataSecureCounterStore : IAsyncDisposable
         var index = SenderIndex(source);
         return TransactionAsync(async (file, token) => (await ReadCounterAsync(file, index, token).ConfigureAwait(false)).Value, ct);
     }
+    /// <summary>
+    /// Commits authenticated peer Sync facts without clearing any existing restore gate. The caller must first verify
+    /// the exact peer, key kind/key epoch, open challenge, frame authentication and timeout. Both values are next-valid
+    /// sequences, not last-used values. This does not recover a lost trusted local highwater or create replacement state.
+    /// </summary>
+    public Task MergeAuthenticatedSyncAsync(IndividualAddress peer, ulong remoteNextSequence, ulong localNextSequence, CancellationToken ct = default)
+    {
+        if (peer == _identity.LocalAddress || remoteNextSequence is 0 or > KnxDataSecureCodec.MaximumSequence
+            || localNextSequence is 0 or > KnxDataSecureCodec.MaximumSequence) throw new ArgumentOutOfRangeException(nameof(peer));
+        var index = SenderIndex(peer);
+        return TransactionAsync(async (file, token) =>
+        {
+            await RequireReadyAsync(file, token).ConfigureAwait(false);
+            var local = await ReadCounterAsync(file, 1, token).ConfigureAwait(false);
+            var remote = await ReadCounterAsync(file, index, token).ConfigureAwait(false);
+            // Persist local nonce highwater first. Interrupted merges release no session readiness or payload.
+            if (localNextSequence - 1 > local.Value) await WriteCounterAsync(file, local, localNextSequence - 1, token).ConfigureAwait(false);
+            if (remoteNextSequence - 1 > remote.Value) await WriteCounterAsync(file, remote, remoteNextSequence - 1, token).ConfigureAwait(false);
+            return true;
+        }, ct);
+    }
     public Task<bool> IsSynchronizationRequiredAsync(CancellationToken ct = default)
         => TransactionAsync(async (file, token) => (await ReadCounterAsync(file, 0, token).ConfigureAwait(false)).Value == 0, ct);
     public Task MarkSynchronizationRequiredAsync(CancellationToken ct = default)
@@ -358,11 +379,21 @@ public sealed class DataSecureCounterStore : IAsyncDisposable
     {
         TaskCompletionSource? owner = null; Task task;
         lock (_gate) { if (_disposal is null) { _disposed = true; owner = new(TaskCreationOptions.RunContinuationsAsynchronously); _disposal = owner.Task; } task = _disposal; }
-        if (owner is not null) { _lifetime.Cancel(); _ = FinishDisposeAsync(owner); } return new(task);
+        if (owner is not null)
+        {
+            Exception? cancellationFailure = null; try { _lifetime.Cancel(); } catch (Exception ex) { cancellationFailure = ex; }
+            _ = FinishDisposeAsync(owner, cancellationFailure);
+        }
+        return new(task);
     }
-    private async Task FinishDisposeAsync(TaskCompletionSource completion)
+    private async Task FinishDisposeAsync(TaskCompletionSource completion, Exception? cancellationFailure)
     {
-        try { await _serial.WaitAsync().ConfigureAwait(false); try { CryptographicOperations.ZeroMemory(_integrityKey); } finally { _serial.Release(); _lifetime.Dispose(); } completion.TrySetResult(); }
+        try
+        {
+            await _serial.WaitAsync().ConfigureAwait(false);
+            try { CryptographicOperations.ZeroMemory(_integrityKey); } finally { _serial.Release(); _lifetime.Dispose(); }
+            if (cancellationFailure is not null) completion.TrySetException(cancellationFailure); else completion.TrySetResult();
+        }
         catch (Exception ex) { completion.TrySetException(ex); }
     }
 }

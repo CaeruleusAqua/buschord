@@ -57,6 +57,7 @@ public sealed class KnxTunnel : IAsyncDisposable
     private readonly TimeSpan _heartbeatInterval;
     private readonly object _gate = new();
     private readonly SemaphoreSlim _sendGate = new(1, 1);
+    private readonly SemaphoreSlim _securityInitializationGate = new(1, 1);
     private readonly Dictionary<byte, TaskCompletionSource<byte>> _ackWaiters = new();
 
     private TaskCompletionSource<byte>? _stateWaiter;
@@ -102,6 +103,27 @@ public sealed class KnxTunnel : IAsyncDisposable
 
     /// <summary>Endpoints of the tunnelling data channel advertised by the server.</summary>
     public IPEndPoint DataEndpoint => CopyEndpoint(_dataEndpoint);
+
+    /// <summary>
+    /// Runs the explicitly installed cEMI security initializer after tunnel authentication/address assignment and before
+    /// publishing a management client. Its control sends use the normal owned retry/ACK path; incoming Sync responses
+    /// are consumed by the processor and never require application Telegram dispatch. Close cancels and joins this work.
+    /// </summary>
+    public async Task InitializeCemiSecurityAsync(CancellationToken ct = default)
+    {
+        using var operation = BeginOperation(ct);
+        await _securityInitializationGate.WaitAsync(operation.Token).ConfigureAwait(false);
+        try
+        {
+            operation.Token.ThrowIfCancellationRequested();
+            if (_cemiSecurity is not ICemiSecurityInitializer initializer) throw new NotSupportedException("This tunnel has no explicit cEMI security initializer.");
+            if (!initializer.IsInitialized)
+                await initializer.InitializeAsync(AssignedAddress, (frame, token) => SendCemiAsync(frame.ToArray(), token), operation.Token).ConfigureAwait(false);
+            operation.Token.ThrowIfCancellationRequested();
+            if (State != BusConnectionState.Connected || !initializer.IsInitialized) throw new OperationCanceledException("Tunnel security initialization did not publish an active connection.", operation.Token);
+        }
+        finally { _securityInitializationGate.Release(); }
+    }
 
     public event Action<BusTelegram>? TelegramReceived;
 
@@ -748,7 +770,7 @@ public sealed class KnxTunnel : IAsyncDisposable
                     finally
                     {
                         try { _transport.Dispose(); }
-                        finally { _operationsCts.Dispose(); _cts.Dispose(); _sendGate.Dispose(); lock (_gate) State = BusConnectionState.Closed; }
+                        finally { _operationsCts.Dispose(); _cts.Dispose(); _sendGate.Dispose(); _securityInitializationGate.Dispose(); lock (_gate) State = BusConnectionState.Closed; }
                     }
                 }
             });

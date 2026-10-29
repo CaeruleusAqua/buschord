@@ -148,14 +148,22 @@ public sealed class KnxDataSecureCemiProcessor : ICemiSecurityProcessor
     {
         TaskCompletionSource? owner = null; Task task;
         lock (_gate) { if (_disposal is null) { _disposed = true; owner = new(TaskCreationOptions.RunContinuationsAsynchronously); _disposal = owner.Task; } task = _disposal; }
-        if (owner is not null) { _lifetime.Cancel(); _ = FinishDisposeAsync(owner); } return new(task);
+        if (owner is not null)
+        {
+            Exception? cancellationFailure = null; try { _lifetime.Cancel(); } catch (Exception ex) { cancellationFailure = ex; }
+            _ = FinishDisposeAsync(owner, cancellationFailure);
+        }
+        return new(task);
     }
-    private async Task FinishDisposeAsync(TaskCompletionSource completion)
+    private async Task FinishDisposeAsync(TaskCompletionSource completion, Exception? cancellationFailure)
     {
         try
         {
             Task drained; lock (_gate) drained = _drained.Task; await drained.ConfigureAwait(false);
-            ResetConnection(); await _context.DisposeAsync().ConfigureAwait(false); _lifetime.Dispose(); completion.TrySetResult();
+            ResetConnection();
+            try { await _context.DisposeAsync().ConfigureAwait(false); }
+            finally { _lifetime.Dispose(); }
+            if (cancellationFailure is not null) completion.TrySetException(cancellationFailure); else completion.TrySetResult();
         }
         catch (Exception ex) { completion.TrySetException(ex); }
     }
