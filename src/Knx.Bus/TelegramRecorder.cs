@@ -15,6 +15,8 @@ public sealed class RecordedTelegram
     public bool IsGroupAddress { get; set; }
     public string Apci { get; set; } = "";
     public string Data { get; set; } = "";
+    /// <summary>Live in-process provenance only; untrusted recording imports cannot assert authentication.</summary>
+    [JsonIgnore] public BusDataSecurity DataSecurity { get; set; } = BusDataSecurity.Unverified;
     private byte? _hopCount;
     /// <summary>Captured hop count; null when the source recording did not retain it.</summary>
     public byte? HopCount
@@ -38,6 +40,7 @@ public sealed class RecordedTelegram
         Apci = telegram.Telegram.Apci.ToString(),
         Data = Convert.ToHexString(telegram.Telegram.Data),
         HopCount = telegram.Telegram.HopCount,
+        DataSecurity = telegram.DataSecurity,
     };
 
     public string ToDisplayLine()

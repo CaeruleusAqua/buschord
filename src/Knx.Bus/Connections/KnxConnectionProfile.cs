@@ -9,7 +9,8 @@ namespace Knx.Bus.Connections;
 
 public enum KnxTransportKind { PlainUdp, IpSecureUdp }
 public enum KnxConnectionFailure { InvalidProfile, Occupied, CredentialSourceUnavailable, KeyringRejected, CredentialBindingMismatch, UnsupportedCredentials, AuthenticationFailed, AssignedAddressMismatch, ConnectionFailed, Cancelled, Disposed,
-    ToolAccessKeyUnavailable, ToolAccessBindingMismatch, ToolAccessStateUnavailable, ToolAccessStateNotReady, ToolAccessCounterExhausted, ToolAccessSynchronizationFailed }
+    ToolAccessKeyUnavailable, ToolAccessBindingMismatch, ToolAccessStateUnavailable, ToolAccessStateNotReady, ToolAccessCounterExhausted, ToolAccessSynchronizationFailed,
+    GroupSecurityBindingMismatch, GroupSecurityStateUnavailable, GroupSecurityStateNotReady, GroupSecurityCounterExhausted, GroupSecurityPolicyDenied }
 public sealed class KnxConnectionException(KnxConnectionFailure failure) : IOException("KNX connection failed: " + failure)
 { public KnxConnectionFailure Failure { get; } = failure; }
 
@@ -52,6 +53,7 @@ public sealed class KnxConnectionProfile
     public IndividualAddress RequestedAddress { get; }
     [JsonIgnore] public SecureKeyringReference? Keyring { get; }
     [JsonIgnore] public ISecurePasswordSource? PasswordSource { get; }
+    [JsonIgnore] public KnxGroupSecurityProfile? GroupSecurity { get; private init; }
     public string EndpointId => $"knx-ip:{new IPAddress(_gateway)}:{Port}";
     public bool RequiresAuthentication => Kind == KnxTransportKind.IpSecureUdp;
     private KnxConnectionProfile(KnxTransportKind kind, IPEndPoint gateway, IndividualAddress requested,
@@ -70,7 +72,14 @@ public sealed class KnxConnectionProfile
         => new(KnxTransportKind.PlainUdp, gateway, requested, null, null, local);
     public static KnxConnectionProfile IpSecure(IPEndPoint gateway, SecureKeyringReference reference, ISecurePasswordSource? passwordSource = null, IPAddress? local = null)
         => new(KnxTransportKind.IpSecureUdp, gateway, reference.TunnelAddress, reference, passwordSource, local);
+    public KnxConnectionProfile WithGroupSecurity(KnxGroupSecurityProfile groupSecurity)
+    {
+        if (!RequiresAuthentication || Keyring?.ExpectedSourceFingerprint is null || groupSecurity is null)
+            throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
+        return new(Kind, Gateway, RequestedAddress, Keyring, PasswordSource, LocalAddress) { GroupSecurity = groupSecurity };
+    }
     public bool EquivalentTo(KnxConnectionProfile other) => Kind == other.Kind && Gateway.Equals(other.Gateway)
-        && RequestedAddress == other.RequestedAddress && Equals(_local, other._local) && Keyring?.SelectionId == other.Keyring?.SelectionId;
+        && RequestedAddress == other.RequestedAddress && Equals(_local, other._local) && Keyring?.SelectionId == other.Keyring?.SelectionId
+        && GroupSecurity?.SelectionId == other.GroupSecurity?.SelectionId && ReferenceEquals(GroupSecurity?.StateSource, other.GroupSecurity?.StateSource);
     public override string ToString() => "[KNX connection profile: " + Kind + "]";
 }

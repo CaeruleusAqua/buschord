@@ -1318,6 +1318,7 @@ public sealed partial class McpServer
             payload = Convert.ToHexString(received.Telegram.Data),
             source = received.Telegram.Source.ToString(),
             transport = received.Source,
+            dataSecurity = received.DataSecurity.ToString(),
             apci = received.Telegram.Apci.ToString(),
             hopCount = received.Telegram.HopCount,
             timestamp = received.Timestamp,
@@ -1853,6 +1854,7 @@ public sealed partial class McpServer
         apci = entry.Apci,
         data = entry.Data,
         hopCount = entry.HopCount,
+        dataSecurity = entry.DataSecurity.ToString(),
     };
 
     private static bool Matches(GroupAddressEntry entry, string filter)

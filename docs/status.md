@@ -862,6 +862,17 @@ accepted native adapter roundtrips do not attest every desktop provider or polic
 Extended cEMI uses one NPDU length octet and the control-field frame selector;
 81 checks cover published vectors, strict lengths and the shared raw-frame API.
 
+An explicit [ordinary group connection profile](group-secure-connections.md) joins
+the accepted processor/counters to the factory, read-only monitor and deliberately
+configured MCP host. Signed interface/group/sender and exact source bindings are
+checked before network I/O; missing/untrusted state is never initialized implicitly.
+An independent anchor is the library default; the separately confirmed current-
+unanchored host profile retains its rollback limit. Seventeen focused bus and nine
+host/MCP cases cover protected reads, durable floor-before-value, rejection,
+reconnect and joined cleanup. Incoming Data Secure provenance is separate from IP
+authentication and own confirmations. Workbench selection and automatic device
+provisioning are unchanged; no Secure hardware or production anchor is claimed.
+
 The combined connection implementation has 29 focused state/lifetime checks and
 19 native dialog checks per German/English run. Eleven additional tunnel checks
 cover drained receive/send/connect operations, remote disconnect, heartbeat failure,

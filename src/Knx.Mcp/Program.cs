@@ -1,5 +1,6 @@
 using System.Text;
 using Knx.Mcp;
+using Knx.Bus.Connections;
 
 if (args.Contains("--list-tools"))
 {
@@ -26,11 +27,27 @@ foreach (var argument in args)
     if (argument.StartsWith("--bus-probe=", StringComparison.OrdinalIgnoreCase))
         return await BusProbe.RunAsync(argument["--bus-probe=".Length..]);
 
-return await RunStdioAsync();
+return await RunStdioAsync(args);
 
-static async Task<int> RunStdioAsync()
+static async Task<int> RunStdioAsync(string[] arguments)
 {
-    await using var server = new McpServer();
+    string? profilesPath = null; string[] confirmed = [];
+    try
+    {
+        var paths = arguments.Where(value => value.StartsWith("--group-security-profiles=", StringComparison.Ordinal)).ToArray();
+        var confirmations = arguments.Where(value => value.StartsWith("--confirm-current-group-state=", StringComparison.Ordinal)).ToArray();
+        if (paths.Length > 1 || confirmations.Length > 1 || confirmations.Length > 0 && paths.Length == 0)
+            throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
+        if (paths.Length == 1) profilesPath = paths[0]["--group-security-profiles=".Length..];
+        if (confirmations.Length == 1) confirmed = confirmations[0]["--confirm-current-group-state=".Length..].Split(',');
+    }
+    catch (KnxConnectionException error) { Console.Error.WriteLine("knx-mcp: " + error.Failure); return 2; }
+    GroupSecurityHostProfiles? profiles;
+    try { profiles = profilesPath is null ? null : GroupSecurityHostProfiles.Load(profilesPath, confirmed); }
+    catch (KnxConnectionException error) { Console.Error.WriteLine("knx-mcp: " + error.Failure); return 2; }
+    await using var profilesOwner = profiles;
+    // Declaration order is deliberate: all server connection jobs drain before the host integrity owner is released.
+    await using var server = new McpServer(null, profiles);
     using var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
     using var output = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false))
     {

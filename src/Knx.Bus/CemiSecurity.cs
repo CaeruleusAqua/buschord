@@ -14,3 +14,12 @@ public interface ICemiSecurityProcessor : IAsyncDisposable
 }
 
 public enum CemiSecurityRejection { None, InvalidFrame, AddressMismatch, PolicyDenied, AuthenticationFailed, Replay, StateUnavailable, UnboundConfirmation }
+
+/// <summary>Application-frame provenance. Gateway authentication and locally prepared confirmations are separate facts.</summary>
+public enum BusDataSecurity { Unverified, IncomingAuthenticated, IncomingAuthenticatedAndConfidential }
+
+/// <summary>Additive trusted processor seam, called synchronously only for the exact incoming wire/accepted pair after admission.</summary>
+public interface ICemiSecurityProvenance
+{
+    BusDataSecurity DescribeAdmittedIncoming(ReadOnlySpan<byte> wire, ReadOnlySpan<byte> admitted);
+}
