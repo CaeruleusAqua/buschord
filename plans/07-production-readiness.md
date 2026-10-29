@@ -29,47 +29,30 @@ Einzelgeräteversuche ersetzen diese Endabnahme nicht.
 
 ## Laufender Stand
 
-- Der gemeinsame logische Imagepfad enthält ein begrenztes synthetisch geprüftes
-  Modul-/Repeat-/Root-Allocator-Speicherprofil mit vollständigen Ursprüngen,
-  latenten Besitzern und Reservierungen. Ein begrenzter direkter bedingter Fall
-  erhält alle potenziellen Besitzer und gespeicherten Werte; ungewählte Instanzen
-  schreiben nichts. Weitere bedingte/verschachtelte Module, weitere
-  Speicherträger und Hersteller-Imagebelege bleiben offen; die vollständige
-  Image-/Ausführungs-/Downloadfreigabe ist davon unberührt.
-- Ausgangspunkt: `415a2db`. Der gebundene M112-Änderungspfad hat 32 gezielte
-  Prüfungen einschließlich anderer Parameter-/GA-/Objektzustände und Rückfall.
-  Der Wiederholungspfad hat weitere 36 gezielte Prüfungen.
-- Am freigegebenen Taster wurde ein LED-Parameter geändert, als einzige Änderung
-  im EEPROM rückgelesen und anschließend der gesamte persistente Originalstand
-  unabhängig bestätigt. Der lesende Scanner hat Koppler und Taster erreicht.
-- Der erste Inbetriebnahmestand ist über PR #7 in `development` integriert;
-  alle neun Prüfungen des abschließenden Branchstands bestehen. Ein echter
-  lesender Workbench-Verbindungsversuch hat Geräteantwort und gejointen Abbau bestätigt.
-- Der native M112-Änderungs-/Recoverydialog, Root-RawData-Schreiber, korrektes
-  Extended-cEMI und die authentisierte Secure-UDP-Bibliothek sind mit PR #8 in
-  `development` integriert; alle neun Prüfungen des abschließenden Stands bestehen.
-- Geschützte Keyrings und dauerhafte Data-Secure-Gruppenzustände bestehen separat
-  101 Import-, 31 Codec-/Zähler- und 11 Tunnelprüfungen sowie die gemeinsame
-  Bus-Regression auf Windows und Ubuntu 26.04; PR #9 ist mit neun grünen Prüfungen
-  in `development` integriert. Die gemeinsame Secure-Verbindungswahl für Workbench,
-  M112 und MCP ist mit PR #11 und neun grünen Prüfungen integriert; provisioniertes
-  Tool-Access/Sync läuft separat.
-- Der vollständige installierte APT-Upgrade auf die lokale Abnahmeversion preview.42
-  besteht in Ubuntu 26.04/WSLg, einschließlich tatsächlichem Timeraufruf, Laufzeitschutz,
-  vollständiger Paketkonfiguration und nativen DE-/EN-Abläufen. Weitere Plattformen,
-  Stromausfallpfade und eine signierte Veröffentlichung bleiben offen.
-- Echte lesende Workbench-Verbindung, Gruppenmonitor und adressierter Scan sind
-  erreichbar; gemeinsame Verbindungsbesitzer beenden I/O vor erneuter Nutzung.
-  Allgemeine Programmierung, Adressierung und weitere Geräteprofile bleiben offen.
-- Der explizit provisionierte individuelle Tool-/P2P-Bibliothekspfad besteht
-  21 Zustands-/Codec- und fünf Tunnelprüfungen sowie die volle Bus-Regression
-  auf Windows und Ubuntu 26.04. Drei zusätzliche Lebensdauerprüfungen sichern
-  die Schlüsselbereinigung bei fehlerhaften Abbruch-Callbacks ab. Die gemeinsame
-  Tool-Access-Factory-Anbindung ist als explizites Management-Bibliotheksprofil mit
-  signiertem Gerätetoolschlüssel und vorhandenen vertrauenswürdigen Zählern
-  ergänzt. App/MCP-Anschluss, Provisionierung und Secure-Geräteabnahme bleiben
-  eigene Aufgaben.
-- Geräteversuche bleiben an die bestehende Zielgerätefreigabe gebunden.
-  Private Quellen, Identitäten, Kennwörter und Rohdaten bleiben außerhalb von Git.
-- Produktionsfreigabe bleibt offen, bis alle Anforderungen durch passende
-  Software-, Plattform- und Gerätebelege tatsächlich erfüllt sind.
+- Der [gemeinsame logische Imagepfad](../docs/status.md#combined-logical-working-stage)
+  unterstützt begrenzte Root-, Modul-/Repeat-/Allocator- und bedingte Profile.
+  Potenzielle Besitzer und gespeicherte inaktive Werte bleiben erhalten.
+  Vollständige physische Abbildung, weitere Herstellerprofile und Finalisierung
+  bleiben offen; Teilimages erhalten keine allgemeine Downloadfreigabe.
+- Der [gezielte M112-Versuch](06-commissioning.md) umfasst alle 37 Root-Unions,
+  vollständiges Wiederholungsladen, eine Parameteränderung, unabhängiges Rücklesen
+  und bestätigte Konfigurationswiederherstellung. Der Nutzer bestätigt auch nach
+  dem vollständigen Lauf unveränderte Tastenfunktion. Das gilt für ein freigegebenes Gerät.
+- [Workbench-Verbindungen](../docs/secure-connections.md), Monitor, adressierter
+  Scan und der [M112-Review-/Recoverydialog](../docs/commissioning.md) besitzen
+  gemeinsame, bis zum I/O-Ende gehaltene Verbindungsbesitzer. Allgemeine
+  Programmierwarteschlange, Adressierung und weitere Ladeprofile bleiben offen.
+- [Geschützte Keyrings](../docs/protected-keyrings.md),
+  [Tool/P2P mit Sync](../docs/individual-secure.md),
+  [Tool-Konsolen-/MCP-Zugang](../docs/tool-access-console.md) und
+  [Gruppenprofile für Factory/MCP](../docs/group-secure-connections.md) sind mit
+  vorhandenen vertrauenswürdigen Zuständen softwareseitig geprüft. Die explizite
+  [OS-Kennwortablage](../docs/credential-vault.md) erhält Quellen- und Projektbindung.
+  Sichere Erstinbetriebnahme, allgemeine Schlüsselprovisionierung und Secure-Geräteabnahme bleiben offen.
+- Die [installierte Linux-Abnahme](../docs/distribution.md#verification-and-current-boundaries)
+  umfasst das vollständige APT-Upgrade auf preview.42, tatsächlichen Timeraufruf,
+  Laufzeitschutz und native DE-/EN-Abläufe unter Ubuntu 26.04/WSLg. Weitere
+  Plattformen, Stromausfallpfade und signierte Veröffentlichung bleiben offen.
+- Aktuelle Softwaregrenzen und Abnahmen stehen im [Produktstatus](../docs/status.md).
+  Die Produktionsfreigabe bleibt offen; private Projekte, Identitäten, Kennwörter
+  und Gerätebelege bleiben außerhalb von Git.

@@ -19,8 +19,10 @@
 - [x] Explizit provisionierten individuellen Tool-/P2P-Pfad mit authentisiertem Client-Sync, dauerhafter Zählerzusammenführung und gejointem Tunnel-Initializer als Bibliothek ergänzen; Anwendungseinbindung und sichere Erstinbetriebnahme bleiben getrennt.
 - [x] Explizite Tool-Access-Managementoperation an gemeinsame Factory binden: signierter ToolKey, vorhandener vertrauenswürdiger Zählerzustand, Sync vor Management und frische Recoveryverbindungen; als Bibliotheksprofil mit Windows-/Linux-Loopback prüfen.
 - [x] Tool-Access-Konsolen-/M112-Pfad und separaten lesenden MCP-Identitätsabruf mit privaten Referenzen, expliziter Zählervertrauensentscheidung und vollständiger Wirebudgetprüfung vor Gerätezugriff integrieren.
-- [ ] Positiven Linien-Scan und reale Transport-Interoperabilität prüfen.
-- [ ] Herstellerimage, Management, Download, Verify und Neustart durchgängig abnehmen.
+- [x] Vorhandene vertrauenswürdige Data-Secure-Gruppenzustände mit signierter Absenderpolicy an Factory, lesenden Monitor und ausdrücklich konfigurierten MCP-Host binden; Geräteprovisionierung und Workbench-Auswahl getrennt halten.
+- [x] Gezielten adressierten Scan mit tatsächlichen Koppler-/Tasterantworten und lesende Workbench-Verbindung einschließlich Verbindungsabbau prüfen.
+- [x] Enges M112-Herstellerprofil mit vollständigem Applikationsdownload, Verify und bestätigter Wiederherstellung am freigegebenen Taster abnehmen.
+- [ ] Breitere Transport-Interoperabilität, Herstellerimages und weitere Management-/Ladeprofile abnehmen.
 - [ ] Secure-Tunnel, Data Security und sichere Inbetriebnahme vollständig integrieren.
 
 ## Hardwareentscheidung
