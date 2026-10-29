@@ -30,7 +30,8 @@ Einzelgeräteversuche ersetzen diese Endabnahme nicht.
 ## Laufender Stand
 
 - Der [gemeinsame logische Imagepfad](../docs/status.md#combined-logical-working-stage)
-  unterstützt begrenzte Root-, Modul-/Repeat-/Allocator- und bedingte Profile.
+  unterstützt begrenzte Root-, Modul-/Repeat-/Allocator- und bedingte Profile
+  mit nachgewiesener Enum- oder enger 0/1-Binärauswahl.
   Potenzielle Besitzer und gespeicherte inaktive Werte bleiben erhalten.
   Vollständige physische Abbildung, weitere Herstellerprofile und Finalisierung
   bleiben offen; Teilimages erhalten keine allgemeine Downloadfreigabe.
