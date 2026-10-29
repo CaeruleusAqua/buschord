@@ -117,7 +117,7 @@ invalidates the choice. No profile is saved automatically.
 Current-unanchored trust requires an unchecked confirmation for every newly
 acquired operation. The next Connect, scan or M112 action offers a short
 confirmation for the same selection; fresh sub-connections of an already admitted
-operation share its grant. Cancellation sends no connection frames. The desktop
+operation share its grant. Cancelling this confirmation opens no connection. The desktop
 ships no independent anchor provider and refuses such a profile unless the host
 explicitly supplies one. Lost/old counters are never initialized or repaired here.
 

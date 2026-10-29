@@ -96,6 +96,8 @@ ist auf Windows und Linux geprüft. Die [sichere Verbindungswahl](docs/secure-co
 verbindet signierte Keyring-Auswahl, Monitor, Scan, M112 und MCP über denselben Besitzer.
 Geschützte [Keyrings](docs/protected-keyrings.md) und ein begrenzter
 [Data-Secure-Gruppenpfad](docs/data-secure.md) ergänzen die Bibliothek.
+Die [explizite Gruppenauswahl](docs/group-secure-connections.md) verbindet vorhandene
+vertrauenswürdige Zählerzustände mit Workbench, Monitor und MCP.
 
 MDT, Jung und Gira sind verbindliche Herstellerprofile. Die derzeit unterstützten
 Import- und Parameterprofile sowie die verbleibenden Plug-in-, Dateiformat- und

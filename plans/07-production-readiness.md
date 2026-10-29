@@ -46,9 +46,11 @@ Einzelgeräteversuche ersetzen diese Endabnahme nicht.
 - [Geschützte Keyrings](../docs/protected-keyrings.md),
   [Tool/P2P mit Sync](../docs/individual-secure.md),
   [Tool-Konsolen-/MCP-Zugang](../docs/tool-access-console.md) und
-  [Gruppenprofile für Factory/MCP](../docs/group-secure-connections.md) sind mit
-  vorhandenen vertrauenswürdigen Zuständen softwareseitig geprüft. Die explizite
-  [OS-Kennwortablage](../docs/credential-vault.md) erhält Quellen- und Projektbindung.
+  [Gruppenprofile für Factory/Workbench/MCP](../docs/group-secure-connections.md) sind mit
+  vorhandenen vertrauenswürdigen Zuständen softwareseitig geprüft. Die
+  Workbench-Auswahl bindet dieselben Quellen und verlangt ohne unabhängigen Anker
+  eine neue Bestätigung pro Auftrag; Monitor-Provenienz und gejointer Abbau sind geprüft.
+  Die [OS-Kennwortablage](../docs/credential-vault.md) erhält Quellen- und Projektbindung.
   Sichere Erstinbetriebnahme, allgemeine Schlüsselprovisionierung und Secure-Geräteabnahme bleiben offen.
 - Die [installierte Linux-Abnahme](../docs/distribution.md#verification-and-current-boundaries)
   umfasst das vollständige APT-Upgrade auf preview.42, tatsächlichen Timeraufruf,
