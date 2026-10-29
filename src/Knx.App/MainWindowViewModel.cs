@@ -20,6 +20,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly CatalogLibrary _catalog;
     private readonly Dictionary<string, CatalogApplicationProgram> _catalogPrograms = [];
     private bool _awaitingCatalog;
+    private int _catalogCompletionPending;
 
     public MainWindowViewModel() : this(CatalogLibrary.Shared) { }
 
@@ -48,7 +49,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private void OnCatalogChanged(object? sender, EventArgs e)
     {
         Interlocked.Increment(ref _recoveryCatalogGeneration);
-        if (_awaitingCatalog) CatalogLoaded?.Invoke(this, EventArgs.Empty);
+        NotifyCatalogCompletion();
+    }
+
+    private void NotifyCatalogCompletion()
+    {
+        // A ready-snapshot lookup can clear the loading status before Changed reaches us.
+        if (Interlocked.Exchange(ref _catalogCompletionPending, 0) != 0)
+            CatalogLoaded?.Invoke(this, EventArgs.Empty);
     }
 
     // ---------- project ----------
@@ -880,7 +888,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
             if (!_awaitingCatalog)
             {
                 _awaitingCatalog = true;
-                _ = _catalog.GetAsync();
+                Interlocked.Exchange(ref _catalogCompletionPending, 1);
+                var loading = _catalog.GetAsync();
+                // Publication may have completed between Current and the pending marker.
+                if (loading.IsCompletedSuccessfully)
+                    ThreadPool.QueueUserWorkItem(static vm => vm.NotifyCatalogCompletion(), this, preferLocal: false);
             }
             Status = Strings.Get("CatalogLoading");
             return null;

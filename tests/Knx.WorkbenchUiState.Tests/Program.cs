@@ -5,6 +5,14 @@ using Knx.Portfolio;
 using System.IO.Compression;
 using System.Text;
 
+if (args.Contains("--catalog-completion"))
+{
+    var directory = Path.Combine(Path.GetTempPath(), "buschord-catalog-completion-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
+    try { return await CatalogCompletionChecks.RunAsync(directory); }
+    finally { Directory.Delete(directory, true); }
+}
+
 if (args.Contains("--performance-budget") || args.Contains("--performance-budget-checks"))
 {
     if (args.Length != 1) { Console.Error.WriteLine("Use exactly one performance-budget mode without additional arguments."); return 2; }
@@ -31,6 +39,7 @@ var root = Path.Combine(Path.GetTempPath(), "buschord-workspace-" + Guid.NewGuid
 Directory.CreateDirectory(root);
 try
 {
+    Check("catalogue completion survives interleaved ready lookups", await CatalogCompletionChecks.RunAsync(root) == 0);
     NativePerformanceBudgetChecks.Run(Check);
     var workspace = new WorkbenchWorkspace("P1");
     var unnamedProject = Knx.Workbench.WorkbenchJson.CreateDemo();
