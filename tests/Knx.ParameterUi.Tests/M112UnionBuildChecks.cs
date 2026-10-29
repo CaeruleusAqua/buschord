@@ -5,7 +5,7 @@ internal static class M112UnionBuildChecks
 {
     private static readonly XNamespace Ns = PropertySourceChecks.Ns;
 
-    internal static ArchivedImageSourceChecks.Fixture Fixture(string directory, Action<XElement>? edit = null, bool fullLoad = false)
+    internal static ArchivedImageSourceChecks.Fixture Fixture(string directory, Action<XElement>? edit = null, bool fullLoad = false, Action<XElement>? fullEdit = null)
     {
         var app = GeneratedTableSerializerChecks.Application(GeneratedTableFormat.M112);
         var program = app.Descendants(Ns + "ApplicationProgram").Single();
@@ -52,6 +52,11 @@ internal static class M112UnionBuildChecks
         if (fullLoad)
         {
             program.SetAttributeValue("ApplicationNumber", 256); program.SetAttributeValue("ApplicationVersion", 16); program.SetAttributeValue("PeiType", 1);
+            var objectBytes = new byte[32]; objectBytes[0] = 5; objectBytes[1] = 7;
+            for (var slot = 0; slot < 5; slot++) { objectBytes[3 + 4 * slot] = 7; objectBytes[4 + 4 * slot] = (byte)(0x10 + 4 * slot); }
+            var objectSegment = stat.Element(Ns + "Code")!.Elements(Ns + "AbsoluteSegment").Single(e => (string?)e.Attribute("Id") == "KO");
+            objectSegment.Element(Ns + "Data")!.Value = Convert.ToBase64String(objectBytes);
+            objectSegment.Element(Ns + "Mask")!.Value = Convert.ToBase64String(Enumerable.Repeat((byte)255, objectBytes.Length).ToArray());
             stat.Element(Ns + "Code")!.Elements(Ns + "AbsoluteSegment").Single(e => (string?)e.Attribute("Id") == "PARAM").SetAttributeValue("Address", 0x4420);
             var controls = stat.Descendants(Ns + "LoadProcedure").Single(); controls.RemoveNodes();
             controls.Add(new XElement(Ns + "LdCtrlConnect"), new XElement(Ns + "LdCtrlCompareProp", new XAttribute("ObjIdx", 0), new XAttribute("PropId", 78), new XAttribute("InlineData", "00000000000100000000")));
@@ -60,7 +65,7 @@ internal static class M112UnionBuildChecks
             {
                 controls.Add(new XElement(Ns + "LdCtrlLoad", new XAttribute("LsmIdx", oi)));
                 if (oi == 3)
-                    foreach (var (start, length, kind) in new[] { (0x700, 8, 0), (0x708, 1, 1) })
+                    foreach (var (start, length, kind) in new[] { (0x700, 64, 0), (0x740, 1, 1) })
                     {
                         stat.Element(Ns + "Code")!.Add(new XElement(Ns + "AbsoluteSegment", new XAttribute("Id", "RAM" + kind), new XAttribute("Address", start), new XAttribute("Size", length), new XAttribute("MemoryType", "RAM")));
                         controls.Add(new XElement(Ns + "LdCtrlAbsSegment", new XAttribute("LsmIdx", oi), new XAttribute("SegType", kind), new XAttribute("Address", start), new XAttribute("Size", length), new XAttribute("Access", 0), new XAttribute("MemType", 2), new XAttribute("SegFlags", 0)));
@@ -78,6 +83,7 @@ internal static class M112UnionBuildChecks
                         new XElement(Ns + "Location", new XAttribute("AddressSpace", "StandardMemory"), new XAttribute("StartAddress", suffix == "LoadControl" ? 0x104 : 0xB6E9 + oi)),
                         new XElement(Ns + "ResourceType", new XAttribute("Length", suffix == "LoadControl" ? 12 : 1), new XAttribute("Flavour", "LoadControl_M112"))));
         }
+        fullEdit?.Invoke(program);
         var fixture = ArchivedImageSourceChecks.Load(directory, app: app, master: master, hardware: PropertyInitializationChecks.Hardware());
         fixture.Project.Installations.Single().Areas.Single().Lines.Single().MediumTypeRefId = "MT-0";
         return fixture;

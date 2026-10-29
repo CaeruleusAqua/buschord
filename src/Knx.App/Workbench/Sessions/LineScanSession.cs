@@ -1,10 +1,11 @@
 using System.Collections.ObjectModel;
 using Knx.App.Localization;
+using Knx.Bus;
 
 namespace Knx.App.Workbench;
 
-/// <summary>One-shot simulated line or device scan; no transport or device write is opened.</summary>
-public sealed class LineScanSession : SessionState
+/// <summary>Explicit demo or read-only real scans; the owner cancels and joins active work before disposal.</summary>
+public sealed class LineScanSession : SessionState, IAsyncDisposable
 {
     private readonly InterfaceCoordinator _interfaces;
     private readonly Func<Project?> _project;
@@ -13,6 +14,12 @@ public sealed class LineScanSession : SessionState
     private string? _lastError;
     private string? _lastLineId;
     private DateTimeOffset? _lastScanAt;
+    private CancellationTokenSource? _cancellation;
+    private Task? _operation;
+    private bool _disposed;
+    private object? _runIdentity;
+    public int CompletedTargets { get; private set; }
+    public int TotalTargets { get; private set; }
 
     public LineScanSession(InterfaceCoordinator interfaces, Func<Project?> project)
     {
@@ -31,6 +38,7 @@ public sealed class LineScanSession : SessionState
     public async Task RunDemoAsync(string lineId, string interfaceId = "demo-ip", CancellationToken ct = default)
     {
         VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(lineId);
         if (_running) throw new InvalidOperationException("A scan is already running.");
         var project = _project() ?? throw new InvalidOperationException("No project is open.");
@@ -39,19 +47,20 @@ public sealed class LineScanSession : SessionState
             ?? throw new ArgumentException("Line is not in the current project.", nameof(lineId));
         var devices = line.Devices.Concat(line.Segments.SelectMany(s => s.Devices))
             .OrderBy(d => d.Address.Device).Select(d => (Device: d, LineId: (string?)line.Id)).ToList();
-        await RunDemoCoreAsync(devices, line.Id, interfaceId, ct);
+        await (_operation = RunDemoCoreAsync(devices, line.Id, interfaceId, ct));
     }
 
     /// <summary>Simulated scan of one project device, reported with its individual address and ids.</summary>
     public async Task RunDemoDeviceAsync(string deviceId, string interfaceId = "demo-ip", CancellationToken ct = default)
     {
         VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceId);
         if (_running) throw new InvalidOperationException("A scan is already running.");
         var project = _project() ?? throw new InvalidOperationException("No project is open.");
         var located = ProjectQuery.Devices(project).FirstOrDefault(d => d.Device.Id == deviceId);
         if (located.Device is null) throw new ArgumentException("Device is not in the current project.", nameof(deviceId));
-        await RunDemoCoreAsync([(located.Device, located.Line?.Id)], located.Line?.Id, interfaceId, ct);
+        await (_operation = RunDemoCoreAsync([(located.Device, located.Line?.Id)], located.Line?.Id, interfaceId, ct));
     }
 
     private async Task RunDemoCoreAsync(IReadOnlyList<(DeviceInstance Device, string? LineId)> devices,
@@ -60,6 +69,8 @@ public sealed class LineScanSession : SessionState
         ArgumentException.ThrowIfNullOrWhiteSpace(interfaceId);
         if (!_interfaces.TryAcquire(interfaceId, InterfaceActivity.Scan, out var lease))
             throw new InvalidOperationException("The interface is occupied by a monitor or programming job.");
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _cancellation = cancellation; ct = cancellation.Token;
         _running = true; _lastError = null; _lastLineId = lineId; _lastScanAt = null;
         _results.Clear();
         OnPropertyChanged(nameof(IsRunning)); OnPropertyChanged(nameof(LastError));
@@ -82,11 +93,81 @@ public sealed class LineScanSession : SessionState
         catch (OperationCanceledException) { _lastError = WorkbenchStrings.Get("ScanCancelled"); }
         finally
         {
+            if (ReferenceEquals(_cancellation, cancellation)) _cancellation = null;
             lease?.Dispose();
             _running = false;
             OnPropertyChanged(nameof(IsRunning)); OnPropertyChanged(nameof(LastError));
             OnPropertyChanged(nameof(LastScanAt));
         }
+    }
+
+    public Task RunRealAsync(string lineId, ReadOnlyLineScanPlan plan, ReadOnlyLineScanner? scanner = null, CancellationToken ct = default)
+    {
+        VerifyAccess(); ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_running) throw new InvalidOperationException("A scan is already running.");
+        var project = _project() ?? throw new InvalidOperationException("No project is open.");
+        if (!project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).Any(l => l.Id == lineId))
+            throw new ArgumentException("Line is not in the current project.", nameof(lineId));
+        return _operation = RunRealCoreAsync(project, lineId, plan, scanner ?? new(), ct);
+    }
+    private async Task RunRealCoreAsync(Project project, string lineId, ReadOnlyLineScanPlan plan, ReadOnlyLineScanner scanner, CancellationToken ct)
+    {
+        using var reservation = RealEndpointReservations.TryAcquire(plan.InterfaceId)
+            ?? throw new InvalidOperationException(LiveConnectionStrings.Get("ScanDisconnect"));
+        if (!_interfaces.TryAcquire(plan.InterfaceId, InterfaceActivity.Scan, out var lease))
+            throw new InvalidOperationException(LiveConnectionStrings.Get("Occupied"));
+        using (lease)
+        using (var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            _cancellation = cancellation; _running = true; _lastError = null; _lastLineId = lineId; _lastScanAt = null;
+            var run = _runIdentity = new object(); CompletedTargets = 0; TotalTargets = plan.Targets.Count;
+            _results.Clear(); Notify();
+            var names = ProjectQuery.DeviceList(project).GroupBy(d => d.Address).ToDictionary(g => g.Key, g => (g.First().Id, g.First().Name));
+            try
+            {
+                var progress = new Progress<ReadOnlyLineScanProgress>(value =>
+                {
+                    if (_disposed || !_running || !ReferenceEquals(run, _runIdentity) || !SameProject(project)) return;
+                    CompletedTargets = value.Completed; OnPropertyChanged(nameof(CompletedTargets));
+                });
+                var result = await scanner.ScanAsync(plan, progress, cancellation.Token);
+                if (_disposed) return;
+                if (!SameProject(project)) { _lastError = LiveConnectionStrings.Get("StaleProject"); return; }
+                CompletedTargets = result.Observations.Count(o => o.State != ReadOnlyLineScanState.NotProbed);
+                foreach (var observation in result.Observations)
+                {
+                    var known = names.GetValueOrDefault(observation.Address);
+                    _results.Add(new(observation.Address.ToString(), known.Name ?? "", LiveConnectionStrings.Get(observation.State.ToString()),
+                        observation.MaskVersion is { } mask ? $"0x{mask:X4}" : LiveConnectionStrings.Get(observation.State.ToString()),
+                        SessionOrigin.Real, observation.ObservedAtUtc ?? DateTimeOffset.UtcNow, known.Id, lineId));
+                }
+                _lastScanAt = result.FinishedAtUtc;
+                if (result.Completion == ReadOnlyLineScanCompletion.Cancelled) _lastError = LiveConnectionStrings.Get("ScanCancelled");
+                else if (result.Completion != ReadOnlyLineScanCompletion.Completed) _lastError = LiveConnectionStrings.Get("Failed");
+            }
+            finally
+            {
+                _running = false;
+                _runIdentity = null;
+                if (ReferenceEquals(_cancellation, cancellation)) _cancellation = null;
+                Notify();
+            }
+        }
+        void Notify()
+        {
+            OnPropertyChanged(nameof(IsRunning)); OnPropertyChanged(nameof(LastError));
+            OnPropertyChanged(nameof(LastLineId)); OnPropertyChanged(nameof(LastScanAt));
+            OnPropertyChanged(nameof(CompletedTargets)); OnPropertyChanged(nameof(TotalTargets));
+        }
+    }
+    private bool SameProject(Project expected)
+    { try { return ReferenceEquals(expected, _project()); } catch (InvalidOperationException) { return false; } }
+    public void Cancel() { VerifyAccess(); _cancellation?.Cancel(); }
+    public async ValueTask DisposeAsync()
+    {
+        VerifyAccess(); _disposed = true; _cancellation?.Cancel();
+        if (_operation is { } operation)
+            try { await operation; } catch { /* Completed scan errors do not bypass joined cleanup or prevent window close. */ }
     }
 }
 

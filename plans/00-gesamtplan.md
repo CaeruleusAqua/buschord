@@ -23,6 +23,7 @@
 - [x] Gemeinsame logische Speicher-/Property-Initialisierung, zugelassene Root-Writer und aktuelle Tabellen-Seeds mit bedingten Optionsannahmen über API und MCP prüfen.
 - [x] Verbindliche Prüfgrenzen für den dokumentierten Windows-Referenzlauf implementieren.
 - [x] Windows-Referenzbudget mit 144 Rohmessungen innerhalb aller Latenz- und Speichergrenzen prüfen.
+- [x] Lesende Workbench-Verbindung, Gruppenmonitor und Scan sowie enges M112-Änderungs-/Wiederherstellungsprofil integrieren und gezielt prüfen.
 - [ ] Verbleibende Hersteller-, Speicher- und Dateiformatprofile schließen.
 - [ ] Manuelle UI-, Accessibility- und Plattformabnahme abschließen.
 - [ ] Reale Inbetriebnahme prüfen — gezielter Tastertest freigegeben, siehe [Einzelgeräteplan](06-commissioning.md).
@@ -39,6 +40,7 @@ Implementiert bedeutet keine allgemeine Kompatibilitäts- oder Gerätefreigabe.
 - [Native Workbench und Abnahme](03-ui.md)
 - [Arbeitsabläufe und lokale Historie](04-workflows.md)
 - [Installation und automatische Updates](05-distribution.md)
+- [Vollständige Projekte und Produktionsfreigabe](07-production-readiness.md)
 
 ## Nächste Aufgaben
 

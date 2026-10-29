@@ -19,6 +19,9 @@ var catalogDir = Path.Combine(Path.GetTempPath(), "knx_mcp_catalog_" + Guid.NewG
 Directory.CreateDirectory(catalogDir);
 Environment.SetEnvironmentVariable("KNX_CATALOG_DIR", catalogDir);
 
+await ManagementChangeCliChecks.RunAsync(Check);
+if (args.Contains("--management-cli")) return failures.Count == 0 ? 0 : 1;
+
 await using var server = new McpServer();
 
 // ---------------------------------------------------------------- initialize

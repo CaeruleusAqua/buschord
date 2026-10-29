@@ -117,6 +117,65 @@ After a failed load, `OriginalConfigurationRestoredAndVerified` reports whether 
 captured configuration was restored and verified; successful rollback still leaves
 the load command unsuccessful.
 
+## Reviewed M112 configuration changes
+
+The separate change mode binds an existing baseline project and a desired project
+to the same device, application definition and load layout. The baseline must match
+the actual device before any unload. Parameter values, object activation/types,
+group addresses and associations are compiled from the desired state. The baseline
+is never replaced with desired bytes for comparison or recovery.
+
+Keep both project copies and expected identity outside the checkout:
+
+```powershell
+dotnet src/Knx.Mcp/bin/Release/net10.0/buschord-mcp.dll `
+  --management-probe=192.0.2.10 --target=1.1.20 `
+  --m112-change-confirm=1.1.20 `
+  --baseline-project=C:\private-tests\before.knxproj `
+  --project=C:\private-tests\desired.knxproj `
+  --expected-identity=C:\private-tests\expected-identity.json `
+  --journal-directory=C:\private-tests\journals `
+  --m112-preview
+```
+
+The preview opens no connection. It returns the plan `Fingerprint`, both image
+fingerprints, layout binding and proposed EEPROM ranges. `RequiresDeviceRead`
+identifies bits whose old value is not established by the baseline archive.
+Review this output, remove `--m112-preview`, and add
+`--review-fingerprint=FINGERPRINT_FROM_PREVIEW` to apply that exact proposal.
+Missing/mismatched confirmation, live baseline drift or stale project inputs refuse
+the operation before unloading. Both project inputs are checked again after the
+final readback without recompiling the image between that check and the first command.
+
+This profile retains manufacturer-provided RAM pointers and segment selectors.
+All active objects, including unlinked objects and objects with communication
+disabled, must fit in declared data RAM with compatible decoded types and without
+overlapping values or status storage. Active unlinked types are written from the
+evaluated target instead of silently retaining an old type. Unknown segment
+mapping and read-on-initialization changes still require additional writers and
+are refused. First provisioning, application migration and other mask profiles
+remain separate implementation tasks.
+
+The normal project-password input/variable serves the desired project and, by
+default, the baseline. `--baseline-password-env=VARIABLE_NAME` selects a separate
+baseline password. Values are not command arguments and are never logged.
+Change operations have a ten-minute caller deadline; recovery retains its
+independent five-minute deadline. The before-image and recovery command below
+restore the actual original bytes after a failed change, not the proposed values.
+
+## Read-only addressed line scans
+
+`ReadOnlyLineScanner` probes an explicitly selected set of up to 255 addresses on
+one line, including coupler address zero, using fresh read-only management sessions.
+Each session permits descriptor/property/memory reads and rejects memory/property
+writes and restart before transmission. A gateway-assigned tunnel address that
+collides with the selected target is skipped and recorded explicitly.
+
+Results distinguish `Responded`, `Unknown` and `NotProbed`. A timeout is not proof
+of absence. Cancellation returns partial evidence and marks unattempted addresses;
+cleanup completes before another probe starts. Construction opens no connection,
+and the scanner never discovers or broadcasts implicitly.
+
 ## Resume captured-configuration recovery
 
 Retain the exact `before-image.json` path printed in `RecoveryPath`. A separate
@@ -166,3 +225,11 @@ application, load/run-state, PEI, table-pointer and status checks with no error.
 The target then answered another temperature group read. This is live acceptance
 of this same-configuration profile on one device; general application downloads,
 other device profiles and broader hardware acceptance remain outside that evidence.
+
+The reviewed-change path subsequently passed a real parameter change on the same
+released device. Independent readback found exactly the intended single EEPROM byte
+changed. Explicit recovery then restored the previous value, and a separate snapshot
+matched all three original persistent-region hashes. The target subsequently answered
+its temperature group read. The user also confirmed unchanged operation of the
+physical buttons. The read-only scanner obtained positive descriptor
+responses from the selected device and a coupler; this is not whole-installation acceptance.

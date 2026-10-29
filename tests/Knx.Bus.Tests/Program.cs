@@ -878,6 +878,9 @@ TelegramMetadataChecks.Run((name, ok) => Check(name, ok));
 TelegramHistoryChecks.Run((name, ok) => Check(name, ok));
 await ManagementChecks.RunAsync(Check);
 await ManagementWriteChecks.RunAsync(Check);
+await ReadOnlyLineScanChecks.RunAsync(Check);
+Check("tunnel lifetime checks", await TunnelLifetimeChecks.RunAsync() == 0);
+Check("tunnel peer checks", await TunnelPeerChecks.RunAsync() == 0);
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 
@@ -1465,7 +1468,7 @@ internal sealed class FakeKnxDevice
 
     /// <summary>Server-initiated disconnect for the open channel.</summary>
     public Task PushDisconnectAsync()
-        => SendAsync(_endpoint, ServiceType.DisconnectRequest, [_channel, 0x00]);
+        => SendAsync(_endpoint, ServiceType.DisconnectRequest, Connection.DisconnectRequest(_channel, _endpoint));
 
     private Task PushAsync(IPEndPoint destination, byte sequence, byte[] cemi)
         => SendAsync(destination, ServiceType.TunnellingRequest, Tunnelling.Request(_channel, sequence, cemi));

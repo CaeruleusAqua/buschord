@@ -9,6 +9,14 @@ namespace Knx.Mcp;
 internal static class ManagementProbe
 {
     public static async Task<int> RunAsync(string host, string[] args)
+        => await RunCoreAsync(host, args, null);
+
+    internal static Task<int> RunWithConnectionsAsync(string host, string[] args,
+        Func<IPEndPoint, IndividualAddress, IndividualAddress, CancellationToken, Task<IManagementConnection>> open)
+        => RunCoreAsync(host, args, open);
+
+    private static async Task<int> RunCoreAsync(string host, string[] args,
+        Func<IPEndPoint, IndividualAddress, IndividualAddress, CancellationToken, Task<IManagementConnection>>? open)
     {
         try
         {
@@ -22,23 +30,30 @@ internal static class ManagementProbe
                 throw new ArgumentException("--target must be one canonical area.line.device address with device 1..254.");
             var mode = Option("--mode-cycle-confirm");
             var full = Option("--m112-full-confirm");
+            var change = Option("--m112-change-confirm");
             var recover = Option("--m112-recover");
-            if ((mode is not null ? 1 : 0) + (full is not null ? 1 : 0) + (recover is not null ? 1 : 0) > 1)
-                throw new ArgumentException("Choose only one of mode-cycle, M112 full load, or M112 recovery.");
-            ValidateModeOptions(options, mode is not null ? "mode" : full is not null ? "full" : recover is not null ? "recover" : "read");
+            if ((mode is not null ? 1 : 0) + (full is not null ? 1 : 0) + (recover is not null ? 1 : 0) + (change is not null ? 1 : 0) > 1)
+                throw new ArgumentException("Choose only one of mode-cycle, M112 reload, configuration change, or recovery.");
+            ValidateModeOptions(options, mode is not null ? "mode" : full is not null ? "full" : change is not null ? "change" : recover is not null ? "recover" : "read");
+            if (change is not null && !options.ContainsKey("--m112-preview"))
+            {
+                var review = Required(options, "--review-fingerprint");
+                if (review.Length != 64 || !review.All(char.IsAsciiHexDigit))
+                    throw new ArgumentException("--review-fingerprint must be the 64 hexadecimal characters from the reviewed preview.");
+            }
             using var caller = new CancellationTokenSource();
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(caller.Token);
-            timeout.CancelAfter(full is not null || recover is not null ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(60));
+            timeout.CancelAfter(change is not null ? TimeSpan.FromMinutes(10) : full is not null || recover is not null ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(60));
             ConsoleCancelEventHandler onCancel = (_, e) => { e.Cancel = true; caller.Cancel(); };
             Console.CancelKeyPress += onCancel;
             try
             {
                 async Task<IManagementConnection> Open(CancellationToken token)
-                    => await KnxManagementConnection.OpenAsync(new IPEndPoint(address, 3671), target,
-                        new IndividualAddress(1, 1, 249), ct: token);
-                if (mode is not null || full is not null || recover is not null)
+                    => open is null ? await KnxManagementConnection.OpenAsync(new IPEndPoint(address, 3671), target,
+                        new IndividualAddress(1, 1, 249), ct: token) : await open(new IPEndPoint(address, 3671), target, new IndividualAddress(1, 1, 249), token);
+                if (mode is not null || full is not null || recover is not null || change is not null)
                 {
-                    var confirmed = mode ?? full ?? Option("--m112-recovery-confirm");
+                    var confirmed = mode ?? full ?? change ?? Option("--m112-recovery-confirm");
                     if (confirmed != targetText)
                         throw new ArgumentException("The selected mode's confirmation must exactly equal --target.");
                     var expectedPath = PrivatePath(Required(options, "--expected-identity"), existingFile: true);
@@ -77,6 +92,33 @@ internal static class ManagementProbe
                     var devices = ProjectQuery.DeviceList(project).Where(d => d.Address == target).ToArray();
                     if (devices.Length != 1) throw new InvalidDataException("The project must contain exactly one device at --target.");
                     var device = devices[0];
+                    if (change is not null)
+                    {
+                        var baselinePath = PrivatePath(Required(options, "--baseline-project"), existingFile: true);
+                        if (!Path.GetExtension(baselinePath).Equals(".knxproj", StringComparison.OrdinalIgnoreCase))
+                            throw new ArgumentException("--baseline-project must name an existing private .knxproj copy.");
+                        var baselineProject = LoadProject(baselinePath, Option("--baseline-password-env") ?? Option("--project-password-env"));
+                        var baselineDevices = ProjectQuery.DeviceList(baselineProject).Where(d => d.Address == target).ToArray();
+                        if (baselineDevices.Length != 1) throw new InvalidDataException("The baseline must contain exactly one device at --target.");
+                        var plan = M112ApplicationChangePlan.Prepare(baselineProject, baselineDevices[0], project, device);
+                        if (expected.Application != $"{plan.Desired.Manufacturer:X4}{plan.Desired.ApplicationNumber:X4}{plan.Desired.ApplicationVersion:X2}")
+                            throw new InvalidDataException("The change plan does not match the confirmed application.");
+                        timeout.Token.ThrowIfCancellationRequested();
+                        if (options.ContainsKey("--m112-preview"))
+                        {
+                            Console.WriteLine(JsonSerializer.Serialize(new { previewOnly = true, devicePreflightPerformed = false,
+                                target = targetText, plan.Fingerprint, layoutFingerprint = plan.Desired.LayoutFingerprint,
+                                baselineFingerprint = plan.Baseline.Fingerprint, desiredFingerprint = plan.Desired.Fingerprint,
+                                changes = plan.Changes.Select(c => new { c.Address, c.Length, c.RequiresDeviceRead,
+                                    baseline = c.BaselineData.Sha256, desired = c.DesiredData.Sha256 }),
+                                recoveryScope = "CapturedConfigurationWithSourceLoadRecipe" }));
+                            return 0;
+                        }
+                        var result = await M112ApplicationDownload.ApplyChangesAsync(Open, plan, Required(options, "--review-fingerprint"), expected,
+                            confirmed, journalDirectory, phase => Console.Error.WriteLine("m112: " + phase), timeout.Token);
+                        Console.WriteLine(JsonSerializer.Serialize(result));
+                        return result.DownloadedAndVerified && result.Error is null ? 0 : 1;
+                    }
                     var image = OfflineM112ApplicationBuild.Build(project, device);
                     if (image.Address != targetText || expected.Application != $"{image.Manufacturer:X4}{image.ApplicationNumber:X4}{image.ApplicationVersion:X2}")
                         throw new InvalidDataException("The source image's address/application does not match the confirmed identity.");
@@ -122,6 +164,7 @@ internal static class ManagementProbe
         var valued = new HashSet<string>(["--management-probe", "--target", "--identity-output", "--mode-cycle-confirm",
             "--expected-identity", "--journal-directory", "--m112-full-confirm", "--project", "--project-password-env",
             "--m112-recover", "--m112-recovery-confirm"], StringComparer.Ordinal);
+        valued.UnionWith(["--m112-change-confirm", "--baseline-project", "--baseline-password-env", "--review-fingerprint"]);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var arg in args)
         {
@@ -143,6 +186,8 @@ internal static class ManagementProbe
         {
             "mode" => ["--mode-cycle-confirm", "--expected-identity", "--journal-directory"],
             "full" => ["--m112-full-confirm", "--project", "--project-password-env", "--expected-identity", "--journal-directory", "--m112-preview"],
+            "change" => ["--m112-change-confirm", "--project", "--project-password-env", "--expected-identity", "--journal-directory", "--m112-preview",
+                "--baseline-project", "--baseline-password-env", "--review-fingerprint"],
             "recover" => ["--m112-recover", "--m112-recovery-confirm", "--expected-identity"],
             _ => new[] { "--identity-output" }
         });

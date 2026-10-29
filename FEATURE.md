@@ -5,6 +5,7 @@ Projektmodell und einem MCP-Server. Projektänderungen erfolgen offline.
 
 - [Funktionsumfang und Grenzen](docs/status.md)
 - [Gesamtplan](plans/00-gesamtplan.md)
+- [Vollständige Projekte und Produktionsfreigabe](plans/07-production-readiness.md)
 - [Benutzerhandbuch](docs/manual.md)
 - [MCP-Vertrag](mcp.md)
 - [Installation und automatische Updates](docs/distribution.md) — lokale Paketprüfung bestanden; Plattformfreigabe offen.
@@ -59,6 +60,13 @@ erneute Laden einer bereits passenden Konfiguration. Er prüft Projektquelle,
 Geräteidentität, PEI, Tabellenzeiger und persistente Bits vor dem Entladen und
 verbindet eine dauerhafte Konfigurationssicherung mit der ursprünglichen
 Ladeprozedur. [Umfang und Abnahme](docs/commissioning.md).
+Ein separater Änderungsplan bindet Ausgangs- und Zielprojekt unabhängig, prüft
+Speicherlayout und tatsächlichen Ausgangsstand und lädt geänderte Parameter und
+Tabellen mit Rückfall auf die ursprünglichen Bytes. Ein schreibgesperrter
+adressierter Scanner liefert auch für Koppler explizite Teil-/Unbekannt-Ergebnisse.
+Die Workbench bietet eine ausdrücklich gewählte lesende UDP-Verbindung, echten
+Gruppenmonitor und Linienscan. Projektwechsel und Schließen warten den tatsächlichen
+Verbindungsabbau ab; allgemeine Programmieraufträge bleiben simuliert.
 Ein separater Property-Arbeitslauf initialisiert alle tatsächlich ausgewählten
 Allokationen seines festen Root-Profils und formatiert die vollständige
 Referenzpopulation aus derselben Auswertung. Initialdaten, Gültigkeit und
