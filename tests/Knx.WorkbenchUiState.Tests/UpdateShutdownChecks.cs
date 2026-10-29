@@ -45,6 +45,7 @@ internal static class UpdateShutdownChecks
                 var job = sessions.Programming.Enqueue(ProjectQuery.DeviceList(vm.Project!).First().Id);
                 var run = sessions.Programming.RunAsync();
                 if (alreadyDetached) _ = (Task)detach.Invoke(window, [])!;
+                window.RequestShutdown();
                 window.Close();
                 await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
                 window.Close();

@@ -96,9 +96,20 @@ internal static class Program
                 }
             }
             var exitCode = 1;
-            try { exitCode = BuildAvaloniaApp().StartWithClassicDesktopLifetime(args); }
+            AppProjectRecoveryService? recovery = null;
+            try
+            {
+                try { recovery = AppProjectRecoveryService.CreateAsync().GetAwaiter().GetResult(); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                { App.RecoveryStartupFailed = true; Console.Error.WriteLine("Recovery.WriterFailed"); }
+                AppProjectRecoveryService.Current = recovery;
+                exitCode = BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+            }
             finally
             {
+                // Every window finished its UI-bound close drain before the dispatcher ended.
+                recovery?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                AppProjectRecoveryService.Current = null;
                 updates.StopAsync().GetAwaiter().GetResult();
                 lease?.Dispose();
             }

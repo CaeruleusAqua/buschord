@@ -39,10 +39,11 @@ public static class WorkbenchJson
     private static void Validate(JsonElement data)
     {
         Shape(data, "schemaVersion project floors rooms lines devices objects gas links");
-        N(data, "schemaVersion", 1, 1);
+        var schemaVersion = N(data, "schemaVersion", 1, 2);
         var project = data.GetProperty("project");
-        Shape(project, "id name description addressStyle");
+        Shape(project, schemaVersion == 1 ? "id name description addressStyle" : "id name description addressStyle guid");
         Id(S(project, "id")); S(project, "name"); S(project, "description"); N(project, "addressStyle", 3, 3);
+        if (schemaVersion == 2) Need(ValidGuid(S(project, "guid")), "Invalid demo project GUID.");
         var floors = Index(data, "floors", 20, "id name short");
         var rooms = Index(data, "rooms", 100, "id name floor");
         var lines = Index(data, "lines", 100, "id name area medium");
@@ -123,7 +124,8 @@ public static class WorkbenchJson
     private static Project Convert(JsonElement data)
     {
         var p = data.GetProperty("project");
-        var project = new Project { Id = S(p, "id"), Name = S(p, "name"), Comment = S(p, "description") };
+        var project = new Project { Id = S(p, "id"), Name = S(p, "name"), Comment = S(p, "description"),
+            Guid = data.GetProperty("schemaVersion").GetInt32() == 2 ? S(p, "guid") : null };
         var installation = new Installation { Id = "BC-V4-Installation", Name = project.Name };
         project.Installations.Add(installation);
         foreach (var f in data.GetProperty("floors").EnumerateArray())
@@ -187,9 +189,13 @@ public static class WorkbenchJson
         var devices = ProjectQuery.Devices(project).ToList();
         if (devices.Any(d => project.Workbench.Devices.GetValueOrDefault(d.Device.Id)?.Demo != true))
             throw new InvalidDataException("V4 JSON exports explicit DEMO projects only; use native knxproj for manufacturer data.");
+        if (project.Guid is not null) Need(ValidGuid(project.Guid), "Invalid demo project GUID.");
+        object projectData = project.Guid is null
+            ? new { id = project.Id, name = project.Name, description = project.Comment, addressStyle = 3 }
+            : new { id = project.Id, name = project.Name, description = project.Comment, addressStyle = 3, guid = project.Guid };
         var data = new
         {
-            schemaVersion = 1, project = new { id = project.Id, name = project.Name, description = project.Comment, addressStyle = 3 },
+            schemaVersion = project.Guid is null ? 1 : 2, project = projectData,
             floors = locations.Where(n => n.Kind == SpaceKind.Floor).Select(f => new { id = f.Id, name = f.Name, @short = project.Workbench.FloorShortNames.GetValueOrDefault(f.Id) }),
             rooms = locations.Where(n => n.Kind == SpaceKind.Room).Select(r => new { id = r.Id, name = r.Name, floor = r.Parent?.Id }),
             lines = project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines.Select(l => new { id = l.Id, name = l.Name, area = a.Address.ToString(), medium = MediumName(l.MediumTypeRefId) })),
@@ -289,6 +295,7 @@ public static class WorkbenchJson
 
     private static string Medium(string name) => name switch { "TP" => "MT-0", "PL" => "MT-1", "RF" => "MT-2", "IP" => "MT-5", _ => throw new InvalidDataException("Unknown medium.") };    private static string MediumName(string id) => id switch { "MT-0" => "TP", "MT-1" => "PL", "MT-2" => "RF", "MT-5" => "IP", _ => throw new InvalidDataException("Unknown native medium.") };
     private static void Need(bool condition, string message) { if (!condition) throw new InvalidDataException(message); }
+    private static bool ValidGuid(string value) => Guid.TryParse(value, out var guid) && guid != Guid.Empty;
     private static string Text(JsonElement value) { var s = value.GetString(); Need(!string.IsNullOrWhiteSpace(s) && s.Length <= 300, "Expected nonempty text up to 300 characters."); return s!; }
     private static string S(JsonElement element, string name) => Text(element.GetProperty(name));
     private static bool B(JsonElement element, string name) => element.GetProperty(name).GetBoolean();

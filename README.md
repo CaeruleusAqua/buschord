@@ -30,6 +30,7 @@ review; the badges track `development`.
 | Offline image planning | Combined logical memory/property initialization, admitted numeric/Single/Time root writers, source policy and current-working-seed M112/SystemB tables under explicit option assumptions; source bindings and unresolved image requirements. |
 | Migration | Reviewed parameter/object/channel mappings, link decisions, stale-preview checks and atomic undo. |
 | Reports | CSV, HTML labels, mail-merge TSV, project comparison, acceptance protocol and a deterministic handover ZIP. |
+| Local history | Opt-in telegram recording with time/filter/context queries, export, backup and retention; optional model/undo checkpoints, independent audit and explicit recovery review. See [workflows](docs/workflows.md) and [recovery](docs/recovery.md). |
 | Native UI | Object-centred tabs, project portfolio, inspector, catalogue and independent tools; keyboard command search, high contrast, light/dark themes and eight UI languages. |
 | MCP | 57 stdio tools, protected open/save, reviewed mass linking, explicit script capability, migration and a bounded Jung SP8 KSP import. |
 | Network | KNXnet/IP discovery, tunnel and routing foundations; device writes and real downloads remain disabled. |
@@ -80,6 +81,7 @@ dotnet run --project src/Knx.Mcp -c Release --no-build -- --selftest
 - [Product catalogues](catalog.md)
 - [MCP setup and tool contract](mcp.md)
 - [Local project backups](docs/project-backup.md)
+- [Local session recovery](docs/recovery.md)
 - [Distribution and automatic updates](docs/distribution.md)
 - [Workbench data model and sessions](docs/workbench-domain.md)
 - [Contributing and test commands](CONTRIBUTING.md)

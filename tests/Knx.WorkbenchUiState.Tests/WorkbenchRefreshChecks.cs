@@ -205,11 +205,15 @@ internal static class WorkbenchRefreshChecks
         ProjectQuery.DeviceList(replacement).Single(d => d.Id == "D-2").ComObjectRefs
             .Single(o => o.Id == "D-2_O-79").Text = "Replacement object";
         vm.CreateProject(replacement, null);
+        var replacementState = (vm.IsDirty, vm.CanUndo, vm.CanRedo);
+        var replacementXml = Knxproj.ToXml(replacement).ToString();
         window.RefreshWorkspace();
         await Settle();
         check("opening another instance with the same id cannot reuse prior rows", ReferenceEquals(vm.Project, replacement)
             && CurrentRows() && Row("D-2_O-79").Name == "Replacement object" && ObjectCaption("#79 · Replacement object"));
-        check("refresh checks do not save or dirty the replacement project", vm.ProjectPath == "" && !vm.IsDirty && !vm.CanUndo);
+        check("refresh preserves replacement model, undo and unsaved state", vm.ProjectPath == ""
+            && (vm.IsDirty, vm.CanUndo, vm.CanRedo) == replacementState
+            && Knxproj.ToXml(replacement).ToString() == replacementXml);
     }
 
     private static async Task Settle()

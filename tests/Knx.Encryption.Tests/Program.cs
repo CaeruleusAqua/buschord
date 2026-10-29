@@ -10,6 +10,13 @@ Directory.CreateDirectory(directory);
 int checks = 0;
 try
 {
+    if (args.Contains("--recovery-only", StringComparer.Ordinal))
+    {
+        RecoveryPersistenceChecks.Run((name, ok) => Check(ok, name));
+        Console.WriteLine($"ALL {checks} RECOVERY CHECKS PASSED");
+        return;
+    }
+    RecoveryPersistenceChecks.Run((name, ok) => Check(ok, name));
     Check(ArchiveEntryLimits.For("M-0001/M-0001_A-large.xml") == 128 * 1024 * 1024, "canonical applications receive the separate archive entry budget");
     foreach (var name in new[] { "M-0001/M-0001_A-large.xml\n", "M-0002/M-0001_A-large.xml", "M-0001/images/M-0001_A-large.xml", "M-0001/opaque.bin" })
         Check(ArchiveEntryLimits.For(name) == 64 * 1024 * 1024, "noncanonical paths keep the ordinary entry budget");

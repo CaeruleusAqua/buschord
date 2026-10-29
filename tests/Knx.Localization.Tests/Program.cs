@@ -57,6 +57,8 @@ var maps = new (string Module, string File, IReadOnlyDictionary<string, (string 
     ("catalog", "src/Knx.App/Services/CatalogBrowser.cs", MapOf(typeof(CatalogUiText))),
     ("catalog-downloads", "src/Knx.App/Localization/CatalogDownloadStrings.cs", MapOf(typeof(CatalogDownloadStrings))),
     ("updates", "src/Knx.App/Localization/UpdateUiStrings.cs", MapOf(typeof(UpdateUiStrings))),
+    ("recovery", "src/Knx.App/Localization/RecoveryUiStrings.cs", RecoveryUiStrings.Keys.ToDictionary(
+        key => key, key => (RecoveryUiStrings.GetForLanguage("de", key), RecoveryUiStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
 };
 var mapByModule = maps.ToDictionary(m => m.Module, m => m.Map, StringComparer.Ordinal);
 Info($"i18n: {maps.Sum(m => m.Map.Count)} keys ({string.Join(", ", maps.Select(m => m.Module + " " + m.Map.Count))})");
@@ -69,7 +71,7 @@ foreach (var (module, file, map) in maps)
     Check($"i18n[{module}]: every key has non-empty de and en text", empty.Count == 0, Join(empty));
 
     var sourceKeys = new List<string>();
-    foreach (Match m in Regex.Matches(File.ReadAllText(Path.Combine(root, file)), "\\[\"([A-Za-z][A-Za-z0-9]*)\"\\]\\s*=\\s*\\("))
+    foreach (Match m in Regex.Matches(File.ReadAllText(Path.Combine(root, file)), "\\[\"([A-Za-z][A-Za-z0-9]*)\"\\]\\s*=\\s*(?:\\(|\\[)"))
         sourceKeys.Add(m.Groups[1].Value);
     var duplicates = sourceKeys.GroupBy(k => k, StringComparer.Ordinal).Where(g => g.Count() > 1)
         .Select(g => g.Key + " x" + g.Count()).ToList();
@@ -150,6 +152,23 @@ foreach (var language in supportedLanguages)
     }
 }
 
+foreach (var language in RecoveryUiStrings.Languages)
+{
+    var mismatches = new List<string>();
+    foreach (var key in RecoveryUiStrings.Keys)
+    {
+        var source = RecoveryUiStrings.GetForLanguage("de", key);
+        var translated = RecoveryUiStrings.GetForLanguage(language, key);
+        string Shape(string text) => string.Join(",", placeholderShape.Matches(text)
+            .Select(match => match.Groups[1].Value).OrderBy(index => index, StringComparer.Ordinal));
+        if (string.IsNullOrWhiteSpace(translated) || Shape(source) != Shape(translated)) mismatches.Add(key);
+        var count = placeholderShape.Matches(source).Select(match => int.Parse(match.Groups[1].Value)).DefaultIfEmpty(-1).Max() + 1;
+        try { _ = RecoveryUiStrings.GetForLanguage(language, key, Enumerable.Range(0, count).Select(index => (object)$"v{index}").ToArray()); }
+        catch (FormatException) { mismatches.Add(key + ": invalid format"); }
+    }
+    Check($"i18n[{language}:recovery]: every value and placeholder is valid", mismatches.Count == 0, Join(mismatches));
+}
+
 var originalCatalogLanguage = Strings.Language;
 foreach (var language in supportedLanguages)
 {
@@ -187,6 +206,7 @@ var callWb = new Regex("\\bWorkbenchStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)
 var callCat = new Regex("\\bCatalogUiText\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callDownloads = new Regex("\\bCatalogDownloadStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callUpdates = new Regex("\\bUpdateUiStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
+var callRecovery = new Regex("\\bRecoveryUiStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callUpdateWrap = new Regex("\\bU\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callWrap = new Regex("\\b(W|Wb)\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var dynCore = new Regex("\\b(Strings|WorkbenchStrings|CatalogUiText|CatalogDownloadStrings|UpdateUiStrings)\\.Get\\(\\s*(?!\"[A-Za-z])", RegexOptions.CultureInvariant);
@@ -199,6 +219,7 @@ var referenced = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
     ["catalog"] = new(StringComparer.Ordinal),
     ["catalog-downloads"] = new(StringComparer.Ordinal),
     ["updates"] = new(StringComparer.Ordinal),
+    ["recovery"] = new(StringComparer.Ordinal),
 };
 var missing = new List<(string Site, string Detail)>();
 var dynamicLookups = 0;
@@ -219,6 +240,7 @@ foreach (var file in SourceScan.Files(root, ["src", "tests"], "*.cs"))
     foreach (Match m in callCat.Matches(text)) Use(file, LineAt(text, m.Index), "catalog", m.Groups[1].Value, "CatalogUiText.Get");
     foreach (Match m in callDownloads.Matches(text)) Use(file, LineAt(text, m.Index), "catalog-downloads", m.Groups[1].Value, "CatalogDownloadStrings.Get");
     foreach (Match m in callUpdates.Matches(text)) Use(file, LineAt(text, m.Index), "updates", m.Groups[1].Value, "UpdateUiStrings.Get");
+    foreach (Match m in callRecovery.Matches(text)) Use(file, LineAt(text, m.Index), "recovery", m.Groups[1].Value, "RecoveryUiStrings.Get");
     if (file.StartsWith("src/Knx.App/UpdateWindow", StringComparison.Ordinal))
         foreach (Match m in callUpdateWrap.Matches(text)) Use(file, LineAt(text, m.Index), "updates", m.Groups[1].Value, "U(...)");
     foreach (Match m in callWrap.Matches(text)) Use(file, LineAt(text, m.Index), "workbench", m.Groups[2].Value, m.Groups[1].Value + "(...)");
@@ -300,6 +322,7 @@ foreach (var (module, _, map) in maps)
         "src/Knx.Core/Localization.cs", "src/Knx.App/Localization/WorkbenchStrings.cs", "src/Knx.App/Services/CatalogBrowser.cs",
         "src/Knx.App/Localization/CatalogDownloadStrings.cs",
         "src/Knx.App/Localization/UpdateUiStrings.cs",
+        "src/Knx.App/Localization/RecoveryUiStrings.cs",
     ];
     var files = SourceScan.Files(root, ["src"], "*.cs", skip)
         .Concat(SourceScan.Files(root, ["src"], "*.axaml", skip)).OrderBy(f => f, StringComparer.Ordinal);

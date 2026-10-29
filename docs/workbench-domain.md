@@ -90,8 +90,10 @@ MutationResult result = WorkbenchProject.AddLinks(project, [key], "central-off",
 - `Associations` yields report DTOs including all inactive links and explicit
   sending choice. Escape fields at the actual HTML/CSV export boundary.
 - `WorkbenchJson.Import/Export` reads/writes the bundle envelope
-  `knx-studio-demo`, version 4 / schemaVersion 1. Import validates before returning
-  a fresh Project. Export refuses native/unrepresentable states rather than
+  `knx-studio-demo`, envelope version 4. Data schema 1 remains unchanged for projects
+  without a GUID; data schema 2 requires `project.guid` and preserves its spelling.
+  Import validates both profiles before returning a fresh Project. Older schema-1-only
+  readers reject profile 2. Export refuses native/unrepresentable states rather than
   discarding manufacturer data. `CreateDemo` uses the public fictional fixture.
 
 ## Persistence and limits

@@ -19,6 +19,13 @@ void Reject(string name, Action action)
     throw new Exception("FAIL " + name);
 }
 
+if(args.Contains("--history-adapter"))
+{
+    await MonitorHistoryCaptureChecks.Run(Check);
+    Console.WriteLine($"{checks} history checks passed.");
+    return;
+}
+
 var project = new Project { Id = "P", Name = "Synthetic" };
 var installation = new Installation { Id = "I" };
 var area = new Area { Id = "A", Address = 1 };
@@ -623,6 +630,7 @@ try { oldSessions.Programming.Enqueue(device.Id); throw new Exception("Expected 
 catch (ObjectDisposedException) { Check("disposed programming queue rejects new jobs", true); }
 
 await ProgrammingPersistenceChecks.Run(Check);
+await MonitorHistoryCaptureChecks.Run(Check);
 Check("configuration location identity checks", ConfigurationLocationChecks.Run() == 0);
 Console.WriteLine($"{checks} checks passed.");
 

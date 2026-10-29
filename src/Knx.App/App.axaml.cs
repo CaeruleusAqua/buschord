@@ -13,6 +13,7 @@ namespace Knx.App;
 
 public partial class App : Application
 {
+    public static bool RecoveryStartupFailed { get; set; }
     /// <summary>Compatibility harness injection; never selected by product settings or command-line options.</summary>
     public static Func<Window>? TestWindowFactory { get; set; }
     /// <summary>Language code passed on the command line (--lang=en), overriding the settings.</summary>
@@ -76,7 +77,12 @@ public partial class App : Application
                 desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
                 desktop.MainWindow = factory();
                 if (desktop.MainWindow is WorkbenchWindow testWorkbench)
+                {
                     desktop.ShutdownRequested += (_, _) => testWorkbench.RequestShutdown();
+                    // Explicitly injected test services use private paths; normal test modes never create one.
+                    if (Services.AppProjectRecoveryService.Current is not null)
+                        testWorkbench.Opened += async (_, _) => await testWorkbench.BindRecoveryCurrentProjectAsync();
+                }
                 base.OnFrameworkInitializationCompleted();
                 return;
             }
@@ -108,9 +114,13 @@ public partial class App : Application
                 var splash = new SplashWindow();
                 splash.Show();
                 string? loadError = null;
-                window.Opened += (_, _) =>
+                window.Opened += async (_, _) =>
                 {
                     splash.Close();
+                    if (StartupProject is { } startupPath && File.Exists(startupPath))
+                        await window.OpenStartupProjectAsync(startupPath);
+                    else await window.BindRecoveryCurrentProjectAsync();
+                    if (RecoveryStartupFailed) window.ViewModel.Status = RecoveryUiStrings.Get("Failed");
                     if (loadError is { } error)
                         _ = ConfirmDialog.ShowMessageAsync(window, WorkbenchStrings.Get("ProjectLoadFailed"), error);
                 };
@@ -128,7 +138,7 @@ public partial class App : Application
                     {
                         try
                         {
-                            window.ViewModel.LoadProject(path);
+                            // Loading is performed by the window's normal guarded path after it opens.
                         }
                         catch (Exception ex)
                         {

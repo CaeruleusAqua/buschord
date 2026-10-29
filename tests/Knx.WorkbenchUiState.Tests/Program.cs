@@ -17,6 +17,7 @@ if (args.Contains("--performance-budget") || args.Contains("--performance-budget
 if (args.Contains("--performance")) return NativePerformanceChecks.Run();
 if (args.Contains("--projection-refresh")) return WorkbenchRefreshChecks.Run();
 if (args.Contains("--dialogs")) return DialogChecks.Run(args.Contains("--de") ? "de" : "en");
+if (args.Contains("--history-dialogs")) return DialogChecks.Run(args.Contains("--de") ? "de" : "en", true);
 
 var checks = 0;
 void Check(string name, bool value)

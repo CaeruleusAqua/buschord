@@ -194,6 +194,7 @@ public partial class WorkbenchWindow : Window
             foreach (var tool in _toolWindows.ToArray()) tool.Close();
         };
         if (_layoutPath is not null) Workspace.TryRestoreLayout(_layoutPath);
+        AppProjectRecoveryService.Current?.Attach(this);
         RefreshWorkspace();
     }
 
@@ -2355,6 +2356,7 @@ public partial class WorkbenchWindow : Window
         toolbar.Children.Add(autoScroll);
         toolbar.Children.Add(ActionButton(W("ExportFilteredCsv"), () => _ = GuardAsync(ExportFilteredMonitorAsync)));
         toolbar.Children.Add(ActionButton(W("ExportFullCsv"), () => _ = GuardAsync(ExportFullMonitorAsync), "quiet"));
+        toolbar.Children.Add(CreateTelegramHistoryButton(sessions.Monitor));
         toolbar.Children.Add(live);
         var demoBadge = Label(W("MonitorDemoNote")); demoBadge.FontSize = 10;
         demoBadge.Classes.Add("wb-warning");

@@ -26,11 +26,12 @@
 - [ ] Verbleibende Hersteller-, Speicher- und Dateiformatprofile schließen.
 - [ ] Manuelle UI-, Accessibility- und Plattformabnahme abschließen.
 - [ ] Reale Inbetriebnahme prüfen — auf Nutzerwunsch zurückgestellt; kein isolierter Testaufbau.
-- [ ] Geprüften Stand integrieren und Veröffentlichung nach verbleibender Abnahme freigeben.
+- [x] Geprüften .NET-10-Stand in `development` integrieren.
+- [ ] Veröffentlichung nach verbleibender Abnahme freigeben.
 
 ## Stand und Teilpläne
 
-Stand: 2026-10-28. [Produktstatus und genaue Grenzen](../docs/status.md).
+Stand: 2026-10-29. [Produktstatus und genaue Grenzen](../docs/status.md).
 Implementiert bedeutet keine allgemeine Kompatibilitäts- oder Gerätefreigabe.
 
 - [Kern, Archive und Hersteller](01-kern.md)

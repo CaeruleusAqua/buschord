@@ -5,6 +5,9 @@ Source of truth for the language roadmap: [product status](../docs/status.md#nat
 - `core/<lang>.json` - `Knx.Strings` keys (German/English reference stays in C#).
 - `workbench/<lang>.json` - Workbench shell keys.
 - `catalog/<lang>.json` - catalogue UI keys.
+- `catalog-downloads/<lang>.json` and `updates/<lang>.json` - download/update UI.
+- `RecoveryUiStrings.cs` - inline recovery catalog for all eight languages;
+  the same key, placeholder and formatting gates validate it.
 - `languages.json` - language codes, endonyms and status.
 
 Each catalog is a flat JSON object. The German value in the C# map is the source;

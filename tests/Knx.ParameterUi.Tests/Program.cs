@@ -135,12 +135,16 @@ failures += NativeImageFoldChecks.Run(directory);
     pane.Refresh();
     Check("Refresh clears deleted visible editor", pane.Device is null && !pane.HasUnappliedChanges);
     modelLine.Devices.Insert(0, removed.Device); pane.DiscardDrafts();
+    var selectionBaselineState = (vm.IsDirty, vm.CanUndo, vm.CanRedo);
+    var selectionBaselineXml = Knxproj.ToXml(vm.Project!).ToString();
     pane.Load(vm.Devices[1]);
     PaneRows()[0].Value = "41";
     pane.Load(vm.Devices[0]);
     pane.Load(vm.Devices[1]);
     Check("Device 2 draft 25 -> 41 survives selection away and back", PaneRows()[0].Value == "41");
-    Check("Selection does not apply drafts", vm.Devices[1].Device.ParameterValues.Count == 0 && !vm.IsDirty);
+    Check("Selection does not apply drafts", vm.Devices[1].Device.ParameterValues.Count == 0
+        && (vm.IsDirty, vm.CanUndo, vm.CanRedo) == selectionBaselineState
+        && Knxproj.ToXml(vm.Project!).ToString() == selectionBaselineXml);
     Check("Dirty API includes the visible draft", pane.HasUnappliedChanges);
     pane.Load(null);
     Check("Dirty API includes drafts while no device is selected", pane.HasUnappliedChanges && pane.Device is null);

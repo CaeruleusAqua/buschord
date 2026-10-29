@@ -8,6 +8,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Knx.App.Services;
+using Knx.App.Localization;
 using Knx.App.Views;
 using Knx.App.Workbench;
 using Knx.Portfolio;
@@ -46,6 +47,7 @@ public partial class WorkbenchWindow
                 Async(W("ReplaceProduct"), ReplaceProductAsync),
                 Item(W("CreateBackup"), CreateBackup),
                 Async(W("Backups"), ShowBackupsAsync),
+                Async(RecoveryUiStrings.Get("Title"), ShowRecoveryAsync),
                 Async(W("ExportDemoJson"), ExportDemoJsonAsync),
                 Async(W("ImportDemoJson"), ImportDemoJsonAsync),
                 Async(W("ResetDemo"), ResetDemoAsync),
@@ -73,6 +75,7 @@ public partial class WorkbenchWindow
             {
                 Item(W("ToolsOverview"), ShowToolsOverview),
                 Item(W("ProjectCheck"), () => ShowTool("problems")), Item(W("Monitor"), () => ShowTool("monitor")),
+                Item(W("HistoryTitle"), ShowTelegramHistory),
                 Item(W("Scan"), () => ShowTool("scan")), Item(W("Changes"), () => ShowTool("changes")),
                 Item(W("SidebarSearch"), () => ShowTool("search")),
                 Item(W("Catalog"), ShowCatalog), Async(W("ExportRecording"), ExportRecordingAsync),
@@ -184,8 +187,12 @@ public partial class WorkbenchWindow
     private async Task<bool> OpenPathAsync(string path)
     {
         if (!await ConfirmDiscardAsync()) return false;
+        var replacementSession = ViewModel.ProjectSessionIdentity; var replacementRevision = _recovery?.CommitRevision;
+        using var frozenEditors = FreezeReplacementEditors();
         try
         {
+            await DrainRecoveryBeforeReplacementAsync();
+            var recovery = await TryRecoverySourceStampAsync(path);
             Project loaded;
             string? password = null;
             while (true)
@@ -203,10 +210,17 @@ public partial class WorkbenchWindow
             }
             // Adoption prepares undo and persists settings before publishing. A failed
             // replacement must leave the old monitor and every hidden draft intact.
+            if (recovery.Stamp is not null)
+            {
+                try { await recovery.Stamp.VerifyAsync(); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { recovery = (null, "Recovery.SourceChanged"); }
+            }
+            if (!ReferenceEquals(replacementSession, ViewModel.ProjectSessionIdentity) || replacementRevision != _recovery?.CommitRevision) return false;
             ViewModel.AdoptProject(loaded, path);
+            await BindRecoveryCurrentProjectAsync(recovery.Stamp, recovery.Reason);
             _parameters.DiscardDrafts();
             await ResetSessionsForReplacementAsync();
-            ViewModel.Status = W("ProjectLoaded", ViewModel.Project?.Name ?? "");
+            ViewModel.Status = RecoveryAwareStatus(W("ProjectLoaded", ViewModel.Project?.Name ?? ""));
             RefreshWorkspace();
             return true;
         }
@@ -247,10 +261,12 @@ public partial class WorkbenchWindow
         if (file?.TryGetLocalPath() is not { } path) return;
         try
         {
+            await DrainRecoveryBeforeReplacementAsync();
             ViewModel.CreateProject(project, path);
+            await BindRecoveryCurrentProjectAsync();
             _parameters.DiscardDrafts();
             await ResetSessionsForReplacementAsync();
-            ViewModel.Status = W("ProjectCreated", project.Name);
+            ViewModel.Status = RecoveryAwareStatus(W("ProjectCreated", project.Name));
             RefreshWorkspace();
         }
         catch (Exception ex) { ViewModel.Status = ex.Message; await ConfirmDialog.ShowMessageAsync(this, W("ProjectCreateFailed"), ex.Message); RefreshWorkspace(); }
@@ -259,6 +275,12 @@ public partial class WorkbenchWindow
     private async Task<bool> SaveAsync(bool saveAs = false)
     {
         if (ViewModel.Project is not { } project) return false;
+        // Finish audit/checkpoint work against the old file hash before the native save replaces it.
+        if (_recovery is not null)
+        {
+            try { await _recovery.DrainAsync(); }
+            catch (IOException) { ViewModel.Status = RecoveryUiStrings.Get("Failed"); }
+        }
         string? backupWarning = null;
         void TryBackup(string path)
         {
@@ -300,6 +322,15 @@ public partial class WorkbenchWindow
                         else ViewModel.SaveProject(password);
                     }
                     catch { project.Workbench.Revisions.Remove(revision); throw; }
+                    var savedRevision = _recovery?.CommitRevision;
+                    if (_recovery is not null)
+                    {
+                        var wasEnabled = IsEnabled; IsEnabled = false;
+                        try { await _recovery.DrainAsync(); }
+                        catch (IOException) { ViewModel.Status = RecoveryUiStrings.Get("Failed"); }
+                        finally { IsEnabled = wasEnabled; }
+                    }
+                    if (!ReferenceEquals(ViewModel.Project, project) || savedRevision != _recovery?.CommitRevision) return false;
                     break;
                 }
                 catch (InvalidDataException ex) when (Knxproj.IsPasswordError(ex))
@@ -340,6 +371,12 @@ public partial class WorkbenchWindow
                 try { if (await ConfirmDiscardAsync()) { _parameters.DiscardDrafts(); _demoDrafts.Clear(); _shuttingDown = true; Close(); } }
                 finally { _confirmingClose = false; }
             });
+            return;
+        }
+        if (_recovery is not null && !_recoveryCloseApproved)
+        {
+            e.Cancel = true; _closingSessionsForExit = true; IsEnabled = false;
+            Dispatcher.UIThread.Post(() => _recoveryCloseCompletion = FinishRecoveryCloseAsync());
             return;
         }
         _closingSessionsForExit = true;
@@ -733,6 +770,7 @@ public partial class WorkbenchWindow
         if (file?.TryGetLocalPath() is not { } path) return;
         try
         {
+            await DrainRecoveryBeforeReplacementAsync();
             ProjectBackup.Restore(backup.Id, path);
             ViewModel.Status = W("RestoreDone", path);
             dialog.Close();
@@ -804,7 +842,9 @@ public partial class WorkbenchWindow
     {
         if (!await ConfirmDialog.AskDemoResetAsync(this)) return;
         if (!await ConfirmDiscardAsync()) return;
+        await DrainRecoveryBeforeReplacementAsync();
         ViewModel.CreateProject(Knx.Workbench.WorkbenchJson.CreateDemo(), null);
+        await BindRecoveryCurrentProjectAsync();
         _parameterSession.DiscardDrafts();
         await ResetSessionsForReplacementAsync();
         _audit.Clear();
@@ -822,7 +862,9 @@ public partial class WorkbenchWindow
         try
         {
             var imported = Knx.Workbench.WorkbenchJson.Import(await File.ReadAllTextAsync(path));
+            await DrainRecoveryBeforeReplacementAsync();
             ViewModel.CreateProject(imported, null);
+            await BindRecoveryCurrentProjectAsync();
             _parameterSession.DiscardDrafts();
             await ResetSessionsForReplacementAsync();
             RefreshWorkspace();

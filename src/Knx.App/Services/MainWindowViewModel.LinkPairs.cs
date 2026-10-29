@@ -14,7 +14,7 @@ public sealed partial class MainWindowViewModel
         var result = WorkbenchProject.AddLinkPairs(project, requests, _undo);
         if (!result.Ok) { Status = result.Errors.FirstOrDefault()?.Reason ?? WorkbenchStrings.Get("LinkImpossible"); return result; }
         if (result.Changed == 0) return result;
-        NotifyEditState(); Refresh(); Status = description; ProjectEdited?.Invoke(this, description);
+        NotifyEditState(); Refresh(); Status = description; NotifyProjectEdit(description);
         return result;
     }
 }

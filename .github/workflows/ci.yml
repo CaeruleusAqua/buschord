@@ -40,6 +40,7 @@ env:
     tests/Knx.ParameterUi.Tests
     tests/Knx.Workbench.Tests
     tests/Knx.WorkbenchUiState.Tests
+    tests/Knx.RecoveryApp.Tests
     tests/Knx.WorkbenchSessions.Tests
     tests/Knx.WorkbenchTheme.Tests
     tests/Knx.WorkbenchPerformance.Tests
@@ -169,6 +170,11 @@ jobs:
           dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --dialogs --de
       - name: Workbench selection and refresh regressions (Windows only)
         run: dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --projection-refresh
+      - name: Recovery lifecycle regressions (Windows only)
+        shell: bash
+        run: |
+          dotnet run --project tests/Knx.RecoveryApp.Tests -c Release --no-build -- --native
+          dotnet run --project tests/Knx.RecoveryApp.Tests -c Release --no-build -- --native --de
       - name: Workbench native self-check de/light (Windows only)
         run: dotnet run --project src/Knx.App -c Release --no-build -- --workbench-selftest --theme=light --lang=de
       - name: Workbench native self-check en/dark (Windows only)

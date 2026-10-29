@@ -41,6 +41,8 @@ lädt diesen Wert deshalb unbekannt. Nutzdaten werden nicht zu einem vollständi
 cEMI-Rahmen umgedeutet.
 
 Weitere Schritte stehen im [Arbeitsablaufplan](../plans/04-workflows.md).
+Die [lokale Wiederherstellung](recovery.md) beschreibt Checkpoints, Undo/Redo,
+getrennten Änderungsnachweis, ausdrückliche Freigabe und deren Grenzen.
 # Startvorlage
 
 Der Projektassistent beginnt mit TP-Linie 1.1 und bietet die bisherige Struktur
@@ -69,3 +71,45 @@ nicht unterstützte Ressourcen erhalten einen sichtbaren Status.
 Alle Ansichten eines Ressourcenlesers teilen zusätzlich höchstens 16 Millionen
 dekodierte Bildpixel. Gleiche Ressourcen verwenden ein gemeinsames Bitmap;
 Verbergen oder Schließen gibt dessen Speicher nach dem letzten Nutzer frei.
+
+## Dauerhafte Telegrammhistorie
+
+„Telegrammhistorie“ im Menü Werkzeuge öffnet vorhandene lokale Daten auch ohne
+Projekt. Im Monitor führt derselbe Befehl zur Historie des aktuellen Umfangs.
+Öffnen verbindet sich nicht mit dem Bus. Dauerhafte Aufnahme muss ausdrücklich
+eingeschaltet werden; die Monitorbeschriftung zeigt sie auch bei geschlossenem
+Historienfenster. Pause, Stopp und Verbindungsende begrenzen Aufnahmeintervalle.
+Überlauf oder Schreibfehler beendet die Historienaufnahme sichtbar, während der
+bisherige Monitor weiterarbeitet. Gepufferte Frames vor dem Aufnahmeanker werden
+unverändert ausgelassen und gezählt.
+
+Zeitangaben verlangen vollständige Datumswerte mit UTC oder explizitem Offset.
+Der Beginn ist enthalten, das Ende ausgeschlossen. Mehrere durch Semikolon
+getrennte Werte eines Filters werden mit ODER, verschiedene Filter mit UND
+verknüpft. „Weitere laden“ ergänzt die feste Suchmomentaufnahme; eine neue Suche
+erfasst später eingetroffene Daten. Kontextzeilen sind ausdrücklich gekennzeichnet
+und können außerhalb der Filter oder des Zeitbereichs liegen. Die Oberfläche hält
+höchstens 2000 geladene Zeilen und nennt erreichte Grenzen.
+
+Geladener Zeitraum und bestätigte Aufnahmeabdeckung sind getrennte Angaben.
+Abdeckung umfasst geschlossene Intervalle aller Schnittstellen und Projekte,
+unabhängig von den Datenfiltern. Aktive oder nach einem Neustart unbekannte Enden
+gelten nicht als bestätigte geschlossene Abdeckung. Eine Lücke sagt nichts darüber
+aus, ob währenddessen Telegramme auf dem Bus vorhanden waren.
+
+„Geladene Zeilen exportieren“ schreibt nur die sichtbare Suchmenge einschließlich
+geladenem Kontext. Unbekannte Metadaten bleiben leer; APDU-Nutzdaten und ein
+tatsächlich erfasster cEMI-Rahmen bleiben getrennte Spalten. Die Auswahl öffnet
+eine heutige Gruppenadresse oder ein heutiges Quellgerät nur bei derselben
+bekannten Projekt-GUID. Historische Geräteidentität wird damit nicht behauptet.
+
+Der lokale Store liegt unter `BusChord.UserData/telegram-history` im
+Benutzerdatenverzeichnis. Eine Sicherung benötigt einen neuen Dateinamen. Das
+ausdrückliche Löschen älterer Daten verwendet die bestätigte UTC-Grenze und
+betrifft alle Projekte und Schnittstellen im Store; vorher die dauerhafte Aufnahme
+ausschalten. Abbruch vor der Bestätigung verändert keine Daten. Unter Unix werden
+neue Speicherverzeichnisse mit 0700 und neue Datendateien mit 0600 angelegt.
+
+Synthetische Beispieldaten: [Light-Ansicht](images/telegram-history-light.png)
+und [Dark-Ansicht](images/telegram-history-dark.png). Die Bilder zeigen eine
+eingespeiste Testhistorie und keinen realen Busbetrieb.

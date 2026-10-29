@@ -10,6 +10,8 @@ static void Reject(Action action, string message)
     try { action(); } catch (InvalidDataException) { return; }
     throw new Exception("Accepted invalid input: " + message);
 }
+DemoJsonIdentityChecks.Run((name, ok) => Check(ok, name));
+if (args.Contains("--demo-identity-only", StringComparer.Ordinal)) return;
 var project = WorkbenchJson.CreateDemo();
 var originalJson = WorkbenchJson.Export(project);
 var reviewFailures = new List<string>();

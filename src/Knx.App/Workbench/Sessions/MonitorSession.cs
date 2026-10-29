@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Text;
 using Knx.App.Services;
+using Knx.App.Localization;
 using Knx.Bus;
 
 namespace Knx.App.Workbench;
@@ -11,7 +12,10 @@ public enum MonitorScope { All, Project, Room, GroupAddress, ComObject, Device, 
 public sealed record MonitorFilter(MonitorScope Scope, string? Id = null, string? DeviceId = null);
 public sealed record WorkbenchTelegram(DateTimeOffset Timestamp, string Source, string Destination,
     string Service, string? DatapointType, string Value, SessionOrigin Origin,
-    string? GroupAddressId = null, string? DeviceId = null, string DataHex = "", bool IsGroup = true);
+    string? GroupAddressId = null, string? DeviceId = null, string DataHex = "", bool IsGroup = true)
+{
+    public byte? HopCount { get; init; }
+}
 
 /// <summary>Receive-only seam; implementations must not start a network connection implicitly.</summary>
 public interface IMonitorTelegramSource
@@ -20,13 +24,23 @@ public interface IMonitorTelegramSource
     event Action<BusTelegram> TelegramReceived;
 }
 
-public sealed class KnxBusMonitorSource(KnxBus bus) : IMonitorTelegramSource
+public interface IMonitorConnectionNotifications
+{
+    event Action<BusConnectionState> StateChanged;
+}
+
+public sealed class KnxBusMonitorSource(KnxBus bus) : IMonitorTelegramSource, IMonitorConnectionNotifications
 {
     public bool IsConnected => bus.State == BusConnectionState.Connected;
     public event Action<BusTelegram> TelegramReceived
     {
         add => bus.TelegramReceived += value;
         remove => bus.TelegramReceived -= value;
+    }
+    public event Action<BusConnectionState> StateChanged
+    {
+        add => bus.StateChanged += value;
+        remove => bus.StateChanged -= value;
     }
 }
 
@@ -52,6 +66,13 @@ public sealed class MonitorSession : SessionState, IDisposable
     private IDisposable? _lease;
     private IMonitorTelegramSource? _bus;
     private Action<BusTelegram>? _receive;
+    private Action<BusConnectionState>? _connectionChanged;
+    private string? _historyProjectId;
+    private DateTimeOffset _lastReceiveUtc;
+    public MonitorHistoryCapture History { get; }
+    public Task HistoryCompletion { get; private set; } = Task.CompletedTask;
+    private (bool,MonitorHistoryFailure,long,long,long) _publishedHistory = (false,MonitorHistoryFailure.None,-1,-1,-1);
+    public string HistoryActionLabel => WorkbenchStrings.Get(History.IsEnabled?"HistoryToolbarActive":"HistoryTitle");
     private long _generation;
     private string? _error;
     private bool _running, _disposed, _follow, _paused, _autoScroll = true;
@@ -60,12 +81,19 @@ public sealed class MonitorSession : SessionState, IDisposable
 
     public MonitorSession(InterfaceCoordinator interfaces, Func<Project?> project,
         Func<MonitorFilter, IReadOnlySet<string>>? resolveGroupIds = null)
+        : this(interfaces, project, resolveGroupIds, new MonitorHistoryCapture()) { }
+
+    public MonitorSession(InterfaceCoordinator interfaces, Func<Project?> project,
+        Func<MonitorFilter, IReadOnlySet<string>>? resolveGroupIds, MonitorHistoryCapture history)
     {
+        History = history ?? throw new ArgumentNullException(nameof(history));
         _interfaces = interfaces; _project = new SessionProject(project).Get; _resolve = resolveGroupIds;
         Rows = new(_rows); FilteredRows = new(_filtered);
         var path = Path.Combine(Path.GetTempPath(), $"buschord-monitor-{Guid.NewGuid():N}.csv");
-        _recording = new(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read,
-            4096, FileOptions.DeleteOnClose);
+        var recordingOptions=new FileStreamOptions { Mode=FileMode.CreateNew,Access=FileAccess.ReadWrite,Share=FileShare.Read,
+            BufferSize=4096,Options=FileOptions.DeleteOnClose };
+        if(!OperatingSystem.IsWindows())recordingOptions.UnixCreateMode=UnixFileMode.UserRead|UnixFileMode.UserWrite;
+        _recording = new(path,recordingOptions);
         _writer = new(_recording, new UTF8Encoding(false), 4096, leaveOpen: true);
         _writer.Write(Header);
     }
@@ -94,6 +122,24 @@ public sealed class MonitorSession : SessionState, IDisposable
     public string InterfaceId { get; private set; } = "demo-ip";
     public long RecordedCount { get { lock (_gate) return _count; } }
     public string? LastError { get { lock (_gate) return _error; } }
+
+    public async Task SetHistoryEnabledAsync(bool enabled,CancellationToken cancellationToken=default)
+    {
+        VerifyAccess();ThrowIfDisposed();
+        if(enabled) await History.OpenAsync(cancellationToken);
+        VerifyAccess();ThrowIfDisposed();
+        lock(_gate) History.SetEnabled(enabled,HistoryState(DateTimeOffset.UtcNow));
+        await History.FlushAsync(cancellationToken);
+        RefreshHistoryStatus();
+    }
+    private void RefreshHistoryStatus()
+    {
+        var current=(History.IsEnabled,History.Failure,History.WrittenCount,History.DroppedCount,History.SkippedBeforeAnchorCount);
+        if(current==_publishedHistory)return;
+        _publishedHistory=current;OnPropertyChanged(nameof(History));OnPropertyChanged(nameof(HistoryActionLabel));
+    }
+    private MonitorHistoryState HistoryState(DateTimeOffset atUtc,bool? connected=null)=>new(_running,_paused,
+        connected??(Origin==SessionOrigin.Demo||_bus?.IsConnected==true),InterfaceId,Origin.ToString(),_historyProjectId,atUtc);
 
     /// <summary>Real mode borrows an already connected bus; never connects, writes or disposes that bus.</summary>
     public void Configure(WorkbenchMonitorMode mode, SessionOrigin origin, string interfaceId, KnxBus? bus = null)
@@ -133,7 +179,7 @@ public sealed class MonitorSession : SessionState, IDisposable
         if (!_interfaces.TryAcquire(InterfaceId, Mode == WorkbenchMonitorMode.Bus
                 ? InterfaceActivity.BusMonitor : InterfaceActivity.GroupMonitor, out _lease))
             throw new InvalidOperationException("The interface is occupied by a conflicting operation.");
-        lock (_gate) { _running = true; _error = null; _paused = false; _generation++; }
+        lock (_gate) { _running = true; _error = null; _paused = false; _generation++; _lastReceiveUtc=DateTimeOffset.UtcNow;History.ObserveState(HistoryState(_lastReceiveUtc)); }
         try
         {
             if (Origin == SessionOrigin.Real)
@@ -141,11 +187,25 @@ public sealed class MonitorSession : SessionState, IDisposable
                 var generation = _generation;
                 _receive = telegram => IngestReal(telegram, generation);
                 _bus!.TelegramReceived += _receive;
+                if(_bus is IMonitorConnectionNotifications notifications)
+                {
+                    _connectionChanged = state =>
+                    {
+                        if(state==BusConnectionState.Connected)return;
+                        lock(_gate)
+                        {
+                            if(!_running||generation!=_generation)return;
+                            _running=false;_paused=false;_generation++;
+                            History.ObserveState(HistoryState(DateTimeOffset.UtcNow,false));
+                        }
+                    };
+                    notifications.StateChanged += _connectionChanged;
+                }
             }
         }
         catch
         {
-            lock (_gate) _running = false;
+            lock (_gate) { _running = false;History.ObserveState(HistoryState(DateTimeOffset.UtcNow)); }
             ReleaseInterface();
             throw;
         }
@@ -157,7 +217,7 @@ public sealed class MonitorSession : SessionState, IDisposable
     public void Stop()
     {
         VerifyAccess();
-        lock (_gate) { _running = false; _paused = false; _generation++; }
+        lock (_gate) { _running = false; _paused = false; _generation++;History.ObserveState(HistoryState(DateTimeOffset.UtcNow)); }
         ReleaseInterface();
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(IsPaused));
@@ -172,6 +232,7 @@ public sealed class MonitorSession : SessionState, IDisposable
         {
             if (_paused) return;
             _paused = true;
+            History.ObserveState(HistoryState(DateTimeOffset.UtcNow));
         }
         OnPropertyChanged(nameof(IsPaused));
     }
@@ -183,6 +244,7 @@ public sealed class MonitorSession : SessionState, IDisposable
         {
             if (!_paused) return;
             _paused = false;
+            History.ObserveState(HistoryState(DateTimeOffset.UtcNow));
         }
         OnPropertyChanged(nameof(IsPaused));
     }
@@ -190,6 +252,8 @@ public sealed class MonitorSession : SessionState, IDisposable
     private void ReleaseInterface()
     {
         if (_bus is not null && _receive is not null) _bus.TelegramReceived -= _receive;
+        if (_bus is IMonitorConnectionNotifications notifications && _connectionChanged is not null) notifications.StateChanged -= _connectionChanged;
+        _connectionChanged=null;
         _receive = null;
         _lease?.Dispose(); _lease = null;
     }
@@ -211,7 +275,7 @@ public sealed class MonitorSession : SessionState, IDisposable
             Append(new(telegram.Timestamp, frame.Source.ToString(), frame.IsGroupAddress
                 ? GroupMonitor.GroupText(frame.Destination.Raw) : frame.Destination.ToString(),
                 frame.Apci.ToString(), group.Dpt, value + (unit.Length == 0 ? "" : " " + unit), SessionOrigin.Real,
-                group.Id, _devices.GetValueOrDefault(frame.Source.ToString()), Convert.ToHexString(data), frame.IsGroupAddress));
+                group.Id, _devices.GetValueOrDefault(frame.Source.ToString()), Convert.ToHexString(data), frame.IsGroupAddress) {HopCount=frame.HopCount});
         }
     }
 
@@ -259,9 +323,12 @@ public sealed class MonitorSession : SessionState, IDisposable
         {
             _error = "Recording stopped: " + ex.Message;
             _running = false;
+            History.ObserveState(HistoryState(DateTimeOffset.UtcNow));
             return;
         }
         _count++;
+        _lastReceiveUtc=DateTimeOffset.UtcNow;
+        History.Observe(telegram,HistoryState(_lastReceiveUtc));
         _tail.Enqueue(telegram);
         if (_tail.Count > DisplayCapacity) _tail.Dequeue();
     }
@@ -294,6 +361,16 @@ public sealed class MonitorSession : SessionState, IDisposable
     public void FlushDisplay()
     {
         VerifyAccess(); ThrowIfDisposed();
+        RefreshHistoryStatus();
+        lock(_gate)
+        {
+            if(_running&&Origin==SessionOrigin.Real&&_bus?.IsConnected!=true)
+            {
+                _running=false;_paused=false;_generation++;
+                // A source without notifications has no exact disconnect time. Confirm no later than its last observed receive.
+                History.ObserveState(HistoryState(_lastReceiveUtc,false));
+            }
+        }
         if (!_running && _lease is not null)
         {
             ReleaseInterface();
@@ -318,7 +395,7 @@ public sealed class MonitorSession : SessionState, IDisposable
             .GroupBy(g => g.Address.Raw).ToDictionary(g => g.Key, g => (g.First().Id, g.First().DatapointType));
         var devices = project is null ? [] : ProjectQuery.DeviceList(project)
             .GroupBy(d => d.Address.ToString()).ToDictionary(g => g.Key, g => g.First().Id);
-        lock (_gate) { _groups = groups; _devices = devices; }
+        lock (_gate) { _groups = groups; _devices = devices; _historyProjectId=string.IsNullOrWhiteSpace(project?.Guid)?project?.Id:project.Guid; }
     }
 
     private void Refilter()
@@ -387,16 +464,21 @@ public sealed class MonitorSession : SessionState, IDisposable
     {
         VerifyAccess();
         if (_disposed) return;
-        lock (_gate)
+        try
         {
-            _disposed = true; _running = false; _generation++;
-            try { ReleaseInterface(); }
-            finally
+            lock (_gate)
             {
-                try { _writer.Dispose(); }
-                finally { _recording.Dispose(); }
+                _disposed = true; _running = false; _generation++;
+                History.ObserveState(HistoryState(DateTimeOffset.UtcNow));
+                try { ReleaseInterface(); }
+                finally
+                {
+                    try { _writer.Dispose(); }
+                    finally { _recording.Dispose(); }
+                }
             }
         }
+        finally { HistoryCompletion=History.DisposeAsync().AsTask(); }
         OnPropertyChanged(nameof(IsRunning));
     }
 }

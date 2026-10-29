@@ -267,6 +267,31 @@ internal static class TelegramHistoryChecks
                 await store.AppendAsync(Draft(86401));
                 return retained.RemovedTelegrams == before && (await store.QueryAsync(new())).Rows.Count == 1;
             });
+            if (!OperatingSystem.IsWindows())
+            {
+                await Case("Unix storage creates private descendants and files without changing existing parents", async () =>
+                {
+                    var parent=PathFor("unix-parent");Directory.CreateDirectory(parent);
+                    var parentMode=UnixFileMode.UserRead|UnixFileMode.UserWrite|UnixFileMode.UserExecute|UnixFileMode.GroupRead|UnixFileMode.GroupExecute|UnixFileMode.OtherRead|UnixFileMode.OtherExecute;
+                    File.SetUnixFileMode(parent,parentMode);
+                    var directory=Path.Combine(parent,"new","history");
+                    const UnixFileMode privateDirectory=UnixFileMode.UserRead|UnixFileMode.UserWrite|UnixFileMode.UserExecute;
+                    const UnixFileMode privateFile=UnixFileMode.UserRead|UnixFileMode.UserWrite;
+                    using(var store=new FileTelegramHistoryStore(directory))
+                    {
+                        await store.AppendAsync(Draft(0));await store.RetainFromAsync(time.AddSeconds(1));
+                        var backup=Path.Combine(parent,"backup.bch");await store.BackupAsync(backup);
+                        if(File.GetUnixFileMode(directory)!=privateDirectory||File.GetUnixFileMode(Path.GetDirectoryName(directory)!)!=privateDirectory
+                            ||File.GetUnixFileMode(store.FilePath)!=privateFile||File.GetUnixFileMode(Path.Combine(directory,"writer.lock"))!=privateFile||File.GetUnixFileMode(backup)!=privateFile)return false;
+                    }
+                    await using(var damaged=new FileStream(Path.Combine(directory,"history.bch"),FileMode.Append,FileAccess.Write))await damaged.WriteAsync(new byte[]{1,2,3});
+                    using var recovered=new FileTelegramHistoryStore(directory);
+                    var damagedCopies=Directory.GetFiles(directory,"history-damaged-*.bch");
+                    if(damagedCopies.Length!=1)return false;
+                    foreach(var file in damagedCopies)if(File.GetUnixFileMode(file)!=privateFile)return false;
+                    return File.GetUnixFileMode(parent)==parentMode&&File.GetUnixFileMode(recovered.FilePath)==privateFile;
+                });
+            }
         }
         finally
         {

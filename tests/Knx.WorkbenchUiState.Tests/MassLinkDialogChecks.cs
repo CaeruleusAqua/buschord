@@ -60,7 +60,8 @@ internal static class MassLinkDialogChecks
         }
         finally
         {
-            if (dialog?.IsVisible == true) dialog.Close(); if (shell.IsVisible) shell.Close();
+            if (dialog?.IsVisible == true) dialog.Close();
+            await NativeWindowCleanup.CloseAsync(shell);
             var resolved = Path.GetFullPath(root);
             if (Path.GetDirectoryName(resolved) == Path.TrimEndingDirectorySeparator(parent)
                 && Path.GetFileName(resolved).StartsWith("buschord-mass-dialog-", StringComparison.Ordinal)
