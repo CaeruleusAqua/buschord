@@ -19,6 +19,8 @@
 - [x] Explizit provisionierten individuellen Tool-/P2P-Pfad mit authentisiertem Client-Sync, dauerhafter Zählerzusammenführung und gejointem Tunnel-Initializer als Bibliothek ergänzen; Anwendungseinbindung und sichere Erstinbetriebnahme bleiben getrennt.
 - [x] Explizite Tool-Access-Managementoperation an gemeinsame Factory binden: signierter ToolKey, vorhandener vertrauenswürdiger Zählerzustand, Sync vor Management und frische Recoveryverbindungen; als Bibliotheksprofil mit Windows-/Linux-Loopback prüfen.
 - [x] Tool-Access-Konsolen-/M112-Pfad und separaten lesenden MCP-Identitätsabruf mit privaten Referenzen, expliziter Zählervertrauensentscheidung und vollständiger Wirebudgetprüfung vor Gerätezugriff integrieren.
+- [x] Korrekte Adressbroadcasts, System-Priority, serielle Services und begrenzte lesende Discovery mit vollständiger Antwortprüfung und gejointem Abbruch ergänzen; [Adressierungsprofil](../docs/individual-addressing.md).
+- [ ] Vollständigen Adressierungsablauf mit Geräte-/Zielbestätigung, Kollisionsprüfung, dauerhaftem Verlauf, Verify und Wiederherstellung an Workbench/MCP anschließen.
 - [x] Vorhandene vertrauenswürdige Data-Secure-Gruppenzustände mit signierter Absenderpolicy an Factory, lesenden Monitor und ausdrücklich konfigurierten MCP-Host binden; Geräteprovisionierung und Workbench-Auswahl getrennt halten.
 - [x] Gezielten adressierten Scan mit tatsächlichen Koppler-/Tasterantworten und lesende Workbench-Verbindung einschließlich Verbindungsabbau prüfen.
 - [x] Enges M112-Herstellerprofil mit vollständigem Applikationsdownload, Verify und bestätigter Wiederherstellung am freigegebenen Taster abnehmen.

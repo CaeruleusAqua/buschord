@@ -7,6 +7,17 @@ using Knx;
 using Knx.Bus;
 using Knx.Bus.Security;
 
+if (args.Contains("--individual-address-wire"))
+{
+    Environment.Exit(await IndividualAddressWireChecks.RunAsync());
+    return;
+}
+if (args.Contains("--individual-address-discovery"))
+{
+    Environment.Exit(await IndividualAddressDiscoveryChecks.RunAsync());
+    return;
+}
+
 if (args.Length > 0 && args[0] == "--serial-publication-child")
 {
     Environment.Exit(await SerialPublicationChecks.RunAsync(args));
@@ -319,8 +330,8 @@ await using (var bus = Activator.CreateInstance<KnxBus>())
     var iaWrite = Management.IndividualAddressWrite(new IndividualAddress(1, 2, 3));
     var iaParsed = Cemi.ParseLData(iaWrite);
     Check("IA write", iaParsed.Apci == Apci.IndividualAddressWrite
-        && iaParsed.Data is [0x12, 0x03] && iaParsed.Destination == new IndividualAddress(1, 2, 3)
-        && iaWrite[3] == 0x60, Convert.ToHexString(iaWrite));
+        && iaParsed.Data is [0x12, 0x03] && iaParsed.Destination == IndividualAddress.Zero
+        && iaParsed.IsGroupAddress && iaParsed.Priority == TelegramPriority.System, Convert.ToHexString(iaWrite));
 
     var restart = Management.Restart(new IndividualAddress(1, 1, 16), erase: false);
     Check("restart frame", Cemi.ParseLData(restart).Apci == Apci.Restart
@@ -799,6 +810,8 @@ Check("individual secure checks", await IndividualSecureChecks.RunAsync() == 0);
 Check("individual secure tunnel checks", await IndividualSecureTunnelChecks.RunAsync() == 0);
 Check("tool access management checks", await ToolAccessChecks.RunAsync() == 0);
 Check("provisioned secure group connection checks", await GroupConnectionChecks.RunAsync() == 0);
+Check("individual address wire checks", await IndividualAddressWireChecks.RunAsync() == 0);
+Check("individual address discovery checks", await IndividualAddressDiscoveryChecks.RunAsync() == 0);
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 
