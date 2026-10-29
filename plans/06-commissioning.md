@@ -13,6 +13,7 @@
 - [x] M112-Ladebefehle und quellenbasierte Konfigurationswiederherstellung mit Abbruch-, Verify-, Metadaten- und Neustartfehlern gegen eine unabhängige Gegenstelle prüfen; 35 gezielte Prüfungen.
 - [x] Segmentimage, Speicherroute und Ladeprozedur für das erneute Laden derselben Konfiguration validieren; bekannte persistente Bits müssen vor dem ersten Entladen übereinstimmen.
 - [x] Vollständiges erneutes Laden derselben Konfiguration, EEPROM-Verify, Wiederanlauf und anschließende Temperaturantwort am freigegebenen Ziel nachweisen; tatsächliche Grenzen dokumentieren.
+- [x] Unveränderte Tastenfunktion auch nach dem vollständigen Applikationsdownload vom Nutzer vor Ort bestätigen lassen.
 
 Die Freigabe gilt für den vom Nutzer benannten Taster in der vorhandenen Installation.
 Andere Geräte, globale Gruppenbefehle, Adressänderungen und Werksreset sind kein Testziel.

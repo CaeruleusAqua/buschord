@@ -27,7 +27,8 @@
 - [x] Lesende Workbench-Verbindung, Gruppenmonitor und Scan sowie enges M112-Änderungs-/Wiederherstellungsprofil integrieren und gezielt prüfen.
 - [ ] Verbleibende Hersteller-, Speicher- und Dateiformatprofile schließen.
 - [ ] Manuelle UI-, Accessibility- und Plattformabnahme abschließen.
-- [ ] Reale Inbetriebnahme prüfen — gezielter Tastertest freigegeben, siehe [Einzelgeräteplan](06-commissioning.md).
+- [x] Gezielten M112-Applikationsdownload mit Rücklesen, Konfigurationswiederherstellung und bestätigter Tastenfunktion am freigegebenen Taster prüfen; siehe [Einzelgeräteplan](06-commissioning.md).
+- [ ] Allgemeine Geräteabnahme und weitere Inbetriebnahmeprofile schließen.
 - [x] Geprüften .NET-10-Stand in `development` integrieren.
 - [ ] Veröffentlichung nach verbleibender Abnahme freigeben.
 
