@@ -14,6 +14,12 @@ capability. Cancellation, project replacement and closing wait for actual networ
 cleanup before releasing credentials and the cross-process gateway reservation.
 An unsuccessful Secure connection cannot silently become an ordinary connection.
 
+The local six-byte client identity is published under a persistent initialization
+lease shared by cooperating processes. Lock contention has a five-second bound;
+existing malformed or linked state is refused. Initialization runs off the UI
+dispatcher and is joined before cancellation releases credentials or the gateway.
+Do not remove `client.serial.lock` while any application or MCP process uses it.
+
 IP Secure authenticates the gateway transport. It does not authenticate or decrypt
 Data Secure group values. All groups with signed keys in the imported export are
 withheld from plaintext read/write/response, including groups outside the selected

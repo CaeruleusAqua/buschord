@@ -7,6 +7,12 @@ using Knx;
 using Knx.Bus;
 using Knx.Bus.Security;
 
+if (args.Length > 0 && args[0] == "--serial-publication-child")
+{
+    Environment.Exit(await SerialPublicationChecks.RunAsync(args));
+    return;
+}
+
 if (await DataSecureChecks.TryRunChildAsync(args) is { } childResult)
 {
     Environment.Exit(childResult);
@@ -775,6 +781,7 @@ Check("tunnel peer checks", await TunnelPeerChecks.RunAsync() == 0);
 Check("protected keyring checks", ProtectedKnxKeyringChecks.Run() == 0);
 Check("data secure codec and durable state checks", await DataSecureChecks.RunAsync() == 0);
 Check("data secure tunnel hook checks", await DataSecureTunnelChecks.RunAsync() == 0);
+Check("client serial publication checks", await SerialPublicationChecks.RunAsync([]) == 0);
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 

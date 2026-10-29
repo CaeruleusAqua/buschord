@@ -9,35 +9,66 @@ namespace Knx.Bus.Connections;
 public sealed record KnxConnectionSecurity(KnxTransportKind Transport, bool GatewayAuthenticated, IndividualAddress AssignedAddress, string? KeyringFingerprint);
 public interface IKnxClientSerialProvider { byte[] ReadOrCreate(); }
 
-/// <summary>One private non-secret client identity. Existing malformed data is never replaced implicitly.</summary>
+/// <summary>One private non-secret client identity. Cooperating processes hold the same bounded initialization lease;
+/// existing malformed data is never replaced implicitly. The persistent lease file must not be removed while in use.</summary>
 public sealed class FileKnxClientSerialProvider(string? directory = null) : IKnxClientSerialProvider
 {
     public byte[] ReadOrCreate()
     {
-        var root = Path.GetFullPath(directory ?? GatewayLeaseCoordinator.DefaultDirectory);
-        Directory.CreateDirectory(root); SecureLocalFiles.NoLinks(root);
-        var path = Path.Combine(root, "client.serial");
-        if (!File.Exists(path))
+        try
         {
-            var serial = RandomNumberGenerator.GetBytes(6);
-            var temporary = Path.Combine(root, "client-" + Guid.NewGuid().ToString("N") + ".tmp");
+            var root = Path.GetFullPath(directory ?? GatewayLeaseCoordinator.DefaultDirectory);
+            Directory.CreateDirectory(root); SecureLocalFiles.NoLinks(root);
+            using var initialization = AcquireInitializationLease(root);
+            var path = Path.Combine(root, "client.serial"); RejectExistingLinks(path);
+            if (!File.Exists(path))
+            {
+                var serial = RandomNumberGenerator.GetBytes(6);
+                var temporary = Path.Combine(root, "client-" + Guid.NewGuid().ToString("N") + ".tmp");
+                try
+                {
+                    var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+                    if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                    using (var created = new FileStream(temporary, options)) { created.Write(serial); created.Flush(true); }
+                    // Move(false) is not a concurrent no-replace primitive on every platform. The common lease
+                    // protects publication; read the final file below rather than returning an unpublished proposal.
+                    try { File.Move(temporary, path, overwrite: false); }
+                    catch (IOException) when (File.Exists(path)) { }
+                }
+                finally { CryptographicOperations.ZeroMemory(serial); if (File.Exists(temporary)) File.Delete(temporary); }
+            }
+            SecureLocalFiles.NoLinks(path);
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (file.Length != 6) throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
+            var result = new byte[6]; file.ReadExactly(result); return result;
+        }
+        catch (KnxConnectionException) { throw; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        { throw new KnxConnectionException(KnxConnectionFailure.CredentialSourceUnavailable); }
+    }
+    private static FileStream AcquireInitializationLease(string root)
+    {
+        var path = Path.Combine(root, "client.serial.lock"); var clock = System.Diagnostics.Stopwatch.StartNew();
+        for (;;)
+        {
+            if (clock.Elapsed >= TimeSpan.FromSeconds(5)) throw new KnxConnectionException(KnxConnectionFailure.CredentialSourceUnavailable);
+            RejectExistingLinks(path);
             try
             {
-                using (var created = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                {
-                    if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                    created.Write(serial); created.Flush(true);
-                }
-                try { File.Move(temporary, path, overwrite: false); return serial; }
-                catch (IOException) when (File.Exists(path)) { CryptographicOperations.ZeroMemory(serial); }
+                var options = new FileStreamOptions { Mode = FileMode.OpenOrCreate, Access = FileAccess.ReadWrite, Share = FileShare.None };
+                if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                var lease = new FileStream(path, options);
+                try { SecureLocalFiles.NoLinks(path); return lease; }
+                catch { lease.Dispose(); throw; }
             }
-            catch { CryptographicOperations.ZeroMemory(serial); throw; }
-            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            catch (IOException) { Thread.Sleep(15); }
         }
-        SecureLocalFiles.NoLinks(path);
-        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        if (file.Length != 6) throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
-        var result = new byte[6]; file.ReadExactly(result); return result;
+    }
+    private static void RejectExistingLinks(string path)
+    {
+        try { SecureLocalFiles.NoLinks(path); }
+        catch (FileNotFoundException) { }
+        catch (DirectoryNotFoundException) { }
     }
 }
 
@@ -73,7 +104,15 @@ public sealed class KnxConnectionFactory
                 if (credentials.Host != profile.Keyring!.HostAddress || credentials.UserId != profile.Keyring.UserId || credentials.TunnelAddress != profile.RequestedAddress
                     || profile.Keyring.ExpectedSourceFingerprint is { } expected && expected != credentials.SourceFingerprint)
                     throw new KnxConnectionException(KnxConnectionFailure.CredentialBindingMismatch);
-                serial = _serial.ReadOrCreate();
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    // The synchronous file lease may wait. Keep it off the caller's dispatcher and always join it
+                    // before cancellation can release the gateway/credential owners; do not abandon it with WaitAsync.
+                    serial = await Task.Run(() => { ct.ThrowIfCancellationRequested(); return _serial.ReadOrCreate(); }).ConfigureAwait(false);
+                }
+                catch { ct.ThrowIfCancellationRequested(); throw; }
+                ct.ThrowIfCancellationRequested();
                 if (serial.Length != 6) throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
             }
             ct.ThrowIfCancellationRequested();
