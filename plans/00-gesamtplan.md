@@ -21,6 +21,7 @@
 - [x] Begrenzte Root-Bedingungen, vollständige feste Referenzpopulation und passende Tabellen aus derselben Auswertung kombinieren.
 - [x] Separaten festen Root-Property-Arbeitslauf mit quellengebundener Initialisierung, vollständiger Referenzpopulation und beobachteten Count-Werten prüfen.
 - [x] Gemeinsame logische Speicher-/Property-Initialisierung, zugelassene Root-Writer und aktuelle Tabellen-Seeds mit bedingten Optionsannahmen über API und MCP prüfen.
+- [x] Begrenzte globale Speicherwriter für literale Module/Repeats und Root-Allocator mit vollständigen Ursprüngen, latenten Besitzern und Reservierungen in denselben Arbeitslauf integrieren.
 - [x] Verbindliche Prüfgrenzen für den dokumentierten Windows-Referenzlauf implementieren.
 - [x] Windows-Referenzbudget mit 144 Rohmessungen innerhalb aller Latenz- und Speichergrenzen prüfen.
 - [x] Lesende Workbench-Verbindung, Gruppenmonitor und Scan sowie enges M112-Änderungs-/Wiederherstellungsprofil integrieren und gezielt prüfen.

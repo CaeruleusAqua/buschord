@@ -78,7 +78,7 @@ internal static class NativeImageInitializer
             || !views.BelongsTo(project, device, inputs, inventory, preparation, application) || !population.BelongsTo(inventory, preparation, application))
             Fail(NativeGeneralIssueCode.ContextMismatch);
         if (application.ScriptCapabilityUsed || application.Snapshot is null || application.Catalog is null || application.Activation is null
-            || application.Snapshot.ModuleInstances.Count != 0 || !application.Activation.BelongsTo(application.Catalog, application.Snapshot))
+            || !inventory.MatchesModules(application) || !application.Activation.BelongsTo(application.Catalog, application.Snapshot))
             Fail(NativeGeneralIssueCode.ContextMismatch);
         if (!inventory.MatchesCurrent(project, device, inputs) || !preparation.MatchesCurrent() || !views.MatchesCurrent()
             || !application.MatchesInputs(project, device, inputs) || !population.MatchesCurrent()
@@ -223,7 +223,7 @@ internal static class NativeImageInitializer
         });
         var requested = population.AllocationRequirements.Select(o => o.OwnerKey).ToHashSet(StringComparer.Ordinal);
         var result = new List<NativeImageCoverageFact>();
-        foreach (var owner in inventory.Owners)
+        foreach (var owner in inventory.Owners.Concat(inventory.Modules?.ReservationOwners ?? Array.Empty<NativeRootOwner>()))
         {
             var length = checked((int)(((ulong)owner.BitOffset + owner.BitLength + 7) / 8));
             if (!ranges.TryGetValue(owner.Target, out var candidates)) Fail(NativeGeneralIssueCode.MissingAllocation, owner.ParameterId);

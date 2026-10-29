@@ -348,6 +348,21 @@ NoStorage and unaligned fields remain refused. Raw inputs retain the shared
 profiles without RawData retain their previous fingerprints. Forty-four core and
 ten MCP checks cover this extension, including full M112/change-plan integration.
 
+The same shared stage admits a bounded global-Memory module profile: unconditional
+flat calls, literal nested Repeat and application-owned Memory-offset allocators,
+with inherited 1–32-bit Number/Value-enum writers. Original call/definition/instance
+origins include active, inactive and unreferenced latent owners. Complete allocated
+spans, including padding, require initialized backing and cannot alias foreign owners.
+First allocation alignment and inclusive pool ends are checked. Source-derived
+instances are allowed when the native ModuleInstances carrier is absent or empty;
+a nonempty saved carrier must contain every exact instance and argument.
+The immutable public population reports origins, instances, allocations and
+reservations. Limits are 256 occurrences, depth 8, 500k planned nodes, 100k
+parameters/references, 500k premeasured repeat work and 5m combined validation
+candidate checks. Empty repeat branches and large root-owner populations count
+toward these budgets. Previous inspection and no-module profiles retain their
+existing contracts. The M112 union/download route does not admit these modules.
+
 Sources, initial Data/validity, working Data, desired validity and canonical bytes
 remain separate. Factory masks and Count words are not adopted. Contained and
 strictly overlapping region/code and pointer/factory contributions use an ordered
@@ -373,7 +388,9 @@ seeds after parameters, with supported initialized backing and operation-specifi
 mapping. They preserve untouched header bytes and refuse data-write collisions.
 Fresh table allocation without backing, full pointer/size adjustments, unused-tail
 invalidation, further writers, configuration and finalization remain open.
-Modules, Union/aliases, assignment/calculation dependencies, raw/count writers,
+Conditional/parameter-driven module calls, nested modules, local pools/code/types,
+module property/Union/RawData storage, additional allocator domains, Union/aliases,
+assignment/calculation dependencies, raw/count writers,
 unsupported PDTs, unaccounted external/binary state and other native carriers
 remain outside this first profile. Positive combined fixtures are synthetic;
 there is no new general MDT/Jung/Gira compatibility or complete-image claim.

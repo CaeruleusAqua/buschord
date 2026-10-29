@@ -30,6 +30,7 @@ internal sealed partial class NativeRootImageInventory
     internal string? HardwareDefinitionHash { get; }
     internal bool PrimaryProgramOnly { get; }
     internal bool AdmitRootUnions { get; }
+    internal NativeModuleImageScope? Modules { get; }
     internal IReadOnlyList<NativeRootUnion> Unions { get; private set; } = Array.Empty<NativeRootUnion>();
     internal Dictionary<string, string> UnionByParameter { get; } = new(StringComparer.Ordinal);
     internal bool FactoryDeclared { get; }
@@ -58,6 +59,7 @@ internal sealed partial class NativeRootImageInventory
         try { return new(project, device, inputs, admitRootUnions); }
         catch (NativeGeneralRejected failure) { return new(failure.Issue); }
         catch (RootBuildRejected failure) { return new(Adapt(failure.Issue)); }
+        catch (NativeCommunicationRejected failure) { return new(new(NativeGeneralIssueCode.UnsupportedSource, ActivationIssue: failure.Issue)); }
         catch (Exception failure) when (failure is XmlException or IOException or InvalidDataException or FormatException or OverflowException or ArgumentException or InvalidOperationException)
         { return new(new(NativeGeneralIssueCode.InvalidDeclaration)); }
     }
@@ -87,17 +89,32 @@ internal sealed partial class NativeRootImageInventory
         if (KnownDcaRequirementsRegistry.RequiresDca(ApplicationId) || nodes.Any(External)) NativeGeneralHash.Fail(NativeGeneralIssueCode.ExternalConfigurationUnaccounted);
         if (device.HasOpaqueBinaryData || device.BinaryData.Count != 0) NativeGeneralHash.Fail(NativeGeneralIssueCode.UnaccountedBinaryData);
         if (admitRootUnions && MaskVersionId != "MV-0701") NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedApplication);
-        if (nodes.Any(e => e.Name.LocalName is "Module" or "ModuleDef" or "SubModuleDefs" or "Repeat" or "Allocator" or "Assign" or "ParameterCalculation" or "ParameterInstance"
+        Modules = NativeModuleImageScope.Read(root);
+        if (admitRootUnions && Modules is not null) NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedSource);
+        if (nodes.Any(e => e.Name.LocalName is "SubModuleDefs" or "Assign" or "ParameterCalculation" or "ParameterInstance"
+            || e.Name.LocalName is "Repeat" or "Allocator" && Modules?.SourceDeclarations.Contains(e) != true
             || e.Name.LocalName == "Union" && !admitRootUnions
-            || e.Attributes().Any(a => a.Name.LocalName is "BaseValue" or "AllocatorRefId" or "BaseOffset" or "BaseIndex" or "BaseOccurrence")))
+            || e.Attributes().Any(a => a.Name.LocalName is "BaseValue" or "BaseIndex" or "BaseOccurrence"
+                || a.Name.LocalName == "AllocatorRefId" && Modules?.SourceDeclarations.Contains(e) != true
+                || a.Name.LocalName == "BaseOffset" && Modules?.SourceDeclarations.Contains(e) != true)))
             NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedSource);
         var stat = RootBuildGuard.One(app, ns + "Static", true)!;
         var parameters = admitRootUnions ? IndexUnionParameters(RootBuildGuard.One(stat, ns + "Parameters"), ns)
             : Index(RootBuildGuard.One(stat, ns + "Parameters"), ns + "Parameter");
         var references = Index(RootBuildGuard.One(stat, ns + "ParameterRefs"), ns + "ParameterRef");
+        var rootParameters = parameters.Values.ToArray(); var rootReferences = references.Values.ToArray();
+        if (Modules is not null)
+        {
+            foreach (var parameter in Modules.Parameters)
+                if (parameters.Count >= 100000 || !parameters.TryAdd(SourceId(parameter, "Id", false), parameter)) NativeGeneralHash.Fail(NativeGeneralIssueCode.AmbiguousOwnership);
+            foreach (var reference in Modules.References)
+                if (references.Count >= 100000 || !references.TryAdd(SourceId(reference, "Id", false), reference)) NativeGeneralHash.Fail(NativeGeneralIssueCode.AmbiguousOwnership);
+        }
         var types = Index(RootBuildGuard.One(stat, ns + "ParameterTypes"), ns + "ParameterType", admitRootUnions);
-        var known = parameters.Values.Concat(references.Values).Concat(types.Values).ToHashSet();
-        var storageLeaves = parameters.Values.SelectMany(p => p.Elements()).Where(e => e.Name == ns + "Memory" || e.Name == ns + "Property").ToHashSet();
+        var known = rootParameters.Concat(rootReferences).Concat(types.Values).ToHashSet();
+        if (Modules is not null) known.UnionWith(Modules.SourceDeclarations);
+        var storageLeaves = rootParameters.SelectMany(p => p.Elements()).Where(e => e.Name == ns + "Memory" || e.Name == ns + "Property").ToHashSet();
+        if (Modules is not null) storageLeaves.UnionWith(Modules.SourceDeclarations.Where(e => e.Name == ns + "Memory"));
         if (admitRootUnions) storageLeaves.UnionWith(parameters.Values.Select(p => p.Parent).Where(p => p?.Name == ns + "Union").SelectMany(p => p!.Elements(ns + "Memory")));
         if (nodes.Any(e => e.Name.LocalName is "Parameter" or "ParameterRef" or "ParameterType" && !known.Contains(e))
             || nodes.Any(e => e.Name.LocalName is "Memory" or "Property" && !storageLeaves.Contains(e))
@@ -128,6 +145,9 @@ internal sealed partial class NativeRootImageInventory
             var declarationOrdinal = ordinal++; var typeId = SourceId(parameter, "ParameterType", admitRootUnions);
             parsed.TryGetValue(typeId, out var type);
             if (parameter.Attribute("ParameterTypeId") is not null || type is null) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration, id);
+            if (parameter.Annotation<NativeCommunicationElementOrigin>() is { Frames.Count: 1 }
+                && type!.DataType is not (ParameterDataType.Number or ParameterDataType.Enumeration))
+                NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedType, id);
             var unionMember = admitRootUnions && parameter.Parent?.Name == ns + "Union";
             if (parameter.Elements().Any(e => e.Name != ns + "Memory" && e.Name != ns + "Property") || parameter.Elements().Take(2).Count() > 1
                 || parameter.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value)) || !unionMember && parameter.Attributes().Any(a => a.Name.LocalName is "Offset" or "BitOffset"))
@@ -142,7 +162,8 @@ internal sealed partial class NativeRootImageInventory
                 locations.Add(id, null); continue;
             }
             RootBuildGuard.Leaf(leaf);
-            if (leaf.Name.LocalName == "Memory" && leaf.Attributes().Any(a => !a.IsNamespaceDeclaration && (a.Name.Namespace != XNamespace.None || a.Name.LocalName is not ("CodeSegment" or "Offset" or "BitOffset"))))
+            if (leaf.Name.LocalName == "Memory" && leaf.Attributes().Any(a => !a.IsNamespaceDeclaration && (a.Name.Namespace != XNamespace.None || a.Name.LocalName is not ("CodeSegment" or "Offset" or "BitOffset")
+                && !(a.Name.LocalName == "BaseOffset" && parameter.Annotation<NativeCommunicationElementOrigin>() is { Frames.Count: 1 }))))
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedMapping, id);
             var location = storage.Read(parameter, null, type!);
             if (raw)
@@ -178,12 +199,14 @@ internal sealed partial class NativeRootImageInventory
                 if (word.Dense) denseFields++;
             }
             var declarationHash = NativeGeneralHash.Document(parameter);
+            Modules?.ValidateStorage(parameter, location);
             var owner = new NativeRootOwner(id, declarationOrdinal, declarationHash, mapped.Target, location.StartAddress.Value,
                 location.BitOffset.Value, location.Footprint.BitLength.Value, aliases.ContainsKey(id), mapped.Raw, mapped.Pdt,
                 NativeGeneralHash.Of(new { id, declarationHash }), NativeGeneralHash.Of(new { mapped.Target, location.StartAddress, location.BitOffset, location.Footprint, mapped.Pdt }));
             owners.Add(owner); byParameter.Add(id, owner); locations.Add(id, location);
         }
         if (admitRootUnions) ReadUnionLayouts(parameters, byParameter, types, parsed);
+        Modules?.ValidateAllocationRanges(owners);
         CheckOwners(owners); Owners = Array.AsReadOnly(owners.ToArray());
         CodecFacts = new(Owners.Count, singleFields, packedFields, denseFields, rawFields);
         var result = new List<NativeRootReference>(); ordinal = 0;
@@ -209,7 +232,7 @@ internal sealed partial class NativeRootImageInventory
         References = Array.AsReadOnly(result.ToArray());
         _saved = RootParameterWriterCommon.ReadSavedProfile(_ids, _sources, device, ApplicationId, legacy, allowRawData: true);
         SavedValuesHash = NativeGeneralHash.Of(_saved.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray());
-        CarrierHash = RootParameterWriterCommon.CaptureCarriers(_ids, project, device, ApplicationId);
+        CarrierHash = RootParameterWriterCommon.CaptureCarriersProfile(_ids, project, device, ApplicationId, Modules?.Instances);
         _hardwareDocument = Knxproj.LoadHardwareData(project, device.Hardware2ProgramRefId!);
         if (_hardwareDocument is null) NativeGeneralHash.Fail(NativeGeneralIssueCode.SourceUnavailable);
         HardwareDefinitionHash = ValidateCapturedHardware(_hardwareDocument!, device, inputs); PrimaryProgramOnly = true;
@@ -223,6 +246,7 @@ internal sealed partial class NativeRootImageInventory
             ? NativeGeneralHash.Of(new { profile = 1, baselineSourceHash, codecFacts = CodecFacts.Fingerprint })
             : baselineSourceHash;
         if (admitRootUnions) SourceHash = NativeGeneralHash.Of(new { profile = "M112RootUnions1", source = SourceHash, unions = Unions });
+        if (Modules is not null) SourceHash = NativeGeneralHash.Of(new { profile = "LiteralMemoryModules1", source = SourceHash, modules = Modules.Fingerprint, Modules.ReservationOwners });
         if (!MatchesCurrent(project, device, inputs)) NativeGeneralHash.Fail(NativeGeneralIssueCode.InputsChanged);
     }
 
@@ -230,7 +254,9 @@ internal sealed partial class NativeRootImageInventory
         => IsAvailable && ReferenceEquals(project, _project) && ReferenceEquals(device, _device) && ReferenceEquals(inputs, _inputs);
     internal bool MatchesCurrent() => _project is not null && _device is not null && _inputs is not null && MatchesCurrent(_project, _device, _inputs);
     internal bool MatchesApplication(NativeApplicationEvaluationContext context)
-        => _project is not null && _device is not null && _inputs is not null && context.MatchesInputs(_project, _device, _inputs);
+        => _project is not null && _device is not null && _inputs is not null && context.MatchesInputs(_project, _device, _inputs) && MatchesModules(context);
+    internal bool MatchesModules(NativeApplicationEvaluationContext context)
+        => Modules is null ? context.Snapshot?.ModuleInstances.Count == 0 : Modules.Matches(context);
     internal bool MatchesPreparation(NativeImageVariantPreparation preparation)
         => _project is not null && _device is not null && _inputs is not null && preparation.BelongsTo(_project, _device, _inputs, this);
     internal bool MatchesCurrent(Project project, DeviceInstance device, ArchivedImageSources.Inputs inputs)
@@ -241,7 +267,7 @@ internal sealed partial class NativeRootImageInventory
             CheckSavedBudget(device.ParameterValues); _ = RootBuildGuard.Nodes(inputs.Application, TextLimit); _ = RootBuildGuard.Nodes(inputs.Master, TextLimit);
             return inputs.Manifest.Binding.MatchesIdentity(project, device) && NativeGeneralHash.Document(inputs.Application) == ApplicationDefinitionHash
                 && NativeGeneralHash.Document(inputs.Master) == _masterHash && MatchesSaved(device.ParameterValues.ToDictionary(p => p.Key, p => (string?)p.Value, StringComparer.Ordinal))
-                && RootParameterWriterCommon.CaptureCarriers(_ids, project, device, ApplicationId!) == CarrierHash
+                && RootParameterWriterCommon.CaptureCarriersProfile(_ids, project, device, ApplicationId!, Modules?.Instances) == CarrierHash
                 && _hardwareDocument is not null && ValidateCapturedHardware(_hardwareDocument, device, inputs) == HardwareDefinitionHash;
         }
         catch (Exception failure) when (failure is NativeGeneralRejected or RootBuildRejected or XmlException or IOException or InvalidDataException or FormatException or OverflowException or ArgumentException or InvalidOperationException) { return false; }

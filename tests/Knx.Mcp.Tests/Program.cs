@@ -18,6 +18,11 @@ void Check(string name, bool ok, string? detail = null)
 var catalogDir = Path.Combine(Path.GetTempPath(), "knx_mcp_catalog_" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(catalogDir);
 Environment.SetEnvironmentVariable("KNX_CATALOG_DIR", catalogDir);
+if (args.Contains("--module-image-build"))
+{
+    await NativeModuleImageToolChecks.Run(Check);
+    return failures.Count == 0 ? 0 : 1;
+}
 
 await ManagementChangeCliChecks.RunAsync(Check);
 if (args.Contains("--management-cli")) return failures.Count == 0 ? 0 : 1;
@@ -929,6 +934,7 @@ await NativeImageFoldToolChecks.Run((name, ok, detail) =>
     Check(name, ok, detail);
 });
 Console.WriteLine($"NativeImageFoldMcp: {nativeFoldChecks} checks, {nativeFoldFailures} failures");
+await NativeModuleImageToolChecks.Run(Check);
 await ApplicationBuildToolChecks.Run(Check);
 await ResolvedProcedureToolChecks.Run(Check);
 await GeneratedTablesToolChecks.Run(Check);

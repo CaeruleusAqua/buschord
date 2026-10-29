@@ -26,6 +26,12 @@ public sealed record NativeImageBuildRecord(string RefId, string ParameterId, st
     bool CustomerAdjustable, bool CustomerExcluded, RootParameterValueOrigin CurrentValueOrigin,
     string CurrentValueHash, string? RecordValueHash, bool NativeRecordEmitted, bool Allocates, bool WritesData,
     NativeImageBuildField? Field);
+public sealed record NativeImageBuildModuleOrigin(string InstanceId, string NativeInstanceId, string CallId,
+    string DefinitionId, string OriginalParameterId, string ParameterId, string? OriginalReferenceId, string? ReferenceId,
+    int SourceKey, string DeclarationHash, NativeImageBuildField? Field);
+public sealed record NativeImageBuildModuleAllocation(string InstanceId, string ArgumentId, string AllocatorId,
+    long Value, long Allocates, long Alignment, long PoolStart, long PoolMaximumInclusive, string Usage);
+public sealed record NativeImageBuildModuleReservation(string OwnerKey, NativeImageBuildField Field);
 
 /// <summary>Archived source policy and admitted physical codecs, independent of the assumed task selection.</summary>
 public sealed class NativeImageBuildPolicy
@@ -68,6 +74,11 @@ public sealed class NativeImageBuildPolicy
 
 public sealed class NativeImageBuildPopulation
 {
+    public IReadOnlyList<NativeImageBuildModuleOrigin> ModuleOrigins { get; }
+    public string? ModuleOriginsFingerprint { get; }
+    public IReadOnlyList<NativeImageBuildModuleAllocation> ModuleAllocations { get; }
+    public IReadOnlyList<NativeImageBuildModuleReservation> ModuleReservations { get; }
+    public IReadOnlyList<ApplicationModuleInstance> ModuleInstances { get; }
     public bool ParameterTaskScheduled { get; }
     public bool CompleteAdmittedRootPopulation => ParameterTaskScheduled;
     public string CustomerPolicy { get; }
@@ -85,8 +96,21 @@ public sealed class NativeImageBuildPopulation
     public IReadOnlyList<NativeImageBuildRecord> Records { get; }
     internal NativeImageBuildPopulation(NativeRootVariantPopulation population)
     {
+        ModuleOriginsFingerprint = population.ModuleOriginsFingerprint;
+        ModuleInstances = Array.AsReadOnly(population.ModuleInstances.Select(i=>new ApplicationModuleInstance(i.Id,i.RefId,i.RepeatIndex,
+            Array.AsReadOnly(i.Arguments.Select(a=>new ApplicationModuleArgument(a.RefId,a.Value)).ToArray()))).ToArray());
+        ModuleAllocations = Array.AsReadOnly(population.ModuleAllocations.Select(a=>new NativeImageBuildModuleAllocation(a.InstanceId,
+            a.ArgumentId,a.AllocatorId,a.Value,a.Allocates,a.Alignment,a.PoolStart,a.PoolMaximumInclusive,a.Usage)).ToArray());
+        ModuleReservations = Array.AsReadOnly(population.ModuleReservations.Select(owner=>new NativeImageBuildModuleReservation(owner.OwnerKey,
+            new NativeImageBuildField(NativeImageBuildProjection.Target(owner.Target),owner.ByteOffset,owner.BitOffset,owner.BitLength))).ToArray());
+        var declaredOwners = population.DeclaredOwners.ToDictionary(owner => owner.ParameterId, StringComparer.Ordinal);
+        ModuleOrigins = Array.AsReadOnly(population.ModuleOrigins.Select(origin => new NativeImageBuildModuleOrigin(origin.InstanceId,
+            origin.NativeInstanceId, origin.CallId, origin.DefinitionId, origin.OriginalParameterId, origin.ParameterId,
+            origin.OriginalReferenceId, origin.ReferenceId, origin.SourceKey, origin.DeclarationHash,
+            !declaredOwners.TryGetValue(origin.ParameterId, out var owner) ? null : new NativeImageBuildField(NativeImageBuildProjection.Target(owner.Target),
+                owner.ByteOffset, owner.BitOffset, owner.BitLength))).ToArray());
         ParameterTaskScheduled = population.ParameterTaskDisposition == NativeRootTaskDisposition.Scheduled;
-        CustomerPolicy = population.CustomerPolicy.ToString(); OwnerCount = population.AllocationRequirements.Count;
+        CustomerPolicy = population.CustomerPolicy.ToString(); OwnerCount = ParameterTaskScheduled ? population.DeclaredOwners.Count : 0;
         PopulationHash = population.PopulationHash!; GeometryHash = population.GeometryHash!; MaskInteractionHash = population.MaskInteractionHash!;
         Records = Array.AsReadOnly(population.Records.Select(r => new NativeImageBuildRecord(r.RefId, r.ParameterId, r.ParameterTypeId,
             r.Disposition, r.Active, r.NormalReferenceCount, r.LegacyPatchAlways, r.CustomerAdjustable, r.CustomerExcluded,

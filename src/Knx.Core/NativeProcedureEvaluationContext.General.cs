@@ -22,7 +22,7 @@ internal sealed partial class NativeProcedureEvaluationContext
             if (!inputs.Manifest.Binding!.MatchesIdentity(project, device) || !application.MatchesInputs(project, device, inputs))
                 Fail(LoadProcedureIssueCode.InputsChanged);
             if (application.ScriptCapabilityUsed || application.Snapshot is null || application.Catalog is null || application.Activation is null
-                || application.CapturedInputs is null || application.Snapshot.ModuleInstances.Count != 0
+                || application.CapturedInputs is null || !inventory.MatchesModules(application)
                 || !application.Activation.BelongsTo(application.Catalog, application.Snapshot))
                 Fail(LoadProcedureIssueCode.ContextMismatch);
             var expected = preparation.ControllerReferences.Concat(application.Catalog!.StructuralPlan.CallControllerReferences)
@@ -44,7 +44,7 @@ internal sealed partial class NativeProcedureEvaluationContext
             if (prepared.ControllerReferences.Count != 0)
             {
                 var placements = projection.Placements.ToDictionary(p => p.SourceKey);
-                foreach (var owner in application.Activation!.ActiveParameterOwners)
+                foreach (var owner in application.Activation!.ActiveParameterOwners.Where(owner => owner.ModuleInstanceId.Length == 0))
                 {
                     SharedPlacement? placement = null;
                     if (owner.ModuleInstanceId.Length != 0 || !activeKeys.Add(owner.SourceKey)

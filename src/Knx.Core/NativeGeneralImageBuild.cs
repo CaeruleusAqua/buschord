@@ -145,8 +145,8 @@ internal static class NativeGeneralImageBuild
             ledger.Reserve(inventory.PeakPayloadBytes);
             var preparation = NativeImagePreparation.Prepare(project!, device!, inputs, inventory, options);
             if (!preparation.IsAvailable) throw new NativeGeneralRejected(preparation.Issues.First());
-            var application = NativeApplicationEvaluationContext.CreateProfile(project!, device!, inputs,
-                preparation.ControllerReferences.ToArray(), null, admitRootUnions);
+            var application = NativeApplicationEvaluationContext.CreateImageProfile(project!, device!, inputs,
+                preparation.ControllerReferences.ToArray(), null, admitRootUnions, inventory.Modules is not null);
             if (!application.IsAvailable) throw new NativeGeneralRejected(new(NativeGeneralIssueCode.ContextMismatch,
                 ActivationIssue: application.Issues.FirstOrDefault()));
             var views = NativeImageVariantViewSet.Create(project!, device!, inputs, inventory, preparation, application);

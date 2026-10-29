@@ -84,6 +84,7 @@ public sealed partial class McpServer
         const int itemLimit = 128, requirementLimit = 256;
         var recordBudget = itemLimit; var sourceBudget = itemLimit; var chunkBudget = itemLimit; var countBudget = itemLimit;
         var controlBudget = itemLimit; var payloadBudget = itemLimit; var adjustmentBudget = itemLimit; var sourceIdBudget = itemLimit;
+        var moduleOriginBudget = itemLimit; var moduleInstanceBudget = itemLimit; var moduleAllocationBudget = itemLimit; var moduleReservationBudget = itemLimit;
         var requirementsBudget = requirementLimit; var issuesBudget = requirementLimit;
         static int TakeCount(int count, ref int budget) { var take = Math.Min(count, budget); budget -= take; return take; }
         var hashes = new Dictionary<ImmutablePatchBytes, string>(ReferenceEqualityComparer.Instance);
@@ -99,6 +100,8 @@ public sealed partial class McpServer
             applicationObjectIndex = selector.ApplicationObjectIndex, objectType = selector.ObjectType, occurrence = selector.Occurrence };
         static object Target(NativeImageBuildTarget target) => new
         { space = Code(target.Space), loadStateMachine = target.LoadStateMachine, property = Selector(target.Property) };
+        static object? Field(NativeImageBuildField? field) => field is null ? null : new
+        { target = Target(field.Target), byteOffset = field.ByteOffset, bitOffset = field.BitOffset, bitLength = field.BitLength };
         static object? Pdt(PropertyPdtLayout? layout) => layout is null ? null : new
         { profileVersion = layout.ProfileVersion, selectionFingerprint = layout.SelectionFingerprint, declaredPdt = layout.DeclaredPdt,
             readElementBytes = layout.ReadElementBytes, writeElementBytes = layout.WriteElementBytes, status = Code(layout.Status) };
@@ -122,6 +125,10 @@ public sealed partial class McpServer
         {
             var population = variant.Population;
             var recordTake = TakeCount(population?.Records.Count ?? 0, ref recordBudget);
+            var moduleOriginTake = TakeCount(population?.ModuleOrigins.Count ?? 0, ref moduleOriginBudget);
+            var moduleInstanceTake = TakeCount(population?.ModuleInstances.Count ?? 0, ref moduleInstanceBudget);
+            var moduleAllocationTake = TakeCount(population?.ModuleAllocations.Count ?? 0, ref moduleAllocationBudget);
+            var moduleReservationTake = TakeCount(population?.ModuleReservations.Count ?? 0, ref moduleReservationBudget);
             var sourceTake = TakeCount(variant.Sources.Count, ref sourceBudget); var chunkTake = TakeCount(variant.Chunks.Count, ref chunkBudget);
             var countTake = TakeCount(variant.ObservedCounts.Count, ref countBudget);
             var controlTake = TakeCount(variant.Procedure?.EffectiveControls.Count ?? 0, ref controlBudget);
@@ -199,6 +206,35 @@ public sealed partial class McpServer
                     physicalRecordCount = population.PhysicalRecordCount, noStorageCount = population.NoStorageCount, activeCount = population.ActiveCount,
                     alwaysCount = population.AlwaysCount, inactiveCount = population.InactiveCount, customerExcludedCount = population.CustomerExcludedCount,
                     populationHash = population.PopulationHash, geometryHash = population.GeometryHash, maskInteractionHash = population.MaskInteractionHash,
+                    moduleOriginsFingerprint = population.ModuleOriginsFingerprint,
+                    moduleOriginsHash = NativeImageDiagnosticHash(population.ModuleOrigins), moduleOriginsTotal = population.ModuleOrigins.Count,
+                    moduleOriginsShown = moduleOriginTake, moduleOriginsTruncated = population.ModuleOrigins.Count > moduleOriginTake,
+                    moduleOrigins = population.ModuleOrigins.Take(moduleOriginTake).Select(origin => new
+                    {
+                        instanceId = origin.InstanceId, nativeInstanceId = origin.NativeInstanceId, callId = origin.CallId, definitionId = origin.DefinitionId,
+                        originalParameterId = origin.OriginalParameterId, parameterId = origin.ParameterId,
+                        originalReferenceId = origin.OriginalReferenceId, referenceId = origin.ReferenceId,
+                        sourceKey = origin.SourceKey, declarationHash = origin.DeclarationHash, field = Field(origin.Field),
+                    }).ToArray(),
+                    moduleInstancesHash = NativeImageDiagnosticHash(population.ModuleInstances), moduleInstancesTotal = population.ModuleInstances.Count,
+                    moduleInstancesShown = moduleInstanceTake, moduleInstancesTruncated = population.ModuleInstances.Count > moduleInstanceTake,
+                    moduleInstances = population.ModuleInstances.Take(moduleInstanceTake).Select(instance => new
+                    {
+                        id = instance.Id, refId = instance.RefId, repeatIndex = instance.RepeatIndex,
+                        argumentsTotal = instance.Arguments.Count, argumentsHash = NativeImageDiagnosticHash(instance.Arguments),
+                    }).ToArray(),
+                    moduleAllocationsHash = NativeImageDiagnosticHash(population.ModuleAllocations), moduleAllocationsTotal = population.ModuleAllocations.Count,
+                    moduleAllocationsShown = moduleAllocationTake, moduleAllocationsTruncated = population.ModuleAllocations.Count > moduleAllocationTake,
+                    moduleAllocations = population.ModuleAllocations.Take(moduleAllocationTake).Select(allocation => new
+                    {
+                        instanceId = allocation.InstanceId, argumentId = allocation.ArgumentId, allocatorId = allocation.AllocatorId,
+                        allocatedValue = allocation.Value, allocates = allocation.Allocates, alignment = allocation.Alignment,
+                        poolStart = allocation.PoolStart, poolMaximumInclusive = allocation.PoolMaximumInclusive, usage = allocation.Usage,
+                    }).ToArray(),
+                    moduleReservationsHash = NativeImageDiagnosticHash(population.ModuleReservations), moduleReservationsTotal = population.ModuleReservations.Count,
+                    moduleReservationsShown = moduleReservationTake, moduleReservationsTruncated = population.ModuleReservations.Count > moduleReservationTake,
+                    moduleReservations = population.ModuleReservations.Take(moduleReservationTake).Select(reservation => new
+                    { ownerKey = reservation.OwnerKey, field = Field(reservation.Field) }).ToArray(),
                     recordsHash = NativeImageDiagnosticHash(population.Records),
                     recordsTotal = population.Records.Count, recordsShown = records?.Length ?? 0, recordsTruncated = population.Records.Count > recordTake, records,
                 },
@@ -260,6 +296,7 @@ public sealed partial class McpServer
             issuesHash = NativeImageDiagnosticHash(plan.Issues), issues = plan.Issues.Take(requirementLimit).Select(Issue).ToArray(), variantsTotal = plan.Variants.Count, variantsShown = variants.Length,
             variantsTruncated = false, variants,
             presentationLimits = new { records = itemLimit, sources = itemLimit, chunks = itemLimit, observedCounts = itemLimit,
+                moduleOrigins = itemLimit, moduleInstances = itemLimit, moduleAllocations = itemLimit, moduleReservations = itemLimit,
                 controls = itemLimit, tablePayloads = itemLimit, procedureAdjustments = itemLimit, sourceIds = itemLimit, requirements = requirementLimit,
                 detailBudgetSharedAcrossVariants = true },
             interpretation = "Conditional logical working alternatives, including unavailable assumptions. Sources, initial data, working data and validity remain separate. Table inputs are current working bytes. Actual device options, physical transfer mapping, count capacity and finalization are unverified; no device operation is authorized.",

@@ -43,12 +43,15 @@ internal sealed class NativeCommunicationOriginCatalog
     private readonly XElement[] _nodes;
     private readonly Dictionary<int, string> _hashes = [];
     private NativeStructuralActivationProof.SourcePlan? _structuralPlan;
+    internal bool ImageModuleProfile { get; }
     internal bool IsAvailable => _nodes.Length != 0;
     internal IReadOnlyList<XElement> Nodes => _nodes;
     internal NativeStructuralActivationProof.SourcePlan StructuralPlan
         => _structuralPlan ??= NativeStructuralActivationProof.ReadSource(this);
-    internal NativeCommunicationOriginCatalog(XElement source)
+    internal NativeCommunicationOriginCatalog(XElement source) : this(source, false) { }
+    internal NativeCommunicationOriginCatalog(XElement source, bool imageModuleProfile)
     {
+        ImageModuleProfile = imageModuleProfile;
         var nodes = source.DescendantsAndSelf().Take(500001).ToArray();
         _nodes = nodes.Length <= 500000 ? nodes : [];
     }

@@ -21,7 +21,11 @@ internal sealed class NativeStructuralActivationProof
     {
         Issues = Array.AsReadOnly(Array.Empty<GeneratedTableIssue>());
         Occurrences = manifest.Occurrences;
-        Fingerprint = source.ConditionalWhenKeys.Count == 0 ? NativeCommunicationGuard.Hash(new
+        Fingerprint = source.ImageModuleProfile ? NativeCommunicationGuard.Hash(new
+        {
+            profile = 4, scope = "LiteralRepeatRootAllocatorModuleImage1", source.SourceHash,
+            expected = source.Expected, occurrences = Occurrences,
+        }) : source.ConditionalWhenKeys.Count == 0 ? NativeCommunicationGuard.Hash(new
         {
             profile = 1, scope = "UnconditionalFlatLiteralModules", source.SourceHash,
             occurrences = Occurrences.Select(o => new { o.Frame, o.Arguments }).ToArray(),
@@ -46,7 +50,7 @@ internal sealed class NativeStructuralActivationProof
     internal sealed class SourcePlan(XElement application, string sourceHash,
         IReadOnlyList<XElement> scopeElements, IReadOnlyList<NativeCommunicationOccurrence> expected,
         IReadOnlyDictionary<int, int> definitionOwners, IReadOnlyDictionary<int, IReadOnlyList<int>> conditionalWhenKeys,
-        IReadOnlyList<string> callControllerReferences)
+        IReadOnlyList<string> callControllerReferences, bool imageModuleProfile = false)
     {
         internal XElement Application { get; } = application;
         internal string SourceHash { get; } = sourceHash;
@@ -55,6 +59,7 @@ internal sealed class NativeStructuralActivationProof
         internal IReadOnlyDictionary<int, int> DefinitionOwners { get; } = definitionOwners;
         internal IReadOnlyDictionary<int, IReadOnlyList<int>> ConditionalWhenKeys { get; } = conditionalWhenKeys;
         internal IReadOnlyList<string> CallControllerReferences { get; } = callControllerReferences;
+        internal bool ImageModuleProfile { get; } = imageModuleProfile;
     }
 
     /// <summary>Validates source structure before any optional evaluation capability is called.</summary>
@@ -132,6 +137,8 @@ internal sealed class NativeStructuralActivationProof
 
     internal static SourcePlan ReadSource(NativeCommunicationOriginCatalog catalog)
     {
+        if (catalog.ImageModuleProfile && catalog.Nodes.Any(e => e.Name.LocalName is "Repeat" or "Allocator"))
+            return NativeModuleImageDeclarations.Read(catalog);
         var nodes = catalog.Nodes;
         if (!catalog.IsAvailable || nodes.Count > 500000) Fail(GeneratedTableIssueCode.LimitExceeded);
         var root = nodes[0]; var ns = root.Name.Namespace;
@@ -369,8 +376,15 @@ internal sealed class NativeStructuralActivationProof
     private static bool IsDeclaration(XElement element)
         => element.Name.LocalName is "ParameterRef" or "Parameter" or "ParameterType" or "ComObjectRef" or "ComObject";
 
+    internal static void ValidateImageDynamicSources(XElement rootStatic, XElement dynamic, IEnumerable<XElement> definitions)
+    {
+        var roots = rootStatic.Descendants().Where(IsDeclaration).ToLookup(Id, StringComparer.Ordinal);
+        ValidateDynamicSources(rootStatic, dynamic, rootStatic, roots, true, true);
+        foreach (var definition in definitions)
+            ValidateDynamicSources(One(definition, "Static", true)!, One(definition, "Dynamic", true)!, rootStatic, roots, false);
+    }
     private static void ValidateDynamicSources(XElement stat, XElement dynamic, XElement rootStatic,
-        ILookup<string, XElement> roots, bool allowCalls)
+        ILookup<string, XElement> roots, bool allowCalls, bool allowLiteralRepeat = false)
     {
         var ns = dynamic.Name.Namespace;
         var locals = ReferenceEquals(stat, rootStatic) ? roots : stat.Descendants().Where(IsDeclaration).ToLookup(Id, StringComparer.Ordinal);
@@ -448,6 +462,10 @@ internal sealed class NativeStructuralActivationProof
                     break;
                 case "Module" when allowCalls:
                     break; // Every original call and all of its arguments are checked by the source plan.
+                case "Repeat" when allowCalls && allowLiteralRepeat:
+                    Shape(element, ["Id", "Count"]);
+                    foreach (var child in element.Elements()) Walk(child, depth + 1);
+                    break;
                 default:
                     Fail(GeneratedTableIssueCode.UnsupportedStructureActivation, Id(element));
                     break;

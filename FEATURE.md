@@ -83,6 +83,9 @@ Arbeitsbereich auch in mehreren geordneten Schritten vergrößern. Getrennte
 Quellenbesitzer und Allokationsgrenzen bleiben dabei erhalten.
 Der gemeinsame Lauf unterstützt auch begrenzte physische Single- und Zeitfelder;
 seine Policy-Ausgabe beschreibt Quellenoptionen und die verwendeten Codecs.
+Literale Modul-/Repeat-Speicherwriter und Root-Allocator nutzen denselben Lauf
+mit vollständigen Ursprüngen, latenten Besitzern und reservierten Bereichen.
+Das begrenzte synthetische Profil erweitert keine Geräte- oder Downloadfreigabe.
 Direkte Root-RawData-Speicherfelder nutzen denselben Arbeitslauf einschließlich
 M112-Änderungsplan; [Profil und Grenzen](docs/status.md#combined-logical-working-stage).
 Ein eigener [M112-Dialog](docs/commissioning.md) verbindet Review, Gerätebestätigung
