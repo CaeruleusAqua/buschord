@@ -289,7 +289,7 @@ public sealed class KnxTunnel : IAsyncDisposable
     private async Task SendCemiLockedAsync(byte[] cemi, CancellationToken ct)
     {
         if (State != BusConnectionState.Connected)
-            throw new InvalidOperationException($"tunnel is {State}, not connected");
+            throw new OperationCanceledException("The admitted send was cancelled by tunnel shutdown.", ct);
 
         var sequence = _sequence;
         try

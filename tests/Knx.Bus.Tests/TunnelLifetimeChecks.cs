@@ -19,6 +19,7 @@ internal static class TunnelLifetimeChecks
             ("negative heartbeat status drains both loops", () => HeartbeatAsync(false)),
             ("heartbeat transport failure drains both loops", () => HeartbeatAsync(true)),
             ("close cancels running sends, queued sends and response waiters", PendingOperationsAsync),
+            ("an admitted send cancels while shutdown callbacks are still pending", ClosingAdmissionAsync),
             ("close signalled by a log observer prevents the transport send", CloseBeforeSendAsync),
             ("close drains a pending connect transport send", ConnectingAsync),
             ("disconnect send is bounded and drained before disposal", DisconnectSendAsync),
@@ -121,6 +122,35 @@ internal static class TunnelLifetimeChecks
         await UntilAsync(() => transport.DataSends == 2);
         await tunnel.DisposeAsync().AsTask().WaitAsync(Deadline);
         await IgnoreCancellationAsync(waitingRead); await IgnoreCancellationAsync(waitingRequest);
+    }
+
+    private static async Task ClosingAdmissionAsync()
+    {
+        var transport = new ControlledTransport(); var tunnel = await ConnectAsync(transport);
+        var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var gate = (SemaphoreSlim)typeof(KnxTunnel).GetField("_sendGate", flags)!.GetValue(tunnel)!;
+        var lifetime = (CancellationTokenSource)typeof(KnxTunnel).GetField("_operationsCts", flags)!.GetValue(tunnel)!;
+        await gate.WaitAsync();
+        var send = tunnel.GroupValueReadAsync(new GroupAddress(1));
+        using var releaseCancellation = new ManualResetEventSlim();
+        var cancelling = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var blocker = lifetime.Token.Register(() => { cancelling.TrySetResult(); releaseCancellation.Wait(Deadline); });
+        var close = tunnel.CloseAsync(); var released = false; Exception? error = null;
+        try
+        {
+            await cancelling.Task.WaitAsync(Deadline);
+            gate.Release(); released = true;
+            try { await send.WaitAsync(Deadline); } catch (Exception ex) { error = ex; }
+        }
+        finally
+        {
+            if (!released) gate.Release();
+            releaseCancellation.Set();
+            await tunnel.DisposeAsync().AsTask().WaitAsync(Deadline);
+        }
+        await close;
+        Require(error is OperationCanceledException && transport.DataSends == 0,
+            "An admitted send did not cancel before transport transmission: " + error?.GetType().Name);
     }
 
     private static async Task CloseBeforeSendAsync()
