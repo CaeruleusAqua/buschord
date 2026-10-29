@@ -64,6 +64,7 @@ jobs:
           sh packaging/linux/build-deb.sh artifacts/publish/linux-x64 0.1.0-preview.0 src/Knx.App/Assets/brand/buschord-house-transparent-tile-256.png artifacts/releases/linux-x64/BusChord_amd64.deb
           sh packaging/linux/inspect-packages.sh artifacts/releases/linux-x64/BusChord-linux-x64-preview.AppImage artifacts/releases/linux-x64/BusChord_amd64.deb artifacts/inspection artifacts/worker-probe/linux-x64/BusChord.ScriptWorkerProbe
           for optimize in 0 1 2; do
+            PYTHONOPTIMIZE=$optimize python3 packaging/linux/test-updater-contract.py
             PYTHONOPTIMIZE=$optimize python3 packaging/linux/test-transaction-hook.py
             PYTHONOPTIMIZE=$optimize python3 packaging/linux/test-apt-source.py
           done

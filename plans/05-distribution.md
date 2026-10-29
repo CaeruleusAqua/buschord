@@ -6,11 +6,15 @@
 - [x] Signierte Feeds, Paketidentität, Rückstufungsschutz und Fehlerwiederholung integrieren und prüfen.
 - [x] Sichere Start-/Schließgrenzen, globale Optionen und Schutz offener Projekte prüfen.
 - [x] Automatische APT-Aktualisierung mit begrenztem Paketumfang, Prozessschutz und synthetischer Transaktionsprüfung ergänzen.
+- [x] Installierte APT-3.2-Policyfälle isoliert prüfen; eigene Konfiguration und unbeaufsichtigte Conffile-Konflikte korrigieren und als Shell-Verhaltenstest absichern.
 - [x] CI-Artefakte und getrennte, gesperrte Veröffentlichungswege prüfen.
 
 Vollständige lokale Anwendungspakete und isolierte Updateprüfungen bestehen.
 Die Windows-/Linux-Paketprüfung und sämtliche Integrationsprüfungen bestehen
 im nach `development` übernommenen Stand.
-Installierte APT-Dienst-, Desktopplattform- und Stromausfallabnahme bleiben offen.
+Der installierte APT-Dienst besteht die abgegrenzten Policyprüfungen mit vollem
+preview.41-Payload; die 41.x-Fixtures sind keine neuen Anwendungsversionen.
+Der vollständige preview.42-Anwendungsupgrade mit korrigiertem Paket sowie weitere
+Plattform-/APT-Versionen und Stromausfallabnahme bleiben offen.
 Private Signierschlüssel bleiben außerhalb des Repositories;
 es erfolgt keine Hostinstallation oder Veröffentlichung ohne Freigabe.

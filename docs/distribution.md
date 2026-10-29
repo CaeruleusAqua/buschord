@@ -165,6 +165,14 @@ across upgrades. The package enables its timer only at first install. Network
 requests and lock waits are bounded; the service has no commit timeout that can
 kill a running dpkg transaction.
 
+The guarded commit permits configuration of the own package, including an already
+unpacked installation. It passes dpkg's `--force-confdef --force-confold` to retain
+administrator conffile changes without an unattended question; debconf's
+`DEBIAN_FRONTEND=noninteractive` alone does not answer dpkg conffile questions.
+An APT exit code of zero is accepted only when BusChord's complete dpkg status is
+`install ok installed`. The real transaction hook still rejects foreign pending
+configure actions before dpkg executes them.
+
 `apt-repository.yml` verifies an existing ECDSA-signed stable Linux full package,
 extracts its authenticated AppImage, builds the deb and GPG-signed repository,
 then deploys `/apt/` through GitHub Pages. It never accepts an arbitrary release
@@ -187,6 +195,12 @@ anti-rollback, cache/staging tamper, cross-process leases, broker crash and code
 backup recovery with synthetic payloads. Linux adds same-filesystem AppImage
 replacement and injected disk/permission/interruption failures. Run
 `python3 packaging/linux/test-transaction-hook.py` for APT action-scope fixtures.
+`python3 packaging/linux/test-updater-contract.py` executes the product shell with
+temporary paths, real `flock`/`awk` and an emulated APT/dpkg boundary. It checks
+own-package configure/poststatus, conffile conflicts, incomplete status after
+APT success, app leases and foreign-dependency deferral. It also invokes the real
+V2 hook for own/foreign configure-only streams. No package manager or service is
+run by this test; it complements installed acceptance rather than replacing it.
 `inspect-packages.sh` extracts to a private temporary directory; it does not install
 or launch a GUI. Synthetic probe builds prove packaging, not BusChord GUI acceptance.
 
@@ -204,16 +218,24 @@ Windows update regressions pass 54 checks. The independent Linux run passes 59;
 APT source/transaction fixtures pass with Python optimization levels 0, 1 and 2.
 Native dialogs pass 854 checks each in German and English, including update
 preferences and asynchronous session shutdown before releasing the application
-lease. Full desktop-platform, installed APT-service and power-loss acceptance
-remain release work.
+lease. Full desktop-platform and power-loss acceptance remain release work.
 
 The 2026-10-29 Ubuntu 26.04/WSLg run also started the native self-contained
 application, passed smoke and screenshot checks, and passed the Workbench's
 German/light and English/dark native workflows. It used isolated XDG/settings
 directories and privately extracted ICU 78, libICE and libSM libraries, without
 invariant globalization or host package installation. This verifies that published
-payload in one Linux desktop environment; AppImage/deb installation, the APT
-service, other desktop environments and power-loss acceptance remain open.
+payload in one Linux desktop environment. A separate dedicated Ubuntu 26.04/APT
+3.2 installation exposed incomplete own-package configuration and unattended
+conffile failure. The corrected installed service completed signed policy fixtures
+with the full preview.41 payload, preserved administrator sources and timer
+disable/deletion policy, and deferred app-running and foreign-dependency cases.
+Actual APT V2 streams and frontend-lock checks also rejected foreign pending
+configure actions. These synthetic 41.x package-policy versions reuse application
+bytes; they are not new application releases. A complete preview.42 application
+upgrade with the corrected package, other supported platforms/APT versions,
+AppImage installation and power-loss acceptance remain open. Private acceptance
+keys, package fixtures and logs stay outside the repository.
 
 Primary documentation checked 2026-10-28:
 - [Velopack packaging](https://docs.velopack.io/packaging/overview),
@@ -222,6 +244,7 @@ Primary documentation checked 2026-10-28:
   [integration](https://docs.velopack.io/integrating/overview).
 - [Pinned SDK CLI contract](https://github.com/velopack/velopack/blob/92d6a1c91716729d449034df5c50307dcce39493/src/lib-csharp/UpdateExe.cs).
 - [APT authentication](https://manpages.debian.org/trixie/apt/apt-secure.8.en.html),
-  [APT transaction hook protocol](https://manpages.debian.org/bookworm/apt/apt.conf.5.en.html#HOW_APT_CALLS_DPKG(1)).
+  [APT transaction hook protocol](https://manpages.debian.org/bookworm/apt/apt.conf.5.en.html#HOW_APT_CALLS_DPKG(1)),
+  [dpkg package states and conffile options](https://manpages.debian.org/trixie/dpkg/dpkg.1.en.html).
 - [Avalonia Linux deployment](https://docs.avaloniaui.net/docs/deployment/linux),
   [.NET 10 native dependencies](https://github.com/dotnet/core/blob/main/release-notes/10.0/dotnet-dependencies.md).
