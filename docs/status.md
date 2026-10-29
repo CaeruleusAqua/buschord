@@ -788,7 +788,16 @@ verified gateway/user authentication, bounded framing, replay/counter checks and
 joined cleanup. Twenty-eight focused Secure and 16 legacy-refusal checks pass on
 Windows and Ubuntu 26.04; the complete bus suite passes on both. The previous
 non-interoperable legacy Secure encoders/parsers are fail closed. Protected keyring
-integration, Secure Workbench/MCP controls, Data Secure and commissioning remain open.
+import verifies the full signature before decrypting owned secrets and requires exact
+project-label and tunnel selection. The separate Data Secure group library supports
+auth-only/auth-conf, explicit group/sender policy and durable send/receive counters.
+Its optional tunnel processor persists before send/dispatch, deduplicates before
+verification and binds own confirmations to prepared frames. A separate optional
+monotonic anchor can detect full-file rollback; an ordinary backup cannot provide
+that guarantee. Missing/corrupt state never creates fresh counters automatically.
+See [keyring scope](protected-keyrings.md) and [counter/recovery limits](data-secure.md).
+Secure Workbench/MCP controls, protected OS storage, authenticated Sync, individual
+Tool Access and secure first commissioning remain open.
 Extended cEMI uses one NPDU length octet and the control-field frame selector;
 81 checks cover published vectors, strict lengths and the shared raw-frame API.
 

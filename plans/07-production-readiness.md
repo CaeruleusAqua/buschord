@@ -38,9 +38,13 @@ Einzelgeräteversuche ersetzen diese Endabnahme nicht.
 - Der erste Inbetriebnahmestand ist über PR #7 in `development` integriert;
   alle neun Prüfungen des abschließenden Branchstands bestehen. Ein echter
   lesender Workbench-Verbindungsversuch hat Geräteantwort und gejointen Abbau bestätigt.
-- In Prüfung: nativer M112-Änderungs-/Recoverydialog, Root-RawData-Schreiber,
-  korrektes Extended-cEMI und authentisierte Secure-UDP-Bibliothek. Geschützte
-  Keyrings und dauerhafte Data-Secure-Zustände werden separat ergänzt.
+- Der native M112-Änderungs-/Recoverydialog, Root-RawData-Schreiber, korrektes
+  Extended-cEMI und die authentisierte Secure-UDP-Bibliothek sind mit PR #8 in
+  `development` integriert; alle neun Prüfungen des abschließenden Stands bestehen.
+- Geschützte Keyrings und dauerhafte Data-Secure-Gruppenzustände bestehen separat
+  101 Import-, 31 Codec-/Zähler- und 11 Tunnelprüfungen sowie die gemeinsame
+  Bus-Regression auf Windows und Ubuntu 26.04. Die Anbindung sicherer Verbindungen
+  an Workbench/MCP und provisioniertes Tool-Access/Sync laufen getrennt weiter.
 - Echte lesende Workbench-Verbindung, Gruppenmonitor und adressierter Scan sind
   erreichbar; gemeinsame Verbindungsbesitzer beenden I/O vor erneuter Nutzung.
   Allgemeine Programmierung, Adressierung und weitere Geräteprofile bleiben offen.

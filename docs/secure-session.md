@@ -49,8 +49,10 @@ before releasing its owned UDP transport and key material.
   the actual OpenSSL 3 RFC 7748 agreement, published protocol vectors and local
   UDP adapter; it does not establish interoperability with a physical Secure gateway.
 - This unicast profile does not implement Secure multicast timer synchronization,
-  KNX Data Secure telegrams, durable Data Secure counters, keyring provisioning,
-  protected key storage or secure first commissioning.
+  keyring provisioning, protected key storage or secure first commissioning.
+  [Protected keyring import](protected-keyrings.md) and the
+  [Data Secure group library](data-secure.md) are separate profiles; their
+  Workbench/MCP integration remains explicit follow-up work.
 
 ## Compatibility gates
 
