@@ -107,6 +107,11 @@ counter-store owner or credentials. No individual-security option is silently
 enabled by the current application factory; UI/MCP integration is a separate
 explicit follow-up.
 
+The [explicit Tool-Access operation](tool-access-management.md) now connects this
+initializer to the shared factory with a verified device ToolKey and existing
+trusted counter state. It is management-only; App/MCP controls and provisioning
+remain separate work.
+
 ## Evidence and boundaries
 
 Checks reproduce four published Tool-Access Annex examples and twelve independent

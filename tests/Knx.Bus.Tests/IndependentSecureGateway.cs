@@ -20,6 +20,10 @@ internal sealed class IndependentSecureGateway(IPEndPoint? endpoint = null) : IU
         private ulong _sequence;
         public bool BadGateway, RejectUser, AuthenticatedUser, HoldReceiveUnwind, HoldSendUnwind, SuppressResponse, FailKeepalive;
         public int TotalSends, PlainSends, ApplicationSends, Disposals, Keepalives;
+        public byte[]? UserKeyOverride, DeviceKeyOverride;
+        public byte ExpectedUserId = 2;
+        public IndividualAddress? AssignedAddressOverride;
+        public Func<byte[], IReadOnlyList<byte[]>?>? ApplicationPacket;
         public TaskCompletionSource ReceiveStarted { get; } = Gate(); public TaskCompletionSource ReceiveCancelled { get; } = Gate(); public TaskCompletionSource ReleaseReceive { get; } = Gate();
         public TaskCompletionSource SendStarted { get; } = Gate(); public TaskCompletionSource SendCancelled { get; } = Gate(); public TaskCompletionSource ReleaseSend { get; } = Gate(); public TaskCompletionSource KeepaliveSeen { get; } = Gate();
         public async Task SendAsync(IPEndPoint destination, byte[] data, CancellationToken ct = default)
@@ -39,20 +43,22 @@ internal sealed class IndependentSecureGateway(IPEndPoint? endpoint = null) : IU
                 PlainSends++; Require(data.Length == 46, "Invalid request size."); var client = data.AsSpan(14, 32).ToArray();
                 using var bob = OsX25519KeyAgreement.ImportPrivateKey(Bob); var raw = bob.DeriveRawSecret(client); _key = SHA256.HashData(raw)[..16]; CryptographicOperations.ZeroMemory(raw);
                 _xor = client.Zip(bob.PublicKey, (a, b) => (byte)(a ^ b)).ToArray();
-                var response = Frame(0x952, [0x12, 0x34, .. bob.PublicKey, .. new byte[16]]); Tag(DeviceKey, [.. response.AsSpan(0, 8).ToArray(), .. _xor]).CopyTo(response, 40);
+                var response = Frame(0x952, [0x12, 0x34, .. bob.PublicKey, .. new byte[16]]); Tag(DeviceKeyOverride ?? DeviceKey, [.. response.AsSpan(0, 8).ToArray(), .. _xor]).CopyTo(response, 40);
                 if (BadGateway) response[^1] ^= 1; return SuppressResponse ? [] : [response];
             }
             Require(service == 0x950 && KnxIpSecureCodec.TryUnwrap(data, _key, out _), "Plaintext fallback or invalid secure wrapper.");
             KnxIpSecureCodec.TryUnwrap(data, _key, out var packet); var payload = packet!.Payload; service = BinaryPrimitives.ReadUInt16BigEndian(payload.AsSpan(2));
             if (service == 0x953)
             {
-                Require(payload.Length == 24 && payload[6] == 0 && payload[7] == 2 && CryptographicOperations.FixedTimeEquals(payload.AsSpan(8), Tag(UserKey, [.. payload.AsSpan(0, 8).ToArray(), .. _xor])), "Invalid independent user authentication.");
+                Require(payload.Length == 24 && payload[6] == 0 && payload[7] == ExpectedUserId && CryptographicOperations.FixedTimeEquals(payload.AsSpan(8), Tag(UserKeyOverride ?? UserKey, [.. payload.AsSpan(0, 8).ToArray(), .. _xor])), "Invalid independent user authentication.");
                 AuthenticatedUser = !RejectUser; return [Wrap(Frame(0x954, [RejectUser ? (byte)1 : (byte)0, 0]))];
             }
             Require(AuthenticatedUser, "Application sent before authentication."); ApplicationSends++;
+            var custom = ApplicationPacket?.Invoke(payload);
+            if (custom is not null) return custom.Select(Wrap).ToArray();
             return service switch
             {
-                0x205 => [Wrap(Frame(0x206, [7, 0, .. Hpai.Control(_endpoint), .. Crd.Tunnel(new(1, 1, 240))]))],
+                0x205 => [Wrap(Frame(0x206, [7, 0, .. Hpai.Control(_endpoint), .. Crd.Tunnel(AssignedAddressOverride ?? new(1, 1, 240))]))],
                 0x207 => [Wrap(Frame(0x208, [7, 0]))],
                 0x209 => [Wrap(Frame(0x20A, [7, 0]))],
                 0x420 => [Wrap(Frame(0x421, [4, 7, payload[8], 0]))],

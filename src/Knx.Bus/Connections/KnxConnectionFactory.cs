@@ -72,7 +72,7 @@ public sealed class FileKnxClientSerialProvider(string? directory = null) : IKnx
     }
 }
 
-public sealed class KnxConnectionFactory
+public sealed partial class KnxConnectionFactory
 {
     private readonly GatewayLeaseCoordinator _leases;
     private readonly IKnxSecureCredentialProvider _credentials;
@@ -128,7 +128,7 @@ public sealed class KnxConnectionFactory
 }
 
 /// <summary>One gateway reservation and frozen credential capability spanning sequential fresh connections and recovery.</summary>
-public sealed class KnxGatewayOperation : IAsyncDisposable
+public sealed partial class KnxGatewayOperation : IAsyncDisposable
 {
     private readonly object _sync = new();
     private readonly SemaphoreSlim _transition = new(1, 1);
@@ -149,6 +149,7 @@ public sealed class KnxGatewayOperation : IAsyncDisposable
 
     public async Task<KnxConnectedTunnel> OpenTunnelAsync(CancellationToken ct = default)
     {
+        if (_toolAccess is not null) throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
         await _transition.WaitAsync(cancellation.Token).ConfigureAwait(false);
         try { return await OpenCoreAsync(cancellation.Token).ConfigureAwait(false); }
@@ -156,6 +157,7 @@ public sealed class KnxGatewayOperation : IAsyncDisposable
     }
     public async Task<IManagementConnection> OpenManagementAsync(IndividualAddress target, bool readOnly, CancellationToken ct = default)
     {
+        _toolAccess?.RequireTarget(target);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
         await _transition.WaitAsync(cancellation.Token).ConfigureAwait(false);
         KnxConnectedTunnel? owned = null; KnxManagementClient? client = null;
@@ -166,13 +168,27 @@ public sealed class KnxGatewayOperation : IAsyncDisposable
             client = new(owned.Tunnel, target, readOnly);
             await client.ConnectAsync(cancellation.Token).ConfigureAwait(false);
             var result = new ManagementOwner(this, client, owned);
-            lock (_sync) _active = result;
+            lock (_sync)
+            {
+                if (_toolAccess is not null)
+                {
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    if (_stopping) throw new KnxConnectionException(KnxConnectionFailure.Disposed);
+                }
+                _active = result;
+            }
             return result;
         }
-        catch
+        catch (Exception error)
         {
-            try { if (client is not null) await client.DisposeAsync().ConfigureAwait(false); }
-            finally { if (owned is not null) await owned.DisposeAsync().ConfigureAwait(false); }
+            try
+            {
+                try { if (client is not null) await client.DisposeAsync().ConfigureAwait(false); }
+                finally { if (owned is not null) await owned.DisposeAsync().ConfigureAwait(false); }
+            }
+            catch when (_toolAccess is not null) { /* Preserve the safe Tool-Access acquisition reason. */ }
+            if (_toolAccess is not null && error is not (OperationCanceledException or KnxConnectionException))
+                throw new KnxConnectionException(KnxConnectionFailure.ConnectionFailed);
             throw;
         }
         finally { _transition.Release(); }
@@ -188,6 +204,7 @@ public sealed class KnxGatewayOperation : IAsyncDisposable
         IUdpTransport? transport = null; SecureSessionTransport? secure = null; KnxIpSecureSession? session = null; KnxTunnel? tunnel = null;
         try
         {
+            if (_toolAccess is not null) await _toolAccess.PreflightAsync(ct).ConfigureAwait(false);
             transport = _createTransport(Profile);
             if (Profile.Kind == KnxTransportKind.IpSecureUdp)
             {
@@ -195,7 +212,7 @@ public sealed class KnxGatewayOperation : IAsyncDisposable
                 secure = new(transport, Profile.Gateway, _localEndpoint(transport, Profile.Gateway), session);
                 await secure.ConnectAsync(ct).ConfigureAwait(false);
                 tunnel = new(secure, Profile.Gateway, Profile.RequestedAddress, secure.LocalEndpoint, null,
-                    new KeyringGroupBoundary(_credentials!.ProtectedGroups));
+                    _toolAccess is not null ? _toolAccess.CreateProcessor() : new KeyringGroupBoundary(_credentials!.ProtectedGroups));
             }
             else if (Profile.Kind == KnxTransportKind.PlainUdp)
                 tunnel = new(transport, Profile.Gateway, Profile.RequestedAddress);
@@ -203,9 +220,18 @@ public sealed class KnxGatewayOperation : IAsyncDisposable
             await tunnel.ConnectAsync(ct).ConfigureAwait(false);
             if (Profile.RequiresAuthentication && (!secure!.IsConnected || tunnel.AssignedAddress != Profile.RequestedAddress))
                 throw new KnxConnectionException(KnxConnectionFailure.AssignedAddressMismatch);
+            if (_toolAccess is not null) await ToolAccessCapability.InitializeAsync(tunnel, ct).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
             var owned = new KnxConnectedTunnel(this, tunnel, new(Profile.Kind, secure?.IsConnected == true, tunnel.AssignedAddress, KeyringFingerprint));
-            lock (_sync) _active = owned;
+            lock (_sync)
+            {
+                if (_toolAccess is not null)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (_stopping) throw new KnxConnectionException(KnxConnectionFailure.Disposed);
+                }
+                _active = owned;
+            }
             return owned;
         }
         catch (Exception error)
@@ -245,7 +271,9 @@ public sealed class KnxGatewayOperation : IAsyncDisposable
         }
         finally
         {
-            _credentials?.Dispose(); CryptographicOperations.ZeroMemory(_serial); _lease.Dispose(); _transition.Release(); _lifetime.Dispose();
+            try { if (_toolAccess is not null) await _toolAccess.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception error) { failure ??= error; }
+            finally { _credentials?.Dispose(); CryptographicOperations.ZeroMemory(_serial); _lease.Dispose(); _transition.Release(); _lifetime.Dispose(); }
         }
         if (failure is null) completion.TrySetResult(); else completion.TrySetException(new KnxConnectionException(KnxConnectionFailure.ConnectionFailed));
     }

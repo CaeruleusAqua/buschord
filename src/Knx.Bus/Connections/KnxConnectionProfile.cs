@@ -8,7 +8,8 @@ using Knx.Bus.Security;
 namespace Knx.Bus.Connections;
 
 public enum KnxTransportKind { PlainUdp, IpSecureUdp }
-public enum KnxConnectionFailure { InvalidProfile, Occupied, CredentialSourceUnavailable, KeyringRejected, CredentialBindingMismatch, UnsupportedCredentials, AuthenticationFailed, AssignedAddressMismatch, ConnectionFailed, Cancelled, Disposed }
+public enum KnxConnectionFailure { InvalidProfile, Occupied, CredentialSourceUnavailable, KeyringRejected, CredentialBindingMismatch, UnsupportedCredentials, AuthenticationFailed, AssignedAddressMismatch, ConnectionFailed, Cancelled, Disposed,
+    ToolAccessKeyUnavailable, ToolAccessBindingMismatch, ToolAccessStateUnavailable, ToolAccessStateNotReady, ToolAccessCounterExhausted, ToolAccessSynchronizationFailed }
 public sealed class KnxConnectionException(KnxConnectionFailure failure) : IOException("KNX connection failed: " + failure)
 { public KnxConnectionFailure Failure { get; } = failure; }
 
