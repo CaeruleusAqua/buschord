@@ -67,6 +67,8 @@ var maps = new (string Module, string File, IReadOnlyDictionary<string, (string 
         key => key, key => (CredentialVaultStrings.GetForLanguage("de", key), CredentialVaultStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
     ("group-security", "src/Knx.App/Localization/GroupSecurityStrings.cs", GroupSecurityStrings.Keys.ToDictionary(
         key => key, key => (GroupSecurityStrings.GetForLanguage("de", key), GroupSecurityStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
+    ("real-programming-queue", "src/Knx.App/Localization/RealProgrammingQueueStrings.cs", RealProgrammingQueueStrings.Keys.ToDictionary(
+        key => key, key => (RealProgrammingQueueStrings.GetForLanguage("de", key), RealProgrammingQueueStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
     ("m112-commissioning", "src/Knx.App/Localization/M112CommissioningStrings.cs", M112CommissioningStrings.Keys.ToDictionary(
         key => key, key => (M112CommissioningStrings.GetForLanguage("de", key), M112CommissioningStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
 };
@@ -235,6 +237,12 @@ Check("i18n[credential-vault]: exactly the supported languages are registered", 
 Check("i18n[group-security]: exactly the supported languages are registered", GroupSecurityStrings.Languages.ToHashSet(StringComparer.Ordinal).SetEquals(Strings.Available));
 var groupValues = typeof(GroupSecurityStrings).GetField("Text", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null) as IReadOnlyDictionary<string, string[]> ?? throw new InvalidOperationException("GroupSecurityStrings.Text not found");
 Check("i18n[group-security]: every value has eight translations", groupValues.Values.All(values => values.Length == GroupSecurityStrings.Languages.Count));
+Check("i18n[real-programming-queue]: exactly the supported languages are registered", RealProgrammingQueueStrings.Languages.ToHashSet(StringComparer.Ordinal).SetEquals(Strings.Available));
+var queueValues = typeof(RealProgrammingQueueStrings).GetField("Text", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null) as IReadOnlyDictionary<string, string[]> ?? throw new InvalidOperationException("RealProgrammingQueueStrings.Text not found");
+Check("i18n[real-programming-queue]: every value has eight translations", queueValues.Values.All(values => values.Length == RealProgrammingQueueStrings.Languages.Count));
+foreach (var language in RealProgrammingQueueStrings.Languages)
+    Check($"i18n[{language}:real-programming-queue]: every key resolves", RealProgrammingQueueStrings.Keys.All(key => !string.IsNullOrWhiteSpace(RealProgrammingQueueStrings.GetForLanguage(language, key))
+        && RealProgrammingQueueStrings.GetForLanguage(language, key) == queueValues[key][RealProgrammingQueueStrings.Languages.ToList().IndexOf(language)]));
 foreach (var language in GroupSecurityStrings.Languages)
     Check($"i18n[{language}:group-security]: every key resolves", GroupSecurityStrings.Keys.All(key => !string.IsNullOrWhiteSpace(GroupSecurityStrings.GetForLanguage(language, key)) && GroupSecurityStrings.GetForLanguage(language, key) != key));
 var vaultValues = typeof(CredentialVaultStrings).GetField("Text", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null) as IReadOnlyDictionary<string, string[]>
@@ -322,6 +330,7 @@ var dynWrap = new Regex("\\b(W|Wb)\\(\\s*(?!\"[A-Za-z])", RegexOptions.CultureIn
 
 var referenced = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
 {
+    ["real-programming-queue"] = new(StringComparer.Ordinal),
     ["core"] = new(StringComparer.Ordinal),
     ["credential-vault"] = new(StringComparer.Ordinal),
     ["group-security"] = new(StringComparer.Ordinal),
@@ -358,6 +367,11 @@ foreach (var file in SourceScan.Files(root, ["src", "tests"], "*.cs"))
     foreach (Match m in callSecure.Matches(text)) Use(file, LineAt(text, m.Index), "secure-connection", m.Groups[1].Value, "SecureConnectionStrings.Get");
     foreach (Match m in callVault.Matches(text)) Use(file, LineAt(text, m.Index), "credential-vault", m.Groups[1].Value, "CredentialVaultStrings.Get");
     foreach (Match m in callGroups.Matches(text)) Use(file, LineAt(text, m.Index), "group-security", m.Groups[1].Value, "GroupSecurityStrings.Get");
+    foreach (Match m in Regex.Matches(text, "\\bRealProgrammingQueueStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant))
+        Use(file, LineAt(text, m.Index), "real-programming-queue", m.Groups[1].Value, "RealProgrammingQueueStrings.Get");
+    if (file == "src/Knx.App/RealProgrammingQueueWindow.cs")
+        foreach (Match m in Regex.Matches(text, "\\bQ\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant))
+            Use(file, LineAt(text, m.Index), "real-programming-queue", m.Groups[1].Value, "Q(...)");
     if (file is "src/Knx.App/GroupSecuritySelectionWindow.cs" or "src/Knx.App/GroupStateConfirmationWindow.cs")
         foreach (Match m in callGroupWrap.Matches(text)) Use(file, LineAt(text, m.Index), "group-security", m.Groups[1].Value, "G(...)");
     foreach (Match m in callCommissioning.Matches(text)) Use(file, LineAt(text, m.Index), "m112-commissioning", m.Groups[1].Value, "M112CommissioningStrings.Get");
@@ -454,6 +468,7 @@ foreach (var (module, _, map) in maps)
         "src/Knx.App/Localization/SecureConnectionStrings.cs",
         "src/Knx.App/Localization/CredentialVaultStrings.cs",
         "src/Knx.App/Localization/GroupSecurityStrings.cs",
+        "src/Knx.App/Localization/RealProgrammingQueueStrings.cs",
         "src/Knx.App/Localization/LiveConnectionStrings.cs",
         "src/Knx.App/Localization/M112CommissioningStrings.cs",
     ];
