@@ -10,7 +10,7 @@ namespace Knx.Bus.Security;
 /// A new value is flushed before release; optional independent anchors detect rollback across restarts.
 /// Without an external anchor, restoring a complete earlier valid file cannot be detected after a process restart.
 /// </summary>
-public sealed class DataSecureCounterStore : IAsyncDisposable
+public sealed partial class DataSecureCounterStore : IAsyncDisposable
 {
     private const int PageSize = 4096, MacOffset = PageSize - 32, MaximumSenders = 65534;
     private static readonly byte[] HeaderMagic = Encoding.ASCII.GetBytes("BCDSC002"), PageMagic = Encoding.ASCII.GetBytes("BCDSCNT2");

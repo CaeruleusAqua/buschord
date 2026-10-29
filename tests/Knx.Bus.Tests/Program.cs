@@ -19,6 +19,12 @@ if (await DataSecureChecks.TryRunChildAsync(args) is { } childResult)
     return;
 }
 
+if (args.Contains("--tool-access"))
+{
+    Environment.Exit(await ToolAccessChecks.RunAsync());
+    return;
+}
+
 // ============ Self-Checks für das Bus-Protokoll und den Download ============
 // Byte-Vektoren aus der KNXnet/IP-Spezifikation (KNX Association, v1.0) und
 // End-to-End-Läufe gegen einen Loopback-Fake.
@@ -785,6 +791,7 @@ Check("client serial publication checks", await SerialPublicationChecks.RunAsync
 Check("group secure lifetime checks", await GroupSecureLifetimeChecks.RunAsync() == 0);
 Check("individual secure checks", await IndividualSecureChecks.RunAsync() == 0);
 Check("individual secure tunnel checks", await IndividualSecureTunnelChecks.RunAsync() == 0);
+Check("tool access management checks", await ToolAccessChecks.RunAsync() == 0);
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 

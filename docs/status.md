@@ -822,8 +822,15 @@ The separate [individual Tool/P2P library](individual-secure.md) adds explicitly
 provisioned unicast data, authenticated client Sync, durable max merging and a
 joined tunnel initializer. Twenty-one state/codec and five tunnel checks cover
 synthetic vectors and actual UDP loopback. It retains missing-state and key-domain
-gates; no real Secure device has been accepted. Protected OS storage,
-provisioning integration and secure first commissioning remain open.
+gates; no real Secure device has been accepted. An explicit
+[Tool-Access management operation](tool-access-management.md) joins the shared
+factory, exact verified device key and existing trusted state across fresh opens.
+Twenty-one focused checks and full Windows/Linux Bus regressions cover its
+pre-network refusals, gateway authentication, Sync, management and recovery.
+Its default state source requires an independent anchor; a separate explicitly
+trusted unanchored source cannot detect full-file restoration. No production anchor
+or App/MCP selector is supplied. Protected OS storage, provisioning integration
+and secure first commissioning remain open.
 Extended cEMI uses one NPDU length octet and the control-field frame selector;
 81 checks cover published vectors, strict lengths and the shared raw-frame API.
 
