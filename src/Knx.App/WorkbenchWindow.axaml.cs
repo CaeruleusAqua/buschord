@@ -53,6 +53,7 @@ public partial class WorkbenchWindow : Window
     private bool _confirmingClose;
     private bool _closingSessionsForExit;
     private readonly List<Task> _pendingSessionDisposals = [];
+    private readonly HashSet<object> _closingGroupProjectLifetimes = new(ReferenceEqualityComparer.Instance);
     private readonly string? _layoutPath;
     private readonly CatalogLibrary _catalogLibrary;
     private Project? _shownProject;
@@ -514,11 +515,13 @@ public partial class WorkbenchWindow : Window
     private Task DisposeSessionsAsync()
     {
         TrackM112Disposal();
+        TrackGroupInputDisposal();
         // Detach every observer before cancellation publishes the final job state.
         CloseSessionWindows();
         ToolHost.Content = null;
         var sessions = _sessions;
         var previousLifetime = _sessionIdentity;
+        if (previousLifetime is not null) _closingGroupProjectLifetimes.Add(previousLifetime);
         var connection = _liveConnection;
         _liveConnection = null;
         UpdateConnectionChrome();
@@ -535,20 +538,23 @@ public partial class WorkbenchWindow : Window
         // while an old executor is still unwinding cancellation. Cancellation adds no attempt facts.
         persistence?.Dispose();
         _pendingSessionDisposals.RemoveAll(task => task.IsCompleted);
-        if (sessions is null && _closingConnections.Count == 0 && selectionClose.IsCompletedSuccessfully) return Task.CompletedTask;
-        var disposal = CompleteSessionDisposalAsync(sessions, _closingConnections.ToArray(), previousLifetime, selectionClose);
+        if (sessions is null && _closingConnections.Count == 0 && selectionClose.IsCompletedSuccessfully && _closingGroupProjectLifetimes.Count == 0) return Task.CompletedTask;
+        var disposal = CompleteSessionDisposalAsync(sessions, _closingConnections.ToArray(), previousLifetime, selectionClose, _pendingSessionDisposals.ToArray(), _closingGroupProjectLifetimes.ToArray());
         if (!disposal.IsCompletedSuccessfully) _pendingSessionDisposals.Add(disposal);
         return disposal;
     }
 
-    private async Task CompleteSessionDisposalAsync(WorkbenchSessions? sessions, ReadOnlyWorkbenchConnection[] connections, object? previousLifetime, Task selectionClose)
+    private async Task CompleteSessionDisposalAsync(WorkbenchSessions? sessions, ReadOnlyWorkbenchConnection[] connections, object? previousLifetime, Task selectionClose, Task[] previousDisposals, object[] closingGroupProjects)
     {
         sessions?.Monitor.Stop();
         var closing = connections.Select(connection => connection.DisposeAsync().AsTask()).ToArray();
         var sessionClose = sessions?.DisposeAsync().AsTask() ?? Task.CompletedTask;
         try
         {
-            await Task.WhenAll(closing.Append(sessionClose).Append(selectionClose));
+            var consumersEnded = Task.WhenAll(closing.Append(sessionClose).Append(selectionClose).Concat(previousDisposals));
+            var releases = closingGroupProjects.Select(lifetime => _groupSecurityOwner.ReleaseProjectAfterAsync(lifetime, consumersEnded)).ToArray();
+            await Task.WhenAll(releases.Prepend(consumersEnded));
+            foreach (var lifetime in closingGroupProjects) _closingGroupProjectLifetimes.Remove(lifetime);
             foreach (var connection in connections) _closingConnections.Remove(connection);
         }
         catch { if (ReferenceEquals(previousLifetime, ViewModel.ProjectSessionIdentity)) ViewModel.Status = LiveConnectionStrings.Get("CleanupFailed"); throw; }
@@ -2344,7 +2350,7 @@ public partial class WorkbenchWindow : Window
             connectionStatus.IsVisible = source.SelectedIndex == 1;
             connectionStatus.Text = _liveConnection is { } connection ? ConnectionWindow.Status(connection.Snapshot) : LiveConnectionStrings.Get("Disconnected");
             if (valueAction is not null) valueAction.IsEnabled = source.SelectedIndex != 1;
-            if (sourceNote is not null) sourceNote.Text = source.SelectedIndex == 1 ? LiveConnectionStrings.Get("GroupOnly") : W("MonitorDemoNote");
+            if (sourceNote is not null) sourceNote.Text = source.SelectedIndex == 1 ? GroupSecurityStrings.Get("MonitorScope") : W("MonitorDemoNote");
             var running = sessions.Monitor.IsRunning;
             live.Text = running
                 ? W("MonitorRunning", sessions.Monitor.RecordedCount, sessions.Monitor.FilteredRows.Count)
@@ -2454,17 +2460,18 @@ public partial class WorkbenchWindow : Window
         toolbar.Children.Add(CreateTelegramHistoryButton(sessions.Monitor));
         toolbar.Children.Add(live);
         var demoBadge = Label(source.SelectedIndex == 1
-            ? LiveConnectionStrings.Get("GroupOnly") : W("MonitorDemoNote")); demoBadge.FontSize = 10;
+            ? GroupSecurityStrings.Get("MonitorScope") : W("MonitorDemoNote")); demoBadge.FontSize = 10;
         sourceNote = demoBadge;
         demoBadge.Classes.Add("wb-warning");
         toolbar.Children.Add(demoBadge);
         CommitToolbar(panel, toolbar);
-        var header = new Grid { ColumnDefinitions = new("70,80,120,90,50,70,*"), Height = 28 };
+        var header = new Grid { ColumnDefinitions = new("70,80,120,90,50,70,*"), Height = 40 };
         header.Classes.Add("wb-table-header");
-        var headings = new[] { W("ColumnTime"), W("ColumnSource"), W("ColumnDestination"), W("ColumnService"), "DPT", W("ColumnValue"), W("ColumnOrigin") };
+        var headings = new[] { W("ColumnTime"), W("ColumnSource"), W("ColumnDestination"), W("ColumnService"), "DPT", W("ColumnValue"), W("ColumnOrigin") + " / " + GroupSecurityStrings.Get("Column") };
         for (var i = 0; i < headings.Length; i++)
         {
             var text = Label(headings[i]); text.Classes.Add("wb-th"); text.Margin = new(6, 0, 0, 0);
+            if (i == 6) text.TextWrapping = TextWrapping.Wrap;
             Grid.SetColumn(text, i); header.Children.Add(text);
         }
         DockPanel.SetDock(header, Avalonia.Controls.Dock.Top); panel.Children.Add(header);
@@ -2474,11 +2481,13 @@ public partial class WorkbenchWindow : Window
         list.ItemTemplate = new FuncDataTemplate<WorkbenchTelegram>((row, _) =>
         {
             if (row is null) return new Border();
-            var grid = new Grid { ColumnDefinitions = new("70,80,120,90,50,70,*"), Height = 28 };
-            var cells = new[] { row.Timestamp.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture), row.Source, row.Destination, row.Service, row.DatapointType ?? "—", row.Value, row.Origin.ToString() };
+            var grid = new Grid { ColumnDefinitions = new("70,80,120,90,50,70,*"), Height = 44 };
+            var verification = GroupSecurityStrings.Verification(row.Origin == SessionOrigin.Real ? row.DataSecurity : Knx.Bus.BusDataSecurity.Unverified);
+            var cells = new[] { row.Timestamp.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture), row.Source, row.Destination, row.Service, row.DatapointType ?? "—", row.Value, row.Origin + "\n" + verification };
             for (var i = 0; i < cells.Length; i++)
             {
                 Control cell = Label(cells[i]);
+                if (i == 6 && cell is TextBlock fact) { fact.TextWrapping = TextWrapping.Wrap; AutomationProperties.SetName(fact, GroupSecurityStrings.Get("Column") + ": " + verification); }
                 if (ViewModel.Project is { } p)
                 {
                     if (i == 1 && ProjectQuery.DeviceList(p).FirstOrDefault(d => d.Address.ToString() == row.Source) is { } source)
@@ -2716,6 +2725,11 @@ public partial class WorkbenchWindow : Window
                     { ViewModel.Status = LiveConnectionStrings.Get("ScanDisconnect"); return; }
                     var area = ViewModel.Project!.Installations.SelectMany(i => i.Areas).Single(a => a.Lines.Contains(line));
                     var targets = Enumerable.Range(0, 255).Select(device => new IndividualAddress(area.Address, line.Address, (byte)device));
+                    if (_liveOptions.GroupSelection is { } groups) targets = targets.Where(groups.Candidate.PlainIndividualPeers.Contains);
+                    if (!targets.Any()) { ViewModel.Status = GroupSecurityStrings.Get("PolicyDenied"); return; }
+                    var selectedOptions = await PrepareGroupOptionsForOperationAsync(_liveOptions);
+                    if (selectedOptions is null || !ReferenceEquals(lifetime, ViewModel.ProjectSessionIdentity) || !ReferenceEquals(sessions, _sessions)) return;
+                    _liveOptions = selectedOptions;
                     var plan = new Knx.Bus.ReadOnlyLineScanPlan(_liveOptions.Gateway, _liveOptions.RequestedAddress, targets);
                     await sessions.LineScan.RunProfileAsync(line.Id, plan, _liveOptions.Profile);
                 }

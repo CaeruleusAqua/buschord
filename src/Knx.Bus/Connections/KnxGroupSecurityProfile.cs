@@ -63,6 +63,16 @@ public sealed class KnxGroupSecurityProfile
     public IReadOnlyList<IndividualAddress> AllowedPlainIndividualPeers { get; }
     internal IReadOnlyList<string> ExternalIndividualKeyFingerprints { get; }
     internal string SelectionId { get; }
+    internal IKnxGroupSourceGuard? SourceGuard { get; }
+    /// <summary>Current explicit App grant only; never an assertion that counter state is ready.</summary>
+    public bool CanStartNewOperation => SourceGuard?.CanStartNewOperation ?? true;
+    private KnxGroupSecurityProfile(KnxGroupSecurityProfile source, IKnxGroupSourceGuard guard)
+    {
+        _installation = source._installation; _epoch = source._epoch; StateSource = source.StateSource; Groups = source.Groups;
+        AllowedPlainGroups = source.AllowedPlainGroups; AllowedPlainIndividualPeers = source.AllowedPlainIndividualPeers;
+        ExternalIndividualKeyFingerprints = source.ExternalIndividualKeyFingerprints; SelectionId = source.SelectionId; SourceGuard = guard;
+    }
+    internal KnxGroupSecurityProfile WithSourceGuard(IKnxGroupSourceGuard guard) => new(this, guard);
     public KnxGroupSecurityProfile(string physicalInstallationScope, string ordinaryKeyEpoch,
         IReadOnlyCollection<KnxSecureGroupSelection> groups, IKnxGroupCounterStateSource stateSource,
         IReadOnlyCollection<string> externalIndividualKeyFingerprints,
@@ -111,4 +121,11 @@ public sealed class KnxGroupSecurityProfile
         _ => KnxConnectionFailure.GroupSecurityStateUnavailable,
     } : KnxConnectionFailure.GroupSecurityStateUnavailable);
     public override string ToString() => "[explicit ordinary group security profile]";
+}
+
+internal interface IKnxGroupSourceGuard
+{
+    bool CanStartNewOperation { get; }
+    Task BeginOperationAsync(CancellationToken ct);
+    Task ValidateAsync(CancellationToken ct);
 }

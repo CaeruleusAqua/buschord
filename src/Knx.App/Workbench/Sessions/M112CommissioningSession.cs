@@ -128,6 +128,25 @@ public sealed class M112CommissioningSession : IAsyncDisposable
         if (IsBusy || RecoveryRequired) throw new InvalidOperationException(RecoveryRequired ? "RecoveryRequired" : "Busy");
         _review = null; _options = null; Publish(new(M112CommissioningPhase.Idle));
     }
+    /// <summary>Renews only a consumed group operation grant; reviewed endpoint, keys, sender policy and source identity must remain equal.</summary>
+    public void RenewEquivalentGroupGrant(ReadOnlyConnectionOptions replacement)
+    {
+        ReadOnlyConnectionOptions previous; bool reviewed;
+        lock (_sync)
+        {
+            if (_disposed || _busy) throw new InvalidOperationException("Busy");
+            if (_options?.GroupSelection is null || replacement.GroupSelection is null || !_options.Profile.EquivalentTo(replacement.Profile)
+                || !ReferenceEquals(_options.Profile.PasswordSource, replacement.Profile.PasswordSource))
+                throw new KnxConnectionException(KnxConnectionFailure.CredentialBindingMismatch);
+            previous = _options; reviewed = _review is not null;
+        }
+        if (reviewed) VerifyCurrent(); else VerifyRecoveryScope(Snapshot.Resume ?? throw new InvalidOperationException("Review"));
+        lock (_sync)
+        {
+            if (_disposed || _busy || reviewed && _invalidated || !ReferenceEquals(previous, _options)) throw new InvalidOperationException("Stale");
+            _options = replacement;
+        }
+    }
     public Task PrepareAsync(Project baseline, string baselinePath, string baselineHash, ReadOnlyConnectionOptions options, string journalRoot)
         => Start(async token =>
         {

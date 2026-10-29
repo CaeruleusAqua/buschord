@@ -7,6 +7,9 @@ using Knx.App.Workbench;
 using Knx.Bus;
 using Knx.Workbench;
 
+if (args.Contains("--native-group-release-retry"))
+{ Environment.ExitCode = GroupReleaseRetryNativeChecks.Run(); return; }
+
 if (args.Contains("--native-connection"))
 {
     Environment.ExitCode = LiveConnectionNativeChecks.Run(args.Contains("--de") ? "de" : "en");
@@ -20,6 +23,11 @@ if (args.Contains("--native-secure-connection"))
 if (args.Contains("--native-credential-vault"))
 {
     Environment.ExitCode = CredentialVaultNativeChecks.Run(args.Contains("--de") ? "de" : "en");
+    return;
+}
+if (args.Contains("--native-group-selection"))
+{
+    Environment.ExitCode = GroupSelectionNativeChecks.Run(args.Contains("--de") ? "de" : "en");
     return;
 }
 if (args.Contains("--native-m112-commissioning"))
@@ -72,6 +80,11 @@ if (args.Contains("--credential-selection"))
     return;
 }
 
+if (args.Contains("--group-selection"))
+{
+    await GroupSelectionChecks.Run(Check); Console.WriteLine($"{checks} group selection checks passed."); return;
+}
+await GroupSelectionChecks.Run(Check);
 await CredentialSelectionChecks.Run(Check);
 
 var project = new Project { Id = "P", Name = "Synthetic" };

@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\Fixtures\GroupConnectionFixture.cs" Link="GroupConnectionFixture.cs" />
+    <Compile Include="..\Fixtures\GroupHostConfigurationFixture.cs" Link="GroupHostConfigurationFixture.cs" />
     <Compile Include="..\Fixtures\SecureGroupKeyringFixture.cs" Link="SecureGroupKeyringFixture.cs" />
     <ProjectReference Include="..\..\src\Knx.Bus\Knx.Bus.csproj" />
   </ItemGroup>

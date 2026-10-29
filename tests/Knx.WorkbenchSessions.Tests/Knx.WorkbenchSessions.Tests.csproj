@@ -3,5 +3,11 @@
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../../src/Knx.App/Knx.App.csproj" /></ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Fixtures/GroupConnectionFixture.cs" Link="GroupConnectionFixture.cs" />
+    <Compile Include="../Fixtures/GroupHostConfigurationFixture.cs" Link="GroupHostConfigurationFixture.cs" />
+    <Compile Include="../Fixtures/SecureGroupKeyringFixture.cs" Link="SecureGroupKeyringFixture.cs" />
+    <Compile Include="../Knx.Bus.Tests/IndependentSecureGateway.cs" Link="IndependentSecureGateway.cs" />
+    <ProjectReference Include="../../src/Knx.App/Knx.App.csproj" />
+  </ItemGroup>
 </Project>

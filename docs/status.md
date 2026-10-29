@@ -879,8 +879,16 @@ An independent anchor is the library default; the separately confirmed current-
 unanchored host profile retains its rollback limit. Seventeen focused bus and nine
 host/MCP cases cover protected reads, durable floor-before-value, rejection,
 reconnect and joined cleanup. Incoming Data Secure provenance is separate from IP
-authentication and own confirmations. Workbench selection and automatic device
-provisioning are unchanged; no Secure hardware or production anchor is claimed.
+authentication and own confirmations. The Workbench now explicitly selects the
+same private host-profile schema through a neutral Bus parser; MCP wrappers keep
+their existing public ABI and exact ENV binding. App selection keeps its verified
+password source, pins registry/keyring bytes across credential and transport
+opens, and consumes one explicit current-state confirmation per new unanchored
+operation. Connect/scan/M112 offer a short renewal of the immutable choice.
+Dialogs and project/connection owners join before integrity capabilities release;
+monitor rows expose admitted per-message verification. Seven explicit-binding and
+21 session/lifetime cases plus German/English native fake-gateway checks cover the
+flow. Automatic provisioning, Secure hardware and a production anchor remain open.
 
 The combined connection implementation has 29 focused state/lifetime checks and
 19 native dialog checks per German/English run. Eleven additional tunnel checks

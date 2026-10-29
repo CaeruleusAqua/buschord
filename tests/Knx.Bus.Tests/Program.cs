@@ -40,6 +40,11 @@ if (args.Contains("--group-connections"))
     Environment.Exit(await GroupConnectionChecks.RunAsync());
     return;
 }
+if (args.Contains("--group-host-explicit"))
+{
+    Environment.Exit(await GroupHostExplicitSourceChecks.RunAsync());
+    return;
+}
 
 // ============ Self-Checks für das Bus-Protokoll und den Download ============
 // Byte-Vektoren aus der KNXnet/IP-Spezifikation (KNX Association, v1.0) und
@@ -812,6 +817,7 @@ Check("tool access management checks", await ToolAccessChecks.RunAsync() == 0);
 Check("provisioned secure group connection checks", await GroupConnectionChecks.RunAsync() == 0);
 Check("individual address wire checks", await IndividualAddressWireChecks.RunAsync() == 0);
 Check("individual address discovery checks", await IndividualAddressDiscoveryChecks.RunAsync() == 0);
+Check("explicit password-source group host checks", await GroupHostExplicitSourceChecks.RunAsync() == 0);
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");
 Environment.Exit(failures.Count == 0 ? 0 : 1);
 

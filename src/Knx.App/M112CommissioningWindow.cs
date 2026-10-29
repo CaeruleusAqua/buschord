@@ -18,7 +18,7 @@ namespace Knx.App;
 
 public sealed record M112BaselineSelection(Project Project, string Path, string Sha256);
 
-public sealed class M112CommissioningWindow : Window
+public sealed partial class M112CommissioningWindow : Window
 {
     private readonly M112CommissioningSession _session;
     private readonly Func<Window, Task<M112BaselineSelection?>> _loadBaseline;
@@ -51,7 +51,7 @@ public sealed class M112CommissioningWindow : Window
     private readonly List<Action> _translations = [];
     private Task _operation = Task.CompletedTask;
     private bool _closed, _closing, _allowClose, _loading, _refreshing;
-    public Task OperationCompletion => _operation;
+    public Task OperationCompletion => _groupCloseOperation ?? _operation;
     public bool MayClose => !_session.RecoveryRequired || _closeUnverified.IsChecked == true;
 
     public M112CommissioningWindow(M112CommissioningSession session, Func<Window, Task<M112BaselineSelection?>> loadBaseline,
@@ -76,8 +76,9 @@ public sealed class M112CommissioningWindow : Window
         }
         Field("Gateway", _gateway, true); Field("Port", _port, true); Field("TunnelAddress", _source, true);
         body.Children.Add(_mode); body.Children.Add(_secure); body.Children.Add(_secureBinding);
+        InitializeGroupSelection(initial, body);
         _mode.SelectionChanged += (_, _) => { if (!_refreshing && !_session.IsBusy && !_session.RecoveryRequired) ResetReview(); };
-        _secure.Click += (_, _) => { if (_operation.IsCompleted) _operation = RunAsync(ConfigureSecureAsync); };
+        _secure.Click += (_, _) => StartInputOperation(ConfigureSecureAsync);
         var sources = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 };
         sources.Children.Add(Button("Baseline", async () => { ResetReview(); _baseline = await _loadBaseline(this); ResetReview(); }));
         sources.Children.Add(Button("Journal", async () =>
@@ -93,9 +94,10 @@ public sealed class M112CommissioningWindow : Window
             actions.Children.Add(Button(key, key switch
             {
                 "Close" => () => { Close(); return Task.CompletedTask; },
-                "Cancel" => () => { _session.Cancel(); return Task.CompletedTask; },
-                "Preview" => PreviewAsync, "ReadIdentity" => async () => { await _prepareNetwork(); if (session.Snapshot.Resume is not null) await session.ReadRecoveryIdentityAsync(); else await session.ReadIdentityAsync(); },
+                "Cancel" => () => { CancelInputOperation(); return Task.CompletedTask; },
+                "Preview" => PreviewAsync, "ReadIdentity" => async () => { if (!await PrepareGroupOperationAsync()) return; await _prepareNetwork(); if (session.Snapshot.Resume is not null) await session.ReadRecoveryIdentityAsync(); else await session.ReadIdentityAsync(); },
                 "Apply" => async () => { if (_planConfirmed.IsChecked != true) throw new InvalidOperationException("Confirmation");
+                    if (!await PrepareGroupOperationAsync()) return;
                     if (session.Snapshot.Resume is not null) await session.RecoverAsync(_target.Text ?? "", session.Snapshot.Fingerprint ?? "");
                     else await session.ApplyAsync(_target.Text ?? "", session.Snapshot.Fingerprint ?? ""); },
                 _ => ResumeAsync
@@ -129,16 +131,18 @@ public sealed class M112CommissioningWindow : Window
         var button = new Button { Name = "M112" + key, Classes = { "wb-button", key == "Apply" ? "wb-danger" : "wb-quiet" } };
         _buttons[key] = button; button.Click += (_, _) =>
         {
-            if (key == "Cancel") { _session.Cancel(); return; }
+            if (key == "Cancel") { CancelInputOperation(); return; }
             if (key == "Close") { Close(); return; }
-            if (_operation.IsCompleted) _operation = RunAsync(action);
+            StartInputOperation(action);
         };
         return button;
     }
     private async Task RunAsync(Func<Task> action)
     {
         _localIssue = null; _loading = true; RefreshState();
-        try { await action(); }
+        try { _groupInputCancellation?.Token.ThrowIfCancellationRequested(); await action(); }
+        catch (OperationCanceledException) { _localIssue = "Cancelled"; }
+        catch (KnxConnectionException error) { _localIssue = error.Failure.ToString(); }
         catch (Exception error) { _localIssue = error.Message is "PrivatePath" or "Confirmation" or "RecoveryRequired" ? error.Message : "OperationFailed"; }
         finally { _loading = false; RefreshState(); }
     }
@@ -172,12 +176,13 @@ public sealed class M112CommissioningWindow : Window
     {
         if (!IPAddress.TryParse(_gateway.Text, out var address) || !int.TryParse(_port.Text, out var port)
             || !IndividualAddress.TryParse(_source.Text ?? "", out var source)) throw new InvalidOperationException("Target");
-        return _mode.SelectedIndex switch
+        ReadOnlyConnectionOptions selected = _mode.SelectedIndex switch
         {
             0 => new(address, port, source),
-            1 when _secureReference is not null && CredentialSelectionSession.MatchesStoredBinding(_credentialScope, _secureReference, _passwordSource) => new(KnxConnectionProfile.IpSecure(new(address, port), _secureReference, _passwordSource)),
+            1 when _secureReference is not null && CredentialSelectionSession.MatchesStoredBinding(_credentialScope, _secureReference, _passwordSource) => new(KnxConnectionProfile.IpSecure(new(address, port), _secureReference, _passwordSource, _selectedLocalAddress)),
             _ => throw new InvalidOperationException("Target")
         };
+        return AttachGroupSelection(selected);
     }
     private async Task ConfigureSecureAsync()
     {
@@ -215,7 +220,7 @@ public sealed class M112CommissioningWindow : Window
         _refreshing = true;
         try
         {
-            _status.Text = L(snapshot.Phase.ToString()) + (snapshot.ConnectionFailure is { } failure ? " " + SecureConnectionStrings.Get(failure.ToString()) : ((_localIssue ?? snapshot.Issue) is { } issue ? " " + L(issue) : ""));
+            _status.Text = L(snapshot.Phase.ToString()) + (snapshot.ConnectionFailure is { } failure ? " " + GroupOrConnectionFailure(failure.ToString()) : ((_localIssue ?? snapshot.Issue) is { } issue ? " " + (GroupSecurityStrings.Contains(issue) ? GroupSecurityStrings.Get(issue) : L(issue)) : ""));
             var identity = snapshot.Identity;
             var resume = snapshot.Resume;
             _identity.Text = identity is null ? "" : (resume is null ? "" : L("RecordedIdentity") + " ") + $"{identity.Address} · MV-{identity.MaskVersion:X4} · {identity.Manufacturer} · {identity.Serial} · {identity.Application}";
@@ -229,6 +234,7 @@ public sealed class M112CommissioningWindow : Window
             _source.IsReadOnly = _mode.SelectedIndex == 1;
             _mode.IsEnabled = !busy && !_session.RecoveryRequired; _secure.IsEnabled = !busy && !_session.RecoveryRequired && _mode.SelectedIndex == 1;
             _secureBinding.Text = _mode.SelectedIndex == 1 && _secureReference is { } reference ? $"Host {reference.HostAddress} · User {reference.UserId} · IA {reference.TunnelAddress}" : "";
+            RefreshGroupSelection(busy);
             _target.IsEnabled = !busy;
             foreach (var key in new[] { "Baseline", "Journal", "Preview" }) _buttons[key].IsEnabled = !busy && !_session.RecoveryRequired && !_session.RecoveryOnly;
             _buttons["ReadIdentity"].IsEnabled = !busy && _prepared && snapshot.Phase is M112CommissioningPhase.Reviewed or M112CommissioningPhase.Ready or M112CommissioningPhase.ResumeReviewed or M112CommissioningPhase.ResumeReady;
@@ -258,16 +264,21 @@ public sealed class M112CommissioningWindow : Window
     private static string ClipHex(string text) => text.Length <= 128 ? text : text[..128] + "…";
     private void OnClosing(object? sender, WindowClosingEventArgs args)
     {
-        if (!_session.IsBusy && !MayClose) { args.Cancel = true; RefreshState(); return; }
-        if (_allowClose || !_session.IsBusy && _operation.IsCompleted) return;
+        if (!_session.IsBusy && _operation.IsCompleted && !MayClose) { args.Cancel = true; RefreshState(); return; }
+        if (_allowClose || !_session.IsBusy && _operation.IsCompleted && _groupConfirmationWindow is null) return;
         args.Cancel = true; if (_closing) return;
-        _closing = true; _secureDialog?.Close(); _session.Cancel(); var pending = _operation;
-        _operation = CloseJoinedAsync(pending);
+        _closing = true; var owner = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); _groupCloseOperation = owner.Task;
+        var pending = _operation; _secureDialog?.Close(); _groupConfirmationWindow?.Close(); CancelInputOperation();
+        _ = CloseJoinedAsync(pending, owner);
     }
-    private async Task CloseJoinedAsync(Task pending)
+    private async Task CloseJoinedAsync(Task pending, TaskCompletionSource owner)
     {
-        await pending; await _session.Completion;
-        if (!MayClose) { _closing = false; RefreshState(); return; }
-        _allowClose = true; Close();
+        try
+        {
+            await pending; await _session.Completion;
+            if (!MayClose) { _closing = false; _groupCloseOperation = null; RefreshState(); owner.TrySetResult(); return; }
+            _allowClose = true; Close(); owner.TrySetResult();
+        }
+        catch { _closing = false; _groupCloseOperation = null; RefreshState(); owner.TrySetException(new IOException("Commissioning input cleanup failed.")); }
     }
 }

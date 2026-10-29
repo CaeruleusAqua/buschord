@@ -37,7 +37,7 @@ review; the badges track `development`.
 | MCP | 58 stdio tools, protected open/save, reviewed mass linking, explicit script capability, migration and a bounded Jung SP8 KSP import. |
 | Network | KNXnet/IP discovery, tunnel/routing and addressed management; explicit Workbench read-only connection, real group monitor and line scan. A dedicated [M112 dialog and console profile](docs/commissioning.md) supports reviewed configuration changes and captured-configuration recovery. [Secure connection selection](docs/secure-connections.md) shares authenticated transport and owned credentials across Workbench/MCP/CLI; Data Secure provisioning remains separate. |
 | Optional password storage | Explicit Workbench use, save, matching replacement and deletion in Windows Credential Manager or Linux Secret Service; exact saved-project/export/interface binding. Ephemeral masked input remains available. [Workflow and provider limits](docs/credential-vault.md). |
-| Data Secure groups | Explicit factory/read-only monitor and [MCP host profiles](docs/group-secure-connections.md) use signed group/sender policy and existing trusted ordinary counters. Incoming verification follows durable replay admission; provisioning and Workbench selection remain separate. |
+| Data Secure groups | Explicit factory, Workbench selection and [MCP host profiles](docs/group-secure-connections.md) use signed group/sender policy and existing trusted ordinary counters. Unanchored Workbench operations require fresh confirmation; monitor verification follows durable replay admission. Provisioning remains separate. |
 
 The [status document](docs/status.md) defines exact format, manufacturer, codec,
 script and commissioning boundaries. Supported partial profiles are not a complete

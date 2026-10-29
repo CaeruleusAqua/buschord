@@ -98,11 +98,49 @@ must match exactly. `bus_read` and live recorder results return `dataSecurity`.
 Reconnect retains the chosen policy. Raw group/integrity keys, counter paths/floors
 and bootstrap arguments are refused; no failed reference enables plaintext.
 
+## Workbench selection
+
+First verify an IP Secure keyring/interface and choose its explicit ephemeral or
+stored password source. **Data Secure groups…** then reads a private host-profile
+file using the same bounded parser as MCP. The dialog displays unverified
+candidates, the complete registry fingerprint, scope/ordinary epoch, existing
+counter path, protected group/mode/sender policy and explicit plain allowlists.
+Selecting a candidate reads no keyring password or network. Final signature,
+assigned-IA and trusted-counter checks remain at the factory before network I/O.
+
+The selected registry and keyring bytes are pinned again before credentials and
+each fresh transport. App binding requires the existing explicit password source;
+the registry's password-ENV name is never used as an App fallback. MCP's normal
+resolver retains its exact ENV binding. Changing endpoint, source or registry
+invalidates the choice. No profile is saved automatically.
+
+Current-unanchored trust requires an unchecked confirmation for every newly
+acquired operation. The next Connect, scan or M112 action offers a short
+confirmation for the same selection; fresh sub-connections of an already admitted
+operation share its grant. Cancelling this confirmation opens no connection. The desktop
+ships no independent anchor provider and refuses such a profile unless the host
+explicitly supplies one. Lost/old counters are never initialized or repaired here.
+
+The monitor shows origin and Data security separately. Only authenticated incoming
+values admitted after durable replay-floor commit carry incoming verification;
+gateway authentication, own confirmations, demo values and imported history do not.
+M112 and scanning retain the group policy and require explicit plain individual
+allowlists; a group profile grants no Tool/P2P keys or programming permission.
+Project change and close join selection reads, dialogs and connection consumers
+before releasing registry integrity capabilities.
+If consumer cleanup fails, capabilities remain retained. A successful project-
+change retry joins fresh cleanup and releases the previous project's capabilities;
+repeated failure or cancellation cannot force an early release.
+
 ## Evidence and limits
 
 Synthetic gateways cover authentication, protected reads, anchored floor-before-
 value, policy/MAC/downgrade/replay rejection, retained counters on fresh opens,
 exact IA, read-only gates and joined cancellation/close. Host tests cover bounded
 configuration, explicit trust, exact selector, redaction, capability ownership,
-standard stdio startup and MCP read/monitor provenance. No physical Secure gateway,
+standard stdio startup and MCP read/monitor provenance. Workbench checks cover
+exact explicit-source binding, stale generations, one-operation confirmation,
+equivalent renewal, joined close and eight UI languages. German/English native
+checks use only synthetic registries/counters and in-process fake gateways.
+No physical Secure gateway,
 device, general provisioning or secure-first-commissioning acceptance is claimed.

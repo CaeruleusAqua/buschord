@@ -18,6 +18,7 @@ public sealed partial class KnxConnectionFactory
         DataSecureCounterStore? store = null; KnxGroupCredentialScope? credentials = null; byte[] serial = [];
         try
         {
+            if (policy.SourceGuard is { } sourceGuard) await sourceGuard.BeginOperationAsync(ct).ConfigureAwait(false);
             try { store = await policy.StateSource.OpenExistingAsync(identity, ct).ConfigureAwait(false); }
             catch (OperationCanceledException) { throw; }
             catch (KnxConnectionException) { throw; }
@@ -32,6 +33,7 @@ public sealed partial class KnxConnectionFactory
             if (gateway.Host != connection.Keyring.HostAddress || gateway.UserId != connection.Keyring.UserId || gateway.TunnelAddress != connection.RequestedAddress
                 || gateway.SourceFingerprint != connection.Keyring.ExpectedSourceFingerprint)
                 throw new KnxConnectionException(KnxConnectionFailure.CredentialBindingMismatch);
+            if (policy.SourceGuard is { } afterCredentials) await afterCredentials.ValidateAsync(ct).ConfigureAwait(false);
             // Validate selected policy and all-protected boundary offline, before any socket is created.
             await using (credentials.CreateProcessor(store!, identity, policy)) { }
             try { serial = await Task.Run(() => { ct.ThrowIfCancellationRequested(); return _serial.ReadOrCreate(); }).ConfigureAwait(false); }
@@ -56,7 +58,11 @@ internal sealed class GroupSecurityCapability(KnxGroupSecurityProfile profile, D
 {
     internal void RequirePlainTarget(IndividualAddress target)
     { if (!profile.AllowedPlainIndividualPeers.Contains(target)) throw new KnxConnectionException(KnxConnectionFailure.GroupSecurityPolicyDenied); }
-    internal Task PreflightAsync(CancellationToken ct) => ValidateStoreAsync(store, identity, profile, ct);
+    internal async Task PreflightAsync(CancellationToken ct)
+    {
+        if (profile.SourceGuard is { } guard) await guard.ValidateAsync(ct).ConfigureAwait(false);
+        await ValidateStoreAsync(store, identity, profile, ct).ConfigureAwait(false);
+    }
     internal KnxGroupConnectionProcessor CreateProcessor() => credentials.CreateProcessor(store, identity, profile);
     internal static async Task ValidateStoreAsync(DataSecureCounterStore? store, DataSecureStateIdentity identity, KnxGroupSecurityProfile policy, CancellationToken ct)
     {
