@@ -2,6 +2,7 @@
 
 ```powershell
 dotnet run --project tests/Knx.ParameterUi.Tests -c Release
+dotnet run --project tests/Knx.ParameterUi.Tests -c Release -- --module-image-build
 dotnet run --project tests/Knx.ParameterUi.Tests -c Release -- --native
 dotnet run --project tests/Knx.ParameterUi.Tests -c Release -- --native --shots
 ```
@@ -12,6 +13,11 @@ undo back to baseline, and switches from A to B synchronously inside Apply's
 `CanUndo` notification (including duplicate device IDs). `--shots` additionally
 renders the real pane at 1440×900 and 1024×700 in light and dark under
 `%TEMP%\opencode\param-shots`. No bus/router access.
+
+`--module-image-build` runs the same bounded module/Repeat/root-allocator image
+checks included in the default suite, using isolated synthetic archives without
+a graphical desktop. It verifies full data/validity/write masks, latent owners,
+source/carrier binding, overlap and combined expansion/validation work budgets.
 
 ## Host API
 

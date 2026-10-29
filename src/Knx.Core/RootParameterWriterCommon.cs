@@ -89,6 +89,9 @@ internal static class RootParameterWriterCommon
         return new System.Collections.ObjectModel.ReadOnlyDictionary<string, string>(saved);
     }
     internal static string CaptureCarriers(IReadOnlyDictionary<string, string> referenceIds, Project project, DeviceInstance device, string appId)
+        => CaptureCarriersProfile(referenceIds, project, device, appId, null);
+    internal static string CaptureCarriersProfile(IReadOnlyDictionary<string, string> referenceIds, Project project, DeviceInstance device, string appId,
+        IReadOnlyList<ApplicationModuleInstance>? moduleInstances)
     {
         if (project.OriginalXml?.Root is null) RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
         var nodes = RootBuildGuard.Nodes(project.OriginalXml!, 128 * RootBuildGuard.Blob);
@@ -106,6 +109,7 @@ internal static class RootParameterWriterCommon
             or "ParameterValues" or "ParameterValue" or "ParameterInstances" or "ParameterInstance").ToArray();
         if (carriers.Length > RootBuildGuard.Limit) RootBuildGuard.Fail(RootImageBuildIssueCode.LimitExceeded);
         long characters = 0; var ids = new HashSet<string>(StringComparer.Ordinal); var containers = new HashSet<XName>();
+        var moduleIds = new HashSet<string>(StringComparer.Ordinal); var moduleHashes = new List<string>();
         foreach (var carrier in carriers)
         {
             foreach (var attribute in carrier.Attributes().Where(a => !a.IsNamespaceDeclaration))
@@ -115,14 +119,21 @@ internal static class RootParameterWriterCommon
                     RootBuildGuard.Fail(RootImageBuildIssueCode.LimitExceeded);
             }
             if (!allowed.Contains(carrier.Name.Namespace)) RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
+            if (carrier.Name.LocalName == "ModuleInstance" && moduleInstances is not null)
+            {
+                if (carrier.Parent?.Name != carrier.Name.Namespace + "ModuleInstances" || !ReferenceEquals(carrier.Parent.Parent, native))
+                    RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
+                ValidateModuleCarrier(carrier, moduleInstances, moduleIds, ref characters);
+                moduleHashes.Add(NativeGeneralHash.Document(carrier)); continue;
+            }
             if (carrier.Name.LocalName is "ModuleInstance" or "BinaryData" or "ParameterValues" or "ParameterValue" or "ParameterInstances" or "ParameterInstance")
                 RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
             if (carrier.Name.LocalName is "ParameterInstanceRefs" or "ModuleInstances")
             {
                 if (!ReferenceEquals(carrier.Parent, native) || !containers.Add(carrier.Name) || carrier.Attributes().Any(a => !a.IsNamespaceDeclaration)
                     || carrier.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value))
-                    || carrier.Elements().Any(e => e.Name != carrier.Name.Namespace + "ParameterInstanceRef")
-                    || carrier.Name.LocalName == "ModuleInstances" && carrier.HasElements)
+                    || carrier.Elements().Any(e => e.Name != carrier.Name.Namespace + (carrier.Name.LocalName == "ModuleInstances" && moduleInstances is not null ? "ModuleInstance" : "ParameterInstanceRef"))
+                    || carrier.Name.LocalName == "ModuleInstances" && moduleInstances is null && carrier.HasElements)
                     RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
             }
             else
@@ -135,9 +146,39 @@ internal static class RootParameterWriterCommon
                 if (carrier.Attribute("Id") is { } identity && !RootBuildGuard.Safe(identity.Value)) RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
             }
         }
-        return RootBuildGuard.Hash(new { carriers = carriers.Select(e => new { name = e.Name.ToString(), attributes = e.Attributes().Where(a => !a.IsNamespaceDeclaration)
+        if (moduleIds.Count != 0 && moduleIds.Count != moduleInstances!.Count) RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
+        var baseline = RootBuildGuard.Hash(new { carriers = carriers.Select(e => new { name = e.Name.ToString(), attributes = e.Attributes().Where(a => !a.IsNamespaceDeclaration)
             .Select(a => new { name = a.Name.ToString(), a.Value }).ToArray() }).ToArray(),
             device.Id, address = device.Address.Raw, device.ProductRefId, device.Hardware2ProgramRefId });
+        return moduleInstances is null ? baseline : RootBuildGuard.Hash(new { profile = "FlatLiteralModuleCarriers1", baseline, modules = moduleHashes });
+    }
+    private static void ValidateModuleCarrier(XElement node, IReadOnlyList<ApplicationModuleInstance> expected, HashSet<string> ids, ref long characters)
+    {
+        var ns = node.Name.Namespace; var id = (string?)node.Attribute("Id");
+        if (id is null || !ids.Add(id) || node.Attributes().Any(a => !a.IsNamespaceDeclaration && (a.Name.Namespace != XNamespace.None
+            || a.Name.LocalName is not ("Id" or "RefId" or "RepeatIndex"))) || node.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value)))
+            RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
+        var instance = expected.SingleOrDefault(i => i.Id == id);
+        if (instance is null || (string?)node.Attribute("RefId") != instance.RefId
+            || node.Attribute("RepeatIndex") is { } repeat && repeat.Value != instance.RepeatIndex
+            || node.Elements().Count() > 1 || node.Elements().Any(e => e.Name != ns + "Arguments"))
+            RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
+        var container = node.Element(ns + "Arguments");
+        if (container is not null && (container.Attributes().Any(a => !a.IsNamespaceDeclaration)
+            || container.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value)))) RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
+        var arguments = new Dictionary<string,string>(StringComparer.Ordinal);
+        foreach (var argument in container?.Elements() ?? [])
+        {
+            RootBuildGuard.Leaf(argument);
+            var reference = (string?)argument.Attribute("RefId"); var value = (string?)argument.Attribute("Value");
+            if ((characters += (reference?.Length ?? 0) + (value?.Length ?? 0)) > RootBuildGuard.TextLimit)
+                RootBuildGuard.Fail(RootImageBuildIssueCode.LimitExceeded);
+            if (argument.Name != ns + "Argument" || reference is null || value is null || !RootBuildGuard.Safe(reference) || value.Length > 65536
+                || argument.Attributes().Any(a => !a.IsNamespaceDeclaration && (a.Name.Namespace != XNamespace.None || a.Name.LocalName is not ("RefId" or "Value")))
+                || arguments.Count >= 64 || !arguments.TryAdd(reference, value)) RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
+        }
+        if (arguments.Count != instance!.Arguments.Count || instance.Arguments.Any(a => !arguments.TryGetValue(a.RefId, out var value) || value != a.Value))
+            RootBuildGuard.Fail(RootImageBuildIssueCode.UnsupportedNativeCarrier);
     }
     private static bool DevicePath(XElement device, XElement project, XNamespace ns)
     {

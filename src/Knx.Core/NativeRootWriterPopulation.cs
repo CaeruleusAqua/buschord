@@ -30,7 +30,7 @@ internal sealed partial class NativeRootWriterPopulation
             || !inventory.MatchesPreparation(preparation) || !inventory.MatchesCurrent() || !preparation.MatchesCurrent())
             NativeGeneralHash.Fail(NativeGeneralIssueCode.InputsChanged);
         if (!application.IsAvailable || application.Catalog is null || application.Snapshot is null || application.Activation is null
-            || application.CapturedInputs is null || application.ScriptCapabilityUsed || application.Snapshot.ModuleInstances.Count != 0
+            || application.CapturedInputs is null || application.ScriptCapabilityUsed || !inventory.MatchesModules(application)
             || !application.Activation.BelongsTo(application.Catalog, application.Snapshot)
             || !inventory.MatchesApplication(application)) NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch);
         var expected = preparation.ControllerReferences.Concat(application.Catalog!.StructuralPlan.CallControllerReferences)
@@ -39,12 +39,14 @@ internal sealed partial class NativeRootWriterPopulation
         if (!inventory.MatchesSaved(application.CapturedInputs!.Values)) NativeGeneralHash.Fail(NativeGeneralIssueCode.InputsChanged);
         _inventory = inventory; _preparation = preparation; _application = application;
         var ids = inventory.References.Select(r => r.RefId).ToHashSet(StringComparer.Ordinal);
-        var counts = new Dictionary<string, int>(StringComparer.Ordinal); var seen = new HashSet<int>();
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal); var seen = new HashSet<NativeStateIdentity>();
         foreach (var owner in application.Activation!.ActiveParameterOwners)
         {
             var original = application.Catalog.At(owner.SourceKey); var id = (string?)original?.Attribute("RefId");
-            if (owner.ModuleInstanceId.Length != 0 || original?.Name.LocalName != "ParameterRefRef" || id is null || !ids.Contains(id)
-                || !seen.Add(owner.SourceKey)) NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch);
+            if (owner.ModuleInstanceId.Length != 0 && id is not null)
+                id = inventory.Modules?.ResolveReference(owner.ModuleInstanceId, id) ?? throw new NativeGeneralRejected(new(NativeGeneralIssueCode.ContextMismatch));
+            if (original?.Name.LocalName != "ParameterRefRef" || id is null || !ids.Contains(id)
+                || !seen.Add(owner)) NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch);
             counts[id!] = checked(counts.GetValueOrDefault(id!) + 1);
         }
         _active = new System.Collections.ObjectModel.ReadOnlyDictionary<string, int>(counts);
@@ -112,7 +114,7 @@ internal sealed partial class NativeRootWriterPopulation
                 CheckValidityInteractions(claims);
             }
             var result = NativeRootVariantPopulation.Seal(this, _inventory!, _preparation!, _application!, variant,
-                records.ToArray(), claims.ToArray(), variant.Tasks.Parameters ? _inventory!.Owners.ToArray() : []);
+                records.ToArray(), claims.ToArray(), variant.Tasks.Parameters ? _inventory!.Owners.Concat(_inventory.Modules?.ReservationOwners ?? Array.Empty<NativeRootOwner>()).ToArray() : []);
             if (!MatchesCurrent()) NativeGeneralHash.Fail(NativeGeneralIssueCode.InputsChanged);
             return result;
         }
@@ -153,6 +155,12 @@ internal sealed class NativeRootVariantPopulation
     internal IReadOnlyList<NativeRootWriterRecord> Records { get; }
     internal IReadOnlyList<NativeRootWriteClaim> Claims { get; }
     internal IReadOnlyList<NativeRootOwner> AllocationRequirements { get; }
+    internal IReadOnlyList<NativeModuleImageMember> ModuleOrigins => _inventory?.Modules?.Members ?? Array.Empty<NativeModuleImageMember>();
+    internal string? ModuleOriginsFingerprint => _inventory?.Modules?.Fingerprint;
+    internal IReadOnlyList<NativeRootOwner> DeclaredOwners => _inventory?.Owners ?? Array.Empty<NativeRootOwner>();
+    internal IReadOnlyList<NativeModuleImageAllocation> ModuleAllocations => _inventory?.Modules?.Allocations ?? Array.Empty<NativeModuleImageAllocation>();
+    internal IReadOnlyList<NativeRootOwner> ModuleReservations => _inventory?.Modules?.ReservationOwners ?? Array.Empty<NativeRootOwner>();
+    internal IReadOnlyList<ApplicationModuleInstance> ModuleInstances => _inventory?.Modules?.Instances ?? Array.Empty<ApplicationModuleInstance>();
     internal NativeRootTaskDisposition ParameterTaskDisposition { get; }
     internal NativeRootCustomerPolicy CustomerPolicy { get; }
     internal string? Fingerprint { get; }

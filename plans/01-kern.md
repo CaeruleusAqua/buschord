@@ -22,6 +22,7 @@
 - [x] Festes Root-Property-Profil aus tatsächlichen Allokationskontrollen initialisieren und mit vollständiger Referenzpopulation formatieren.
 - [x] Gemeinsame logische Initialisierung und Root-Writer mit Optionsalternativen und aktuellen Tabellen-Seeds über API/MCP absichern.
 - [x] Physische Single-/Zeitfelder und eine quellengebundene Policy-Ausgabe im gemeinsamen Lauf prüfen.
+- [x] Literale Modul-/Repeat- und Root-Allocator-Speicherwriter mit Quellenbindung, vollständigen Besitzern, Reservierungen und Arbeitsbudgets im gemeinsamen API-/MCP-Lauf prüfen.
 - [x] Mehrstufige überlappende Faltungen mit getrennten Quellenbesitzern und kumulierten Allokationsgrenzen prüfen.
 - [ ] Allgemeine Property-/Speicher-Backends und vollständige Geräteimages validieren.
 - [ ] Weitere Hersteller-, Plug-in-, Export- und Roundtrip-Profile schließen.

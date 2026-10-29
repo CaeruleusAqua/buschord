@@ -43,7 +43,7 @@ internal sealed class NativeImageVariantViewSet
             if (!inventory.BelongsTo(project, device, inputs) || !preparation.BelongsTo(project, device, inputs, inventory)
                 || !application.IsAvailable || !application.MatchesInputs(project, device, inputs)
                 || application.ScriptCapabilityUsed || application.Catalog is null || application.Activation is null
-                || application.Snapshot is null || application.Snapshot.ModuleInstances.Count != 0
+                || application.Snapshot is null || !inventory.MatchesModules(application)
                 || !application.Activation.BelongsTo(application.Catalog, application.Snapshot))
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch);
             var expected = preparation.ControllerReferences.Concat(application.Catalog!.StructuralPlan.CallControllerReferences)

@@ -65,14 +65,17 @@ internal sealed class NativeApplicationEvaluationContext
 
     internal static NativeApplicationEvaluationContext CreateProfile(Project project, DeviceInstance device, ArchivedImageSources.Inputs inputs,
         IReadOnlyCollection<string>? additionalControllerRefs, IParameterScriptRuntime? scripts, bool admitRootUnions)
+        => CreateImageProfile(project, device, inputs, additionalControllerRefs, scripts, admitRootUnions, false);
+    internal static NativeApplicationEvaluationContext CreateImageProfile(Project project, DeviceInstance device, ArchivedImageSources.Inputs inputs,
+        IReadOnlyCollection<string>? additionalControllerRefs, IParameterScriptRuntime? scripts, bool admitRootUnions, bool imageModules)
     {
-        try { return Mint(project, device, inputs, additionalControllerRefs, scripts, admitRootUnions); }
+        try { return Mint(project, device, inputs, additionalControllerRefs, scripts, admitRootUnions, imageModules); }
         catch (NativeCommunicationRejected failure) { return new(failure.Issue); }
         catch (Exception failure) when (failure is XmlException or InvalidDataException or FormatException or OverflowException or ArgumentException or InvalidOperationException)
         { return new(new(GeneratedTableIssueCode.InvalidApplication)); }
     }
     private static NativeApplicationEvaluationContext Mint(Project project, DeviceInstance device, ArchivedImageSources.Inputs inputs,
-        IReadOnlyCollection<string>? additionalRefs, IParameterScriptRuntime? scripts, bool admitRootUnions)
+        IReadOnlyCollection<string>? additionalRefs, IParameterScriptRuntime? scripts, bool admitRootUnions, bool imageModules)
     {
         if (inputs.Manifest.Status != ArchivedImageSourceStatus.Inspected || inputs.Application is null || inputs.Manifest.Binding is null
             || !inputs.Manifest.Binding.MatchesIdentity(project, device) || inputs.Manifest.ApplicationDefinitionHash is null)
@@ -92,7 +95,7 @@ internal sealed class NativeApplicationEvaluationContext
         var document = new XDocument(inputs.Application); var root = document.Root!; var ns = root.Name.Namespace;
         if (root.Name.LocalName != "KNX" || ns.NamespaceName is not ("http://knx.org/xml/project/20" or "http://knx.org/xml/project/21" or "http://knx.org/xml/project/23"))
             NativeCommunicationGuard.Fail(GeneratedTableIssueCode.InvalidApplication);
-        var catalog = new NativeCommunicationOriginCatalog(root);
+        var catalog = new NativeCommunicationOriginCatalog(root, imageModules);
         if (!catalog.IsAvailable) NativeCommunicationGuard.Fail(GeneratedTableIssueCode.LimitExceeded);
         if (catalog.Nodes.Any(e => e.Name.Namespace != ns)) NativeCommunicationGuard.Fail(GeneratedTableIssueCode.InvalidApplication);
         var applications = catalog.Nodes.Where(e => e.Name == ns + "ApplicationProgram").Take(2).ToArray();

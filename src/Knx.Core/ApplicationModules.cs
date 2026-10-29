@@ -201,6 +201,10 @@ internal static class ApplicationModules
                         start = cursors.TryGetValue(allocatorReference.Value, out var previous)
                             ? checked(checked(checked(previous.Start + previous.Size) + alignment - 1) / alignment * alignment)
                             : checked(checked(start + basis) + value);
+                        if (communicationOrigins?.ImageModuleProfile == true && previous is null)
+                            start = checked(checked(start + alignment - 1) / alignment * alignment);
+                        if (communicationOrigins?.ImageModuleProfile == true && checked(checked(start - basis) + size - 1) > maximum)
+                            throw new InvalidDataException("Module allocation exceeds the declared inclusive capacity.");
                         if (start < 0) throw new InvalidDataException("Module allocation exceeds the supported range.");
                         cursors[allocatorReference.Value] = new(start, size, basis, maximum);
                         value = start;
@@ -265,7 +269,7 @@ internal static class ApplicationModules
             }
             var dynamicRoots = root.DescendantsAndSelf().Where(e => e.Name.LocalName == "Dynamic" && !InsideDefinition(e)).ToArray();
             foreach (var dynamic in dynamicRoots) Walk(dynamic.Elements(), [], 0, null);
-            if (cursors.Values.Any(a => checked(checked(a.Start - a.Basis) + a.Size) > a.Maximum)) return source;
+            if (cursors.Values.Any(a => checked(checked(a.Start - a.Basis) + a.Size - (communicationOrigins?.ImageModuleProfile == true ? 1 : 0)) > a.Maximum)) return source;
             foreach (var definition in root.Descendants().Where(e => e.Name.LocalName == "ModuleDef").ToList()) definition.Remove();
             if (!ModuleStructure.RefreshControls(root)) return source;
             root.AddAnnotation(new ModuleStructure.ModuleInstances(nativeInstances.ToArray()));

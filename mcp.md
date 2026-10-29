@@ -253,7 +253,9 @@ offline and returns zeros until a connection delivers telegrams.
 preflight and dry run for a future device download: it reports the gate checks (descriptor/mask,
 programming mode, confirmed address/line, program match, parameter/link completeness,
 confirmations), the computed image chunks, the printable dry run and the attempt-log status. It
-sends no programming frame; with `gateway` it only reads the descriptor like `bus_device_info`.
+sends no programming frame. An ordinary preflight with `gateway` reads the descriptor
+like `bus_device_info`. Any explicit archive subset, procedure or image preview stays
+offline even with `gateway`; no descriptor discovery or connection is attempted.
 The tool cannot query programming mode or obtain on-site confirmations, so a plan always reports
 those gates as open and is never ready. `writesEnabled` stays `false`, `realDownloadAvailable` is
 `false`, and a real download remains disabled.
@@ -422,6 +424,14 @@ requires whole-byte fields at bit zero. Single/Time NoStorage and procedure
 controllers remain unsupported. The profile
 retains explicit refusals and unresolved image requirements; see the
 [exact combined scope](docs/status.md#combined-logical-working-stage).
+
+Its bounded global-Memory module profile adds `moduleOrigins`, `moduleInstances`,
+`moduleAllocations` and `moduleReservations` to each population, plus complete role
+hashes, totals, shown counts and truncation flags. Each role shares its own 128-item
+budget across all alternatives. Origins retain original declarations and concrete
+fields, including latent owners; allocations expose alignment and inclusive pool
+bounds. Instance arguments expose only count and hash. These are synthetic logical
+image facts; actual options, complete-image, execution and download flags remain false.
 
 The same native logical pipeline also accepts direct byte-aligned root Memory
 RawData: strict Base64, declared `MaxSize + 4` capacity, a program-byte-order

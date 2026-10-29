@@ -16,6 +16,10 @@ namespace Knx.Mcp;
 
 public sealed partial class McpServer
 {
+    private Func<JsonElement, int, IndividualAddress, ScanOptions, Task<BusScan>>? _downloadDescriptorReader = null;
+    private Task<BusScan> ReadDownloadDescriptorAsync(JsonElement arguments, int timeoutMs, IndividualAddress address, ScanOptions options)
+        => _downloadDescriptorReader?.Invoke(arguments, timeoutMs, address, options)
+            ?? WithDiagnosticsAsync(arguments, timeoutMs, (session, ct) => Diagnostics.ScanAsync(session, [address], options, ct));
     // ---------------------------------------------------------------- catalog
 
     private List<McpTool> BuildTools() => AddConnectionSchemas(
@@ -375,8 +379,8 @@ public sealed partial class McpServer
             "Read-only preflight and dry run for a future device download: reports the gate checks " +
             "(descriptor/mask, programming mode, confirmed address/line, program match, parameter/link " +
             "completeness, confirmations), the computed image chunks, the printable dry run and the " +
-            "attempt-log status. Sends no programming frame and never downloads; with 'gateway' it reads " +
-            "the descriptor over the active tunnel or one reserved read-only factory operation (like bus_device_info). " +
+            "attempt-log status. Sends no programming frame and never downloads; an ordinary preflight with 'gateway' reads " +
+            "the descriptor over the active tunnel or one reserved read-only factory operation (like bus_device_info). Explicit archive preview options remain offline even with 'gateway'. " +
             "Adds archiveMaskProfile metadata from the loaded archive without script evaluation. " +
             "An explicit parameter_subset plus byte_order optionally adds an offline subset preview (Subset-Vorschau) for numeric fields, declared unsigned enum values, aligned IEEE32 using the explicit .NET10 XML Double-to-Single profile, bounded signed raw ordinary Time counts without unit scaling, and 24-bit PackedDaysHoursMinutesAndSeconds with BigEndian requests only; it never supplies a complete application image or download permission. " +
             "resource_preview=true explicitly uses typed absolute/LSM-relative arenas, compact resource hashes and archived image-source metadata for that subset; absent or false keeps the ordinary subset contract. " +
@@ -1447,10 +1451,12 @@ public sealed partial class McpServer
         var rootImageOptions = ReadRootImageBuildOptions(args, buildOptions, patchOptions, imageOptions);
         var resolvedRootOptions = ReadRootResolvedImageBuildOptions(args, buildOptions, patchOptions, imageOptions, rootImageOptions);
 
-        // A descriptor read is the only live step and it is read-only; without 'gateway' the plan
-        // stays offline and reports the missing descriptor as a blocker.
+        // Explicit archive previews are always offline, including when a caller supplies a gateway.
+        // Only the ordinary preflight may perform its optional read-only descriptor probe.
+        var offlinePreview = nativeImageOptions is not null || rootPropertyOptions is not null || patchOptions is not null
+            || buildOptions is not null || imageOptions is not null || rootImageOptions is not null || resolvedRootOptions is not null;
         DeviceDescriptor? descriptor = null;
-        if (Str(args, "gateway") is { Length: > 0 } gateway)
+        if (!offlinePreview && Str(args, "gateway") is { Length: > 0 } gateway)
         {
             var timeoutMs = Math.Clamp(Int(args, "timeout_ms") ?? 1500, 100, 10000);
             var responseTimeoutMs = Math.Clamp(Int(args, "response_timeout_ms") ?? 1000, 100, 5000);
@@ -1458,12 +1464,11 @@ public sealed partial class McpServer
             BusScan scan;
             try
             {
-                scan = await WithDiagnosticsAsync(args, timeoutMs,
-                    (session, ct) => Diagnostics.ScanAsync(session, [address], options, ct));
+                scan = await ReadDownloadDescriptorAsync(args, timeoutMs, address, options);
             }
             catch (Exception ex) when (ex is not (ToolException or KnxConnectionException or OperationCanceledException))
             {
-                throw new ToolException($"descriptor read failed: {ex.Message}");
+                throw new KnxConnectionException(KnxConnectionFailure.ConnectionFailed);
             }
             descriptor = scan.Devices[0].Descriptor;
         }
