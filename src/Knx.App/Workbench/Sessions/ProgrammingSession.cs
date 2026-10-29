@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using Knx.Bus;
 using Knx.Workbench;
 
 namespace Knx.App.Workbench;
@@ -25,7 +26,7 @@ public sealed class ProgrammingJob : SessionState
     public string Operation { get; }
     public ProgrammingJobType Type { get; }
     public string InterfaceId { get; }
-    /// <summary>Execution source. Real jobs are rejected at enqueue; execution is demo-only.</summary>
+    /// <summary>Execution origin. Generic real execution requires an explicitly injected executor.</summary>
     public SessionOrigin Origin { get; }
     public FrozenConfiguration Configuration { get; }
     public ProgrammingJobStatus Status { get; private set; }
@@ -82,6 +83,7 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
     private readonly ObservableCollection<ProgrammingJob> _jobs = [];
     private readonly SnapshotCollection<DownloadedDeviceState> _downloaded = new();
     private readonly Dictionary<string, DeviceProgrammingState> _states = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DeviceProgrammingState> _m112HistoryProjections = new(StringComparer.Ordinal);
     private CancellationTokenSource? _cancellation;
     private CancellationTokenSource? _jobCancellation;
     private ProgrammingJob? _activeJob;
@@ -110,6 +112,7 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
     public ProgrammingJob? ActiveJob => _activeJob;
     /// <summary>True only when the host supplied an explicit real executor; no transport lives in this session.</summary>
     public bool RealExecutionConfigured => _realExecute is not null;
+    internal bool IsRestoringM112History { get; private set; }
     public event EventHandler? DownloadedChanged;
 
     public ProgrammingJob Enqueue(string deviceId, string operation = "full", string interfaceId = "demo-ip",
@@ -327,6 +330,61 @@ public sealed class ProgrammingSession : SessionState, IAsyncDisposable
         var state = _states.GetValueOrDefault(job.DeviceId) ?? DeviceProgrammingState.Empty(job.DeviceId);
         _states[job.DeviceId] = state.ApplySuccess(LoadFlags(job.Type), job.Configuration.Signature,
             DateTimeOffset.UtcNow, job.InterfaceId, OriginOf(job.Origin));
+    }
+
+    /// <summary>Only the current verified M112 application/parameter/group image is evidenced; no address/network or demo flags are promoted.</summary>
+    internal bool RecordVerifiedM112Change(string deviceId, string frozenSignature, string interfaceId, M112DownloadResult result)
+    {
+        VerifyAccess(); ThrowIfDisposed();
+        if (!result.DownloadedAndVerified || result.Error is not null || IsRunning) return false;
+        var project = _project(); var device = project is null ? null : ProjectQuery.DeviceList(project).SingleOrDefault(d => d.Id == deviceId);
+        if (device is null || _freeze(project!, device).Signature != frozenSignature) return false;
+        var state = (_states.GetValueOrDefault(deviceId) ?? DeviceProgrammingState.Empty(deviceId)) with { Flags = DeviceLoadFlags.None };
+        _states[deviceId] = state.ApplySuccess(DeviceLoadFlags.ApplicationProgram | DeviceLoadFlags.Parameters | DeviceLoadFlags.GroupAddresses,
+            frozenSignature, DateTimeOffset.UtcNow, interfaceId, ProgrammingOrigin.Real);
+        PublishDownloaded(); return true;
+    }
+    internal void RecordRealM112Failure(string deviceId, string interfaceId, string issue)
+    {
+        VerifyAccess(); ThrowIfDisposed();
+        var state = (_states.GetValueOrDefault(deviceId) ?? DeviceProgrammingState.Empty(deviceId)) with { Flags = DeviceLoadFlags.None };
+        _states[deviceId] = state.ApplyFailure(issue, DateTimeOffset.UtcNow, interfaceId, ProgrammingOrigin.Real); PublishDownloaded();
+    }
+    internal void InvalidateM112Flags(string deviceId)
+    {
+        VerifyAccess(); ThrowIfDisposed();
+        if (_states.TryGetValue(deviceId, out var state)) { _states[deviceId] = state with { Flags = DeviceLoadFlags.None }; PublishDownloaded(); }
+    }
+    internal void BeginVerifiedM112HistoryRevalidation()
+    {
+        VerifyAccess(); ThrowIfDisposed(); if (IsRunning) return;
+        var changed = false;
+        foreach (var (id, projection) in _m112HistoryProjections)
+            if (_states.TryGetValue(id, out var current) && ReferenceEquals(current, projection)) { _states.Remove(id); changed = true; }
+        _m112HistoryProjections.Clear();
+        if (!changed) return;
+        IsRestoringM112History = true;
+        try { PublishDownloaded(); } finally { IsRestoringM112History = false; }
+    }
+    internal void ImportVerifiedM112History(IReadOnlyList<DeviceProgrammingState> states)
+    {
+        VerifyAccess(); ThrowIfDisposed(); if (IsRunning) return;
+        var project = _project(); if (project is null) return;
+        var changed = false;
+        foreach (var state in states)
+        {
+            var device = ProjectQuery.DeviceList(project).SingleOrDefault(d => d.Id == state.DeviceId);
+            if (device is null || state.Origin != ProgrammingOrigin.Real || state.LastAttemptOrigin != ProgrammingOrigin.Real
+                || state.Flags != (DeviceLoadFlags.ApplicationProgram | DeviceLoadFlags.Parameters | DeviceLoadFlags.GroupAddresses)
+                || state.ImageHash != _freeze(project, device).Signature) continue;
+            // Live state supersedes imported history by session order, even after a wall-clock correction.
+            if (_states.TryGetValue(state.DeviceId, out var existing) && (existing.Origin == ProgrammingOrigin.Real
+                || existing.LastAttemptOrigin == ProgrammingOrigin.Real || existing.LastAttemptAt >= state.LastSuccessAt)) continue;
+            state.Validate(); _states[state.DeviceId] = state; _m112HistoryProjections[state.DeviceId] = state; changed = true;
+        }
+        if (!changed) return;
+        IsRestoringM112History = true;
+        try { PublishDownloaded(); } finally { IsRestoringM112History = false; }
     }
 
     private void RecordFailure(ProgrammingJob job, string error)

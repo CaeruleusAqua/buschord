@@ -16,6 +16,7 @@ public partial class WorkbenchWindow
     private bool M112Busy => _m112Session?.IsBusy == true;
     private async Task ShowM112Async()
     {
+        if (_realProgrammingWindow is { } queue) { queue.Activate(); return; }
         if (_m112Window is not null) { _m112Window.Activate(); return; }
         EnsureSessions();
         var selected = ViewModel.SelectedDevice;
@@ -27,6 +28,15 @@ public partial class WorkbenchWindow
         var session = _m112Session = new(() => new(ViewModel.Project,
             ViewModel.ProjectSessionIdentity, HasParameterDrafts, _sessions?.Programming.IsRunning == true), deviceId,
             _m112BackendFactory?.Invoke(deviceId), recoveryOnly);
+        session.Changed += snapshot =>
+        {
+            if (snapshot.Phase is not (M112CommissioningPhase.Applying or M112CommissioningPhase.Restoring)) return;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (ReferenceEquals(lifetime, ViewModel.ProjectSessionIdentity) && ReferenceEquals(_m112Session, session)
+                    && _sessions is { } current && current.Programming.DeviceStates.ContainsKey(deviceId)) current.Programming.InvalidateM112Flags(deviceId);
+            });
+        };
         var window = _m112Window = new(session, LoadM112BaselineAsync, _liveOptions, PrepareM112NetworkAsync, ViewModel.Project?.Name ?? "",
             Services.WorkbenchCredentialVaultOwner.ProjectScope(ViewModel.Project, ViewModel.ProjectPath), _credentialVaultOwner);
         var others = _toolWindows.Concat(_companions.Values).Distinct().Select(other => (other, other.IsEnabled)).ToArray();

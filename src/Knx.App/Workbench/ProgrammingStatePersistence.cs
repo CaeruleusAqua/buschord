@@ -44,11 +44,11 @@ public sealed class ProgrammingStatePersistence : IDisposable
         catch (Exception ex) when (ProgrammingStateStore.IsFileError(ex)) { _error?.Invoke("DEMO comparison: " + ex.Message); }
     }
 
-    private void OnChanged(object? sender, EventArgs e) { _dirty = true; Flush(); }
+    private void OnChanged(object? sender, EventArgs e) { if (_session.IsRestoringM112History) return; _dirty = true; Flush(); }
     public void Flush()
     {
         if (!_dirty || _binding is null) return;
-        try { _store.Save(_binding, _session.DeviceStates.Values); _dirty = false; }
+        try { _store.Save(_binding, _session.DeviceStates.Values.Where(state => state.Origin != ProgrammingOrigin.Real && state.LastAttemptOrigin != ProgrammingOrigin.Real)); _dirty = false; }
         catch (Exception ex) when (ProgrammingStateStore.IsFileError(ex)) { _error?.Invoke("DEMO comparison: " + ex.Message); }
     }
     public void Dispose()

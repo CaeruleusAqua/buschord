@@ -351,6 +351,7 @@ public partial class WorkbenchWindow
 
     private async Task<bool> ConfirmDiscardAsync()
     {
+        await DrainRealProgrammingBeforeReplacementAsync();
         await DrainM112BeforeReplacementAsync();
         if (HasParameterDrafts && !await ConfirmDialog.AskDiscardDraftsAsync(this)) return false;
         if (!ViewModel.IsDirty) return true;
@@ -364,6 +365,7 @@ public partial class WorkbenchWindow
     {
         if (e.CloseReason == WindowCloseReason.OSShutdown && AppUpdateService.Current is { } updates)
             updates.SuppressApply = true;
+        if (JoinRealProgrammingBeforeOwnerClose(e)) return;
         if (JoinM112BeforeOwnerClose(e)) return;
         if (_closingSessionsForExit) { e.Cancel = true; return; }
         if (!_shuttingDown && (ViewModel.IsDirty || HasParameterDrafts))

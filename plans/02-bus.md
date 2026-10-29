@@ -25,6 +25,7 @@
 - [x] Explizite Workbench-Gruppenauswahl mit Quellenbindung, erneuter Auftragsbestätigung, Monitor-Provenienz und gejointem Projekt-/Dialogabbau ergänzen; Scan und M112 behalten ihre Zielpolicy.
 - [x] Gezielten adressierten Scan mit tatsächlichen Koppler-/Tasterantworten und lesende Workbench-Verbindung einschließlich Verbindungsabbau prüfen.
 - [x] Enges M112-Herstellerprofil mit vollständigem Applikationsdownload, Verify und bestätigter Wiederherstellung am freigegebenen Taster abnehmen.
+- [x] Separate echte Plain-M112-Warteschlange mit Quellen-/Identitätsbindung, Einzel-/Batchbestätigung, dauerhaften Belegen und gejointem Wiederherstellungs-/Schließablauf integrieren; [Profilgrenzen](../docs/real-programming-queue.md).
 - [ ] Breitere Transport-Interoperabilität, Herstellerimages und weitere Management-/Ladeprofile abnehmen.
 - [ ] Secure-Tunnel, Data Security und sichere Inbetriebnahme vollständig integrieren.
 

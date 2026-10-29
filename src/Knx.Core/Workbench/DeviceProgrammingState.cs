@@ -45,14 +45,14 @@ public enum DeviceChangeKind
     Configuration = 1 << 7,
 }
 
-/// <summary>Execution source of a recorded load. Real execution is not implemented.</summary>
+/// <summary>Execution source of a recorded load.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ProgrammingOrigin { Demo, Real }
 
 /// <summary>
 /// What is known to be loaded into one device, independent of project undo and project dirty state.
-/// <see cref="ImageHash"/> is the frozen configuration signature used as an image/program hash until a
-/// real image builder exists; it is not a downloadable device image.
+/// <see cref="ImageHash"/> is the frozen configuration signature used for drift comparison;
+/// it is not a downloadable device image.
 /// </summary>
 public sealed record DeviceProgrammingState(
     string DeviceId,

@@ -791,7 +791,11 @@ and window shutdown join network cleanup before an endpoint can be reused. Real
 monitoring supports the existing recording, filters, CSV and optional local history;
 it is not a complete hardware bus monitor. Scans require disconnecting the monitor
 connection and report unknown/unprobed addresses without claiming absence.
-The general Workbench programming queue remains a labelled simulation. General device writes and
+The Workbench programming panel retains labelled simulation and adds an explicit
+[reviewed real M112 queue](real-programming-queue.md) for the admitted same-application/layout profile.
+It serializes frozen per-device plans, separate identity/plan/batch confirmations,
+verified receipts and joined recovery; unsupported devices and source drift fail closed.
+General device writes and
 application downloads remain disabled. An explicit console-only MDT M112 programming-mode test
 has live identity, write, readback and restoration evidence for one released device;
 see [targeted commissioning](commissioning.md). Complete images, complete load flows

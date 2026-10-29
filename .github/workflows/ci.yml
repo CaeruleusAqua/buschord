@@ -201,6 +201,12 @@ jobs:
           dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-group-selection
           dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-group-selection --de
           dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-group-release-retry
+      - name: Native real M112 queue and source binding with synthetic devices (Windows only)
+        shell: bash
+        run: |
+          dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-real-m112-queue
+          dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-real-m112-queue --de
+          dotnet run --project tests/Knx.ParameterUi.Tests -c Release --no-build -- --native-queue-archive-binding
       - name: Recovery lifecycle regressions (Windows only)
         shell: bash
         run: |
