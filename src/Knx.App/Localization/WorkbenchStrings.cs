@@ -52,6 +52,19 @@ public sealed class WorkbenchStrings : INotifyPropertyChanged
     // Keys are grouped by shell region; German values preserve the previous literals.
     private static readonly Dictionary<string, (string De, string En)> Map = new()
     {
+        ["BusDiagram"] = ("Busdiagramm", "Bus diagram"),
+        ["DiagramInstallation"] = ("Installation", "Installation"),
+        ["DiagramArea"] = ("Bereich", "Area"),
+        ["DiagramSegment"] = ("Segment", "Segment"),
+        ["DiagramCoupler"] = ("Koppler", "Coupler"),
+        ["DiagramOpen"] = ("Im Editor öffnen", "Open in editor"),
+        ["DiagramFit"] = ("Einpassen", "Fit"),
+        ["DiagramZoomIn"] = ("Vergrößern", "Zoom in"),
+        ["DiagramZoomOut"] = ("Verkleinern", "Zoom out"),
+        ["DiagramActualSize"] = ("Originalgröße", "Actual size"),
+        ["DiagramChoose"] = ("Knoten auswählen", "Select a node"),
+        ["DiagramEmpty"] = ("Noch keine Topologie vorhanden. Bereiche und Linien im Topologie-Navigator anlegen.", "No topology yet. Add areas and lines in the topology navigator."),
+        ["DiagramHint"] = ("Projektstruktur · keine Verdrahtungs- oder Live-Statusanzeige. Strg+Mausrad: Zoom · freien Hintergrund ziehen: verschieben · Pfeiltasten: navigieren · Enter/Doppelklick: Editor öffnen. Koppler nur nach Herstellerdaten.", "Project structure · no wiring or live status shown. Ctrl+wheel: zoom · drag empty background: pan · arrow keys: navigate · Enter/double-click: open editor. Couplers require manufacturer evidence."),
         ["HistoryAnyOrigin"] = ("Alle", "All"),
         ["HistoryReal"] = ("Real", "Real"),
         ["HistoryDemo"] = ("Demo", "Demo"),

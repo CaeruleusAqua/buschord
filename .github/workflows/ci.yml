@@ -170,6 +170,11 @@ jobs:
           dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --dialogs --de
       - name: Workbench selection and refresh regressions (Windows only)
         run: dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --projection-refresh
+      - name: Native bus diagram regressions (Windows only)
+        shell: bash
+        run: |
+          dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --bus-diagram
+          dotnet run --project tests/Knx.WorkbenchUiState.Tests -c Release --no-build -- --bus-diagram --de
       - name: Recovery lifecycle regressions (Windows only)
         shell: bash
         run: |

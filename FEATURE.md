@@ -75,6 +75,9 @@ MDT, Jung und Gira sind verbindliche Herstellerprofile. Die derzeit unterstützt
 Import- und Parameterprofile sowie die verbleibenden Plug-in-, Dateiformat- und
 Inbetriebnahmeaufgaben stehen im Status und in den Teilplänen.
 
+Eine native [Busdiagramm-Darstellung](docs/manual.md#25-navigation-suche-und-auswahl)
+zeigt die tatsächliche Projektstruktur mit Segmenten, lesender Auswahl und
+Editor-Navigation sowie Zoom/Pan. Koppler beruhen auf Hersteller-Hardwaredaten.
 Die Oberfläche bietet acht Sprachen und Light/Dark. Die vollständige manuelle
 Accessibility-/Plattformabnahme läuft; ein [gezielter Geräteversuch](plans/06-commissioning.md)
 ist seit 2026-10-29 freigegeben. Die allgemeine Hardware-Abnahme und die hörbare
