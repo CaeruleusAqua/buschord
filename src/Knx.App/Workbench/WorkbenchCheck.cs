@@ -618,7 +618,19 @@ internal static class WorkbenchCheck
                 window.ApplyLayoutForWidth(window.Bounds.Width);
                 window.ShowTool("programming");
                 await Task.Delay(60);
-                Check("programming tool renders its list inside one host", window.FindControl<ContentControl>("ToolHost")!.Content is DockPanel);
+                var programmingHost = window.FindControl<ContentControl>("ToolHost")!;
+                var programmingModes = programmingHost.Content as TabControl;
+                Check("programming opens the labelled simulation mode beside real plans",
+                    programmingModes is { Name: "ProgrammingModes", SelectedIndex: 0, ItemCount: 2 }
+                    && programmingModes.SelectedItem is TabItem selectedProgrammingMode
+                    && Equals(selectedProgrammingMode.Header, RealProgrammingQueueStrings.Get("Simulation"))
+                    && programmingModes.Items[1] is TabItem realProgrammingMode
+                    && Equals(realProgrammingMode.Header, RealProgrammingQueueStrings.Get("RealMode")));
+                var programmingLists = programmingModes?.GetVisualDescendants().OfType<ListBox>()
+                    .Where(list => list.IsEffectivelyVisible && list.Bounds.Width > 0 && list.Bounds.Height > 0).ToArray() ?? [];
+                Check("programming tool renders its list inside one host", programmingLists.Length == 1
+                    && programmingLists[0].GetVisualAncestors().Contains(programmingHost)
+                    && ReferenceEquals(programmingLists[0].ItemsSource, window.Sessions?.Programming.Jobs));
                 window.ShowTool("search");
                 await Task.Delay(60);
                 Check("search tool is hosted maximized instead of the 242 DIP dock", window.Workspace.ToolsMaximized
