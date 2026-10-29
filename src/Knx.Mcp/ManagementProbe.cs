@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Knx.Bus;
 using Knx.Bus.Connections;
+using Knx.Bus.Security;
 
 namespace Knx.Mcp;
 
@@ -19,12 +20,18 @@ internal static class ManagementProbe
     internal static Task<int> RunWithFactoryAsync(string host, string[] args, KnxConnectionFactory factory)
         => RunCoreAsync(host, args, null, factory);
 
+    internal static Task<int> RunWithToolFactoryAsync(string host, string[] args, KnxConnectionFactory factory,
+        Func<string, CancellationToken, Task<byte[]>> integritySource, ISecurePasswordSource passwordSource,
+        IKnxToolAccessCredentialProvider credentialProvider, CancellationToken ct)
+        => RunCoreAsync(host, args, null, factory, ToolAccessConsoleServices.FromProviders(integritySource, passwordSource, credentialProvider), ct);
+
     private static async Task<int> RunCoreAsync(string host, string[] args,
         Func<IPEndPoint, IndividualAddress, IndividualAddress, CancellationToken, Task<IManagementConnection>>? open,
-        KnxConnectionFactory? connections)
+        KnxConnectionFactory? connections, ToolAccessConsoleServices? services = null, CancellationToken externalCancellation = default)
     {
         try
         {
+            externalCancellation.ThrowIfCancellationRequested();
             var options = ParseOptions(args);
             string? Option(string name) => options.GetValueOrDefault(name);
             if (!IPAddress.TryParse(host, out var address) || address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork
@@ -33,7 +40,14 @@ internal static class ManagementProbe
             var target = IndividualAddress.Parse(targetText);
             if (target.Device is 0 or 255 || target.ToString() != targetText)
                 throw new ArgumentException("--target must be one canonical area.line.device address with device 1..254.");
-            var profile = ConnectionProfile(options, host);
+            ToolAccessConsoleProfile? tool = null;
+            if (Option("--tool-access-config") is { } toolPath)
+            {
+                if (ConnectionOptions.Any(options.ContainsKey) || open is not null) throw new ToolConsoleException(ToolConsoleFailure.InvalidToolConfiguration);
+                tool = ToolAccessConsoleProfile.Read(toolPath, host, target, Option("--tool-current-state-confirm"), services?.Password);
+            }
+            else if (options.ContainsKey("--tool-current-state-confirm")) throw new ToolConsoleException(ToolConsoleFailure.InvalidToolConfiguration);
+            var profile = tool?.Connection ?? ConnectionProfile(options, host);
             if (open is not null && profile.RequiresAuthentication) throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
             var mode = Option("--mode-cycle-confirm");
             var full = Option("--m112-full-confirm");
@@ -49,19 +63,23 @@ internal static class ManagementProbe
                     throw new ArgumentException("--review-fingerprint must be the 64 hexadecimal characters from the reviewed preview.");
             }
             using var caller = new CancellationTokenSource();
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(caller.Token);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(caller.Token, externalCancellation);
             timeout.CancelAfter(change is not null ? TimeSpan.FromMinutes(10) : full is not null || recover is not null ? TimeSpan.FromMinutes(5) : TimeSpan.FromSeconds(60));
-            ConsoleCancelEventHandler onCancel = (_, e) => { e.Cancel = true; caller.Cancel(); };
+            ConsoleCancelEventHandler onCancel = (_, e) => { e.Cancel = true; try { caller.Cancel(); } catch (AggregateException) { } };
             Console.CancelKeyPress += onCancel;
             KnxGatewayOperation? operation = null;
             try
             {
+                if (tool is not null)
+                    Console.Error.WriteLine("Tool Access selected. Provisioner confirms current unanchored state; this does not detect restored valid backups. Offline preview does not authenticate a device.");
                 async Task<IManagementConnection> Open(CancellationToken token)
                 {
                     if (open is not null) return await open(profile.Gateway, target, profile.RequestedAddress, token);
                     // Acquisition is lazy: offline previews perform no credential/file/network work.
                     // The capability outlives the original caller token and every independent recovery connection.
-                    operation ??= await (connections ?? new KnxConnectionFactory()).AcquireOperationAsync(profile, token);
+                    operation ??= tool is null
+                        ? await (connections ?? new KnxConnectionFactory()).AcquireOperationAsync(profile, token)
+                        : await tool.AcquireAsync(connections ?? new KnxConnectionFactory(), services, token);
                     return await operation.OpenManagementAsync(target, readOnly: mode is null && full is null && change is null && recover is null, token);
                 }
                 if (mode is not null || full is not null || recover is not null || change is not null)
@@ -82,17 +100,26 @@ internal static class ManagementProbe
                     if (recover is not null)
                     {
                         var recoveryPath = PrivatePath(recover, existingFile: true);
+                        M112RecoveryInspection? inspection = null;
+                        if (tool is not null)
+                        {
+                            inspection = await M112ApplicationDownload.InspectRecoveryAsync(recoveryPath, timeout.Token);
+                            if (inspection.Identity != expected) throw new InvalidDataException("Recovery identity mismatch.");
+                            tool.RequireWireBudget(M112ApplicationWireBudget.ForRecovery(inspection));
+                        }
                         timeout.Token.ThrowIfCancellationRequested();
                         Console.Error.WriteLine("M112 recovery started; caller cancellation cannot interrupt restoration. Independent timeout: five minutes.");
                         using var recoveryTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-                        var result = await M112ApplicationDownload.RecoverAsync(Open, recoveryPath, expected, confirmed,
-                            phase => Console.Error.WriteLine("m112: " + phase), recoveryTimeout.Token);
+                        var result = inspection is null
+                            ? await M112ApplicationDownload.RecoverAsync(Open, recoveryPath, expected, confirmed, phase => Console.Error.WriteLine("m112: " + phase), recoveryTimeout.Token)
+                            : await M112ApplicationDownload.RecoverInspectedAsync(Open, inspection, confirmed, phase => Console.Error.WriteLine("m112: " + phase), recoveryTimeout.Token);
                         WriteResult(result);
                         return result.OriginalConfigurationRestoredAndVerified && result.Error is null ? 0 : 1;
                     }
                     var journalDirectory = PrivatePath(Required(options, "--journal-directory"), existingFile: false);
                     if (mode is not null)
                     {
+                        tool?.RequireWireBudget(M112ApplicationWireBudget.IdentityAndStatus());
                         var result = await ProgrammingModeCycle.RunAsync(Open, expected, confirmed, journalDirectory, timeout.Token);
                         Console.WriteLine(JsonSerializer.Serialize(new { result.ActivatedAndVerified, result.RestoredAndVerified, failed = result.Error is not null }));
                         return result.ActivatedAndVerified && result.RestoredAndVerified && result.Error is null ? 0 : 1;
@@ -114,6 +141,7 @@ internal static class ManagementProbe
                         var baselineDevices = ProjectQuery.DeviceList(baselineProject).Where(d => d.Address == target).ToArray();
                         if (baselineDevices.Length != 1) throw new InvalidDataException("The baseline must contain exactly one device at --target.");
                         var plan = M112ApplicationChangePlan.Prepare(baselineProject, baselineDevices[0], project, device);
+                        tool?.RequireWireBudget(M112ApplicationWireBudget.ForImages(plan.Baseline, plan.Desired));
                         if (expected.Application != $"{plan.Desired.Manufacturer:X4}{plan.Desired.ApplicationNumber:X4}{plan.Desired.ApplicationVersion:X2}")
                             throw new InvalidDataException("The change plan does not match the confirmed application.");
                         timeout.Token.ThrowIfCancellationRequested();
@@ -133,6 +161,7 @@ internal static class ManagementProbe
                         return result.DownloadedAndVerified && result.Error is null ? 0 : 1;
                     }
                     var image = OfflineM112ApplicationBuild.Build(project, device);
+                    tool?.RequireWireBudget(M112ApplicationWireBudget.ForImages(image, image));
                     if (image.Address != targetText || expected.Application != $"{image.Manufacturer:X4}{image.ApplicationNumber:X4}{image.ApplicationVersion:X2}")
                         throw new InvalidDataException("The source image's address/application does not match the confirmed identity.");
                     timeout.Token.ThrowIfCancellationRequested();
@@ -168,6 +197,7 @@ internal static class ManagementProbe
                 finally { Console.CancelKeyPress -= onCancel; }
             }
         }
+        catch (ToolConsoleException error) { Console.Error.WriteLine("management-probe: " + error.Failure); return 2; }
         catch (ArgumentException) { Console.Error.WriteLine("management-probe: InvalidProfile"); return 2; }
         catch (Exception ex)
         {
@@ -183,6 +213,7 @@ internal static class ManagementProbe
             "--m112-recover", "--m112-recovery-confirm"], StringComparer.Ordinal);
         valued.UnionWith(["--m112-change-confirm", "--baseline-project", "--baseline-password-env", "--review-fingerprint"]);
         valued.UnionWith(ConnectionOptions);
+        valued.UnionWith(["--tool-access-config", "--tool-current-state-confirm"]);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var arg in args)
         {
@@ -201,6 +232,7 @@ internal static class ManagementProbe
     {
         var allowed = new HashSet<string>(["--management-probe", "--target"], StringComparer.Ordinal);
         allowed.UnionWith(ConnectionOptions);
+        allowed.UnionWith(["--tool-access-config", "--tool-current-state-confirm"]);
         allowed.UnionWith(mode switch
         {
             "mode" => ["--mode-cycle-confirm", "--expected-identity", "--journal-directory"],

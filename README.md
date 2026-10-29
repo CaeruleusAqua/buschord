@@ -34,7 +34,7 @@ review; the badges track `development`.
 | Reports | CSV, HTML labels, mail-merge TSV, project comparison, acceptance protocol and a deterministic handover ZIP. |
 | Local history | Opt-in telegram recording with time/filter/context queries, export, backup and retention; optional model/undo checkpoints, independent audit and explicit recovery review. See [workflows](docs/workflows.md) and [recovery](docs/recovery.md). |
 | Native UI | Object-centred tabs, project portfolio, inspector, catalogue and independent tools; keyboard command search, high contrast, light/dark themes and eight UI languages. |
-| MCP | 57 stdio tools, protected open/save, reviewed mass linking, explicit script capability, migration and a bounded Jung SP8 KSP import. |
+| MCP | 58 stdio tools, protected open/save, reviewed mass linking, explicit script capability, migration and a bounded Jung SP8 KSP import. |
 | Network | KNXnet/IP discovery, tunnel/routing and addressed management; explicit Workbench read-only connection, real group monitor and line scan. A dedicated [M112 dialog and console profile](docs/commissioning.md) supports reviewed configuration changes and captured-configuration recovery. [Secure connection selection](docs/secure-connections.md) shares authenticated transport and owned credentials across Workbench/MCP/CLI; Data Secure provisioning remains separate. |
 | Optional password storage | Explicit Workbench use, save, matching replacement and deletion in Windows Credential Manager or Linux Secret Service; exact saved-project/export/interface binding. Ephemeral masked input remains available. [Workflow and provider limits](docs/credential-vault.md). |
 
@@ -86,6 +86,7 @@ dotnet run --project src/Knx.Mcp -c Release --no-build -- --selftest
 - [Authenticated Secure UDP sessions](docs/secure-session.md)
 - [Secure Workbench/MCP connection selection](docs/secure-connections.md)
 - [Explicit protected OS password storage](docs/credential-vault.md)
+- [Explicit Tool-Access console and read-only MCP profile](docs/tool-access-console.md)
 - [Product catalogues](catalog.md)
 - [MCP setup and tool contract](mcp.md)
 - [Local project backups](docs/project-backup.md)

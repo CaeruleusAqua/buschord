@@ -841,8 +841,11 @@ Twenty-one focused checks and full Windows/Linux Bus regressions cover its
 pre-network refusals, gateway authentication, Sync, management and recovery.
 Its default state source requires an independent anchor; a separate explicitly
 trusted unanchored source cannot detect full-file restoration. No production anchor
-or App/MCP selector is supplied. Provisioning integration and secure first
-commissioning remain open.
+or App selector is supplied. The [explicit console workflow](tool-access-console.md)
+adds private profile references, whole-image/recovery wire-budget checks and a
+standalone read-only MCP identity operation. It preserves reviewed M112 write gates
+and requires an explicit current-unanchored-state trust decision. Provisioning
+integration and secure first commissioning remain open.
 
 The optional [OS password controls](credential-vault.md) use the reviewed Windows
 Credential Manager/Linux Secret Service adapters. The Workbench exposes separate

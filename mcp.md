@@ -1,7 +1,7 @@
 # buschord-mcp – MCP server for BusChord
 
 Headless [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the
-`Knx.Core`, `Knx.Bus`, `Knx.Reports` and `Knx.ProjectCompare` functionality as 57 MCP tools.
+`Knx.Core`, `Knx.Bus`, `Knx.Reports` and `Knx.ProjectCompare` functionality as 58 MCP tools.
 It is a .NET 10 console app; JSON-RPC 2.0 runs over stdio,
 one JSON message per line. stdout carries protocol messages only, all logging goes to stderr.
 
@@ -11,7 +11,7 @@ one JSON message per line. stdout carries protocol messages only, all logging go
 dotnet build
 dotnet run --project src/Knx.Mcp --no-build              # stdio server (for MCP clients)
 dotnet run --project src/Knx.Mcp -- --selftest           # end-to-end check, exit 0/1
-dotnet run --project src/Knx.Mcp -- --list-tools         # 57 tool names only
+dotnet run --project src/Knx.Mcp -- --list-tools         # 58 tool names only
 dotnet run --project src/Knx.Mcp -- --scan-catalogs=<folder>   # parse .knxprod files, read-only
 dotnet run --project src/Knx.Mcp -- --import-catalogs=<folder> # copy them into the local library
 ```
@@ -91,7 +91,7 @@ one undo step and retains required manufacturer data for later export.
 
 ## Tools
 
-The server exposes 57 tools in the groups below.
+The server exposes 58 tools in the groups below.
 
 ### Manufacturer metadata and Jung SP8 import
 
@@ -238,7 +238,13 @@ wire behaviour is not verified against real hardware (see "Bus behaviour" below)
 
 **Bus diagnostics (read-only)** – `bus_scan(target?, gateway?, timeout_ms?, response_timeout_ms?)`,
 `bus_device_info(address, gateway?, timeout_ms?, response_timeout_ms?)`,
+`bus_tool_identity_read(gateway, target, tool_access_config, confirm_current_state)`,
 `bus_statistics(window_ms?)`.
+`bus_tool_identity_read` uses an exact private [Tool-Access configuration](docs/tool-access-console.md),
+existing provisioned counters and an explicit current-unanchored-state assertion.
+It owns one fresh authenticated read-only management connection, requires a free
+gateway reservation and never replaces an active bus session. Other bus tools and
+`download_plan` refuse Tool/counter references before network access.
 `bus_scan` broadcasts `IndividualAddressRead`, collects the answering addresses, reads each device
 descriptor (`DeviceDescriptorRead`, mask version) and compares the result with the open project's
 devices: duplicate, missing and unexpected addresses. `target` restricts the scan to one line

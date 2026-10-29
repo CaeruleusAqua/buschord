@@ -35,7 +35,8 @@ public sealed partial class McpServer : IAsyncDisposable
         "exports, project_compare for diffs and catalog_* for manufacturer product databases. For live bus " +
         "access call bus_connect first (mode tunnel searches for a gateway, mode routing joins multicast, " +
         "ip_secure_udp requires an explicit gateway and exact protected-keyring selectors), then bus_read/recorder_*; " +
-        "bus_disconnect drains the interface. Secure connections never fall back to plain. download_plan reports the " +
+        "bus_disconnect drains the interface. Standalone bus_tool_identity_read requires an explicit pinned Tool configuration, " +
+        "trusted existing counters and a free gateway reservation. Secure connections never fall back to plain. download_plan reports the " +
         "read-only preflight and dry run for one project device. This build is read-only: " +
         "group writes, device programming and downloads are disabled.";
 
@@ -185,7 +186,7 @@ public sealed partial class McpServer : IAsyncDisposable
 
         try
         {
-            if (name.StartsWith("bus_", StringComparison.Ordinal) || name == "download_plan") RefuseSecretArguments(arguments);
+            if (name.StartsWith("bus_", StringComparison.Ordinal) || name == "download_plan") RefuseSecretArguments(arguments, allowToolReferences: name == "bus_tool_identity_read");
             if (name == "bus_discover" && (ConnectionInput.HasSecureFields(arguments)
                 || string.Equals(Str(arguments, "mode"), "ip_secure_udp", StringComparison.OrdinalIgnoreCase)))
                 throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);

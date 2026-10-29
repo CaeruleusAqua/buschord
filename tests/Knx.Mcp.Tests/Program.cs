@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Knx.Mcp;
 
+if (args.Contains("--tool-cli")) return await ToolAccessCliChecks.RunAsync();
+
 // In-process checks for the MCP dispatcher: protocol handshake, tool catalog and the
 // project_new -> group_address_add -> group_addresses_list round trip including undo.
 // Run: dotnet run --project tests/Knx.Mcp.Tests
@@ -33,6 +35,7 @@ await ManagementChangeCliChecks.RunAsync(Check);
 if (args.Contains("--management-cli")) return failures.Count == 0 ? 0 : 1;
 await SecureConnectionMcpChecks.RunAsync(Check);
 if (args.Contains("--secure-connections")) return failures.Count == 0 ? 0 : 1;
+Check("Tool Access console and standalone MCP lifecycle", await ToolAccessCliChecks.RunAsync() == 0);
 
 await using var server = new McpServer();
 
