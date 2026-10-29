@@ -23,6 +23,7 @@ with tempfile.TemporaryDirectory(prefix='buschord-apt-hook-checks-') as director
         if not okay: raise RuntimeError(name)
         checks+=1
     check('BusChord-only real upgrade and configure',f'buschord 1.0 < 2.0 {own}\nbuschord 2.0 = 2.0 **CONFIGURE**\n',True)
+    check('BusChord already unpacked configure-only transaction','buschord 2.0 = 2.0 **CONFIGURE**\n',True)
     check('foreign dependency unpack rejected',f'review-lib 1.0 < 2.0 {foreign}\nbuschord 1.0 < 2.0 {own}\n')
     check('foreign configure rejected','review-lib 2.0 = 2.0 **CONFIGURE**\n')
     check('foreign bytes under own action rejected',f'buschord 1.0 < 2.0 {foreign}\n')
