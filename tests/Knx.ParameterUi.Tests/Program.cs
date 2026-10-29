@@ -95,9 +95,11 @@ try
     failures += NativeGeneralPopulationChecks.Run(directory);
     failures += NativeGeneralInitializationChecks.Run(directory);
     failures += NativeGeneralImageBuildChecks.Run(directory);
+    failures += NativeImageRawDataBuildChecks.Run(directory);
     failures += NativeImageBuildPublicChecks.Run(directory);
     failures += M112UnionBuildChecks.Run(directory);
     failures += await M112DownloadChecks.RunAsync(directory);
+    failures += await M112WorkbenchFlowChecks.RunAsync(directory);
     failures += NativeImageCoalescingChecks.Run(directory);
     failures += NativeImageGrowthBuildChecks.Run(directory);
     failures += NativeImageScalarBuildChecks.Run(directory);

@@ -63,13 +63,42 @@ public sealed class Telegram
 }
 
 /// <summary>
+/// Owned raw cEMI L_Data fields. <see cref="Apdu"/> contains the complete TPDU, including TPCI;
+/// it is not interpreted as a Telegram or an application service. Array inputs and outputs are copied.
+/// </summary>
+public sealed class CemiLDataFrame
+{
+    private readonly byte[] _apdu, _additionalInformation;
+    public CemiMessageCode MessageCode { get; }
+    public byte Control1 { get; }
+    public byte Control2 { get; }
+    public IndividualAddress Source { get; }
+    public ushort DestinationRaw { get; }
+    public byte[] Apdu => _apdu.ToArray();
+    public byte[] AdditionalInformation => _additionalInformation.ToArray();
+    internal ReadOnlySpan<byte> ApduSpan => _apdu;
+    internal ReadOnlySpan<byte> AdditionalInformationSpan => _additionalInformation;
+
+    public CemiLDataFrame(CemiMessageCode messageCode, byte control1, byte control2,
+        IndividualAddress source, ushort destinationRaw, ReadOnlySpan<byte> apdu,
+        ReadOnlySpan<byte> additionalInformation = default)
+    {
+        if (apdu.Length is < 1 or > Cemi.MaxExtendedApduOctets) throw new ArgumentOutOfRangeException(nameof(apdu));
+        if (additionalInformation.Length > byte.MaxValue) throw new ArgumentOutOfRangeException(nameof(additionalInformation));
+        MessageCode = messageCode; Control1 = control1; Control2 = control2; Source = source; DestinationRaw = destinationRaw;
+        _apdu = apdu.ToArray(); _additionalInformation = additionalInformation.ToArray();
+    }
+}
+
+/// <summary>
 /// cEMI L_Data encode/decode for KNXnet/IP tunnelling and routing. Wire layout
 /// Supported frame layout:
 /// <list type="bullet">
 /// <item>ctrl2 bit 7 is the group address flag; bits 6..4 are the hop count.</item>
 /// <item>APCI = ((octet 7 &amp; 0x03) &lt;&lt; 8) | (octet 8 &amp; 0xC0); octet 7 bits 7..6 are TPCI.</item>
 /// <item>1..6 bit values live in octet 8 bits 5..0, longer payloads start at octet 9.</item>
-/// <item>The length octet is the APDU octet count minus one; 0x40 in it marks an extended frame.</item>
+/// <item>One NPDU length octet contains the TPDU octet count minus one; 255 is the unsupported escape value.</item>
+/// <item>Control field 1 bit 7 selects standard (1) or extended (0) framing; the header has the same length.</item>
 /// </list>
 /// </summary>
 public static class Cemi
@@ -79,31 +108,69 @@ public static class Cemi
     public const byte Ctrl2Individual = 0x60; // hop 6, no group flag
     public const byte GroupAddressFlag = 0x80;
     public const int MaxStandardApduOctets = 16;
+    public const int MaxExtendedApduOctets = 255;
+    public const int MaxNpduLength = MaxExtendedApduOctets - 1;
 
     /// <summary>Builds an L_Data.req frame for tunnelling.</summary>
     public static byte[] LDataRequest(Telegram telegram)
     {
-        var apdu = BuildApdu(telegram, out var extended);
-        var headerLength = extended ? 10 : 9;
-        var frame = new byte[headerLength + apdu.Length];
-        frame[0] = (byte)CemiMessageCode.LDataReq;
-        frame[1] = 0x00; // additional info length
-        frame[2] = Ctrl1Standard;
-        frame[3] = Control2(telegram.IsGroupAddress, telegram.HopCount);
-        BinaryPrimitives.WriteUInt16BigEndian(frame.AsSpan(4), telegram.Source.Raw);
-        BinaryPrimitives.WriteUInt16BigEndian(frame.AsSpan(6), telegram.Destination.Raw);
-        var length = (ushort)(apdu.Length - 1);
-        if (extended)
+        ArgumentNullException.ThrowIfNull(telegram); ArgumentNullException.ThrowIfNull(telegram.Data);
+        return EncodeLDataFrame(new(CemiMessageCode.LDataReq, Ctrl1Standard,
+            Control2(telegram.IsGroupAddress, telegram.HopCount), telegram.Source, telegram.Destination.Raw, BuildApdu(telegram)));
+    }
+
+    /// <summary>Encodes one raw L_Data frame. Frame type follows the current TPDU length; all other supported flags are retained.</summary>
+    public static byte[] EncodeLDataFrame(CemiLDataFrame data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        RequireLData(data.MessageCode, data.Control2);
+        var additional = data.AdditionalInformationSpan; ValidateAdditionalInformation(additional);
+        var apdu = data.ApduSpan;
+        var frame = new byte[9 + additional.Length + apdu.Length];
+        frame[0] = (byte)data.MessageCode; frame[1] = (byte)additional.Length;
+        additional.CopyTo(frame.AsSpan(2)); var offset = 2 + additional.Length;
+        frame[offset] = (byte)((data.Control1 & 0x7F) | (apdu.Length <= MaxStandardApduOctets ? 0x80 : 0));
+        frame[offset + 1] = data.Control2;
+        BinaryPrimitives.WriteUInt16BigEndian(frame.AsSpan(offset + 2), data.Source.Raw);
+        BinaryPrimitives.WriteUInt16BigEndian(frame.AsSpan(offset + 4), data.DestinationRaw);
+        frame[offset + 6] = (byte)(apdu.Length - 1);
+        apdu.CopyTo(frame.AsSpan(offset + 7)); return frame;
+    }
+
+    /// <summary>Parses the raw TPDU and supported address format without interpreting APCI or discarding TPCI.</summary>
+    public static CemiLDataFrame ParseLDataFrame(ReadOnlySpan<byte> frame)
+    {
+        if (frame.Length < 2) throw new FormatException("L_Data frame too short");
+        var offset = 2 + frame[1];
+        if (frame.Length < offset + 8) throw new FormatException("L_Data frame too short");
+        RequireLData((CemiMessageCode)frame[0], frame[offset + 1]);
+        var additional = frame.Slice(2, frame[1]); ValidateAdditionalInformation(additional);
+        var npduLength = frame[offset + 6];
+        if (npduLength > MaxNpduLength) throw new FormatException("The NPDU length escape is not supported");
+        if (frame.Length != offset + 8 + npduLength) throw new FormatException("L_Data length does not match its NPDU length");
+        // 3/6/3 §4.1.5.2.3 requires receivers to tolerate the frame-type choice.
+        // XKNX CEMILData.from_knx retains it rather than enforcing a length/type match.
+        return new((CemiMessageCode)frame[0], frame[offset], frame[offset + 1],
+            new(BinaryPrimitives.ReadUInt16BigEndian(frame[(offset + 2)..])),
+            BinaryPrimitives.ReadUInt16BigEndian(frame[(offset + 4)..]), frame[(offset + 7)..], additional);
+    }
+
+    private static void RequireLData(CemiMessageCode code, byte control2)
+    {
+        if (code is not (CemiMessageCode.LDataReq or CemiMessageCode.LDataInd or CemiMessageCode.LDataCon))
+            throw new FormatException("Unsupported cEMI message code");
+        if ((control2 & 15) != 0) throw new FormatException("Unsupported cEMI extended frame format");
+    }
+    private static void ValidateAdditionalInformation(ReadOnlySpan<byte> information)
+    {
+        // Preserve unknown information types, but require complete type/length/value records.
+        for (var offset = 0; offset < information.Length;)
         {
-            frame[8] = (byte)(0x40 | (length >> 8));
-            frame[9] = (byte)length;
+            if (information.Length - offset < 2) throw new FormatException("Truncated cEMI additional information header");
+            var size = information[offset + 1]; offset += 2;
+            if (size > information.Length - offset) throw new FormatException("Truncated cEMI additional information value");
+            offset += size;
         }
-        else
-        {
-            frame[8] = (byte)length;
-        }
-        apdu.CopyTo(frame.AsSpan(headerLength));
-        return frame;
     }
 
     /// <summary>ctrl2: group flag in bit 7, hop count in bits 6..4, standard frame format in bits 3..0.</summary>
@@ -113,8 +180,8 @@ public static class Cemi
         return (byte)((isGroupAddress ? GroupAddressFlag : 0x00) | (hopCount << 4));
     }
 
-    /// <summary>Builds the APDU (octet 7, octet 8 and payload); sets <paramref name="extended"/> when it exceeds a standard frame.</summary>
-    private static byte[] BuildApdu(Telegram telegram, out bool extended)
+    /// <summary>Builds the APDU (TPCI/APCI octets and payload).</summary>
+    private static byte[] BuildApdu(Telegram telegram)
     {
         var apci = (ushort)telegram.Apci;
         if (apci > 0x3FF)
@@ -136,8 +203,7 @@ public static class Cemi
                 $"value 0x{value:X2} does not fit in {inlineBits} bit(s)");
 
         var apduOctets = inline ? 2 : 2 + data.Length;
-        extended = apduOctets > MaxStandardApduOctets;
-        if (apduOctets > 1024)
+        if (apduOctets > MaxExtendedApduOctets)
             throw new ArgumentOutOfRangeException(nameof(telegram), "APDU longer than the extended frame limit");
         var apdu = new byte[apduOctets];
         apdu[0] = (byte)((apci >> 8) & 0x03); // TPCI 0, APCI bits 9..8
@@ -156,29 +222,8 @@ public static class Cemi
     /// <summary>Parses an L_Data frame (req/ind/con are structurally identical here).</summary>
     public static Telegram ParseLData(ReadOnlySpan<byte> frame)
     {
-        if (frame.Length < 2) throw new FormatException("L_Data frame too short");
-        var offset = 2 + frame[1]; // skip cEMI message code and additional info
-        if (frame.Length < offset + 8) throw new FormatException("L_Data frame too short");
-
-        var ctrl2 = frame[offset + 1];
-        var src = new IndividualAddress(BinaryPrimitives.ReadUInt16BigEndian(frame[(offset + 2)..]));
-        var dstRaw = BinaryPrimitives.ReadUInt16BigEndian(frame[(offset + 4)..]);
-
-        var lengthOctet = frame[offset + 6];
-        ReadOnlySpan<byte> apdu;
-        if ((lengthOctet & 0xC0) == 0x40)
-        {
-            if (frame.Length < offset + 9) throw new FormatException("extended L_Data frame too short");
-            var length = ((lengthOctet & 0x3F) << 8) | frame[offset + 7];
-            if (frame.Length < offset + 9 + length) throw new FormatException("extended L_Data frame truncated");
-            apdu = frame.Slice(offset + 8, length + 1);
-        }
-        else
-        {
-            var length = lengthOctet & 0x0F;
-            if (frame.Length < offset + 8 + length) throw new FormatException("L_Data frame truncated");
-            apdu = frame.Slice(offset + 7, length + 1);
-        }
+        var raw = ParseLDataFrame(frame); var ctrl2 = raw.Control2;
+        var apdu = raw.ApduSpan;
         if (apdu.Length < 2) throw new FormatException("APDU shorter than two octets");
 
         var apci = (Apci)(((apdu[0] & 0x03) << 8) | (apdu[1] & 0xC0));
@@ -209,8 +254,8 @@ public static class Cemi
 
         return new Telegram
         {
-            Source = src,
-            Destination = new IndividualAddress(dstRaw),
+            Source = raw.Source,
+            Destination = new IndividualAddress(raw.DestinationRaw),
             IsGroupAddress = (ctrl2 & GroupAddressFlag) != 0,
             HopCount = (byte)((ctrl2 >> 4) & 0x07),
             Apci = apci,

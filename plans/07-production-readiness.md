@@ -35,6 +35,12 @@ Einzelgeräteversuche ersetzen diese Endabnahme nicht.
 - Am freigegebenen Taster wurde ein LED-Parameter geändert, als einzige Änderung
   im EEPROM rückgelesen und anschließend der gesamte persistente Originalstand
   unabhängig bestätigt. Der lesende Scanner hat Koppler und Taster erreicht.
+- Der erste Inbetriebnahmestand ist über PR #7 in `development` integriert;
+  alle neun Prüfungen des abschließenden Branchstands bestehen. Ein echter
+  lesender Workbench-Verbindungsversuch hat Geräteantwort und gejointen Abbau bestätigt.
+- In Prüfung: nativer M112-Änderungs-/Recoverydialog, Root-RawData-Schreiber,
+  korrektes Extended-cEMI und authentisierte Secure-UDP-Bibliothek. Geschützte
+  Keyrings und dauerhafte Data-Secure-Zustände werden separat ergänzt.
 - Echte lesende Workbench-Verbindung, Gruppenmonitor und adressierter Scan sind
   erreichbar; gemeinsame Verbindungsbesitzer beenden I/O vor erneuter Nutzung.
   Allgemeine Programmierung, Adressierung und weitere Geräteprofile bleiben offen.

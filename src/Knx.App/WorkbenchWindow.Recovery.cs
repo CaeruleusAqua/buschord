@@ -15,7 +15,7 @@ public partial class WorkbenchWindow
     {
         if (_recovery is not null) throw new InvalidOperationException("Recovery.ControllerAlreadyAttached");
         return _recovery = new(ViewModel, recorder, store, new RecoveryDispatcher(), () => HasParameterDrafts,
-            () => _sessions?.Programming.IsRunning == true, dependencies, dependencyRecorder);
+            () => _sessions?.Programming.IsRunning == true || M112Busy, dependencies, dependencyRecorder);
     }
     /// <summary>Root awaits this after the existing close gates and before closing the dispatcher/app lease.</summary>
     public Task DrainRecoveryForCloseAsync() => _recovery?.CloseAndDrainAsync() ?? Task.CompletedTask;
@@ -54,6 +54,7 @@ public partial class WorkbenchWindow
     private sealed class RestoreEditors(Action restore) : IDisposable { public void Dispose() => restore(); }
     private async Task DrainRecoveryBeforeReplacementAsync()
     {
+        await DrainM112BeforeReplacementAsync();
         if (_recovery is null) return;
         try { await _recovery.DrainAsync(); }
         catch (IOException) { ViewModel.Status = RecoveryUiStrings.Get("Failed"); }

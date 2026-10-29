@@ -207,6 +207,14 @@ preferences and asynchronous session shutdown before releasing the application
 lease. Full desktop-platform, installed APT-service and power-loss acceptance
 remain release work.
 
+The 2026-10-29 Ubuntu 26.04/WSLg run also started the native self-contained
+application, passed smoke and screenshot checks, and passed the Workbench's
+German/light and English/dark native workflows. It used isolated XDG/settings
+directories and privately extracted ICU 78, libICE and libSM libraries, without
+invariant globalization or host package installation. This verifies that published
+payload in one Linux desktop environment; AppImage/deb installation, the APT
+service, other desktop environments and power-loss acceptance remain open.
+
 Primary documentation checked 2026-10-28:
 - [Velopack packaging](https://docs.velopack.io/packaging/overview),
   [Windows](https://docs.velopack.io/packaging/operating-systems/windows),

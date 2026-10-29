@@ -12,6 +12,11 @@ if (args.Contains("--native-connection"))
     Environment.ExitCode = LiveConnectionNativeChecks.Run(args.Contains("--de") ? "de" : "en");
     return;
 }
+if (args.Contains("--native-m112-commissioning"))
+{
+    Environment.ExitCode = M112CommissioningNativeChecks.Run(args.Contains("--de") ? "de" : "en");
+    return;
+}
 
 var checks = 0;
 void Check(string name, bool condition)
@@ -36,6 +41,12 @@ if(args.Contains("--history-adapter"))
 {
     await MonitorHistoryCaptureChecks.Run(Check);
     Console.WriteLine($"{checks} history checks passed.");
+    return;
+}
+if (args.Contains("--m112-commissioning"))
+{
+    await M112CommissioningChecks.Run(Check);
+    Console.WriteLine($"{checks} M112 commissioning checks passed.");
     return;
 }
 
@@ -645,6 +656,7 @@ catch (ObjectDisposedException) { Check("disposed programming queue rejects new 
 await ProgrammingPersistenceChecks.Run(Check);
 await MonitorHistoryCaptureChecks.Run(Check);
 await LiveConnectionChecks.Run(Check);
+await M112CommissioningChecks.Run(Check);
 Check("configuration location identity checks", ConfigurationLocationChecks.Run() == 0);
 Console.WriteLine($"{checks} checks passed.");
 

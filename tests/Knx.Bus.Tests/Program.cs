@@ -260,14 +260,15 @@ await using (var bus = new KnxBus())
     }
     catch (ArgumentOutOfRangeException) { Check("value wider than its declared bits is rejected", true); }
 
-    // Extended length field: lengths above a standard APDU round-trip, nothing is silently cut.
+    // Extended frames retain the one-octet NPDU length and select their type in control field 1.
     var longData = Enumerable.Range(0, 15).Select(i => (byte)i).ToArray();
     var extended = Cemi.LDataRequest(new Telegram
     {
         Source = new IndividualAddress(0x11FA), Destination = new IndividualAddress(0x3303),
         IsGroupAddress = true, Apci = Apci.GroupValueWrite, Data = longData,
     });
-    Check("extended frame length flag", (extended[8] & 0xC0) == 0x40, Convert.ToHexString(extended[..12]));
+    Check("extended frame control and single length octet", (extended[2] & 0x80) == 0 && extended[8] == 16 && extended.Length == 26,
+        Convert.ToHexString(extended[..12]));
     Check("extended frame round-trip", Cemi.ParseLData(extended).Data.SequenceEqual(longData));
 }
 
@@ -557,23 +558,13 @@ Check("routing joins, decodes and leaves the multicast group", routingOk, routin
     await refusalTunnel.DisposeAsync();
 }
 
-// ---- 8. KNX Data Secure: Schlüsselableitung, Keyring, S-A_Data, Secure Wrapper ----
+// ---- 8. AES primitive and synthetic keyring material ----
 var dac = Convert.FromHexString("000102030405060708090A0B0C0D0E0F");
-var dacOther = Convert.FromHexString("0F0E0D0C0B0A09080706050403020100");
-var keys = SecureKeys.DeriveKeys("geheim", dac);
-var keysAgain = SecureKeys.DeriveKeys("geheim", dac);
-var keysOtherPw = SecureKeys.DeriveKeys("anders", dac);
-var keysOtherDac = SecureKeys.DeriveKeys("geheim", dacOther);
+var keys = (UserKey: Convert.FromHexString("00112233445566778899AABBCCDDEEFF"),
+    DeviceAuthenticationKey: Convert.FromHexString("FFEEDDCCBBAA99887766554433221100"));
 {
-    Check("PBKDF2 deterministisch",
-        keys.UserKey.SequenceEqual(keysAgain.UserKey)
-        && keys.DeviceAuthenticationKey.SequenceEqual(keysAgain.DeviceAuthenticationKey));
-    Check("User- und Device-Key unterschiedlich", !keys.UserKey.SequenceEqual(keys.DeviceAuthenticationKey));
-    Check("anderes Passwort -> anderer Key", !keys.UserKey.SequenceEqual(keysOtherPw.UserKey));
-    Check("anderer DAC -> anderer Key", !keys.UserKey.SequenceEqual(keysOtherDac.UserKey));
-    Check("Keylänge 16 Byte", keys.UserKey.Length == 16 && keys.DeviceAuthenticationKey.Length == 16);
-    Check("FixedTimeEquals", SecureKeys.FixedTimeEquals(keys.UserKey, keysAgain.UserKey)
-        && !SecureKeys.FixedTimeEquals(keys.UserKey, keysOtherPw.UserKey));
+    Check("FixedTimeEquals", SecureKeys.FixedTimeEquals(keys.UserKey, keys.UserKey.ToArray())
+        && !SecureKeys.FixedTimeEquals(keys.UserKey, keys.DeviceAuthenticationKey));
     Check("AES-128 Blockvektor", SecureKeys.AesEncryptBlock(Convert.FromHexString("000102030405060708090A0B0C0D0E0F"),
         Convert.FromHexString("00112233445566778899AABBCCDDEEFF")) is
         [0x69, 0xC4, 0xE0, 0xD8, 0x6A, 0x7B, 0x04, 0x30, 0xD8, 0xCD, 0xB7, 0x80, 0x70, 0xB4, 0xC5, 0x5A],
@@ -666,120 +657,9 @@ var keysOtherDac = SecureKeys.DeriveKeys("geheim", dacOther);
         && fromXml.Interfaces is [{ Type: InterfaceType.Tunneling }]);
 }
 
-// ---- 10. S-A_Data: Round-Trip, Tamper, falscher Key, 2-Byte-Tag ----
-{
-    var first = new byte[] { 0x00, 0x80, 0x01 }; // GroupValueWrite, 1 Byte
-    var telegram = new SecureTelegram { PlainData = first, SequenceNumber = 7 };
-    var (header, saData) = SecureTelegram.Encrypt(0x0110, GroupAddress.ThreeLevel(1, 2, 3).Raw, telegram, keys.UserKey);
-    Check("S-A_Data Länge", saData.Length == 8 + first.Length + 4, saData.Length.ToString());
-    Check("S-A_Data Round-Trip", SecureTelegram.TryDecrypt(header, saData, keys.UserKey, out var decoded, out var err)
-        && decoded!.PlainData.SequenceEqual(first) && decoded.SequenceNumber == 7, err);
-
-    var tampered = (byte[])saData.Clone();
-    tampered[8] ^= 0x01; // erstes Datumbyte
-    Check("S-A_Data Tamper erkannt", !SecureTelegram.TryDecrypt(header, tampered, keys.UserKey, out _, out _));
-
-    var tamperedTag = (byte[])saData.Clone();
-    tamperedTag[^1] ^= 0x01;
-    Check("S-A_Data Tag-Tamper erkannt", !SecureTelegram.TryDecrypt(header, tamperedTag, keys.UserKey, out _, out _));
-
-    var tamperedHeader = SecureTelegram.Encrypt(0x0110, GroupAddress.ThreeLevel(1, 2, 4).Raw, telegram, keys.UserKey).Header;
-    Check("S-A_Data Header-Tamper erkannt", !SecureTelegram.TryDecrypt(tamperedHeader, saData, keys.UserKey, out _, out _));
-
-    Check("S-A_Data falscher Key abgelehnt", !SecureTelegram.TryDecrypt(header, saData, keysOtherPw.UserKey, out _, out var wrongErr)
-        && wrongErr == "MAC mismatch", wrongErr);
-
-    var telegram2 = new SecureTelegram { PlainData = [0x09, 0x1F], SequenceNumber = 8, TagLength = SecureTelegram.TagLength2 };
-    var (header2, saData2) = SecureTelegram.Encrypt(0x0110, GroupAddress.ThreeLevel(1, 2, 3).Raw, telegram2, keys.UserKey);
-    Check("S-A_Data 2-Byte-Tag Länge", saData2.Length == 8 + 2 + 2, saData2.Length.ToString());
-    Check("S-A_Data 2-Byte-Tag Round-Trip", SecureTelegram.TryDecrypt(header2, saData2, keys.UserKey,
-        SecureTelegram.TagLength2, out var decoded2, out var err2) && decoded2!.PlainData.SequenceEqual(new byte[] { 0x09, 0x1F }), err2);
-}
-
-// ---- 11. S-A_Data im Secure-Routing-Frame ----
-{
-    var telegram = new SecureTelegram { PlainData = [0x00, 0x80, 0x2A], SequenceNumber = 12 };
-    var frame = SecureApdu.BuildLDataIndication(0x0110, GroupAddress.ThreeLevel(1, 2, 3).Raw, telegram, keys.UserKey);
-    Check("Secure-Frame: cEMI + APCI", frame[0] == 0x29 && frame[8] == 0x03 && frame[9] == 0xF1,
-        Convert.ToHexString(frame[..10]));
-    Check("Secure-Frame Round-Trip", SecureApdu.TryDecryptLDataIndication(frame, keys.UserKey, out var decoded, out var err)
-        && decoded!.PlainData.SequenceEqual(new byte[] { 0x00, 0x80, 0x2A })
-        && decoded.SequenceNumber == 12, err);
-    frame[12] ^= 0x10;
-    Check("Secure-Frame Tamper erkannt", !SecureApdu.TryDecryptLDataIndication(frame, keys.UserKey, out _, out _));
-    Check("Secure-Frame ohne Secure-APCI abgelehnt", !SecureApdu.TryDecryptLDataIndication(frame[..10], keys.UserKey, out _, out _));
-}
-
-// ---- 12. KNXnet/IP Secure Wrapper ----
-{
-    var payload = new byte[] { 0x29, 0x00, 0xBC, 0xE0, 0x01, 0x10, 0x0A, 0x03, 0x03, 0xF1, 1, 2, 3, 4, 5, 0xAB };
-    var serial = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05 };
-    var packet = new SecurePacket
-    {
-        SessionId = 0x1234,
-        SequenceNumber = 5,
-        SerialNumber = serial,
-        MessageTag = 0,
-        Payload = payload,
-    };
-    var body = SecureWrapper.Wrap(packet, keys.DeviceAuthenticationKey);
-    Check("Wrapper Länge", body.Length == 16 + 16 + 16, body.Length.ToString());
-    Check("Wrapper Round-Trip", SecureWrapper.TryUnwrap(body, keys.DeviceAuthenticationKey, out var back, out var err)
-        && back!.Payload.SequenceEqual(payload) && back.SessionId == 0x1234 && back.SequenceNumber == 5, err);
-    Check("Wrapper Seriennummer", back?.SerialNumber.SequenceEqual(serial) == true);
-    Check("Wrapper Seriennummer passt", back is not null && SecureWrapper.IsFrom(back, serial)
-        && !SecureWrapper.IsFrom(back, new byte[] { 0, 1, 2, 3, 4, 6 }));
-    Check("Wrapper falscher Key abgelehnt",
-        !SecureWrapper.TryUnwrap(body, keysOtherPw.DeviceAuthenticationKey, out _, out _));
-
-    var tampered = (byte[])body.Clone();
-    tampered[18] ^= 0x40;
-    Check("Wrapper Tamper erkannt", !SecureWrapper.TryUnwrap(tampered, keys.DeviceAuthenticationKey, out _, out _));
-    Check("Wrapper Längenfehler erkannt",
-        !SecureWrapper.TryUnwrap(body[..^1], keys.DeviceAuthenticationKey, out _, out _));
-
-    // KNXnet/IP-Frame mit 0x00 am Ende: Länge kommt aus dem Frame-Header, nicht aus dem Padding
-    var frameBytes = new byte[16];
-    frameBytes[0] = 0x06; frameBytes[1] = 0x10; frameBytes[3] = 0x50; frameBytes[5] = 0x10; frameBytes[9] = 0x09;
-    var zeroPacket = new SecurePacket
-    {
-        SessionId = 0x1234,
-        SequenceNumber = 6,
-        SerialNumber = serial,
-        Payload = frameBytes,
-    };
-    var zeroBody = SecureWrapper.Wrap(zeroPacket, keys.DeviceAuthenticationKey);
-    Check("Wrapper Frame mit 0x00-Ende", SecureWrapper.TryUnwrap(zeroBody, keys.DeviceAuthenticationKey, out var zeroBack, out _)
-        && zeroBack!.Payload.SequenceEqual(frameBytes));
-}
-
-// ---- 13. Secure-Session-Bodies ----
-{
-    var endpoint = new IPEndPoint(IPAddress.Parse("192.168.1.10"), 3671);
-    var auth = SecureSession.Authenticate(endpoint, keys.UserKey);
-    Check("SESSION_AUTHENTICATE Round-Trip", SecureSession.TryParseAuthenticate(auth, out var ep, out var userKey, out var err)
-        && ep!.Port == 3671 && ep.Address.ToString() == "192.168.1.10" && userKey!.SequenceEqual(keys.UserKey), err);
-
-    var response = SecureSession.Response(0x0A0B, [0, 1, 2, 3, 4, 5], keys.DeviceAuthenticationKey);
-    Check("SESSION_RESPONSE Round-Trip", SecureSession.TryParseResponse(response, keys.DeviceAuthenticationKey,
-        out var sessionId, out var serial, out var err2) && sessionId == 0x0A0B
-        && serial!.SequenceEqual(new byte[] { 0, 1, 2, 3, 4, 5 }), err2);
-    response[7] ^= 0x01;
-    Check("SESSION_RESPONSE Tamper erkannt", !SecureSession.TryParseResponse(response,
-        keys.DeviceAuthenticationKey, out _, out _, out _));
-}
-
-// ---- 14. Sequenznummern ----
-{
-    var key = new SecureKey { SequenceNumber = 3 };
-    var first = key.NextSequenceNumber();
-    var second = key.NextSequenceNumber();
-    Check("Sequenz monoton", second == first + 1 && key.SequenceNumber == second);
-    var max = new SecureKey { SequenceNumber = SecureKey.MaxSequenceNumber };
-    Check("Sequenz Wrap bei 48 Bit", max.NextSequenceNumber() == 0 && max.SequenceNumber == 0);
-    Check("Sequenz bleibt 48 Bit", new SecureKey { SequenceNumber = SecureKey.MaxSequenceNumber - 1 }
-        .NextSequenceNumber() == SecureKey.MaxSequenceNumber);
-}
+// ---- 10. Authenticated IP sessions and legacy refusal ----
+Check("authenticated secure tunnel checks", await SecureTunnelChecks.RunAsync() == 0);
+Check("legacy secure APIs fail closed", LegacySecurityChecks.Run() == 0);
 
 // ---- 15. CSV-Export: RFC 4180 und Formel-Neutralisierung ----
 {
@@ -879,6 +759,7 @@ TelegramHistoryChecks.Run((name, ok) => Check(name, ok));
 await ManagementChecks.RunAsync(Check);
 await ManagementWriteChecks.RunAsync(Check);
 await ReadOnlyLineScanChecks.RunAsync(Check);
+Check("cEMI frame checks", CemiExtendedChecks.Run() == 0);
 Check("tunnel lifetime checks", await TunnelLifetimeChecks.RunAsync() == 0);
 Check("tunnel peer checks", await TunnelPeerChecks.RunAsync() == 0);
 Console.WriteLine(failures.Count == 0 ? "\nALLE CHECKS OK" : $"\n{failures.Count} FEHLER");

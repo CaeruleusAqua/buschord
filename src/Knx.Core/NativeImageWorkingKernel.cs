@@ -282,13 +282,26 @@ internal sealed class NativeImageWorkingKernel
         ValidateInteractions(population.Claims);
         foreach (var claim in population.Claims)
         {
-            if (claim.BitLength is 0 or > 32 || claim.BitOffset > 7)
+            if (claim.BitLength == 0 || claim.BitOffset > 7 || claim.EncodedBytes is null && claim.BitLength > 32)
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration, claim.RefId);
             var length = FieldBytes(claim.BitOffset, claim.BitLength);
             var buffer = Find(claim.Target, claim.ByteOffset, length);
             if (buffer.Mask is null) NativeGeneralHash.Fail(NativeGeneralIssueCode.MissingAllocation, claim.RefId);
             var start = checked((int)(claim.ByteOffset - buffer.Range.ByteOffset));
             buffer.ParameterWriteBits ??= _ledger.Allocate(buffer.Data.Length);
+            if (claim.EncodedBytes is { } bytes)
+            {
+                if (claim.Target.Space is not (NativeImageSpace.StandardMemory or NativeImageSpace.RelativeMemory)
+                    || claim.BitOffset != 0 || claim.EncodedWord is not null || claim.BitLength != (uint)bytes.Length * 8)
+                    NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration, claim.RefId);
+                for (var i = 0; i < bytes.Length; i++)
+                {
+                    if (claim.WritesData) { buffer.Data[start + i] = bytes[i]; buffer.ParameterWriteBits[start + i] = 255; }
+                    if (claim.ValidityClear != NativeRootValidityEffect.None) buffer.Mask![start + i] = 0;
+                    if (claim.ValiditySet != NativeRootValidityEffect.None) buffer.Mask![start + i] = 255;
+                }
+                continue;
+            }
             if (claim.WritesData && claim.EncodedWord is null) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidValue, claim.RefId);
             var touches = new SortedDictionary<int, (byte Bits, byte Mask)>();
             FixedScalarPatchCodec.Accumulate(touches, claim.EncodedWord ?? 0, start, claim.BitOffset, claim.BitLength, order);

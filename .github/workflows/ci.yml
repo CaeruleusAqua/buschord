@@ -180,6 +180,11 @@ jobs:
         run: |
           dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-connection
           dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-connection --de
+      - name: Native M112 commissioning regressions (Windows only)
+        shell: bash
+        run: |
+          dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-m112-commissioning
+          dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-m112-commissioning --de
       - name: Recovery lifecycle regressions (Windows only)
         shell: bash
         run: |

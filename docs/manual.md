@@ -574,8 +574,9 @@ Download und keine Geräteprogrammierung“.
 - **Auftrag abbrechen**, **Wartende abbrechen** und **Verlauf leeren** helfen beim
   Aufräumen; die Anzeige nennt Geräte mit Programmierbedarf gegenüber dem zuletzt
   simulierten Erfolgsstand.
-- Ein echter Download ist nicht verdrahtet; ein Auftrag mit Ursprung `Real` wird
-  ohne Executor abgelehnt.
+- Ein echter Download ist in dieser allgemeinen Warteschlange nicht verdrahtet; ein Auftrag mit Ursprung `Real` wird
+  ohne Executor abgelehnt. Der separate M112-Dialog unten hat einen eigenen
+  geprüften Ablauf und erzeugt keine allgemeinen Erfolgsflags für Demo-Aufträge.
 - Die read-only **Download-Vorprüfung** ist kein Workbench-Befehl, sondern das
   MCP-Werkzeug `download_plan`. Es prüft Descriptor/Maske, Programmpaarung,
   Parameter-/Link-Vollständigkeit und Adress-/Linienbezug, berechnet die
@@ -583,6 +584,23 @@ Download und keine Geräteprogrammierung“.
   Da Programmiermodus und Vor-Ort-Bestätigungen nicht abfragbar sind, bleibt der
   Plan immer offen; `writesEnabled` ist `false` und ein echter Download ist
   gesperrt.
+
+Für das Teilprofil MV-0701/M112 gibt es **Werkzeuge → M112-Änderung prüfen**:
+
+1. Projektgerät wählen, private Ausgangsprojektkopie und Journalordner auswählen.
+   **Offline prüfen** zeigt den gebundenen Parameter-/Tabellenplan und öffnet keine
+   Verbindung. Applikation und Speichergeometrie müssen übereinstimmen.
+2. **Gerät lesen** beendet die Monitorverbindung vollständig. Physische Identität
+   vergleichen und ausdrücklich bestätigen, den unveränderlichen Plan prüfen und
+   die Zieladresse eingeben. Der Fingerprint ist kopierbar und muss nicht abgetippt werden.
+3. **Bestätigten Plan ausführen** lädt dieses Profil. Abbrechen und Schließen warten
+   eine notwendige unabhängige Rücksicherung ab. Ergebnis und Recovery-Pfad bleiben sichtbar.
+4. Nach einem Programmneustart lässt sich ohne Projekt oder Geräteauswahl dieselbe
+   Funktion im Wiederherstellungsmodus öffnen. Eine gewählte Sicherung wird vorab
+   geprüft; die physische Bestätigung benötigt keine laufende Geräteapplikation.
+   Eine fehlgeschlagene Wiederherstellung muss vor dem Verlassen eigens bestätigt werden.
+
+Umfang, Konsolenbefehle und Gerätebelege stehen in [Inbetriebnahme](commissioning.md).
 
 ### 7.3 Scan
 
@@ -875,7 +893,8 @@ belegt; belegt ist `Strg+Shift+G`.
 
 - **Projektänderungen senden nichts.** Echte Workbench-Verbindung, Monitor und
   Scan werden ausdrücklich gewählt und arbeiten lesend. Programmieraufträge
-  bleiben simuliert; `bus_write` ist gesperrt.
+  bleiben als allgemeine Warteschlange simuliert; der gesonderte M112-Dialog
+  erfordert einen geprüften Plan und ausdrückliche Gerätebestätigung. `bus_write` ist gesperrt.
 - **Allgemeine Downloads und Adressschreibungen bleiben gesperrt.** Der Schreibpfad ist
   deaktiviert (`WritesEnabled = false`), `bus_write` wird abgewiesen, ein realer
   Programmierauftrag hat keinen Executor, und `download_plan` sendet kein

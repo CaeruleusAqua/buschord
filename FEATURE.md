@@ -83,6 +83,11 @@ Arbeitsbereich auch in mehreren geordneten Schritten vergrößern. Getrennte
 Quellenbesitzer und Allokationsgrenzen bleiben dabei erhalten.
 Der gemeinsame Lauf unterstützt auch begrenzte physische Single- und Zeitfelder;
 seine Policy-Ausgabe beschreibt Quellenoptionen und die verwendeten Codecs.
+Direkte Root-RawData-Speicherfelder nutzen denselben Arbeitslauf einschließlich
+M112-Änderungsplan; [Profil und Grenzen](docs/status.md#combined-logical-working-stage).
+Ein eigener [M112-Dialog](docs/commissioning.md) verbindet Review, Gerätebestätigung
+und Wiederherstellung nach Neustart. Die [Secure-UDP-Bibliothek](docs/secure-session.md)
+ist auf Windows und Linux geprüft; ihre Oberflächen-/Schlüsselintegration läuft.
 
 MDT, Jung und Gira sind verbindliche Herstellerprofile. Die derzeit unterstützten
 Import- und Parameterprofile sowie die verbleibenden Plug-in-, Dateiformat- und

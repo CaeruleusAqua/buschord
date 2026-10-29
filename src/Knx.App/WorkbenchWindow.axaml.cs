@@ -93,12 +93,14 @@ public partial class WorkbenchWindow : Window
     public WorkbenchWindow() : this(new MainWindowViewModel(), new WorkbenchWorkspace(), DefaultLayoutPath) { }
 
     public WorkbenchWindow(MainWindowViewModel viewModel, WorkbenchWorkspace workspace, string? layoutPath = null, CatalogLibrary? catalogLibrary = null,
-        ProgrammingStateStore? programmingStateStore = null, Func<ReadOnlyConnectionOptions, IReadOnlyWorkbenchBackend>? connectionFactory = null)
+        ProgrammingStateStore? programmingStateStore = null, Func<ReadOnlyConnectionOptions, IReadOnlyWorkbenchBackend>? connectionFactory = null,
+        Func<string, IM112CommissioningBackend>? m112BackendFactory = null)
     {
         ViewModel = viewModel;
         _realConnectionFactory = connectionFactory;
+        _m112BackendFactory = m112BackendFactory;
         ViewModel.WorkbenchMonitorOwnsCapture = true;
-        ViewModel.HistoryBlocked = () => _sessions?.Programming.IsRunning == true;
+        ViewModel.HistoryBlocked = () => _sessions?.Programming.IsRunning == true || M112Busy;
         Workspace = workspace;
         _layoutPath = layoutPath;
         _programmingStateStore = programmingStateStore ?? new ProgrammingStateStore(Path.Combine(
@@ -433,6 +435,7 @@ public partial class WorkbenchWindow : Window
     });
     private void OnProjectEdited(object? sender, string description)
     {
+        _m112Session?.Invalidate();
         void Add()
         {
             _audit.Add(description);
@@ -509,6 +512,7 @@ public partial class WorkbenchWindow : Window
 
     private Task DisposeSessionsAsync()
     {
+        TrackM112Disposal();
         // Detach every observer before cancellation publishes the final job state.
         CloseSessionWindows();
         ToolHost.Content = null;

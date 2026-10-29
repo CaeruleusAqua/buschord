@@ -75,6 +75,7 @@ public partial class WorkbenchWindow
             {
                 Item(W("ToolsOverview"), ShowToolsOverview),
                 Async(LiveConnectionStrings.Get("Title"), ShowConnectionAsync),
+                Async(M112CommissioningStrings.Get("Title"), ShowM112Async),
                 Item(W("ProjectCheck"), () => ShowTool("problems")), Item(W("Monitor"), () => ShowTool("monitor")),
                 Item(W("HistoryTitle"), ShowTelegramHistory),
                 Item(W("Scan"), () => ShowTool("scan")), Item(W("Changes"), () => ShowTool("changes")),
@@ -234,7 +235,7 @@ public partial class WorkbenchWindow
         }
     }
 
-    private async Task<string?> PromptPasswordAsync(string message, bool saving = false)
+    private async Task<string?> PromptPasswordAsync(string message, bool saving = false, Window? owner = null)
     {
         var dialog = CreateDialog(W("Password"), 460, 230);
         var panel = new StackPanel { Margin = new(22, 22, 22, 14), Spacing = 10 };
@@ -248,7 +249,8 @@ public partial class WorkbenchWindow
             ActionButton(W(saving ? "MenuSave" : "Open"), () => { result = box.Text; dialog.Close(); }, "primary", isDefault: true));
         dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => box.Focus();
-        await dialog.ShowDialog(this);
+        await dialog.ShowDialog(owner ?? this);
+        box.Text = "";
         return result;
     }
 
@@ -349,6 +351,7 @@ public partial class WorkbenchWindow
 
     private async Task<bool> ConfirmDiscardAsync()
     {
+        await DrainM112BeforeReplacementAsync();
         if (HasParameterDrafts && !await ConfirmDialog.AskDiscardDraftsAsync(this)) return false;
         if (!ViewModel.IsDirty) return true;
         return await ConfirmDialog.AskUnsavedAsync(this, ViewModel.Project?.Name ?? "") switch
@@ -361,6 +364,7 @@ public partial class WorkbenchWindow
     {
         if (e.CloseReason == WindowCloseReason.OSShutdown && AppUpdateService.Current is { } updates)
             updates.SuppressApply = true;
+        if (JoinM112BeforeOwnerClose(e)) return;
         if (_closingSessionsForExit) { e.Cancel = true; return; }
         if (!_shuttingDown && (ViewModel.IsDirty || HasParameterDrafts))
         {

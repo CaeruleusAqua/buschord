@@ -113,7 +113,7 @@ internal enum NativeRootValidityEffect { None, FieldBits, WholeBytes }
 internal sealed record NativeRootWriteClaim(string RefId, string OwnerKey,
     NativeImageTarget Target, uint ByteOffset, byte BitOffset, uint BitLength,
     bool WritesData, uint? EncodedWord, NativeRootValidityEffect ValiditySet,
-    NativeRootValidityEffect ValidityClear);
+    NativeRootValidityEffect ValidityClear, ImmutablePatchBytes? EncodedBytes = null);
 internal sealed record NativeRootWriterRecord(string RefId, string ParameterId,
     string ParameterTypeId, RootParameterDisposition Disposition, bool Active,
     int NormalReferenceCount, bool LegacyPatchAlways, bool CustomerAdjustable,

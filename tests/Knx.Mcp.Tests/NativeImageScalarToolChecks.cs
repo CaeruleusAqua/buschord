@@ -71,6 +71,17 @@ internal static class NativeImageScalarToolChecks
         => F.CreateArchive(directory, name, editApplication: app => { AddScalars(app, little, packed, behavior, latent); change?.Invoke(app); }, editMaster: AddInitialSources);
     private static XElement Param(XDocument app, string id) => F.Static(app).Element(Ns + "Parameters")!.Elements().Single(p => (string?)p.Attribute("Id") == "P" + id);
     private static XElement Shape(XDocument app, string id) => F.Static(app).Element(Ns + "ParameterTypes")!.Elements().Single(t => (string?)t.Attribute("Id") == id).Elements().Single();
+    private static void AddRaw(XDocument app)
+    {
+        var stat = F.Static(app);
+        stat.Element(Ns + "ParameterTypes")!.Add(new XElement(Ns + "ParameterType", new XAttribute("Id", "RT"),
+            new XElement(Ns + "TypeRawData", new XAttribute("MaxSize", 4))));
+        stat.Element(Ns + "Parameters")!.Add(new XElement(Ns + "Parameter", new XAttribute("Id", "PRAW"),
+            new XAttribute("ParameterType", "RT"), new XAttribute("Value", "AID/"),
+            new XElement(Ns + "Memory", new XAttribute("CodeSegment", "SC"), new XAttribute("Offset", 56), new XAttribute("BitOffset", 0))));
+        stat.Element(Ns + "ParameterRefs")!.Add(new XElement(Ns + "ParameterRef", new XAttribute("Id", "RAW"), new XAttribute("RefId", "PRAW")));
+        F.Program(app).Element(Ns + "Dynamic")!.Add(new XElement(Ns + "ParameterRefRef", new XAttribute("RefId", "RAW")));
+    }
     private static (byte[] Data, byte[] Mask) Expected(bool little = false, bool packed = true, string behavior = "DefaultValue", bool excluded = false, string? rounding = null, bool negativeZero = true)
     {
         var data = Seed(); var mask = new byte[64];
@@ -231,6 +242,37 @@ internal static class NativeImageScalarToolChecks
                 var invalidPath = Fixture(directory, "invalid-" + Guid.NewGuid().ToString("N"), little: little, change: change);
                 var opened = await Open(invalidPath); check("invalid scalar source opens for offline typed diagnostics " + name, !Error(opened), opened.ToJsonString());
                 if (!Error(opened)) { var rejected = await Preview(); check("invalid scalar source atomically refuses " + name, Atomic(rejected), rejected.ToJsonString()); }
+            }
+            foreach (var little in new[] { false, true })
+            {
+                var rawPath = Fixture(directory, "raw-" + little, little: little, packed: !little, change: AddRaw);
+                var opened = await Open(rawPath);
+                check("native raw MCP fixture opens " + little, !Error(opened), opened.ToJsonString());
+                if (Error(opened)) continue;
+                var raw = await Preview(); var rawCore = Core();
+                var expected = Expected(little: little, packed: !little);
+                Convert.FromHexString(little ? "030000000080FF" : "000000030080FF").CopyTo(expected.Data, 56);
+                Array.Fill(expected.Mask, (byte)255, 56, 7);
+                check("native raw MCP complete memory hashes match independent bytes " + little, Available(raw)
+                    && (string?)Memory(raw)["workingDataHash"] == Hash(expected.Data)
+                    && (string?)Memory(raw)["desiredValidityHash"] == Hash(expected.Mask), raw.ToJsonString());
+                check("native raw MCP policy reports framing without exposing payload " + little, Available(raw)
+                    && Build(raw)["policy"]?["rawDataFieldCount"]?.GetValue<int>() == 1
+                    && Build(raw)["policy"]?["codecProfileVersion"]?.GetValue<int>() == 4
+                    && (string?)Build(raw)["policy"]?["rawDataEncodingProfile"] == "RootMemoryLength32ProgramByteOrderOpaquePayloadRetainedTail"
+                    && HashOnly(Build(raw)) && !raw.ToJsonString().Contains("AID/")
+                    && Data(raw)["writesEnabled"]?.GetValue<bool>() == false, raw.ToJsonString());
+                var rawDevice = ProjectQuery.DeviceList(server.Project!).Single();
+                rawDevice.ParameterValues["RAW"] = "AA==";
+                var shortened = await Preview(); var shortenedExpected = Expected(little: little, packed: !little);
+                Convert.FromHexString(little ? "0100000000" : "0000000100").CopyTo(shortenedExpected.Data, 56);
+                check("native raw MCP edit changes binding and retains shortened tail " + little, Available(shortened)
+                    && rawCore.Binding is not null && !rawCore.Binding.IsCurrent(server.Project!, rawDevice)
+                    && (string?)Memory(shortened)["workingDataHash"] == Hash(shortenedExpected.Data), shortened.ToJsonString());
+                rawDevice.ParameterValues["RAW"] = "not:a:base64";
+                var invalidRaw = await Preview();
+                check("native raw MCP invalid payload refuses atomically without a value echo " + little,
+                    Atomic(invalidRaw) && !invalidRaw.ToJsonString().Contains("not:a:base64"), invalidRaw.ToJsonString());
             }
         }
         finally { Environment.SetEnvironmentVariable("KNX_CATALOG_DIR", previous); }

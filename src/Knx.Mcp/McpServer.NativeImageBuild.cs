@@ -249,6 +249,7 @@ public sealed partial class McpServer
                 packedTimeEncodingProfile = policy.PackedTimeEncodingProfile, denseTimeEncodingProfile = policy.DenseTimeEncodingProfile,
                 physicalFieldCount = policy.PhysicalFieldCount, singleFieldCount = policy.SingleFieldCount,
                 packedTimeFieldCount = policy.PackedTimeFieldCount, denseTimeFieldCount = policy.DenseTimeFieldCount,
+                rawDataFieldCount = policy.RawDataFieldCount, rawDataEncodingProfile = policy.RawDataEncodingProfile,
                 sourcePolicyFingerprint = policy.SourcePolicyFingerprint, codecFactsFingerprint = policy.CodecFactsFingerprint, fingerprint = policy.Fingerprint,
             },
             declaredReferenceCount = plan.DeclaredReferenceCount, declaredOwnerCount = plan.DeclaredOwnerCount,

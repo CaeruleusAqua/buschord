@@ -50,6 +50,8 @@ internal sealed partial class NativeRootWriterPopulation
         _active = new System.Collections.ObjectModel.ReadOnlyDictionary<string, int>(counts);
         _values = inventory.Hydrate(application);
         CurrentValuesHash = NativeGeneralHash.Of(_values.Select(v => new { v.Reference.RefId, v.Origin, v.CurrentHash, v.DefaultHash, v.CurrentWord, v.DefaultWord }).ToArray());
+        if (_values.Any(v => v.CurrentBytes is not null)) CurrentValuesHash = NativeGeneralHash.Of(new { profile = 4, previous = CurrentValuesHash,
+            bytes = _values.Where(v => v.CurrentBytes is not null).Select(v => new { v.Reference.RefId, current = v.CurrentBytes!.Sha256, fallback = v.DefaultBytes!.Sha256 }).ToArray() });
         ActivityHash = NativeGeneralHash.Of(inventory.References.Select(r => new { r.RefId, normal = counts.GetValueOrDefault(r.RefId) }).ToArray());
         Fingerprint = NativeGeneralHash.Of(new { profile = 1, inventory.SourceHash, inventory.SavedValuesHash, inventory.CarrierHash,
             preparation = preparation.Fingerprint, application = application.Fingerprint, CurrentValuesHash, ActivityHash, inventory.GeometryHash });
@@ -83,20 +85,25 @@ internal sealed partial class NativeRootWriterPopulation
                     }
                     var behavior = _inventory!.Policy!.DownloadBehavior;
                     var chosen = active || reference.Always ? value.CurrentWord : behavior == RootParameterDownloadBehavior.DefaultValue ? value.DefaultWord : null;
-                    var chosenHash = chosen is null ? null : active || reference.Always ? value.CurrentHash : value.DefaultHash;
+                    var chosenBytes = active || reference.Always ? value.CurrentBytes : behavior == RootParameterDownloadBehavior.DefaultValue ? value.DefaultBytes : null;
+                    var hasValue = chosen is not null || chosenBytes is not null;
+                    var chosenHash = !hasValue ? null : active || reference.Always ? value.CurrentHash : value.DefaultHash;
                     var disposition = active ? RootParameterDisposition.ActiveValue : reference.Always ? RootParameterDisposition.AlwaysValue
                         : behavior == RootParameterDownloadBehavior.DefaultValue ? RootParameterDisposition.InactiveDefault
                         : behavior == RootParameterDownloadBehavior.None ? RootParameterDisposition.InactiveNullNone : RootParameterDisposition.InactiveNullBackground;
-                    var writes = chosen is not null && !excluded;
+                    var writes = hasValue && !excluded;
                     var set = NativeRootValidityEffect.None; var clear = NativeRootValidityEffect.None;
-                    if (chosen is not null)
+                    if (hasValue)
                     {
                         if (excluded) clear = NativeRootValidityEffect.WholeBytes;
                         else set = _inventory.Policy.MaskPolicy == RootParameterMaskPolicy.FieldBitsOnly ? NativeRootValidityEffect.FieldBits : NativeRootValidityEffect.WholeBytes;
                     }
                     else if (behavior != RootParameterDownloadBehavior.None && !excluded) set = NativeRootValidityEffect.WholeBytes;
+                    // RawData reserves MaxSize+4 bytes but drives only prefix+actual payload.
+                    // A background record keeps its current bytes with that same bounded extent.
+                    var bytes = chosenBytes ?? value.CurrentBytes;
                     var claim = new NativeRootWriteClaim(reference.RefId, owner.OwnerKey, owner.Target, owner.ByteOffset, owner.BitOffset,
-                        owner.BitLength, writes, writes ? chosen : null, set, clear);
+                        bytes is null ? owner.BitLength : checked((uint)bytes.Length * 8), writes, writes ? chosen : null, set, clear, bytes);
                     claims.Add(claim);
                     records.Add(new(reference.RefId, reference.ParameterId, reference.ParameterTypeId, disposition, active, count,
                         reference.Always, reference.CustomerAdjustable, value.Origin, value.CurrentHash, chosenHash, true, true, writes, excluded, claim));

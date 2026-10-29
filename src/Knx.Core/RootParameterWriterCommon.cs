@@ -60,6 +60,11 @@ internal static class RootParameterWriterCommon
     }
     internal static IReadOnlyDictionary<string, string> ReadSaved(IReadOnlyDictionary<string, string> referenceIds,
         IReadOnlyDictionary<string, RootParameterSource> sourceReferences, DeviceInstance device, string appId, RootImageBuildPolicy policy)
+        => ReadSavedProfile(referenceIds, sourceReferences, device, appId, policy, allowRawData: false);
+
+    internal static IReadOnlyDictionary<string, string> ReadSavedProfile(IReadOnlyDictionary<string, string> referenceIds,
+        IReadOnlyDictionary<string, RootParameterSource> sourceReferences, DeviceInstance device, string appId, RootImageBuildPolicy policy,
+        bool allowRawData)
     {
         var saved = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (key, value) in device.ParameterValues)
@@ -68,6 +73,12 @@ internal static class RootParameterWriterCommon
             var source = sourceReferences[id];
             if (source.Location is not null)
             {
+                if (allowRawData && source.ParsedType.DataType == ParameterDataType.RawData)
+                {
+                    _ = NativeRootRawDataCodec.Encode(source.ParsedType, value, policy.ByteOrder, id);
+                    if (saved.TryGetValue(id, out var previous) && previous != value) RootBuildGuard.Fail(RootImageBuildIssueCode.InvalidValue, id);
+                    saved[id] = value; continue;
+                }
                 if (value.Length > 64 || value.Any(char.IsControl)) RootBuildGuard.Fail(RootImageBuildIssueCode.InvalidValue, id);
                 var encoded = OfflineParameterPatch.EncodeWord(source.Type.Elements().Single(), source.ParsedType, value, policy.ByteOrder, source.Location.BitOffset!.Value, id);
                 if (encoded.Issue is not null) RootBuildGuard.Fail(RootImageBuildIssueCode.InvalidValue, id, parameter: encoded.Issue);

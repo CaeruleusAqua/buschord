@@ -11,6 +11,8 @@
 - [x] Adressiertes MDT-M112-Management und expliziten Programmiermodus-Schreibtest mit Rücklesen und frischer Wiederherstellungsverbindung am freigegebenen Einzelgerät prüfen.
 - [x] Lesende Koppler-/Geräteabfrage sowie enges M112-Wiederholungsladen und tatsächliche Parameteränderung mit unabhängig bestätigter Konfigurationswiederherstellung prüfen.
 - [x] Explizite lesende Workbench-Verbindung, Gruppenmonitor und adressierten Scan mit gejointem Verbindungsabbau integrieren.
+- [x] Authentisierte Secure-UDP-Sitzungen mit OS-X25519 und unabhängigen Windows-/Linux-Protokoll- und Loopbackprüfungen als Bibliothek ergänzen.
+- [x] Extended-cEMI-Längen und gemeinsame Raw-Frames mit veröffentlichten Vektoren prüfen.
 - [ ] Positiven Linien-Scan und reale Transport-Interoperabilität prüfen.
 - [ ] Herstellerimage, Management, Download, Verify und Neustart durchgängig abnehmen.
 - [ ] Secure-Tunnel, Data Security und sichere Inbetriebnahme vollständig integrieren.

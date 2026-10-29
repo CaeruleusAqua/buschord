@@ -43,7 +43,12 @@ internal sealed partial class NativeRootImageInventory
     internal IReadOnlyList<ImageCompositionSourceSegment> CodeSources { get; } = Array.Empty<ImageCompositionSourceSegment>();
     internal long CodeSourcePayloadBytes => CodeSources.Sum(s => (long)(s.RawData?.Length ?? 0) + (s.RawMask?.Length ?? 0));
     internal long CodeSourcePeakPayloadBytes => checked(CodeSourcePayloadBytes * 2);
-    internal long PeakPayloadBytes => CodeSourcePeakPayloadBytes;
+    // Includes decoded/transient/framed/immutable copies and the three hydration encodings.
+    // Encoded text is an upper bound on decoded length, including accepted whitespace.
+    internal long RawDataPeakPayloadBytes => _sources.Where(p => p.Value.ParsedType.DataType == ParameterDataType.RawData)
+        .Sum(p => checked(12L * (4 + (p.Value.ParameterValue?.Length ?? 0)
+            + Math.Max(p.Value.ReferenceValue?.Length ?? 0, _saved.GetValueOrDefault(p.Key)?.Length ?? 0))));
+    internal long PeakPayloadBytes => checked(CodeSourcePeakPayloadBytes + RawDataPeakPayloadBytes);
 
     private NativeRootImageInventory(NativeGeneralIssue issue) { Issues = Array.AsReadOnly(new[] { issue }); }
     internal static NativeRootImageInventory Read(Project project, DeviceInstance device, ArchivedImageSources.Inputs inputs)
@@ -117,7 +122,7 @@ internal sealed partial class NativeRootImageInventory
         if (!admitRootUnions && aliases.Values.Any(c => c > 1)) NativeGeneralHash.Fail(NativeGeneralIssueCode.AmbiguousOwnership);
         var owners = new List<NativeRootOwner>(); var byParameter = new Dictionary<string, NativeRootOwner>(StringComparer.Ordinal);
         var locations = new Dictionary<string, ParameterStorageLocation?>(StringComparer.Ordinal); var ordinal = 0;
-        var singleFields = 0; var packedFields = 0; var denseFields = 0;
+        var singleFields = 0; var packedFields = 0; var denseFields = 0; var rawFields = 0;
         foreach (var (id, parameter) in parameters)
         {
             var declarationOrdinal = ordinal++; var typeId = SourceId(parameter, "ParameterType", admitRootUnions);
@@ -127,11 +132,12 @@ internal sealed partial class NativeRootImageInventory
             if (parameter.Elements().Any(e => e.Name != ns + "Memory" && e.Name != ns + "Property") || parameter.Elements().Take(2).Count() > 1
                 || parameter.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value)) || !unionMember && parameter.Attributes().Any(a => a.Name.LocalName is "Offset" or "BitOffset"))
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedSource, id);
-            CheckValue((string?)parameter.Attribute("Value"), id);
+            var raw = type!.DataType == ParameterDataType.RawData;
+            CheckValue((string?)parameter.Attribute("Value"), id, raw);
             var leaf = unionMember ? parameter.Parent!.Element(ns + "Memory") : parameter.Elements().SingleOrDefault();
             if (leaf is null)
             {
-                if (type!.DataType is ParameterDataType.Float or ParameterDataType.Time)
+                if (type!.DataType is ParameterDataType.Float or ParameterDataType.Time or ParameterDataType.RawData)
                     NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedType, id);
                 locations.Add(id, null); continue;
             }
@@ -139,7 +145,16 @@ internal sealed partial class NativeRootImageInventory
             if (leaf.Name.LocalName == "Memory" && leaf.Attributes().Any(a => !a.IsNamespaceDeclaration && (a.Name.Namespace != XNamespace.None || a.Name.LocalName is not ("CodeSegment" or "Offset" or "BitOffset"))))
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedMapping, id);
             var location = storage.Read(parameter, null, type!);
-            if (location is not { Status: ParameterStorageStatus.Supported, StartAddress: not null, BitOffset: not null, Footprint: { Status: ParameterFootprintStatus.Known, BitLength: > 0 and <= 32 } })
+            if (raw)
+            {
+                if (unionMember || leaf.Name.LocalName != "Memory" || location.Status != ParameterStorageStatus.Supported
+                    || location.BitOffset != 0 || location.Kind is not (ParameterStorageKind.AbsoluteMemory or ParameterStorageKind.RelativeMemory))
+                    NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedMapping, id);
+                var capacity = checked((uint)type.RawDataMaxSize!.Value + 4);
+                location = location with { Footprint = new(ParameterFootprintStatus.Known, capacity * 8, capacity) };
+            }
+            if (location is not { Status: ParameterStorageStatus.Supported, StartAddress: not null, BitOffset: not null, Footprint: { Status: ParameterFootprintStatus.Known, BitLength: > 0 } }
+                || !raw && location.Footprint.BitLength > 32)
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedMapping, id);
             var mapped = Map(location, id); var byteSpan = checked((int)((location.BitOffset!.Value + location.Footprint!.BitLength!.Value + 7) / 8));
             if (!mapped.Target.IsValid || (ulong)location.StartAddress!.Value + (uint)byteSpan > (ulong)uint.MaxValue + 1)
@@ -153,11 +168,15 @@ internal sealed partial class NativeRootImageInventory
             }
             var value = (string?)parameter.Attribute("Value");
             if (value is null) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidValue, id);
-            var word = Encode(types[typeId], type!, value!, location.BitOffset.Value, id);
-            if (word.Bits != location.Footprint.BitLength) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration, id);
-            if (word.Single) singleFields++;
-            if (word.Packed) packedFields++;
-            if (word.Dense) denseFields++;
+            if (raw) { _ = NativeRootRawDataCodec.Encode(type, value!, Policy!.ByteOrder, id); rawFields++; }
+            else
+            {
+                var word = Encode(types[typeId], type!, value!, location.BitOffset.Value, id);
+                if (word.Bits != location.Footprint.BitLength) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration, id);
+                if (word.Single) singleFields++;
+                if (word.Packed) packedFields++;
+                if (word.Dense) denseFields++;
+            }
             var declarationHash = NativeGeneralHash.Document(parameter);
             var owner = new NativeRootOwner(id, declarationOrdinal, declarationHash, mapped.Target, location.StartAddress.Value,
                 location.BitOffset.Value, location.Footprint.BitLength.Value, aliases.ContainsKey(id), mapped.Raw, mapped.Pdt,
@@ -166,23 +185,29 @@ internal sealed partial class NativeRootImageInventory
         }
         if (admitRootUnions) ReadUnionLayouts(parameters, byParameter, types, parsed);
         CheckOwners(owners); Owners = Array.AsReadOnly(owners.ToArray());
-        CodecFacts = new(Owners.Count, singleFields, packedFields, denseFields);
+        CodecFacts = new(Owners.Count, singleFields, packedFields, denseFields, rawFields);
         var result = new List<NativeRootReference>(); ordinal = 0;
         foreach (var (id, reference) in references)
         {
             RootBuildGuard.Leaf(reference); var parameterId = RootBuildGuard.Id(reference, "RefId");
             if (!parameters.TryGetValue(parameterId, out var parameter) || reference.Attribute("ParameterType") is not null || reference.Attribute("ParameterTypeId") is not null)
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration, id);
-            var typeId = SourceId(parameter!, "ParameterType", admitRootUnions); CheckValue((string?)reference.Attribute("Value"), id);
+            var typeId = SourceId(parameter!, "ParameterType", admitRootUnions);
+            var raw = parsed[typeId].DataType == ParameterDataType.RawData;
+            CheckValue((string?)reference.Attribute("Value"), id, raw);
             var source = new RootParameterSource(parameter!, reference, types[typeId], parsed[typeId], locations[parameterId],
                 (string?)parameter!.Attribute("Value"), (string?)reference.Attribute("Value"), RootBuildGuard.Bool(parameter, "LegacyPatchAlways"),
                 reference.Attribute("CustomerAdjustable") is null ? RootBuildGuard.Bool(parameter, "CustomerAdjustable") : RootBuildGuard.Bool(reference, "CustomerAdjustable"));
-            if (source.Location is not null && source.ReferenceValue is { } value) _ = Encode(source.Type, source.ParsedType, value, source.Location.BitOffset!.Value, id);
+            if (source.Location is not null && source.ReferenceValue is { } value)
+            {
+                if (raw) _ = NativeRootRawDataCodec.Encode(source.ParsedType, value, Policy!.ByteOrder, id);
+                else _ = Encode(source.Type, source.ParsedType, value, source.Location.BitOffset!.Value, id);
+            }
             _ids.Add(id, id); _sources.Add(id, source);
             result.Add(new(id, parameterId, typeId, ordinal++, byParameter.GetValueOrDefault(parameterId), source.Always, source.Customer, NativeGeneralHash.Document(reference)));
         }
         References = Array.AsReadOnly(result.ToArray());
-        _saved = RootParameterWriterCommon.ReadSaved(_ids, _sources, device, ApplicationId, legacy);
+        _saved = RootParameterWriterCommon.ReadSavedProfile(_ids, _sources, device, ApplicationId, legacy, allowRawData: true);
         SavedValuesHash = NativeGeneralHash.Of(_saved.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray());
         CarrierHash = RootParameterWriterCommon.CaptureCarriers(_ids, project, device, ApplicationId);
         _hardwareDocument = Knxproj.LoadHardwareData(project, device.Hardware2ProgramRefId!);
@@ -235,6 +260,7 @@ internal sealed partial class NativeRootImageInventory
             var source = _sources[reference.RefId]; var current = RootParameterWriterCommon.Hydrate(reference.RefId, source.ParameterValue, source.ReferenceValue, _saved);
             if (!context.EffectiveValues.TryGetValue(reference.RefId, out var evaluated)) NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch, reference.RefId);
             ParameterWordEncoding? word = null, fallback = null;
+            ImmutablePatchBytes? bytes = null, defaultBytes = null;
             if (reference.Owner is null)
             {
                 var placeholder = AdmitRootUnions && source.ParsedType.DataType == ParameterDataType.None
@@ -245,12 +271,22 @@ internal sealed partial class NativeRootImageInventory
             else
             {
                 if (current.Value is null || evaluated is null || source.ParameterValue is null) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidValue, reference.RefId);
-                word = Encode(source.Type, source.ParsedType, current.Value!, reference.Owner.BitOffset, reference.RefId);
-                var comparison = Encode(source.Type, source.ParsedType, evaluated!, reference.Owner.BitOffset, reference.RefId);
-                if (word.Value.Word != comparison.Word || word.Value.Bits != comparison.Bits) NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch, reference.RefId);
-                fallback = Encode(source.Type, source.ParsedType, source.ParameterValue!, reference.Owner.BitOffset, reference.RefId);
+                if (source.ParsedType.DataType == ParameterDataType.RawData)
+                {
+                    bytes = NativeRootRawDataCodec.Encode(source.ParsedType, current.Value!, Policy!.ByteOrder, reference.RefId);
+                    var comparison = NativeRootRawDataCodec.Encode(source.ParsedType, evaluated!, Policy!.ByteOrder, reference.RefId);
+                    if (bytes.Length != comparison.Length || bytes.Sha256 != comparison.Sha256) NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch, reference.RefId);
+                    defaultBytes = NativeRootRawDataCodec.Encode(source.ParsedType, source.ParameterValue!, Policy!.ByteOrder, reference.RefId);
+                }
+                else
+                {
+                    word = Encode(source.Type, source.ParsedType, current.Value!, reference.Owner.BitOffset, reference.RefId);
+                    var comparison = Encode(source.Type, source.ParsedType, evaluated!, reference.Owner.BitOffset, reference.RefId);
+                    if (word.Value.Word != comparison.Word || word.Value.Bits != comparison.Bits) NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch, reference.RefId);
+                    fallback = Encode(source.Type, source.ParsedType, source.ParameterValue!, reference.Owner.BitOffset, reference.RefId);
+                }
             }
-            result.Add(new(reference, current.Origin, NativeGeneralHash.Of(current.Value), NativeGeneralHash.Of(source.ParameterValue), word?.Word, fallback?.Word));
+            result.Add(new(reference, current.Origin, NativeGeneralHash.Of(current.Value), NativeGeneralHash.Of(source.ParameterValue), word?.Word, fallback?.Word, bytes, defaultBytes));
         }
         return Array.AsReadOnly(result.ToArray());
     }
@@ -262,11 +298,12 @@ internal sealed partial class NativeRootImageInventory
     }
 }
 internal sealed record NativeRootHydratedReference(NativeRootReference Reference, RootParameterValueOrigin Origin,
-    string CurrentHash, string DefaultHash, uint? CurrentWord, uint? DefaultWord);
+    string CurrentHash, string DefaultHash, uint? CurrentWord, uint? DefaultWord,
+    ImmutablePatchBytes? CurrentBytes = null, ImmutablePatchBytes? DefaultBytes = null);
 
 internal sealed class NativeRootCodecFacts
 {
-    internal int CodecProfileVersion => 3;
+    internal int CodecProfileVersion => RawDataFieldCount == 0 ? 3 : 4;
     internal string NumericParseProfile => SingleFieldCount == 0 ? "ExactInteger" : "ExactIntegerAndDotNet10XmlDoubleToSingle";
     internal string? PackedTimeEncodingProfile => PackedTimeFieldCount == 0 ? null : "PackedDaysHoursMinutesAndSeconds24BigEndianOnly";
     internal string? DenseTimeEncodingProfile => DenseTimeFieldCount == 0 ? null : "SignedRawOrdinaryTime8To32";
@@ -274,13 +311,16 @@ internal sealed class NativeRootCodecFacts
     internal int SingleFieldCount { get; }
     internal int PackedTimeFieldCount { get; }
     internal int DenseTimeFieldCount { get; }
-    internal bool HasExtendedCodecs => SingleFieldCount != 0 || PackedTimeFieldCount != 0 || DenseTimeFieldCount != 0;
+    internal int RawDataFieldCount { get; }
+    internal string? RawDataEncodingProfile => RawDataFieldCount == 0 ? null : "RootMemoryLength32ProgramByteOrderOpaquePayloadRetainedTail";
+    internal bool HasExtendedCodecs => SingleFieldCount != 0 || PackedTimeFieldCount != 0 || DenseTimeFieldCount != 0 || RawDataFieldCount != 0;
     internal string Fingerprint { get; }
-    internal NativeRootCodecFacts(int physicalFields, int singleFields, int packedFields, int denseFields)
+    internal NativeRootCodecFacts(int physicalFields, int singleFields, int packedFields, int denseFields, int rawFields = 0)
     {
         PhysicalFieldCount = physicalFields; SingleFieldCount = singleFields;
-        PackedTimeFieldCount = packedFields; DenseTimeFieldCount = denseFields;
+        PackedTimeFieldCount = packedFields; DenseTimeFieldCount = denseFields; RawDataFieldCount = rawFields;
         Fingerprint = NativeGeneralHash.Of(new { CodecProfileVersion, NumericParseProfile, PackedTimeEncodingProfile,
             DenseTimeEncodingProfile, PhysicalFieldCount, SingleFieldCount, PackedTimeFieldCount, DenseTimeFieldCount, HasExtendedCodecs });
+        if (RawDataFieldCount != 0) Fingerprint = NativeGeneralHash.Of(new { profile = 4, previous = Fingerprint, RawDataFieldCount, RawDataEncodingProfile });
     }
 }

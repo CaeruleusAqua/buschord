@@ -1,11 +1,9 @@
 using System.Security.Cryptography;
-using System.Text;
 
 namespace Knx.Bus.Security;
 
 /// <summary>
-/// Key material handling for KNX IP Secure and KNX Data Secure: PBKDF2 key derivation,
-/// AES-128 block/chaining helpers and constant-time comparison.
+/// AES-128 block/chaining helpers and constant-time comparison. Protocol-specific key derivation uses KnxIpSecureCodec.
 /// </summary>
 public static class SecureKeys
 {
@@ -13,32 +11,12 @@ public static class SecureKeys
     public const int Iterations = 65536;
 
     /// <summary>
-    /// Derives the user key and the device authentication key from a password and the
-    /// 16-byte device authentication code (DAC), both 16 bytes.
-    /// Real-installation validation remains outstanding.
+    /// Compatibility gate for an unsupported legacy derivation profile.
     /// </summary>
+    [Obsolete("Unsupported legacy derivation. Use KnxIpSecureCodec.DeriveUserKey or DeriveDeviceAuthenticationKey.")]
     public static (byte[] UserKey, byte[] DeviceAuthenticationKey) DeriveKeys(
         string password, ReadOnlySpan<byte> deviceAuthenticationCode)
-    {
-        ArgumentNullException.ThrowIfNull(password);
-        if (deviceAuthenticationCode.Length != KeyLength)
-            throw new ArgumentException($"device authentication code must be {KeyLength} bytes",
-                nameof(deviceAuthenticationCode));
-
-        var pwd = Encoding.UTF8.GetBytes(password);
-        try
-        {
-            var userKey = Rfc2898DeriveBytes.Pbkdf2(pwd, deviceAuthenticationCode, Iterations,
-                HashAlgorithmName.SHA256, KeyLength);
-            var deviceKey = Rfc2898DeriveBytes.Pbkdf2(deviceAuthenticationCode, pwd, Iterations,
-                HashAlgorithmName.SHA256, KeyLength);
-            return (userKey, deviceKey);
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(pwd);
-        }
-    }
+        => throw new NotSupportedException("Unsupported legacy secure key derivation.");
 
     /// <summary>Encrypts one 16-byte block with AES-128 (ECB, no padding).</summary>
     public static byte[] AesEncryptBlock(ReadOnlySpan<byte> key, ReadOnlySpan<byte> block)
