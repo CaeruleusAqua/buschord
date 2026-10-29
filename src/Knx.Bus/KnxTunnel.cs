@@ -55,6 +55,7 @@ public sealed class KnxTunnel : IAsyncDisposable
     private readonly IPEndPoint? _configuredLocalEndpoint;
     private readonly TimeSpan _heartbeatInterval;
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _sendGate = new(1, 1);
     private readonly Dictionary<byte, TaskCompletionSource<byte>> _ackWaiters = new();
 
     private TaskCompletionSource<byte>? _stateWaiter;
@@ -88,6 +89,12 @@ public sealed class KnxTunnel : IAsyncDisposable
     public IPEndPoint DataEndpoint => _dataEndpoint;
 
     public event Action<BusTelegram>? TelegramReceived;
+
+    /// <summary>Unmodified incoming standard transport frames, including transport ACKs and controls.</summary>
+    public event Action<ManagementTransportFrame>? ManagementFrameReceived;
+
+    public Task SendManagementTransportAsync(IndividualAddress target, byte[] tpdu, CancellationToken ct = default)
+        => SendCemiAsync(new ManagementTransportFrame(AssignedAddress, target, tpdu).ToRequest(), ct);
 
     /// <summary>
     /// L_Data.con confirmations (echoes of frames we sent). Kept out of
@@ -239,6 +246,13 @@ public sealed class KnxTunnel : IAsyncDisposable
     /// requires.
     /// </summary>
     private async Task SendCemiAsync(byte[] cemi, CancellationToken ct)
+    {
+        await _sendGate.WaitAsync(ct);
+        try { await SendCemiLockedAsync(cemi, ct); }
+        finally { _sendGate.Release(); }
+    }
+
+    private async Task SendCemiLockedAsync(byte[] cemi, CancellationToken ct)
     {
         if (State != BusConnectionState.Connected)
             throw new InvalidOperationException($"tunnel is {State}, not connected");
@@ -449,6 +463,11 @@ public sealed class KnxTunnel : IAsyncDisposable
             switch (cemi[0])
             {
                 case (byte)CemiMessageCode.LDataInd:
+                    if (ManagementTransportFrame.TryParseIndication(cemi, out var management))
+                    {
+                        ManagementFrameReceived?.Invoke(management!);
+                        if (management!.Tpdu.Length == 1) return;
+                    }
                     TelegramReceived?.Invoke(new BusTelegram
                     {
                         Telegram = Cemi.ParseLData(cemi),
@@ -456,6 +475,8 @@ public sealed class KnxTunnel : IAsyncDisposable
                     });
                     return;
                 case (byte)CemiMessageCode.LDataCon:
+                    // A transport control has no APCI and cannot be represented as a Telegram.
+                    if (cemi.Length >= 10 && cemi.Length == 10 + cemi[1] && cemi[8 + cemi[1]] == 0) return;
                     // Our own frame was confirmed on the bus; a monitor must not show it as traffic.
                     ConfirmationReceived?.Invoke(new BusTelegram
                     {
