@@ -1,139 +1,145 @@
 using System.Net;
 using Knx;
+using Knx.Bus.Connections;
 
 namespace Knx.Bus;
 
-/// <summary>
-/// High-level bus facade: device discovery, tunnelling, routing and the aggregated
-/// telegram feed (bus monitor).
-/// </summary>
+/// <summary>Explicit bus facade. Configuration writes remain disabled independently of transport authentication.</summary>
 public sealed class KnxBus : IAsyncDisposable
 {
-    // Read-only policy: the current writer targets a fixed memory address without descriptor/mask/
-    // programming-mode verification, and group writes have not been validated on real hardware.
-    // Keep every real bus write and download disabled until that is verified.
     public static bool WritesEnabled => false;
-
-    private IUdpTransport? _transport;
+    private readonly object _sync = new();
+    private readonly SemaphoreSlim _transition = new(1,1), _diagnostics = new(1,1);
+    private readonly KnxConnectionFactory _connections;
+    private CancellationTokenSource? _connecting;
+    private CancellationTokenSource _connectedLifetime = new();
+    private KnxGatewayOperation? _operation;
+    private KnxConnectedTunnel? _owned;
     private KnxTunnel? _tunnel;
     private KnxRouting? _routing;
-
+    private bool _disconnecting;
+    private Task? _closing;
+    public KnxBus() : this(null) { }
+    public KnxBus(KnxConnectionFactory? connections) => _connections = connections ?? new();
     public event Action<BusTelegram>? TelegramReceived;
     public event Action<BusConnectionState>? StateChanged;
-
-    public BusConnectionState State => _tunnel?.State ?? _routing?.State ?? BusConnectionState.Disconnected;
-
+    public BusConnectionState State => _tunnel?.State ?? _routing?.State
+        ?? (_connecting is not null ? BusConnectionState.Connecting : BusConnectionState.Disconnected);
     public string? DeviceName { get; private set; }
-
-    public async Task<List<KnxDevice>> DiscoverAsync(TimeSpan? timeout = null, string? host = null,
-        CancellationToken ct = default)
-        => await Discovery.DiscoverAsync(timeout ?? TimeSpan.FromSeconds(2), host, ct);
-
-    public async Task ConnectTunnelAsync(KnxDevice device, IndividualAddress individualAddress,
-        CancellationToken ct = default)
+    public KnxConnectionProfile? Profile => _operation?.Profile;
+    public KnxConnectionSecurity? Security => _owned?.Security;
+    public Task<List<KnxDevice>> DiscoverAsync(TimeSpan? timeout = null, string? host = null, CancellationToken ct = default)
+        => Discovery.DiscoverAsync(timeout ?? TimeSpan.FromSeconds(2), host, ct);
+    public async Task ConnectTunnelAsync(KnxDevice device, IndividualAddress individualAddress, CancellationToken ct = default)
+    { await ConnectAsync(KnxConnectionProfile.Plain(device.ControlEndpoint, individualAddress), ct); DeviceName = device.Name; }
+    public async Task ConnectAsync(KnxConnectionProfile profile, CancellationToken ct = default)
     {
-        if (_transport is not null) throw new InvalidOperationException("already connected");
-        var transport = UdpTransport.Broadcast();
-        var tunnel = new KnxTunnel(transport, device.ControlEndpoint, individualAddress);
+        CancellationTokenSource connecting;
+        lock(_sync)
+        {
+            if (_connecting is not null || _operation is not null || _routing is not null || _disconnecting) throw new KnxConnectionException(KnxConnectionFailure.Occupied);
+            _connecting = connecting = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        }
+        await _transition.WaitAsync().ConfigureAwait(false);
+        KnxGatewayOperation? operation = null; KnxConnectedTunnel? owned = null;
         try
         {
-            tunnel.TelegramReceived += t => TelegramReceived?.Invoke(t);
-            await tunnel.ConnectAsync(ct);
+            operation = await _connections.AcquireOperationAsync(profile, connecting.Token).ConfigureAwait(false);
+            owned = await operation.OpenTunnelAsync(connecting.Token).ConfigureAwait(false);
+            connecting.Token.ThrowIfCancellationRequested();
+            _connectedLifetime.Dispose(); _connectedLifetime = new();
+            _operation = operation; _owned = owned; _tunnel = owned.Tunnel;
+            _tunnel.TelegramReceived += OnTelegram; _tunnel.Disconnected += OnDisconnected;
+            DeviceName = profile.RequiresAuthentication ? "KNX IP Secure" : "KNX UDP";
+            NotifyState(BusConnectionState.Connected);
         }
         catch
         {
-            await tunnel.DisposeAsync();
-            throw;
+            try { if(owned is not null)await owned.DisposeAsync().ConfigureAwait(false); }
+            finally { if(operation is not null) await operation.DisposeAsync().ConfigureAwait(false); }
+            _operation = null; _owned = null; _tunnel = null; DeviceName = null; throw;
         }
-        _transport = transport;
-        _tunnel = tunnel;
-        DeviceName = device.Name;
-        tunnel.Disconnected += () => StateChanged?.Invoke(BusConnectionState.Disconnected);
-        StateChanged?.Invoke(BusConnectionState.Connected);
+        finally { lock(_sync) if(ReferenceEquals(_connecting,connecting))_connecting=null; connecting.Dispose(); _transition.Release(); }
     }
-
-    /// <summary>
-    /// Opens routing on the multicast group, bound to the routing port on
-    /// <paramref name="localAddress"/> (the KNX segment NIC on multi-homed hosts).
-    /// </summary>
+    private void OnTelegram(BusTelegram value)
+    { foreach (var observer in TelegramReceived?.GetInvocationList() ?? []) try { ((Action<BusTelegram>)observer)(value); } catch { } }
+    private void NotifyState(BusConnectionState state)
+    { foreach (var observer in StateChanged?.GetInvocationList() ?? []) try { ((Action<BusConnectionState>)observer)(state); } catch { } }
+    private void OnDisconnected() { try { _connectedLifetime.Cancel(); } catch (ObjectDisposedException) { } NotifyState(BusConnectionState.Disconnected); }
     public async Task ConnectRoutingAsync(IPAddress? localAddress = null, CancellationToken ct = default)
     {
-        if (_transport is not null) throw new InvalidOperationException("already connected");
-        var transport = new UdpTransport(localAddress ?? IPAddress.Any, Discovery.MulticastPort, reuseAddress: true);
-        var routing = new KnxRouting(transport, localAddress);
+        await _transition.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            routing.TelegramReceived += t => TelegramReceived?.Invoke(t);
-            await routing.OpenAsync(ct);
+            lock(_sync) if(_connecting is not null || _operation is not null || _routing is not null || _disconnecting)throw new KnxConnectionException(KnxConnectionFailure.Occupied);
+            var routing = new KnxRouting(new UdpTransport(localAddress ?? IPAddress.Any, Discovery.MulticastPort, reuseAddress:true), localAddress);
+            try { routing.TelegramReceived += OnTelegram; await routing.OpenAsync(ct).ConfigureAwait(false); }
+            catch { await routing.DisposeAsync().ConfigureAwait(false); throw; }
+            _routing=routing; DeviceName="Routing"; NotifyState(BusConnectionState.Connected);
         }
-        catch
+        finally { _transition.Release(); }
+    }
+    public Task GroupValueWriteAsync(Knx.GroupAddress address, byte[] data, int? dataBits = null)
+        => throw new NotSupportedException("Bus writes are disabled by the read-only policy.");
+    public Task GroupValueReadAsync(Knx.GroupAddress address)
+        => (_tunnel ?? throw new InvalidOperationException("Read requires a tunnel.")).GroupValueReadAsync(address, _connectedLifetime.Token);
+    public Task<BusTelegram?> ReadGroupValueAsync(Knx.GroupAddress address, TimeSpan timeout, CancellationToken ct=default)
+        => ReadGroupAsync(address,timeout,ct);
+    private async Task<BusTelegram?> ReadGroupAsync(Knx.GroupAddress address, TimeSpan timeout, CancellationToken ct)
+    {
+        using var cancellation=CancellationTokenSource.CreateLinkedTokenSource(ct,_connectedLifetime.Token);
+        return await (_tunnel??throw new InvalidOperationException("Read requires a tunnel.")).ReadGroupValueAsync(address,timeout,cancellation.Token).ConfigureAwait(false);
+    }
+    public async Task<T> WithDiagnosticsAsync<T>(Func<IBusDiagnosticSession,CancellationToken,Task<T>> action,CancellationToken ct=default)
+    {
+        using var cancellation=CancellationTokenSource.CreateLinkedTokenSource(ct,_connectedLifetime.Token);
+        await _diagnostics.WaitAsync(cancellation.Token).ConfigureAwait(false);
+        try
         {
-            await routing.DisposeAsync();
-            throw;
+            var tunnel=_tunnel??throw new InvalidOperationException("Diagnostics require an explicit connected tunnel.");
+            return await action(new TunnelDiagnosticSession(tunnel),cancellation.Token).ConfigureAwait(false);
         }
-        _transport = transport;
-        _routing = routing;
-        DeviceName = "Routing";
-        StateChanged?.Invoke(BusConnectionState.Connected);
+        finally { _diagnostics.Release(); }
     }
-
-    public async Task GroupValueWriteAsync(Knx.GroupAddress address, byte[] data, int? dataBits = null)
+    public Task<DownloadResult> DownloadAsync(KnxDevice device, IndividualAddress deviceAddress, IApplicationProgram program,
+        IProgress<DownloadProgress> progress, CancellationToken ct=default)
+        => throw new NotSupportedException("Real device download is disabled by the read-only policy; use DownloadPreflight with an explicitly reviewed profile.");
+    public ValueTask DisposeAsync()
     {
-        if (!WritesEnabled)
-            throw new NotSupportedException(
-                "Bus writes are disabled by the read-only policy; only discovery, connect/disconnect " +
-                "and read paths are enabled in this build.");
-        if (_tunnel is not null) await _tunnel.GroupValueWriteAsync(address, data, dataBits);
-        else if (_routing is not null) await _routing.GroupValueWriteAsync(address, data, dataBits);
-        else throw new InvalidOperationException("not connected");
+        TaskCompletionSource? completion = null; Task pending;
+        lock (_sync)
+        {
+            if (_closing is null) { _disconnecting = true; completion = new(TaskCreationOptions.RunContinuationsAsynchronously); _closing = completion.Task; }
+            pending = _closing;
+        }
+        if (completion is not null)
+        {
+            try { _connecting?.Cancel(); _connectedLifetime.Cancel(); }
+            catch (Exception error) when (error is AggregateException or ObjectDisposedException) { }
+            finally { _ = FinishDisposeAsync(completion); }
+        }
+        return new(pending);
     }
-
-    public async Task GroupValueReadAsync(Knx.GroupAddress address)
+    private async Task FinishDisposeAsync(TaskCompletionSource completion)
     {
-        if (_tunnel is null) throw new InvalidOperationException("read requires a tunnel");
-        await _tunnel.GroupValueReadAsync(address);
-    }
-
-    /// <summary>
-    /// Reads one group value and waits for a GroupValueResponse from a device (not the
-    /// transport and not our own confirmation). Null when nothing answered in time.
-    /// </summary>
-    public async Task<BusTelegram?> ReadGroupValueAsync(Knx.GroupAddress address, TimeSpan timeout,
-        CancellationToken ct = default)
-    {
-        if (_tunnel is null) throw new InvalidOperationException("read requires a tunnel");
-        return await _tunnel.ReadGroupValueAsync(address, timeout, ct);
-    }
-
-    /// <summary>
-    /// Flashes an application program to a device over a fresh tunnel. Disabled by policy: a future
-    /// implementation must read the descriptor, build a plan with <see cref="DownloadPreflight"/> and
-    /// hand a ready plan to <see cref="DownloadSession.RunAsync"/>.
-    /// </summary>
-    public Task<Knx.Bus.DownloadResult> DownloadAsync(KnxDevice device, IndividualAddress deviceAddress,
-        IApplicationProgram program, IProgress<Knx.Bus.DownloadProgress> progress, CancellationToken ct = default)
-    {
-        if (!WritesEnabled)
-            throw new NotSupportedException(
-                "Real device download is disabled by the read-only policy: descriptor/mask read, " +
-                "programming mode and verified load procedures are not implemented. A future download " +
-                "must pass the read-only DownloadPreflight gate (DownloadSession.RunAsync requires a " +
-                "ready plan). Use the explicit simulation instead.");
-
-        // Not reachable while WritesEnabled is false: the old fixed-address writer is gone because it
-        // never passed the gate. Rebuild the pipeline on top of DownloadPreflight and a ready plan.
-        throw new NotSupportedException(
-            "Real device download is not implemented: no ready DownloadPreflight plan exists; no frame was sent.");
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_tunnel is not null) await _tunnel.DisposeAsync();
-        if (_routing is not null) await _routing.DisposeAsync();
-        _tunnel = null;
-        _routing = null;
-        _transport = null;
-        DeviceName = null;
-        StateChanged?.Invoke(BusConnectionState.Disconnected);
+        Exception? failure = null;
+        await _transition.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await _diagnostics.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if(_tunnel is {} tunnel) { tunnel.TelegramReceived-=OnTelegram; tunnel.Disconnected-=OnDisconnected; }
+                try { if(_owned is not null)await _owned.DisposeAsync().ConfigureAwait(false); }
+                finally { try { if(_operation is not null)await _operation.DisposeAsync().ConfigureAwait(false); }
+                    finally { if(_routing is not null)await _routing.DisposeAsync().ConfigureAwait(false); } }
+                _owned=null;_operation=null;_tunnel=null;_routing=null;DeviceName=null;
+                NotifyState(BusConnectionState.Disconnected);
+            }
+            finally { _diagnostics.Release(); }
+        }
+        catch (Exception error) { failure = error; }
+        finally { lock(_sync) { _disconnecting=false; _closing=null; } _transition.Release(); }
+        if (failure is null) completion.TrySetResult(); else completion.TrySetException(new KnxConnectionException(KnxConnectionFailure.ConnectionFailed));
     }
 }

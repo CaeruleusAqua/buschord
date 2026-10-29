@@ -15,6 +15,7 @@
 - [x] Extended-cEMI-Längen und gemeinsame Raw-Frames mit veröffentlichten Vektoren prüfen.
 - [x] Geschützte Keyrings mit Signaturprüfung und exakter Interface-Auswahl importieren.
 - [x] Data-Secure-Gruppenpfad mit expliziter Policy, dauerhaften Zählern und optionalem Tunnel-Hook als Bibliothek ergänzen; Sync und sichere Erstinbetriebnahme getrennt halten.
+- [x] Explizite IP-Secure-Verbindungswahl in Workbench/MCP/CLI mit gemeinsamem Gateway-/Credentialbesitzer und geschützter Gruppenabgrenzung integrieren.
 - [ ] Positiven Linien-Scan und reale Transport-Interoperabilität prüfen.
 - [ ] Herstellerimage, Management, Download, Verify und Neustart durchgängig abnehmen.
 - [ ] Secure-Tunnel, Data Security und sichere Inbetriebnahme vollständig integrieren.

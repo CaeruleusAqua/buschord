@@ -51,8 +51,9 @@ public partial class WorkbenchWindow
     {
         var connected = _liveConnection?.IsConnected == true;
         var connecting = _liveConnection?.Snapshot.Phase == ReadOnlyConnectionPhase.Connecting;
-        ConnectionBadge.Text = LiveConnectionStrings.Get(connected ? "ReadOnly" : connecting ? "Connecting" : "Disconnected");
-        ConnectionFooter.Text = connected ? LiveConnectionStrings.Get("ReadOnly")
+        var authenticated = connected && _liveConnection?.Snapshot.GatewayAuthenticated == true;
+        ConnectionBadge.Text = authenticated ? SecureConnectionStrings.Get("Authenticated") : LiveConnectionStrings.Get(connected ? "ReadOnly" : connecting ? "Connecting" : "Disconnected");
+        ConnectionFooter.Text = authenticated ? SecureConnectionStrings.Get("Authenticated") : connected ? LiveConnectionStrings.Get("ReadOnly")
             : connecting ? LiveConnectionStrings.Get("Connecting") : W("StatusLocalOnly");
     }
     private async Task ShowConnectionAsync()
@@ -68,7 +69,7 @@ public partial class WorkbenchWindow
         if (_liveConnection is null) return;
         if (_connectionWindow is not null) { _connectionWindow.Activate(); return; }
         var connection = _liveConnection;
-        var window = _connectionWindow = new(connection, _liveOptions);
+        var window = _connectionWindow = new(connection, _liveOptions, ViewModel.Project?.Name ?? "");
         try
         {
             await window.ShowDialog(this);

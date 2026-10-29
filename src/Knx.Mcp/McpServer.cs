@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Knx.Bus;
+using Knx.Bus.Connections;
 
 namespace Knx.Mcp;
 
@@ -32,8 +33,9 @@ public sealed partial class McpServer : IAsyncDisposable
         "project_check and smart_link_suggest for diagnostics, export_csv/export_semantic/export_labels/report_export/" +
         "acceptance_protocol_export/handover_package_export for " +
         "exports, project_compare for diffs and catalog_* for manufacturer product databases. For live bus " +
-        "access call bus_connect first (mode tunnel searches for a gateway, mode routing joins the multicast " +
-        "group), then bus_read/recorder_*; bus_disconnect releases the interface. download_plan reports the " +
+        "access call bus_connect first (mode tunnel searches for a gateway, mode routing joins multicast, " +
+        "ip_secure_udp requires an explicit gateway and exact protected-keyring selectors), then bus_read/recorder_*; " +
+        "bus_disconnect drains the interface. Secure connections never fall back to plain. download_plan reports the " +
         "read-only preflight and dry run for one project device. This build is read-only: " +
         "group writes, device programming and downloads are disabled.";
 
@@ -48,15 +50,16 @@ public sealed partial class McpServer : IAsyncDisposable
 
     private readonly List<McpTool> _tools;
     private readonly UndoStack _undo = new(100);
-    private readonly KnxBus _bus = new();
+    private readonly KnxBus _bus;
     private readonly TelegramRecorder _recorder = new();
     private readonly BusStatistics _statistics = new();
 
     private Project? _project;
     private string? _projectPath;
 
-    public McpServer()
+    public McpServer(KnxConnectionFactory? connections = null)
     {
+        _connections = connections ?? new(); _bus = new(_connections);
         // The recorder ignores telegrams while stopped, so subscribing once is enough.
         _bus.TelegramReceived += _recorder.Add;
         _bus.TelegramReceived += _statistics.Add;
@@ -67,8 +70,9 @@ public sealed partial class McpServer : IAsyncDisposable
     public Project? Project => _project;
 
     /// <summary>Handles one JSON-RPC line; returns the response line or null for notifications.</summary>
-    public async Task<string?> HandleAsync(string line)
+    public async Task<string?> HandleAsync(string line, CancellationToken ct = default)
     {
+        var previous = _requestCancellation.Value; _requestCancellation.Value = ct;
         try
         {
             return await DispatchAsync(line);
@@ -78,6 +82,7 @@ public sealed partial class McpServer : IAsyncDisposable
             Log("internal error: " + ex);
             return Error(null, -32603, "Internal error: " + ex.Message);
         }
+        finally { _requestCancellation.Value = previous; }
     }
 
     private async Task<string?> DispatchAsync(string line)
@@ -180,16 +185,30 @@ public sealed partial class McpServer : IAsyncDisposable
 
         try
         {
+            if (name.StartsWith("bus_", StringComparison.Ordinal) || name == "download_plan") RefuseSecretArguments(arguments);
+            if (name == "bus_discover" && (ConnectionInput.HasSecureFields(arguments)
+                || string.Equals(Str(arguments, "mode"), "ip_secure_udp", StringComparison.OrdinalIgnoreCase)))
+                throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
             var payload = await tool.Handler(arguments);
             return Result(id, ToolResult(JsonSerializer.Serialize(payload, Json), payload, false));
         }
         catch (ToolException ex)
         {
+            if (IsConnectionTool(name) && (name != "download_plan" || ConnectionInput.HasSecureFields(arguments)))
+            {
+                var safe = SafeConnectionFailure(ex); Log(name + ": " + safe);
+                return Result(id, ToolResult(safe, null, true));
+            }
             Log($"{name}: {ex.Message}");
             return Result(id, ToolResult(ex.Message, null, true));
         }
         catch (Exception ex)
         {
+            if (IsConnectionTool(name) || ex is KnxConnectionException)
+            {
+                var safe = SafeConnectionFailure(ex); Log(name + ": " + safe);
+                return Result(id, ToolResult(safe, null, true));
+            }
             Log($"{name} failed: {ex}");
             return Result(id, ToolResult(ex.Message, null, true));
         }
@@ -226,11 +245,40 @@ public sealed partial class McpServer : IAsyncDisposable
 
     private static void Log(string message) => Console.Error.WriteLine("knx-mcp: " + message);
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        _migrationReviews.Clear();
-        _jungKspReview = null;
-        await _bus.DisposeAsync();
+        TaskCompletionSource? completion = null;
+        Task drain;
+        lock (_connectionDisposeGate)
+        {
+            if (_connectionDisposeTask is null)
+            {
+                completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                _connectionDisposeTask = completion.Task;
+            }
+            drain = _connectionDisposeTask;
+        }
+        if (completion is not null) _ = DisposeConnectionsAsync(completion);
+        return new(drain);
+    }
+
+    private async Task DisposeConnectionsAsync(TaskCompletionSource completion)
+    {
+        try
+        {
+            // Foreign token callbacks cannot prevent owner cleanup or leave a half-drained server.
+            try { _connectionLifetime.Cancel(); } catch (AggregateException) { }
+            await _connectionJobs.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _migrationReviews.Clear();
+                _jungKspReview = null;
+                await _bus.DisposeAsync().ConfigureAwait(false);
+            }
+            finally { _connectionJobs.Release(); }
+            completion.TrySetResult();
+        }
+        catch (Exception error) { completion.TrySetException(error); }
     }
 
     /// <summary>Expected tool failure; reported to the client as isError, never as a protocol error.</summary>

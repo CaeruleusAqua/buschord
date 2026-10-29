@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Knx.App.Localization;
 using Knx.Bus;
+using Knx.Bus.Connections;
 
 namespace Knx.App.Workbench;
 
@@ -47,7 +48,7 @@ public sealed class LineScanSession : SessionState, IAsyncDisposable
             ?? throw new ArgumentException("Line is not in the current project.", nameof(lineId));
         var devices = line.Devices.Concat(line.Segments.SelectMany(s => s.Devices))
             .OrderBy(d => d.Address.Device).Select(d => (Device: d, LineId: (string?)line.Id)).ToList();
-        await (_operation = RunDemoCoreAsync(devices, line.Id, interfaceId, ct));
+        await StartOwned(() => RunDemoCoreAsync(devices, line.Id, interfaceId, ct));
     }
 
     /// <summary>Simulated scan of one project device, reported with its individual address and ids.</summary>
@@ -60,7 +61,7 @@ public sealed class LineScanSession : SessionState, IAsyncDisposable
         var project = _project() ?? throw new InvalidOperationException("No project is open.");
         var located = ProjectQuery.Devices(project).FirstOrDefault(d => d.Device.Id == deviceId);
         if (located.Device is null) throw new ArgumentException("Device is not in the current project.", nameof(deviceId));
-        await (_operation = RunDemoCoreAsync([(located.Device, located.Line?.Id)], located.Line?.Id, interfaceId, ct));
+        await StartOwned(() => RunDemoCoreAsync([(located.Device, located.Line?.Id)], located.Line?.Id, interfaceId, ct));
     }
 
     private async Task RunDemoCoreAsync(IReadOnlyList<(DeviceInstance Device, string? LineId)> devices,
@@ -102,18 +103,41 @@ public sealed class LineScanSession : SessionState, IAsyncDisposable
     }
 
     public Task RunRealAsync(string lineId, ReadOnlyLineScanPlan plan, ReadOnlyLineScanner? scanner = null, CancellationToken ct = default)
+        => RunRealAsyncCore(lineId, plan, scanner, null, null, ct);
+    public Task RunProfileAsync(string lineId, ReadOnlyLineScanPlan plan, KnxConnectionProfile profile, KnxConnectionFactory? factory = null, CancellationToken ct = default)
+    {
+        if (!plan.Gateway.Equals(profile.Gateway) || plan.RequestedTunnelAddress != profile.RequestedAddress)
+            throw new ArgumentException("The scan must use the selected connection profile.", nameof(profile));
+        return RunRealAsyncCore(lineId, plan, null, profile, factory ?? new(), ct);
+    }
+    private Task RunRealAsyncCore(string lineId, ReadOnlyLineScanPlan plan, ReadOnlyLineScanner? scanner,
+        KnxConnectionProfile? profile, KnxConnectionFactory? factory, CancellationToken ct)
     {
         VerifyAccess(); ObjectDisposedException.ThrowIf(_disposed, this);
         if (_running) throw new InvalidOperationException("A scan is already running.");
         var project = _project() ?? throw new InvalidOperationException("No project is open.");
         if (!project.Installations.SelectMany(i => i.Areas).SelectMany(a => a.Lines).Any(l => l.Id == lineId))
             throw new ArgumentException("Line is not in the current project.", nameof(lineId));
-        return _operation = RunRealCoreAsync(project, lineId, plan, scanner ?? new(), ct);
+        return StartOwned(() => RunRealCoreAsync(project, lineId, plan, scanner ?? new(), profile, factory, ct));
     }
-    private async Task RunRealCoreAsync(Project project, string lineId, ReadOnlyLineScanPlan plan, ReadOnlyLineScanner scanner, CancellationToken ct)
+    private Task StartOwned(Func<Task> action)
     {
-        using var reservation = RealEndpointReservations.TryAcquire(plan.InterfaceId)
-            ?? throw new InvalidOperationException(LiveConnectionStrings.Get("ScanDisconnect"));
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _operation = completion.Task;
+        _ = RunOwnedAsync(action, completion);
+        return completion.Task;
+    }
+    private static async Task RunOwnedAsync(Func<Task> action, TaskCompletionSource completion)
+    {
+        try { await action(); completion.TrySetResult(); }
+        catch (OperationCanceledException error) { completion.TrySetCanceled(error.CancellationToken); }
+        catch (Exception error) { completion.TrySetException(error); }
+    }
+    private async Task RunRealCoreAsync(Project project, string lineId, ReadOnlyLineScanPlan plan, ReadOnlyLineScanner scanner,
+        KnxConnectionProfile? profile, KnxConnectionFactory? factory, CancellationToken ct)
+    {
+        using var reservation = profile is null ? RealEndpointReservations.TryAcquire(plan.InterfaceId)
+            ?? throw new InvalidOperationException(LiveConnectionStrings.Get("ScanDisconnect")) : null;
         if (!_interfaces.TryAcquire(plan.InterfaceId, InterfaceActivity.Scan, out var lease))
             throw new InvalidOperationException(LiveConnectionStrings.Get("Occupied"));
         using (lease)
@@ -125,6 +149,8 @@ public sealed class LineScanSession : SessionState, IAsyncDisposable
             var names = ProjectQuery.DeviceList(project).GroupBy(d => d.Address).ToDictionary(g => g.Key, g => (g.First().Id, g.First().Name));
             try
             {
+                await using var operation = profile is null ? null : await factory!.AcquireOperationAsync(profile, cancellation.Token);
+                if (operation is not null) scanner = new ReadOnlyLineScanner((_, target, token) => operation.OpenManagementAsync(target, readOnly: true, token));
                 var progress = new Progress<ReadOnlyLineScanProgress>(value =>
                 {
                     if (_disposed || !_running || !ReferenceEquals(run, _runIdentity) || !SameProject(project)) return;
@@ -145,6 +171,8 @@ public sealed class LineScanSession : SessionState, IAsyncDisposable
                 if (result.Completion == ReadOnlyLineScanCompletion.Cancelled) _lastError = LiveConnectionStrings.Get("ScanCancelled");
                 else if (result.Completion != ReadOnlyLineScanCompletion.Completed) _lastError = LiveConnectionStrings.Get("Failed");
             }
+            catch (KnxConnectionException error) { _lastError = SecureConnectionStrings.Get(error.Failure.ToString()); }
+            catch (OperationCanceledException) { _lastError = LiveConnectionStrings.Get("ScanCancelled"); }
             finally
             {
                 _running = false;

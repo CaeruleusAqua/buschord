@@ -12,6 +12,11 @@ if (args.Contains("--native-connection"))
     Environment.ExitCode = LiveConnectionNativeChecks.Run(args.Contains("--de") ? "de" : "en");
     return;
 }
+if (args.Contains("--native-secure-connection"))
+{
+    Environment.ExitCode = SecureConnectionNativeChecks.Run(args.Contains("--de") ? "de" : "en");
+    return;
+}
 if (args.Contains("--native-m112-commissioning"))
 {
     Environment.ExitCode = M112CommissioningNativeChecks.Run(args.Contains("--de") ? "de" : "en");
@@ -47,6 +52,12 @@ if (args.Contains("--m112-commissioning"))
 {
     await M112CommissioningChecks.Run(Check);
     Console.WriteLine($"{checks} M112 commissioning checks passed.");
+    return;
+}
+if (args.Contains("--secure-connection"))
+{
+    await SecureConnectionChecks.Run(Check);
+    Console.WriteLine($"{checks} secure connection checks passed.");
     return;
 }
 
@@ -657,6 +668,7 @@ await ProgrammingPersistenceChecks.Run(Check);
 await MonitorHistoryCaptureChecks.Run(Check);
 await LiveConnectionChecks.Run(Check);
 await M112CommissioningChecks.Run(Check);
+await SecureConnectionChecks.Run(Check);
 Check("configuration location identity checks", ConfigurationLocationChecks.Run() == 0);
 Console.WriteLine($"{checks} checks passed.");
 

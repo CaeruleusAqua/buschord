@@ -61,6 +61,8 @@ var maps = new (string Module, string File, IReadOnlyDictionary<string, (string 
         key => key, key => (RecoveryUiStrings.GetForLanguage("de", key), RecoveryUiStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
     ("live-connection", "src/Knx.App/Localization/LiveConnectionStrings.cs", LiveConnectionStrings.Keys.ToDictionary(
         key => key, key => (LiveConnectionStrings.GetForLanguage("de", key), LiveConnectionStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
+    ("secure-connection", "src/Knx.App/Localization/SecureConnectionStrings.cs", SecureConnectionStrings.Keys.ToDictionary(
+        key => key, key => (SecureConnectionStrings.GetForLanguage("de", key), SecureConnectionStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
     ("m112-commissioning", "src/Knx.App/Localization/M112CommissioningStrings.cs", M112CommissioningStrings.Keys.ToDictionary(
         key => key, key => (M112CommissioningStrings.GetForLanguage("de", key), M112CommissioningStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
 };
@@ -199,6 +201,32 @@ foreach (var language in LiveConnectionStrings.Languages)
     Check($"i18n[{language}:live-connection]: every value and placeholder is valid", mismatches.Count == 0, Join(mismatches));
 }
 
+Check("i18n[secure-connection]: exactly the supported languages are registered",
+    SecureConnectionStrings.Languages.Count == Strings.Available.Count
+    && SecureConnectionStrings.Languages.ToHashSet(StringComparer.Ordinal).SetEquals(Strings.Available));
+var secureValues = typeof(SecureConnectionStrings).GetField("Text", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null)
+    as IReadOnlyDictionary<string, string[]>
+    ?? throw new InvalidOperationException("SecureConnectionStrings.Text not found; update the localization gates");
+Check("i18n[secure-connection]: every key has exactly one value per language",
+    secureValues.Values.All(values => values.Length == SecureConnectionStrings.Languages.Count));
+foreach (var language in SecureConnectionStrings.Languages)
+{
+    var mismatches = new List<string>();
+    foreach (var key in SecureConnectionStrings.Keys)
+    {
+        var source = SecureConnectionStrings.GetForLanguage("de", key);
+        var translated = SecureConnectionStrings.GetForLanguage(language, key);
+        string Shape(string text) => string.Join(",", placeholderShape.Matches(text)
+            .Select(match => match.Groups[1].Value).OrderBy(index => index, StringComparer.Ordinal));
+        if (string.IsNullOrWhiteSpace(translated) || Shape(source) != Shape(translated)) mismatches.Add(key);
+        var count = placeholderShape.Matches(source).Select(match => int.Parse(match.Groups[1].Value)).DefaultIfEmpty(-1).Max() + 1;
+        try { _ = string.Format(CultureInfo.InvariantCulture, translated,
+            Enumerable.Range(0, count).Select(index => (object)$"v{index}").ToArray()); }
+        catch (FormatException) { mismatches.Add(key + ": invalid format"); }
+    }
+    Check($"i18n[{language}:secure-connection]: every value and placeholder is valid", mismatches.Count == 0, Join(mismatches));
+}
+
 Check("i18n[m112-commissioning]: exactly the supported languages are registered",
     M112CommissioningStrings.Languages.Count == Strings.Available.Count
     && M112CommissioningStrings.Languages.ToHashSet(StringComparer.Ordinal).SetEquals(Strings.Available));
@@ -264,6 +292,7 @@ var callDownloads = new Regex("\\bCatalogDownloadStrings\\.Get\\(\\s*\"([A-Za-z]
 var callUpdates = new Regex("\\bUpdateUiStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callRecovery = new Regex("\\bRecoveryUiStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callLive = new Regex("\\bLiveConnectionStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
+var callSecure = new Regex("\\bSecureConnectionStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callCommissioning = new Regex("\\bM112CommissioningStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callLiveWrap = new Regex("\\bL\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callUpdateWrap = new Regex("\\bU\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
@@ -280,6 +309,7 @@ var referenced = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
     ["updates"] = new(StringComparer.Ordinal),
     ["recovery"] = new(StringComparer.Ordinal),
     ["live-connection"] = new(StringComparer.Ordinal),
+    ["secure-connection"] = new(StringComparer.Ordinal),
     ["m112-commissioning"] = new(StringComparer.Ordinal),
 };
 var missing = new List<(string Site, string Detail)>();
@@ -303,9 +333,12 @@ foreach (var file in SourceScan.Files(root, ["src", "tests"], "*.cs"))
     foreach (Match m in callUpdates.Matches(text)) Use(file, LineAt(text, m.Index), "updates", m.Groups[1].Value, "UpdateUiStrings.Get");
     foreach (Match m in callRecovery.Matches(text)) Use(file, LineAt(text, m.Index), "recovery", m.Groups[1].Value, "RecoveryUiStrings.Get");
     foreach (Match m in callLive.Matches(text)) Use(file, LineAt(text, m.Index), "live-connection", m.Groups[1].Value, "LiveConnectionStrings.Get");
+    foreach (Match m in callSecure.Matches(text)) Use(file, LineAt(text, m.Index), "secure-connection", m.Groups[1].Value, "SecureConnectionStrings.Get");
     foreach (Match m in callCommissioning.Matches(text)) Use(file, LineAt(text, m.Index), "m112-commissioning", m.Groups[1].Value, "M112CommissioningStrings.Get");
     if (file.Equals("src/Knx.App/ConnectionWindow.cs", StringComparison.Ordinal))
         foreach (Match m in callLiveWrap.Matches(text)) Use(file, LineAt(text, m.Index), "live-connection", m.Groups[1].Value, "L(...)");
+    if (file.Equals("src/Knx.App/SecureConnectionWindow.cs", StringComparison.Ordinal))
+        foreach (Match m in callLiveWrap.Matches(text)) Use(file, LineAt(text, m.Index), "secure-connection", m.Groups[1].Value, "L(...)");
     if (file.Equals("src/Knx.App/M112CommissioningWindow.cs", StringComparison.Ordinal))
         foreach (Match m in callLiveWrap.Matches(text)) Use(file, LineAt(text, m.Index), "m112-commissioning", m.Groups[1].Value, "L(...)");
     if (file.StartsWith("src/Knx.App/UpdateWindow", StringComparison.Ordinal))
@@ -390,6 +423,7 @@ foreach (var (module, _, map) in maps)
         "src/Knx.App/Localization/CatalogDownloadStrings.cs",
         "src/Knx.App/Localization/UpdateUiStrings.cs",
         "src/Knx.App/Localization/RecoveryUiStrings.cs",
+        "src/Knx.App/Localization/SecureConnectionStrings.cs",
         "src/Knx.App/Localization/LiveConnectionStrings.cs",
         "src/Knx.App/Localization/M112CommissioningStrings.cs",
     ];

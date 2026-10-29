@@ -47,6 +47,11 @@ The agent then calls `initialize`, reads `tools/list` and invokes tools with `to
 Server name `buschord`, version `1.0.0`, protocol version `2025-06-18`
 (`2025-03-26` is accepted for older clients).
 
+Bus tools support explicit authenticated `ip_secure_udp` profiles with a protected
+keyring, exact host/user/tunnel selection and a password environment-variable name.
+[Fields, ownership and limits](docs/secure-connections.md). Raw connection passwords
+and keys are refused; Secure failures cannot fall back to plain discovery.
+
 Typical session: `project_open` or `project_new` → inspect with `project_info` /
 `project_dashboard` → edit with `group_address_*`, `group_link_*`, `device_*`, `smart_link_apply`,
 `product_replace` → verify with `project_check` → `project_save`.

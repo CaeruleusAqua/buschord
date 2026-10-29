@@ -43,8 +43,9 @@ Einzelgeräteversuche ersetzen diese Endabnahme nicht.
   `development` integriert; alle neun Prüfungen des abschließenden Stands bestehen.
 - Geschützte Keyrings und dauerhafte Data-Secure-Gruppenzustände bestehen separat
   101 Import-, 31 Codec-/Zähler- und 11 Tunnelprüfungen sowie die gemeinsame
-  Bus-Regression auf Windows und Ubuntu 26.04. Die Anbindung sicherer Verbindungen
-  an Workbench/MCP und provisioniertes Tool-Access/Sync laufen getrennt weiter.
+  Bus-Regression auf Windows und Ubuntu 26.04; PR #9 ist mit neun grünen Prüfungen
+  in `development` integriert. Die anschließende gemeinsame Secure-Verbindungswahl
+  für Workbench/MCP wird geprüft; provisioniertes Tool-Access/Sync läuft separat.
 - Echte lesende Workbench-Verbindung, Gruppenmonitor und adressierter Scan sind
   erreichbar; gemeinsame Verbindungsbesitzer beenden I/O vor erneuter Nutzung.
   Allgemeine Programmierung, Adressierung und weitere Geräteprofile bleiben offen.

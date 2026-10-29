@@ -35,7 +35,7 @@ review; the badges track `development`.
 | Local history | Opt-in telegram recording with time/filter/context queries, export, backup and retention; optional model/undo checkpoints, independent audit and explicit recovery review. See [workflows](docs/workflows.md) and [recovery](docs/recovery.md). |
 | Native UI | Object-centred tabs, project portfolio, inspector, catalogue and independent tools; keyboard command search, high contrast, light/dark themes and eight UI languages. |
 | MCP | 57 stdio tools, protected open/save, reviewed mass linking, explicit script capability, migration and a bounded Jung SP8 KSP import. |
-| Network | KNXnet/IP discovery, tunnel/routing and addressed management; explicit Workbench read-only connection, real group monitor and line scan. A dedicated [M112 dialog and console profile](docs/commissioning.md) supports reviewed configuration changes and captured-configuration recovery. The library also provides [authenticated Secure UDP sessions](docs/secure-session.md); Secure UI/MCP controls remain open. |
+| Network | KNXnet/IP discovery, tunnel/routing and addressed management; explicit Workbench read-only connection, real group monitor and line scan. A dedicated [M112 dialog and console profile](docs/commissioning.md) supports reviewed configuration changes and captured-configuration recovery. [Secure connection selection](docs/secure-connections.md) shares authenticated transport and owned credentials across Workbench/MCP/CLI; Data Secure provisioning remains separate. |
 
 The [status document](docs/status.md) defines exact format, manufacturer, codec,
 script and commissioning boundaries. Supported partial profiles are not a complete
@@ -81,6 +81,7 @@ dotnet run --project src/Knx.Mcp -c Release --no-build -- --selftest
 - [User manual](docs/manual.md)
 - [Capabilities, validation and limits](docs/status.md)
 - [Authenticated Secure UDP sessions](docs/secure-session.md)
+- [Secure Workbench/MCP connection selection](docs/secure-connections.md)
 - [Product catalogues](catalog.md)
 - [MCP setup and tool contract](mcp.md)
 - [Local project backups](docs/project-backup.md)

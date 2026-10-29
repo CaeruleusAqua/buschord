@@ -10,6 +10,8 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Knx.App.Localization;
 using Knx.App.Workbench;
+using Knx.Bus.Connections;
+using Knx.Bus.Security;
 
 namespace Knx.App;
 
@@ -25,6 +27,13 @@ public sealed class M112CommissioningWindow : Window
     private readonly TextBox _gateway = new() { Name = "M112Gateway", Classes = { "wb-field" } };
     private readonly TextBox _port = new() { Name = "M112Port", Text = "3671", Classes = { "wb-field" } };
     private readonly TextBox _source = new() { Name = "M112TunnelAddress", Text = "1.1.250", Classes = { "wb-field" } };
+    private readonly ComboBox _mode = new() { Name = "M112TransportMode", SelectedIndex = -1 };
+    private readonly Button _secure = new() { Name = "M112ConfigureSecure", Classes = { "wb-button", "wb-quiet" } };
+    private readonly TextBlock _secureBinding = new() { Name = "M112SecureBinding", TextWrapping = TextWrapping.Wrap };
+    private SecureKeyringReference? _secureReference;
+    private ISecurePasswordSource? _passwordSource;
+    private SecureConnectionWindow? _secureDialog;
+    private readonly string _expectedKeyringProject;
     private readonly TextBox _target = new() { Name = "M112ConfirmTarget", Classes = { "wb-field" } };
     private readonly TextBlock _scope = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _status = new() { Name = "M112Status", TextWrapping = TextWrapping.Wrap };
@@ -43,12 +52,15 @@ public sealed class M112CommissioningWindow : Window
     public bool MayClose => !_session.RecoveryRequired || _closeUnverified.IsChecked == true;
 
     public M112CommissioningWindow(M112CommissioningSession session, Func<Window, Task<M112BaselineSelection?>> loadBaseline,
-        ReadOnlyConnectionOptions? initial = null, Func<Task>? prepareNetwork = null)
+        ReadOnlyConnectionOptions? initial = null, Func<Task>? prepareNetwork = null, string expectedKeyringProject = "")
     {
         _session = session; _loadBaseline = loadBaseline; _prepareNetwork = prepareNetwork ?? (() => Task.CompletedTask);
+        _expectedKeyringProject = expectedKeyringProject;
         Width = 900; Height = 820; MinWidth = 480; MinHeight = 420;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Classes.Add("wb-dialog");
         if (initial is not null) { _gateway.Text = initial.Gateway.Address.ToString(); _port.Text = initial.Port.ToString(); _source.Text = initial.RequestedAddress.ToString(); }
+        if (initial is not null) _mode.SelectedIndex = initial.Profile.Kind == KnxTransportKind.IpSecureUdp ? 1 : 0;
+        if (initial?.Profile.Kind == KnxTransportKind.IpSecureUdp) { _secureReference = initial.Profile.Keyring; _passwordSource = initial.Profile.PasswordSource; }
         var body = new StackPanel { Spacing = 10, Margin = new Thickness(20) };
         body.Children.Add(_scope);
         void Field(string key, TextBox input, bool live = false)
@@ -57,6 +69,9 @@ public sealed class M112CommissioningWindow : Window
             _translations.Add(() => { label.Text = live ? LiveConnectionStrings.Get(key) : L(key); AutomationProperties.SetName(input, label.Text); });
         }
         Field("Gateway", _gateway, true); Field("Port", _port, true); Field("TunnelAddress", _source, true);
+        body.Children.Add(_mode); body.Children.Add(_secure); body.Children.Add(_secureBinding);
+        _mode.SelectionChanged += (_, _) => { if (!_refreshing && !_session.IsBusy && !_session.RecoveryRequired) ResetReview(); };
+        _secure.Click += (_, _) => { if (_operation.IsCompleted) _operation = RunAsync(ConfigureSecureAsync); };
         var sources = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 };
         sources.Children.Add(Button("Baseline", async () => { ResetReview(); _baseline = await _loadBaseline(this); ResetReview(); }));
         sources.Children.Add(Button("Journal", async () =>
@@ -136,9 +151,8 @@ public sealed class M112CommissioningWindow : Window
     private async Task PreviewAsync()
     {
         _prepared = false;
-        if (_baseline is null || _journalPath is null || !IPAddress.TryParse(_gateway.Text, out var address)
-            || !int.TryParse(_port.Text, out var port) || !IndividualAddress.TryParse(_source.Text ?? "", out var source)) throw new InvalidOperationException("PrivatePath");
-        await _session.PrepareAsync(_baseline.Project, _baseline.Path, _baseline.Sha256, new(address, port, source), _journalPath);
+        if (_baseline is null || _journalPath is null) throw new InvalidOperationException("PrivatePath");
+        await _session.PrepareAsync(_baseline.Project, _baseline.Path, _baseline.Sha256, Options(), _journalPath);
         _prepared = _session.Snapshot.Phase == M112CommissioningPhase.Reviewed;
         _identityConfirmed.IsChecked = _planConfirmed.IsChecked = false;
     }
@@ -152,7 +166,22 @@ public sealed class M112CommissioningWindow : Window
     {
         if (!IPAddress.TryParse(_gateway.Text, out var address) || !int.TryParse(_port.Text, out var port)
             || !IndividualAddress.TryParse(_source.Text ?? "", out var source)) throw new InvalidOperationException("Target");
-        return new(address, port, source);
+        return _mode.SelectedIndex switch
+        {
+            0 => new(address, port, source),
+            1 when _secureReference is not null => new(KnxConnectionProfile.IpSecure(new(address, port), _secureReference, _passwordSource)),
+            _ => throw new InvalidOperationException("Target")
+        };
+    }
+    private async Task ConfigureSecureAsync()
+    {
+        ResetReview(); var dialog = _secureDialog = new SecureConnectionWindow(this, _expectedKeyringProject);
+        try
+        {
+            await dialog.ShowDialog(this); await dialog.OperationCompletion;
+            if (dialog.Selection is { } selected) { _secureReference = selected; _passwordSource = dialog.PasswordSource; _source.Text = selected.TunnelAddress.ToString(); }
+        }
+        finally { _secureDialog = null; }
     }
     private async Task InspectRecoveryAsync(string explicitlySelectedPath)
     {
@@ -166,6 +195,8 @@ public sealed class M112CommissioningWindow : Window
     private void RefreshLanguage()
     {
         Title = L("Title"); _scope.Text = L("Scope") + " " + L("NetworkNotice");
+        _refreshing = true; var mode = _mode.SelectedIndex; _mode.ItemsSource = new[] { SecureConnectionStrings.Get("Plain"), SecureConnectionStrings.Get("Secure") }; _mode.SelectedIndex = mode; _refreshing = false;
+        AutomationProperties.SetName(_mode, SecureConnectionStrings.Get("Mode")); _secure.Content = SecureConnectionStrings.Get("Title");
         foreach (var (key, button) in _buttons) { button.Content = L(key); AutomationProperties.SetName(button, L(key)); }
         _identityConfirmed.Content = L("ConfirmIdentity"); _planConfirmed.Content = L("ConfirmPlan");
         _closeUnverified.Content = L("CloseUnverified");
@@ -178,7 +209,7 @@ public sealed class M112CommissioningWindow : Window
         _refreshing = true;
         try
         {
-            _status.Text = L(snapshot.Phase.ToString()) + ((_localIssue ?? snapshot.Issue) is { } issue ? " " + L(issue) : "");
+            _status.Text = L(snapshot.Phase.ToString()) + (snapshot.ConnectionFailure is { } failure ? " " + SecureConnectionStrings.Get(failure.ToString()) : ((_localIssue ?? snapshot.Issue) is { } issue ? " " + L(issue) : ""));
             var identity = snapshot.Identity;
             var resume = snapshot.Resume;
             _identity.Text = identity is null ? "" : (resume is null ? "" : L("RecordedIdentity") + " ") + $"{identity.Address} · MV-{identity.MaskVersion:X4} · {identity.Manufacturer} · {identity.Serial} · {identity.Application}";
@@ -189,6 +220,9 @@ public sealed class M112CommissioningWindow : Window
             _identityConfirmed.IsEnabled = !busy && _prepared && snapshot.Phase is M112CommissioningPhase.Ready or M112CommissioningPhase.ResumeReady;
             _planConfirmed.IsEnabled = !busy && _prepared;
             _gateway.IsEnabled = _port.IsEnabled = _source.IsEnabled = !busy && !_session.RecoveryRequired;
+            _source.IsReadOnly = _mode.SelectedIndex == 1;
+            _mode.IsEnabled = !busy && !_session.RecoveryRequired; _secure.IsEnabled = !busy && !_session.RecoveryRequired && _mode.SelectedIndex == 1;
+            _secureBinding.Text = _mode.SelectedIndex == 1 && _secureReference is { } reference ? $"Host {reference.HostAddress} · User {reference.UserId} · IA {reference.TunnelAddress}" : "";
             _target.IsEnabled = !busy;
             foreach (var key in new[] { "Baseline", "Journal", "Preview" }) _buttons[key].IsEnabled = !busy && !_session.RecoveryRequired && !_session.RecoveryOnly;
             _buttons["ReadIdentity"].IsEnabled = !busy && _prepared && snapshot.Phase is M112CommissioningPhase.Reviewed or M112CommissioningPhase.Ready or M112CommissioningPhase.ResumeReviewed or M112CommissioningPhase.ResumeReady;
@@ -221,7 +255,7 @@ public sealed class M112CommissioningWindow : Window
         if (!_session.IsBusy && !MayClose) { args.Cancel = true; RefreshState(); return; }
         if (_allowClose || !_session.IsBusy && _operation.IsCompleted) return;
         args.Cancel = true; if (_closing) return;
-        _closing = true; _session.Cancel(); var pending = _operation;
+        _closing = true; _secureDialog?.Close(); _session.Cancel(); var pending = _operation;
         _operation = CloseJoinedAsync(pending);
     }
     private async Task CloseJoinedAsync(Task pending)

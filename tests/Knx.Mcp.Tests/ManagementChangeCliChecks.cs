@@ -7,6 +7,8 @@ using System.Text.Json.Nodes;
 using System.Xml.Linq;
 using Knx;
 using Knx.Bus;
+using Knx.Bus.Connections;
+using Knx.Bus.Security;
 using Knx.Mcp;
 
 internal static class ManagementChangeCliChecks
@@ -60,9 +62,26 @@ internal static class ManagementChangeCliChecks
         var unsafePassword = await Run([.. common, "--m112-preview", "--password=" + secret]);
         check("M112 CLI rejects password values without echoing them", unsafePassword.Code == 2 && opens == 0 && !unsafePassword.Output.Contains(secret), null);
         var confirmed = await Run([.. common, "--review-fingerprint=" + fingerprint]);
-        check("M112 CLI exact reviewed proposal reaches only the injected opener", confirmed.Code == 1 && opens == 1
-            && confirmed.Output.Contains("Isolated test opener"), confirmed.Output);
+        check("M112 CLI exact reviewed proposal reaches only the injected opener with sanitized errors", confirmed.Code == 1 && opens == 1
+            && !confirmed.Output.Contains("Isolated test opener"), confirmed.Output);
         check("M112 CLI original baseline archive is unchanged", !ProjectQuery.DeviceList(Knxproj.Load(baseline)).Single().ParameterValues.ContainsKey("R"), null);
+        var forbidden = new ForbiddenCredentials(); var transports = 0;
+        var factory = new KnxConnectionFactory(new GatewayLeaseCoordinator(directory), forbidden,
+            createTransport: _ => { transports++; throw new InvalidOperationException("No transport is allowed for offline preview."); });
+        var secureMethod = typeof(McpServer).Assembly.GetType("Knx.Mcp.ManagementProbe")!.GetMethod("RunWithFactoryAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var secureArgs = new[] { "--transport=ip_secure_udp", "--own-address=1.1.240", "--host-address=1.1.0", "--user-id=2",
+            "--keyring-path=" + Path.Combine(directory, "does-not-exist.knxkeys"), "--keyring-project=Synthetic CLI project", "--keyring-password-env=SYNTHETIC_PASSWORD_ENV" };
+        var oldOut = Console.Out; var oldError = Console.Error; using var secureOutput = new StringWriter(); int secureCode;
+        try { Console.SetOut(secureOutput); Console.SetError(secureOutput); secureCode = await (Task<int>)secureMethod.Invoke(null, ["192.0.2.1", common.Concat(secureArgs).Append("--m112-preview").ToArray(), factory])!; }
+        finally { Console.SetOut(oldOut); Console.SetError(oldError); }
+        check("M112 CLI Secure offline preview performs zero credential/source/network acquisition", secureCode == 0 && forbidden.Calls == 0 && transports == 0, secureOutput.ToString());
+    }
+
+    private sealed class ForbiddenCredentials : IKnxSecureCredentialProvider
+    {
+        internal int Calls;
+        public Task<KnxSecureCredentialScope> AcquireAsync(SecureKeyringReference reference, ISecurePasswordSource? passwordSource, CancellationToken token)
+        { Calls++; throw new InvalidOperationException("No credentials are allowed for offline preview."); }
     }
 
     private static string Fixture(string directory)

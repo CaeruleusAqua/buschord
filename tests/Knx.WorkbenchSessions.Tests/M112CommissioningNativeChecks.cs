@@ -47,6 +47,7 @@ internal static class M112CommissioningNativeChecks
                 Check("native M112 opens as localized profile dialog with shared chrome", dialog.Title == M112CommissioningStrings.Get("Title") && dialog.Classes.Contains("wb-dialog"));
                 Check("native M112 opens without any network or write operation", fixture.Backend.Reads == 0 && fixture.Backend.Applies == 0);
                 var gateway = Find<TextBox>(dialog, "M112Gateway"); gateway.Text = "192.0.2.190";
+                Find<ComboBox>(dialog, "M112TransportMode").SelectedIndex = 0;
                 Check("native M112 gateway and target fields have localized accessible names", ControlAutomationPeer.CreatePeerForElement(gateway)?.GetName() == LiveConnectionStrings.Get("Gateway")
                     && ControlAutomationPeer.CreatePeerForElement(Find<TextBox>(dialog, "M112ConfirmTarget"))?.GetName() == M112CommissioningStrings.Get("TargetPrompt"));
                 var session = (M112CommissioningSession)typeof(WorkbenchWindow).GetField("_m112Session", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(shell)!;
@@ -72,6 +73,7 @@ internal static class M112CommissioningNativeChecks
                 dialog = lifetime.Windows.OfType<M112CommissioningWindow>().Single();
                 session = (M112CommissioningSession)typeof(WorkbenchWindow).GetField("_m112Session", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(shell)!;
                 Find<TextBox>(dialog, "M112Gateway").Text = "192.0.2.190";
+                Find<ComboBox>(dialog, "M112TransportMode").SelectedIndex = 0;
                 typeof(M112CommissioningWindow).GetField("_baseline", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(dialog, new M112BaselineSelection(fixture.Project, fixture.BaselinePath, fixture.Hash));
                 typeof(M112CommissioningWindow).GetField("_journalPath", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(dialog, fixture.Root);
                 Click(Find<Button>(dialog, "M112Preview")); await dialog.OperationCompletion;

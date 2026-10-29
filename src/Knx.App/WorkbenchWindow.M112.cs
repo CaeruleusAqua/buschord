@@ -27,7 +27,7 @@ public partial class WorkbenchWindow
         var session = _m112Session = new(() => new(ViewModel.Project,
             ViewModel.ProjectSessionIdentity, HasParameterDrafts, _sessions?.Programming.IsRunning == true), deviceId,
             _m112BackendFactory?.Invoke(deviceId), recoveryOnly);
-        var window = _m112Window = new(session, LoadM112BaselineAsync, _liveOptions, PrepareM112NetworkAsync);
+        var window = _m112Window = new(session, LoadM112BaselineAsync, _liveOptions, PrepareM112NetworkAsync, ViewModel.Project?.Name ?? "");
         var others = _toolWindows.Concat(_companions.Values).Distinct().Select(other => (other, other.IsEnabled)).ToArray();
         foreach (var (other, _) in others) other.IsEnabled = false;
         try { await window.ShowDialog(this); await window.OperationCompletion; }

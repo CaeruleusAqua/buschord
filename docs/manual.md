@@ -536,14 +536,17 @@ Ansicht wieder an. `Strg+J` blendet den Werkzeugbereich ein oder aus.
 
 Der Monitor bietet die Quellen **Demo** und **Echter Bus**. Für echte Telegramme
 zunächst **Werkzeuge → Busverbindung** oder **Verbindung wählen…** öffnen,
-Gateway-IPv4, UDP-Port und angeforderte Tunneladresse eingeben und **Verbinden**
-wählen. Die Anzeige nennt den Verbindungszustand und die tatsächlich zugewiesene
+die Verbindungsart wählen. Für UDP Gateway-IPv4, UDP-Port und angeforderte
+Tunneladresse eingeben. Für IP Secure UDP den geschützten Keyring lokal prüfen,
+Gateway-KNX-Adresse, Benutzer und Tunneladresse daraus auswählen und das Kennwort
+im maskierten Dialog eingeben. **Verbinden** stellt die gewählte Verbindung her.
+Die Anzeige nennt den Verbindungszustand und die tatsächlich zugewiesene
 Adresse. Schließen des Dialogs erhält eine erfolgreiche Verbindung; **Trennen**
 beendet sie. Abbrechen während des Aufbaus wartet dessen Beendigung ab.
 
 - **Starten**, **Stoppen**, **Pause**, **Fortsetzen**, **Anzeige leeren**.
 - **Monitorart**: Gruppenmonitor oder Busmonitor; der Wechsel ist nur im
-  gestoppten Zustand möglich. Der echte Standard-UDP-Tunnel unterstützt hier den
+  gestoppten Zustand möglich. Die echten UDP-Verbindungen unterstützen hier den
   Gruppenmonitor; ein vollständiger Hardware-Busmonitor ist nicht enthalten.
 - **Telegrammfilter**: Alle Telegramme, Ganzes Projekt, Aktueller
   Arbeitsgegenstand, Auswahl folgen.
@@ -623,10 +626,14 @@ weiterhin ausschließlich simulierte Ergebnisse projektierter Geräte.
 
 ### 7.5 Bus, Secure und was live belegt ist
 
-- **Werkzeuge → Busverbindung** öffnet den ausdrücklich gewählten Standard-UDP-
-  Tunnel für den lesenden Monitor. Die Angaben gelten für die aktuelle
+- **Werkzeuge → Busverbindung** öffnet den ausdrücklich gewählten UDP- oder
+  IP-Secure-Tunnel für den lesenden Monitor. Die Angaben gelten für die aktuelle
   Projektinstanz; ein Projektwechsel schließt die alte Verbindung vollständig.
   Die alten Felder unter **Optionen → Bus** öffnen keine Verbindung automatisch.
+- IP Secure authentisiert das Gateway. Geschützte Gruppenwerte benötigen einen
+  zusätzlich provisionierten Data-Secure-Kontext. Die Verbindungswahl sendet
+  bekannte geschützte Gruppen nicht ersatzweise unverschlüsselt;
+  [Umfang und Auswahl](secure-connections.md).
 - **Werkzeuge → Secure-Übersicht** zählt Geräte und Gruppenadressen mit
   ausdrücklich belegter Secure-Fähigkeit. Die Übersicht verwaltet keine Schlüssel
   oder Zertifikate und behauptet keine sichere Inbetriebnahme.
