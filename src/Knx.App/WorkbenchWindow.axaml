@@ -212,7 +212,15 @@
     </Border>
     <Grid x:Name="Zones" Grid.Row="1" ColumnDefinitions="47,272,5,*,0,0">
       <Border Background="{DynamicResource WbRail}" BorderBrush="{DynamicResource WbLine}" BorderThickness="0,0,1,0">
-        <DockPanel><StackPanel x:Name="Rail" Spacing="5" Margin="5,10"/><Button DockPanel.Dock="Bottom" Width="35" Height="35" HorizontalAlignment="Center" Click="OnHelp" VerticalAlignment="Bottom" Classes="quiet" ToolTip.Tip="{loc:Wb Documentation}" AutomationProperties.Name="{loc:Wb Documentation}"><views:ConceptIcon Symbol="help"/></Button></DockPanel>
+        <Grid RowDefinitions="*,Auto">
+          <StackPanel x:Name="Rail" Spacing="5" Margin="5,10"/>
+          <Button Grid.Row="1" Width="35" Height="35" Margin="0,0,0,10" Padding="0"
+                  HorizontalAlignment="Center" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                  Click="OnHelp" Classes="quiet" ToolTip.Tip="{loc:Wb Documentation}"
+                  AutomationProperties.Name="{loc:Wb Documentation}">
+            <views:ConceptIcon Symbol="help"/>
+          </Button>
+        </Grid>
       </Border>
       <Border x:Name="Navigator" Grid.Column="1" Background="{DynamicResource WbPanel}">
         <Grid RowDefinitions="Auto,Auto,Auto,*,30">
