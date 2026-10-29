@@ -190,6 +190,12 @@ jobs:
         run: |
           dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-secure-connection
           dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-secure-connection --de
+      - name: Native individual address assignment (Windows only)
+        # In-process fake gateways, never a real bus.
+        shell: bash
+        run: |
+          dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-individual-address-assignment
+          dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-individual-address-assignment --de
       - name: Native explicit credential controls with fake vaults (Windows only)
         shell: bash
         run: |

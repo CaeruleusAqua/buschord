@@ -1035,3 +1035,32 @@ verifiziert:
   Workbench-Selbstprüfung belegen gerenderte Ansichten und geroutete Abläufe,
   keine Screenreader-, 150-/200-%-DPI- oder vollständige Klicktest-Abnahme.
 - Verhalten von ETS beim Öffnen der von BusChord geschriebenen Dateien insgesamt.
+
+## Individuelle Adresse zuweisen
+
+Geplantes Projektgerät auswählen, dann **Werkzeuge → Individuelle Adresse vergeben**
+öffnen. Die normale Verbindungsauswahl führt keine Adressschreibung aus. Im
+Adressdialog bewusst ungeschütztes UDP, Gateway, Tunneladresse und vollständige
+Seriennummer oder den eindeutig benannten, unverändert isolierten Einzelgerätaufbau
+wählen. Ein privater Auftragsordner ist Pflicht. Koppler benötigen den tatsächlichen
+Projekt-Hardwarebeleg; bekannte Secure-Geräte werden vor der Verbindung gesperrt.
+
+Das Öffnen lässt eine bestehende Monitorverbindung bestehen. Erst die ausdrückliche
+Prüfung oder der Abgleich stoppt den Monitor und wartet auf dessen vollständigen
+Verbindungsabbau. Vorgeschlagen werden die tatsächlich zugewiesene Tunneladresse
+und die gewählte lokale Schnittstelle. Abbrechen, Schließen oder Projektwechsel
+während dieses Wartens startet danach keine verspätete Geräteerkennung.
+
+Die erste Prüfung liest nur. Eine stumme Zieladresse beweist nicht, dass sie frei ist:
+Reservierung unabhängig prüfen und benennen. Vor dem einmaligen Schreiben die
+physische Bindung und Reservierung bestätigen sowie die angezeigte Zieladresse
+wiederholen. Danach werden Auftrag/Versuchsmarker gespeichert und das Ergebnis
+frisch zurückgelesen. Nur tatsächlich verifiziertes, zum aktuellen Projekt passendes
+Ergebnis setzt **Adr**; Simulationsflags werden nicht übernommen.
+
+Abbrechen oder Schließen wartet auf den lesenden Abgleich. Bei ungeklärtem Zustand
+bleiben Warnung und Auftragspfad sichtbar; bewusstes Verlassen bedeutet keine
+Wiederherstellung. **Gespeicherten Auftrag öffnen** und **nur lesend abgleichen**
+funktionieren nach einem Neustart, schreiben aber niemals erneut. Für eine
+Rückadressierung muss ein neuer Auftrag geprüft und ausdrücklich bestätigt werden.
+Details, MCP-Aufrufe und Aussagegrenzen: [Adressierung](individual-addressing.md).

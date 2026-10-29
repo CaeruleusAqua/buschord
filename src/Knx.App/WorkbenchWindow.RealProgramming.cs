@@ -29,6 +29,7 @@ public partial class WorkbenchWindow
     }
     private Task ShowRealProgrammingAsync()
     {
+        if (_addressAssignmentWindow is { } addressing) { addressing.Activate(); return Task.CompletedTask; }
         if (_realProgrammingWindow is { } existing) { existing.Activate(); return Task.CompletedTask; }
         if (!_realProgrammingOpening.IsCompleted) return _realProgrammingOpening;
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -47,7 +48,7 @@ public partial class WorkbenchWindow
         if (_realProgrammingWindow is { } existing) { existing.Activate(); return; }
         EnsureSessions();
         if (ViewModel.Project is not { } project || _sessions is not { } sessions) { ViewModel.Status = W("ProgrammingNeedsProject"); return; }
-        if (HasParameterDrafts || sessions.Programming.IsRunning || sessions.LineScan.IsRunning || M112Busy || _m112Window is not null)
+        if (HasParameterDrafts || sessions.Programming.IsRunning || sessions.LineScan.IsRunning || M112Busy || _m112Window is not null || AddressAssignmentBusy || _addressAssignmentWindow is not null)
         { ViewModel.Status = M112CommissioningStrings.Get("Stale"); return; }
         if (ViewModel.IsDirty || string.IsNullOrEmpty(ViewModel.ProjectPath))
         { ViewModel.Status = RealProgrammingQueueStrings.Get("SaveTarget"); return; }
@@ -63,7 +64,7 @@ public partial class WorkbenchWindow
         var receipts = new VerifiedM112ReceiptStore(Path.Combine(_programmingStateStore.DirectoryPath, "verified-m112"), binding, sourceHash,
             VerifiedM112ReceiptStore.ModelFingerprint(project), _m112BackendFactory is null ? null : (id, path, ct) => _m112BackendFactory(id).InspectRecoveryAsync(path, ct));
         var queue = _realProgrammingQueue = new(() => new(ViewModel.Project, ViewModel.ProjectSessionIdentity, HasParameterDrafts,
-            _sessions?.Programming.IsRunning == true || _sessions?.LineScan.IsRunning == true || M112Busy), sessions.Programming, _m112BackendFactory, receipts);
+            _sessions?.Programming.IsRunning == true || _sessions?.LineScan.IsRunning == true || M112Busy || AddressAssignmentBusy), sessions.Programming, _m112BackendFactory, receipts);
         await queue.ReadHistoryAsync();
         if (_shuttingDown || _closingSessionsForExit || !ReferenceEquals(lifetime, ViewModel.ProjectSessionIdentity))
         { await queue.DisposeAsync(); if (ReferenceEquals(_realProgrammingQueue, queue)) _realProgrammingQueue = null; return; }

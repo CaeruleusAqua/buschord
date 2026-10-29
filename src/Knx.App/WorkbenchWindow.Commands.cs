@@ -76,6 +76,7 @@ public partial class WorkbenchWindow
                 Item(W("ToolsOverview"), ShowToolsOverview),
                 Async(LiveConnectionStrings.Get("Title"), ShowConnectionAsync),
                 Async(M112CommissioningStrings.Get("Title"), ShowM112Async),
+                Async(AddressAssignmentStrings.Get("Title"), ShowAddressAssignmentAsync),
                 Item(W("ProjectCheck"), () => ShowTool("problems")), Item(W("Monitor"), () => ShowTool("monitor")),
                 Item(W("HistoryTitle"), ShowTelegramHistory),
                 Item(W("Scan"), () => ShowTool("scan")), Item(W("Changes"), () => ShowTool("changes")),
@@ -352,6 +353,7 @@ public partial class WorkbenchWindow
     private async Task<bool> ConfirmDiscardAsync()
     {
         await DrainRealProgrammingBeforeReplacementAsync();
+        await DrainAddressAssignmentBeforeReplacementAsync();
         await DrainM112BeforeReplacementAsync();
         if (HasParameterDrafts && !await ConfirmDialog.AskDiscardDraftsAsync(this)) return false;
         if (!ViewModel.IsDirty) return true;
@@ -366,6 +368,7 @@ public partial class WorkbenchWindow
         if (e.CloseReason == WindowCloseReason.OSShutdown && AppUpdateService.Current is { } updates)
             updates.SuppressApply = true;
         if (JoinRealProgrammingBeforeOwnerClose(e)) return;
+        if (JoinAddressAssignmentBeforeOwnerClose(e)) return;
         if (JoinM112BeforeOwnerClose(e)) return;
         if (_closingSessionsForExit) { e.Cancel = true; return; }
         if (!_shuttingDown && (ViewModel.IsDirty || HasParameterDrafts))

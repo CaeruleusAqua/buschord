@@ -26,6 +26,14 @@ if (args.Contains("--m112-receipts"))
     Environment.ExitCode = failed; return;
 }
 
+if (args.Contains("--native-individual-address-assignment"))
+{ Environment.ExitCode = IndividualAddressNativeChecks.Run(args.Contains("--de") ? "de" : "en"); return; }
+
+if (args.Contains("--individual-address-assignment"))
+{
+    var failed = 0; await IndividualAddressSessionChecks.Run((name, okay) => { Console.WriteLine((okay ? "PASS " : "FAIL ") + name); if (!okay) failed++; }); Environment.ExitCode = failed; return;
+}
+
 if (args.Contains("--native-connection"))
 {
     Environment.ExitCode = LiveConnectionNativeChecks.Run(args.Contains("--de") ? "de" : "en");
@@ -714,6 +722,7 @@ await RealM112ProgrammingQueueChecks.Run(Check);
 await VerifiedM112ReceiptChecks.Run(Check);
 await SecureConnectionChecks.Run(Check);
 Check("configuration location identity checks", ConfigurationLocationChecks.Run() == 0);
+await IndividualAddressSessionChecks.Run(Check);
 Console.WriteLine($"{checks} checks passed.");
 
 sealed class FakeTelegramSource : IMonitorTelegramSource

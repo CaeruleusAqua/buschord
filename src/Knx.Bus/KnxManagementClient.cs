@@ -41,7 +41,7 @@ public sealed class KnxManagementClient : IAsyncDisposable
 
     public KnxManagementClient(IManagementTransport transport, IndividualAddress target, bool readOnly, TimeSpan? responseTimeout = null)
     {
-        if (target.Device == 255 || target.Device == 0 && !readOnly) throw new ArgumentOutOfRangeException(nameof(target));
+        if (target.Raw is 0 or ushort.MaxValue || target.Device == 0 && !readOnly) throw new ArgumentOutOfRangeException(nameof(target));
         IsReadOnly = readOnly;
         _transport = transport;
         Target = target;

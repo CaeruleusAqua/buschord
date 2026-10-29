@@ -69,6 +69,8 @@ var maps = new (string Module, string File, IReadOnlyDictionary<string, (string 
         key => key, key => (GroupSecurityStrings.GetForLanguage("de", key), GroupSecurityStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
     ("real-programming-queue", "src/Knx.App/Localization/RealProgrammingQueueStrings.cs", RealProgrammingQueueStrings.Keys.ToDictionary(
         key => key, key => (RealProgrammingQueueStrings.GetForLanguage("de", key), RealProgrammingQueueStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
+    ("address-assignment", "src/Knx.App/Localization/AddressAssignmentStrings.cs", AddressAssignmentStrings.Keys.ToDictionary(
+        key => key, key => (AddressAssignmentStrings.GetForLanguage("de", key), AddressAssignmentStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
     ("m112-commissioning", "src/Knx.App/Localization/M112CommissioningStrings.cs", M112CommissioningStrings.Keys.ToDictionary(
         key => key, key => (M112CommissioningStrings.GetForLanguage("de", key), M112CommissioningStrings.GetForLanguage("en", key)), StringComparer.Ordinal)),
 };
@@ -245,6 +247,11 @@ foreach (var language in RealProgrammingQueueStrings.Languages)
         && RealProgrammingQueueStrings.GetForLanguage(language, key) == queueValues[key][RealProgrammingQueueStrings.Languages.ToList().IndexOf(language)]));
 foreach (var language in GroupSecurityStrings.Languages)
     Check($"i18n[{language}:group-security]: every key resolves", GroupSecurityStrings.Keys.All(key => !string.IsNullOrWhiteSpace(GroupSecurityStrings.GetForLanguage(language, key)) && GroupSecurityStrings.GetForLanguage(language, key) != key));
+Check("i18n[address-assignment]: exactly the supported languages are registered", AddressAssignmentStrings.Languages.ToHashSet(StringComparer.Ordinal).SetEquals(Strings.Available));
+var addressValues = typeof(AddressAssignmentStrings).GetField("Text", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null) as IReadOnlyDictionary<string, string[]> ?? throw new InvalidOperationException("AddressAssignmentStrings.Text not found");
+Check("i18n[address-assignment]: every value has eight translations", addressValues.Values.All(values => values.Length == AddressAssignmentStrings.Languages.Count));
+foreach (var language in AddressAssignmentStrings.Languages)
+    Check($"i18n[{language}:address-assignment]: every key resolves", AddressAssignmentStrings.Keys.All(key => !string.IsNullOrWhiteSpace(AddressAssignmentStrings.GetForLanguage(language, key)) && AddressAssignmentStrings.GetForLanguage(language, key) != key));
 var vaultValues = typeof(CredentialVaultStrings).GetField("Text", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null) as IReadOnlyDictionary<string, string[]>
     ?? throw new InvalidOperationException("CredentialVaultStrings.Text not found");
 Check("i18n[credential-vault]: every value has eight translations", vaultValues.Values.All(values => values.Length == CredentialVaultStrings.Languages.Count));
@@ -318,6 +325,8 @@ var callRecovery = new Regex("\\bRecoveryUiStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-
 var callLive = new Regex("\\bLiveConnectionStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callSecure = new Regex("\\bSecureConnectionStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callVault = new Regex("\\bCredentialVaultStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
+var callAddress = new Regex("\\bAddressAssignmentStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
+var callAddressWrap = new Regex("\\bA\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callVaultWrap = new Regex("\\bV\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callGroups = new Regex("\\bGroupSecurityStrings\\.Get\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
 var callGroupWrap = new Regex("\\bG\\(\\s*\"([A-Za-z][A-Za-z0-9]*)\"", RegexOptions.CultureInvariant);
@@ -334,6 +343,7 @@ var referenced = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
     ["core"] = new(StringComparer.Ordinal),
     ["credential-vault"] = new(StringComparer.Ordinal),
     ["group-security"] = new(StringComparer.Ordinal),
+    ["address-assignment"] = new(StringComparer.Ordinal),
     ["workbench"] = new(StringComparer.Ordinal),
     ["catalog"] = new(StringComparer.Ordinal),
     ["catalog-downloads"] = new(StringComparer.Ordinal),
@@ -374,6 +384,9 @@ foreach (var file in SourceScan.Files(root, ["src", "tests"], "*.cs"))
             Use(file, LineAt(text, m.Index), "real-programming-queue", m.Groups[1].Value, "Q(...)");
     if (file is "src/Knx.App/GroupSecuritySelectionWindow.cs" or "src/Knx.App/GroupStateConfirmationWindow.cs")
         foreach (Match m in callGroupWrap.Matches(text)) Use(file, LineAt(text, m.Index), "group-security", m.Groups[1].Value, "G(...)");
+    foreach (Match m in callAddress.Matches(text)) Use(file, LineAt(text, m.Index), "address-assignment", m.Groups[1].Value, "AddressAssignmentStrings.Get");
+    if (file.Equals("src/Knx.App/IndividualAddressAssignmentWindow.cs", StringComparison.Ordinal))
+        foreach (Match m in callAddressWrap.Matches(text)) Use(file, LineAt(text, m.Index), "address-assignment", m.Groups[1].Value, "A(...)");
     foreach (Match m in callCommissioning.Matches(text)) Use(file, LineAt(text, m.Index), "m112-commissioning", m.Groups[1].Value, "M112CommissioningStrings.Get");
     if (file.Equals("src/Knx.App/ConnectionWindow.cs", StringComparison.Ordinal))
         foreach (Match m in callLiveWrap.Matches(text)) Use(file, LineAt(text, m.Index), "live-connection", m.Groups[1].Value, "L(...)");
@@ -469,6 +482,7 @@ foreach (var (module, _, map) in maps)
         "src/Knx.App/Localization/CredentialVaultStrings.cs",
         "src/Knx.App/Localization/GroupSecurityStrings.cs",
         "src/Knx.App/Localization/RealProgrammingQueueStrings.cs",
+        "src/Knx.App/Localization/AddressAssignmentStrings.cs",
         "src/Knx.App/Localization/LiveConnectionStrings.cs",
         "src/Knx.App/Localization/M112CommissioningStrings.cs",
     ];

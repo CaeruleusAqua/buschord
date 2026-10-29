@@ -20,7 +20,7 @@
 - [x] Explizite Tool-Access-Managementoperation an gemeinsame Factory binden: signierter ToolKey, vorhandener vertrauenswürdiger Zählerzustand, Sync vor Management und frische Recoveryverbindungen; als Bibliotheksprofil mit Windows-/Linux-Loopback prüfen.
 - [x] Tool-Access-Konsolen-/M112-Pfad und separaten lesenden MCP-Identitätsabruf mit privaten Referenzen, expliziter Zählervertrauensentscheidung und vollständiger Wirebudgetprüfung vor Gerätezugriff integrieren.
 - [x] Korrekte Adressbroadcasts, System-Priority, serielle Services und begrenzte lesende Discovery mit vollständiger Antwortprüfung und gejointem Abbruch ergänzen; [Adressierungsprofil](../docs/individual-addressing.md).
-- [ ] Vollständigen Adressierungsablauf mit Geräte-/Zielbestätigung, Kollisionsprüfung, dauerhaftem Verlauf, Verify und Wiederherstellung an Workbench/MCP anschließen.
+- [x] Expliziten Plain-Adressierungsablauf mit physischer Geräte-/Zielbestätigung, Kollisionsbeobachtung, dauerhaftem Auftrag und lesendem Verify/Kalt-Abgleich an Workbench/MCP anschließen; [Profilgrenzen und offene Hardwareabnahme](../docs/individual-addressing.md).
 - [x] Vorhandene vertrauenswürdige Data-Secure-Gruppenzustände mit signierter Absenderpolicy an Factory, lesenden Monitor und ausdrücklich konfigurierten MCP-Host binden; Geräteprovisionierung getrennt halten.
 - [x] Explizite Workbench-Gruppenauswahl mit Quellenbindung, erneuter Auftragsbestätigung, Monitor-Provenienz und gejointem Projekt-/Dialogabbau ergänzen; Scan und M112 behalten ihre Zielpolicy.
 - [x] Gezielten adressierten Scan mit tatsächlichen Koppler-/Tasterantworten und lesende Workbench-Verbindung einschließlich Verbindungsabbau prüfen.

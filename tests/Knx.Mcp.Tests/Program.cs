@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Knx.Mcp;
 
+if (args.Contains("--individual-address-assignment")) return await IndividualAddressAssignmentMcpChecks.RunAsync();
+
 if (args.Contains("--tool-cli")) return await ToolAccessCliChecks.RunAsync();
 // Self-contained child executes the actual stdio host entrypoint; Linux acceptance requires no global dotnet host.
 if (args.Length > 0 && args[0] == "--group-host-child")
@@ -961,6 +963,7 @@ await ResolvedProcedureToolChecks.Run(Check);
 await GeneratedTablesToolChecks.Run(Check);
 await MassLinkToolChecks.Run((name, ok) => Check(name, ok));
 await TopologyTemplateToolChecks.Run((name, ok) => Check(name, ok));
+Check("reviewed individual address MCP checks", await IndividualAddressAssignmentMcpChecks.RunAsync() == 0);
 
 Console.WriteLine();
 if (failures.Count == 0)

@@ -37,8 +37,9 @@ public sealed partial class McpServer : IAsyncDisposable
         "ip_secure_udp requires an explicit gateway and exact protected-keyring selectors), then bus_read/recorder_*; " +
         "bus_disconnect drains the interface. Standalone bus_tool_identity_read requires an explicit pinned Tool configuration, " +
         "trusted existing counters and a free gateway reservation. Secure connections never fall back to plain. download_plan reports the " +
-        "read-only preflight and dry run for one project device. This build is read-only: " +
-        "group writes, device programming and downloads are disabled.";
+        "read-only preflight and dry run for one project device. Group writes and application downloads remain disabled. " +
+        "The separate address_assignment_review/apply workflow alone permits one explicitly confirmed plain-device address write after a durable intent/claim; " +
+        "poll address_assignment_status or cancel/join with address_assignment_cancel. Cold inspect/reconcile is read-only and never resends an uncertain write.";
 
     internal static readonly JsonSerializerOptions Json = new()
     {
@@ -68,6 +69,7 @@ public sealed partial class McpServer : IAsyncDisposable
         _bus.TelegramReceived += _recorder.Add;
         _bus.TelegramReceived += _statistics.Add;
         _tools = BuildTools();
+        _tools.AddRange(BuildAddressAssignmentTools());
     }
 
     public IReadOnlyList<McpTool> Tools => _tools;
@@ -272,11 +274,13 @@ public sealed partial class McpServer : IAsyncDisposable
         {
             // Foreign token callbacks cannot prevent owner cleanup or leave a half-drained server.
             try { _connectionLifetime.Cancel(); } catch (AggregateException) { }
+            await DrainAddressCommandAsync().ConfigureAwait(false);
             await _connectionJobs.WaitAsync().ConfigureAwait(false);
             try
             {
                 _migrationReviews.Clear();
                 _jungKspReview = null;
+                await CloseAddressAssignmentAsync().ConfigureAwait(false);
                 await _bus.DisposeAsync().ConfigureAwait(false);
             }
             finally { _connectionJobs.Release(); }

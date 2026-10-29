@@ -60,8 +60,7 @@ public static class IndividualAddressDiscovery
                 var shape = serial is null
                     ? data is { Length: 0 } && telegram.DataBits is null || data is [0] && telegram.DataBits == 6
                     : data is { Length: 8 } && telegram.DataBits is null && data[6] == 0 && data[7] == 0;
-                if (!shape || telegram.Source.Raw == 0 || telegram.Source == clientAddress
-                    || telegram.Source.Device == 255 && telegram.Source.Raw != ushort.MaxValue)
+                if (!shape || telegram.Source.Raw == 0 || telegram.Source == clientAddress)
                 { malformed++; return; }
                 valid++; addresses.Add(telegram.Source.Raw);
             }

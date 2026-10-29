@@ -30,6 +30,8 @@ internal static class IndividualAddressDiscoveryChecks
         { var peer = new Peer { Send = p => { p.Emit(Reply()); p.Emit(Reply(source: new(1, 1, 8))); } }; var result = await Read(peer); Require(result.State == AddressObservationState.MultipleAddresses && result.Addresses.Count == 2); });
         await Case("factory address is observable without making it a valid assignment", async () =>
         { var peer = new Peer { Send = p => p.Emit(Reply(source: new(ushort.MaxValue))) }; Require((await Read(peer)).Addresses.Single().Raw == ushort.MaxValue); });
+        await Case("coupler0 and legitimate device255 replies remain observable", async () =>
+        { foreach (var source in new[] { new IndividualAddress(1, 1, 0), new IndividualAddress(1, 1, 255) }) { var peer = new Peer { Send = p => p.Emit(Reply(source: source)) }; Require((await Read(peer)).Addresses.Single() == source); } });
         await Case("wrong destination and unrelated services are ignored", async () =>
         {
             var peer = new Peer { Send = p => { p.Emit(Reply(destination: new(1, 1, 239))); p.Emit(Reply(service: Apci.GroupValueResponse)); } };
@@ -37,7 +39,7 @@ internal static class IndividualAddressDiscoveryChecks
         });
         await Case("invalid source and reserved inline bits refuse the observation", async () =>
         {
-            foreach (var reply in new[] { Reply(source: IndividualAddress.Zero), Reply(source: Client), Reply(source: new(1, 1, 255)), Reply(data: [1], bits: 6) })
+            foreach (var reply in new[] { Reply(source: IndividualAddress.Zero), Reply(source: Client), Reply(data: [1], bits: 6) })
             { var peer = new Peer { Send = p => p.Emit(reply) }; var result = await Read(peer); Require(result.State == AddressObservationState.MalformedResponse && result.MalformedResponses == 1); }
         });
         await Case("response work is bounded", async () =>

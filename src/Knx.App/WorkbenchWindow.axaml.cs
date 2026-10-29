@@ -102,7 +102,7 @@ public partial class WorkbenchWindow : Window
         _m112BackendFactory = m112BackendFactory;
         _credentialVaultOwner = credentialVaultOwner ?? new();
         ViewModel.WorkbenchMonitorOwnsCapture = true;
-        ViewModel.HistoryBlocked = () => _sessions?.Programming.IsRunning == true || M112Busy || RealProgrammingBusy;
+        ViewModel.HistoryBlocked = () => _sessions?.Programming.IsRunning == true || M112Busy || RealProgrammingBusy || AddressAssignmentBusy;
         Workspace = workspace;
         _layoutPath = layoutPath;
         _programmingStateStore = programmingStateStore ?? new ProgrammingStateStore(Path.Combine(
@@ -521,6 +521,7 @@ public partial class WorkbenchWindow : Window
     private Task DisposeSessionsAsync()
     {
         TrackRealProgrammingDisposal();
+        TrackAddressAssignmentDisposal();
         TrackM112Disposal();
         TrackGroupInputDisposal();
         // Detach every observer before cancellation publishes the final job state.
@@ -2731,7 +2732,7 @@ public partial class WorkbenchWindow : Window
                     if (_liveConnection?.Snapshot.Phase is ReadOnlyConnectionPhase.Connected or ReadOnlyConnectionPhase.Connecting or ReadOnlyConnectionPhase.Disconnecting)
                     { ViewModel.Status = LiveConnectionStrings.Get("ScanDisconnect"); return; }
                     var area = ViewModel.Project!.Installations.SelectMany(i => i.Areas).Single(a => a.Lines.Contains(line));
-                    var targets = Enumerable.Range(0, 255).Select(device => new IndividualAddress(area.Address, line.Address, (byte)device));
+                    var targets = Enumerable.Range(0, 256).Select(device => new IndividualAddress(area.Address, line.Address, (byte)device)).Where(address => address.Raw is not (0 or ushort.MaxValue));
                     if (_liveOptions.GroupSelection is { } groups) targets = targets.Where(groups.Candidate.PlainIndividualPeers.Contains);
                     if (!targets.Any()) { ViewModel.Status = GroupSecurityStrings.Get("PolicyDenied"); return; }
                     var selectedOptions = await PrepareGroupOptionsForOperationAsync(_liveOptions);
