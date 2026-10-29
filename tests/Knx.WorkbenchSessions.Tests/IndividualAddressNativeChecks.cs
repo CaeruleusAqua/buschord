@@ -95,6 +95,7 @@ internal static class IndividualAddressNativeChecks
                     window.Close(); await showing;
                 }
                 await WorkbenchOwnerClose(root, Check);
+                await AddressConnectionPreparationNativeChecks.Run(shell, root, Check);
             }
             catch (Exception error) { failures++; Console.WriteLine("FAIL address native exception: " + error); }
             finally

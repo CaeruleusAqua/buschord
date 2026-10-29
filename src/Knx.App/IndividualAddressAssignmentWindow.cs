@@ -19,6 +19,9 @@ namespace Knx.App;
 public sealed class IndividualAddressAssignmentWindow : Window
 {
     private readonly IndividualAddressAssignmentSession _session;
+    private readonly Func<Task> _prepareNetwork;
+    private readonly IPAddress? _localAddress;
+    private CancellationTokenSource? _inputCancellation;
     private readonly bool _secureInitial;
     private readonly TextBox _gateway = Field("AddressGateway"), _port = Field("AddressPort", "3671"), _client = Field("AddressClient", "1.1.240");
     private readonly TextBox _target = Field("AddressTarget"), _serial = Field("AddressSerial"), _isolation = Field("AddressIsolation"), _reservation = Field("AddressReservation");
@@ -39,8 +42,11 @@ public sealed class IndividualAddressAssignmentWindow : Window
     public Task ClosedCompletion => _closedTask.Task;
     public bool MayClose => !_loading && _inputOperation.IsCompleted && _session.MayLeave;
     public IndividualAddressAssignmentWindow(IndividualAddressAssignmentSession session, ReadOnlyConnectionOptions? initial = null)
+        : this(session, initial, null) { }
+    public IndividualAddressAssignmentWindow(IndividualAddressAssignmentSession session, ReadOnlyConnectionOptions? initial, Func<Task>? prepareNetwork)
     {
         _session = session; _secureInitial = initial?.Profile.RequiresAuthentication == true;
+        _prepareNetwork = prepareNetwork ?? (() => Task.CompletedTask); _localAddress = initial?.Profile.LocalAddress;
         Width = 840; Height = 850; MinWidth = 460; MinHeight = 400; Classes.Add("wb-dialog"); WindowStartupLocation = WindowStartupLocation.CenterOwner;
         if (initial is not null) { _gateway.Text = initial.Gateway.Address.ToString(); _port.Text = initial.Port.ToString(); _client.Text = initial.RequestedAddress.ToString(); }
         _target.IsReadOnly = _journalPath.IsReadOnly = _intentPath.IsReadOnly = true;
@@ -68,8 +74,8 @@ public sealed class IndividualAddressAssignmentWindow : Window
         body.Children.Add(readings); body.Children.Add(_details); body.Children.Add(_physical); body.Children.Add(_reserved); Input("TypeTarget", _repeatTarget); body.Children.Add(_intentPath); body.Children.Add(_exit); body.Children.Add(_status);
         var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right, ItemSpacing = 8, LineSpacing = 8 };
         var close = Button("Close", "Close", () => { Close(); return Task.CompletedTask; }); close.IsCancel = true;
-        actions.Children.Add(close); actions.Children.Add(Button("Cancel", "Cancel", () => { _session.Cancel(); return Task.CompletedTask; }));
-        actions.Children.Add(Button("Reconcile", "ReconcileAction", async () => await _session.ReconcileAsync(_physical.IsChecked == true, _isolation.Text)));
+        actions.Children.Add(close); actions.Children.Add(Button("Cancel", "Cancel", () => { CancelInput(); return Task.CompletedTask; }));
+        actions.Children.Add(Button("Reconcile", "ReconcileAction", ReconcileAsync));
         actions.Children.Add(Button("Apply", "ApplyAction", async () =>
         {
             if (_reviewGeneration != _generation || _session.Review is not { } review || _repeatTarget.Text != review.NewAddress) throw new AddressAssignmentException(AddressAssignmentFailure.StaleReview);
@@ -95,14 +101,14 @@ public sealed class IndividualAddressAssignmentWindow : Window
     {
         var button = new Button { Name = "Address" + id, Classes = { "wb-button", danger ? "wb-danger" : "wb-quiet" } }; _buttons[id] = button;
         _translations.Add(() => { var text = key is "Close" ? LiveConnectionStrings.Get("Close") : key is "Cancel" ? M112CommissioningStrings.Get("Cancel") : A(key); button.Content = text; AutomationProperties.SetName(button, text); });
-        button.Click += (_, _) => { if (id == "Close") Close(); else if (id == "Cancel") _session.Cancel(); else Begin(action); }; return button;
+        button.Click += (_, _) => { if (id == "Close") Close(); else if (id == "Cancel") CancelInput(); else Begin(action); }; return button;
     }
     private void InputsChanged()
     {
         if (_refreshing || _closed) return;
         _generation++; _reviewGeneration = -1; _localIssue = null;
         _refreshing = true; try { _physical.IsChecked = _reserved.IsChecked = false; _repeatTarget.Text = ""; } finally { _refreshing = false; }
-        if (_session.IsBusy) _session.Cancel(); RefreshState();
+        if (_loading || _session.IsBusy) CancelInput(); RefreshState();
     }
     private async Task ReviewAsync()
     {
@@ -111,24 +117,40 @@ public sealed class IndividualAddressAssignmentWindow : Window
             || !IPAddress.TryParse(_gateway.Text, out var gateway) || !int.TryParse(_port.Text, out var port) || !IndividualAddress.TryParse(_client.Text ?? "", out var client))
             throw new AddressAssignmentException(AddressAssignmentFailure.InvalidSelection);
         var selection = _selection.SelectedIndex switch { 0 => AddressSelectionKind.ExactSerial, 1 => AddressSelectionKind.IsolatedProgrammingMode, _ => throw new AddressAssignmentException(AddressAssignmentFailure.InvalidSelection) };
-        var request = new AddressAssignmentRequest(KnxConnectionProfile.Plain(new(gateway, port), client), target, selection, _reservation.Text ?? "",
+        var request = new AddressAssignmentRequest(KnxConnectionProfile.Plain(new(gateway, port), client, _localAddress), target, selection, _reservation.Text ?? "",
             selection == AddressSelectionKind.ExactSerial ? _serial.Text : null, selection == AddressSelectionKind.IsolatedProgrammingMode ? _isolation.Text : null, confirmPlainDevice: _plain.IsChecked == true,
             targetRole: _session.ProjectCouplerHardware is null ? AddressDeviceRole.EndDevice : AddressDeviceRole.Coupler, confirmCouplerHardware: _session.ProjectCouplerHardware is not null, couplerHardwareReference: _session.ProjectCouplerHardware);
-        var generation = _generation; await _session.ReviewAsync(request, _journal); if (generation == _generation && _session.Issue is null) _reviewGeneration = generation;
+        var generation = _generation; await PrepareNetworkForInputAsync(generation);
+        await _session.ReviewAsync(request, _journal); if (generation == _generation && _session.Issue is null) _reviewGeneration = generation;
     }
+    private async Task ReconcileAsync()
+    {
+        var physical = _physical.IsChecked == true; var isolation = _isolation.Text;
+        await PrepareNetworkForInputAsync(_generation); await _session.ReconcileAsync(physical, isolation);
+    }
+    private async Task PrepareNetworkForInputAsync(long generation)
+    {
+        var token = _inputCancellation?.Token ?? throw new OperationCanceledException();
+        token.ThrowIfCancellationRequested(); await _prepareNetwork(); token.ThrowIfCancellationRequested();
+        if (_closing || _closed || generation != _generation) throw new OperationCanceledException(token);
+    }
+    private void CancelInput()
+    { try { _inputCancellation?.Cancel(); } catch (ObjectDisposedException) { } _session.Cancel(); }
     private void Begin(Func<Task> action)
     {
         if (!_inputOperation.IsCompleted || _session.IsBusy || _closing || _closed) return;
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); _inputOperation = completion.Task; _loading = true; _localIssue = null;
-        _refreshing = true; _exit.IsChecked = false; _refreshing = false; RefreshState(); _ = RunAsync(action, completion);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellation = _inputCancellation = new CancellationTokenSource();
+        _inputOperation = completion.Task; _loading = true; _localIssue = null;
+        _refreshing = true; _exit.IsChecked = false; _refreshing = false; RefreshState(); _ = RunAsync(action, cancellation, completion);
     }
-    private async Task RunAsync(Func<Task> action, TaskCompletionSource completion)
+    private async Task RunAsync(Func<Task> action, CancellationTokenSource cancellation, TaskCompletionSource completion)
     {
-        try { await action(); }
+        try { cancellation.Token.ThrowIfCancellationRequested(); await action(); }
         catch (AddressAssignmentException error) { _localIssue = error.Failure.ToString(); }
         catch (OperationCanceledException) { _localIssue = "Cancelled"; }
         catch { _localIssue = "Failed"; }
-        finally { _loading = false; completion.TrySetResult(); if (!_closed) RefreshState(); }
+        finally { if (ReferenceEquals(_inputCancellation, cancellation)) _inputCancellation = null; cancellation.Dispose(); _loading = false; completion.TrySetResult(); if (!_closed) RefreshState(); }
     }
     private void OnSessionChanged() { if (Dispatcher.UIThread.CheckAccess()) RefreshState(); else Dispatcher.UIThread.Post(() => { if (!_closed) RefreshState(); }); }
     private void OnLanguage(object? sender, System.ComponentModel.PropertyChangedEventArgs args) { if (args.PropertyName == "Item[]") Dispatcher.UIThread.Post(() => { if (!_closed) RefreshLanguage(); }); }
@@ -180,7 +202,7 @@ public sealed class IndividualAddressAssignmentWindow : Window
     }
     private void OnClosing(object? sender, WindowClosingEventArgs args)
     {
-        if (_allowClose) return; args.Cancel = true; if (_closing) return; _closing = true; _session.Cancel();
+        if (_allowClose) return; args.Cancel = true; if (_closing) return; _closing = true; CancelInput();
         var pending = OperationCompletion; _ = FinishCloseAsync(pending);
     }
     private async Task FinishCloseAsync(Task pending)

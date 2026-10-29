@@ -27,7 +27,7 @@ public partial class WorkbenchWindow
         var lifetime = ViewModel.ProjectSessionIdentity;
         var deviceId = selected?.Device.Id ?? "";
         var session = _m112Session = new(() => new(ViewModel.Project,
-            ViewModel.ProjectSessionIdentity, HasParameterDrafts, _sessions?.Programming.IsRunning == true), deviceId,
+            ViewModel.ProjectSessionIdentity, HasParameterDrafts, _sessions?.Programming.IsRunning == true || RealProgrammingBusy || AddressAssignmentBusy), deviceId,
             _m112BackendFactory?.Invoke(deviceId), recoveryOnly);
         session.Changed += snapshot =>
         {
@@ -54,12 +54,15 @@ public partial class WorkbenchWindow
                     + (session.Snapshot.Result?.RecoveryPath is { } path ? " " + path : "");
         }
     }
-    private async Task PrepareM112NetworkAsync()
+    private Task PrepareM112NetworkAsync() => PrepareCommissioningNetworkAsync();
+    private async Task PrepareCommissioningNetworkAsync()
     {
-        if (_sessions?.LineScan.IsRunning == true || _sessions?.Programming.IsRunning == true) throw new InvalidOperationException("Occupied");
+        if (_sessions?.LineScan.IsRunning == true || _sessions?.Programming.IsRunning == true || RealProgrammingBusy || AddressAssignmentBusy || M112Busy) throw new InvalidOperationException("Occupied");
+        // Snapshot before disconnect awaits: a concurrent owner close may register this workflow's own drain.
+        var previousDisposals = _pendingSessionDisposals.ToArray();
         _sessions?.Monitor.Stop();
         if (_liveConnection is { } connection) await connection.DisconnectAsync();
-        await Task.WhenAll(_pendingSessionDisposals.ToArray());
+        await Task.WhenAll(previousDisposals);
     }
     private async Task<M112BaselineSelection?> LoadM112BaselineAsync(Window owner)
     {

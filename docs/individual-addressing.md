@@ -35,6 +35,13 @@ continuously isolated setup containing exactly one physical device in programmin
 mode. A single responding address never proves physical uniqueness; duplicate
 replies are retained and refused.
 
+Opening the dialog preserves an existing monitor connection and performs no I/O.
+The client field proposes the address actually assigned to that connection and
+retains its selected local interface. Explicit review or reconciliation stops the
+monitor and joins its receiver and gateway release before opening a commissioning
+owner. Cancel, close or project replacement during that wait cannot start a late
+discovery operation.
+
 The read-only review binds selector, endpoint/client, old/new address, independent
 project reservation, role/hardware evidence and observations into a fingerprint.
 Any observed sender at the target blocks assignment. **No response does not prove

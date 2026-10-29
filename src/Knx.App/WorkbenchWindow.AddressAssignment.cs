@@ -19,13 +19,18 @@ public partial class WorkbenchWindow
     {
         if (_addressAssignmentWindow is { } existing) { existing.Activate(); return; }
         if (_m112Window is { } m112) { m112.Activate(); return; }
+        if (_realProgrammingWindow is { } queue) { queue.Activate(); return; }
         EnsureSessions();
-        if (HasParameterDrafts || _sessions?.Programming.IsRunning == true || _sessions?.LineScan.IsRunning == true || M112Busy)
+        if (HasParameterDrafts || _sessions?.Programming.IsRunning == true || _sessions?.LineScan.IsRunning == true || M112Busy || RealProgrammingBusy || !_realProgrammingOpening.IsCompleted)
         { ViewModel.Status = AddressAssignmentStrings.Get("Stale"); return; }
         var lifetime = ViewModel.ProjectSessionIdentity; var selected = ViewModel.SelectedDevice?.Device;
         var session = _addressAssignmentSession = new(() => new(ViewModel.Project, ViewModel.ProjectSessionIdentity, HasParameterDrafts,
-            _sessions?.Programming.IsRunning == true || _sessions?.LineScan.IsRunning == true || M112Busy), _sessions?.Programming, selected?.Id ?? "", _addressAssignmentOpen);
-        var window = _addressAssignmentWindow = new(session, _liveOptions);
+            _sessions?.Programming.IsRunning == true || _sessions?.LineScan.IsRunning == true || M112Busy || RealProgrammingBusy), _sessions?.Programming, selected?.Id ?? "", _addressAssignmentOpen);
+        var initial = _liveOptions;
+        if (initial?.Profile.RequiresAuthentication == false && _liveConnection?.IsConnected == true
+            && _liveConnection.Snapshot is { Transport: KnxTransportKind.PlainUdp, AssignedAddress: { } assigned })
+            initial = new(KnxConnectionProfile.Plain(initial.Gateway, assigned, initial.Profile.LocalAddress));
+        var window = _addressAssignmentWindow = new(session, initial, PrepareCommissioningNetworkAsync);
         var others = _toolWindows.Concat(_companions.Values).Distinct().Select(other => (other, other.IsEnabled)).ToArray();
         foreach (var (other, _) in others) other.IsEnabled = false;
         try { await window.ShowDialog(this); await window.OperationCompletion; }

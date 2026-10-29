@@ -1045,7 +1045,13 @@ Seriennummer oder den eindeutig benannten, unverändert isolierten Einzelgeräta
 wählen. Ein privater Auftragsordner ist Pflicht. Koppler benötigen den tatsächlichen
 Projekt-Hardwarebeleg; bekannte Secure-Geräte werden vor der Verbindung gesperrt.
 
-Die erste Prüfung liest nur. Eine stumme Zieladresse ist kein Freiheitsbeweis:
+Das Öffnen lässt eine bestehende Monitorverbindung bestehen. Erst die ausdrückliche
+Prüfung oder der Abgleich stoppt den Monitor und wartet auf dessen vollständigen
+Verbindungsabbau. Vorgeschlagen werden die tatsächlich zugewiesene Tunneladresse
+und die gewählte lokale Schnittstelle. Abbrechen, Schließen oder Projektwechsel
+während dieses Wartens startet danach keine verspätete Geräteerkennung.
+
+Die erste Prüfung liest nur. Eine stumme Zieladresse beweist nicht, dass sie frei ist:
 Reservierung unabhängig prüfen und benennen. Vor dem einmaligen Schreiben die
 physische Bindung und Reservierung bestätigen sowie die angezeigte Zieladresse
 wiederholen. Danach werden Auftrag/Versuchsmarker gespeichert und das Ergebnis
