@@ -28,7 +28,7 @@ public sealed class IndividualAddressAssignmentWindow : Window
     private readonly TextBox _journalPath = Field("AddressJournal"), _intentPath = Field("AddressIntent"), _repeatTarget = Field("AddressRepeatTarget");
     private readonly ComboBox _mode = new() { Name = "AddressTransport", SelectedIndex = -1 }, _selection = new() { Name = "AddressSelection", SelectedIndex = -1 };
     private readonly CheckBox _plain = new() { Name = "AddressPlainConfirmed" }, _physical = new() { Name = "AddressPhysicalConfirmed" }, _reserved = new() { Name = "AddressReservationConfirmed" }, _exit = new() { Name = "AddressUnknownExitConfirmed" };
-    private readonly TextBox _details = new() { Name = "AddressReview", IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 100, MaxHeight = 230, Classes = { "wb-field" } };
+    private readonly TextBox _details = new() { Name = "AddressReviewDetails", IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 100, MaxHeight = 230, Classes = { "wb-field" } };
     private readonly TextBlock _status = new() { Name = "AddressStatus", TextWrapping = TextWrapping.Wrap };
     private readonly List<Action> _translations = [];
     private readonly Dictionary<string, Button> _buttons = [];
@@ -55,10 +55,10 @@ public sealed class IndividualAddressAssignmentWindow : Window
         void Input(string key, Control control, Func<string>? title = null)
         { Text(body, title ?? (() => A(key))); body.Children.Add(control); _translations.Add(() => AutomationProperties.SetName(control, title?.Invoke() ?? A(key))); }
         Input("Gateway", _gateway, () => LiveConnectionStrings.Get("Gateway")); Input("Port", _port, () => LiveConnectionStrings.Get("Port"));
-        Input("TunnelAddress", _client, () => LiveConnectionStrings.Get("TunnelAddress")); body.Children.Add(_mode);
-        Input("Target", _target, () => A("TypeTarget")); Input("Selection", _selection); Input("Serial", _serial); Input("Isolation", _isolation); Input("Reservation", _reservation);
+        Input("TunnelAddress", _client, () => LiveConnectionStrings.Get("TunnelAddress")); Input("Transport", _mode, () => SecureConnectionStrings.Get("Mode"));
+        Input("Target", _target); Input("Selection", _selection); Input("Serial", _serial); Input("Isolation", _isolation); Input("Reservation", _reservation);
         Text(body, () => A(_session.ProjectCouplerHardware is null ? "EndDeviceRole" : "CouplerRole") + (_session.ProjectCouplerHardware is { } hardware ? " · " + hardware : ""));
-        body.Children.Add(_plain); body.Children.Add(_journalPath);
+        body.Children.Add(_plain); Input("JournalPath", _journalPath);
         body.Children.Add(Button("ChooseJournal", "Journal", async () =>
         {
             var paths = await StorageProvider.OpenFolderPickerAsync(new() { Title = A("Journal"), AllowMultiple = false });
@@ -71,7 +71,7 @@ public sealed class IndividualAddressAssignmentWindow : Window
             var paths = await StorageProvider.OpenFilePickerAsync(new() { Title = A("InspectAction"), AllowMultiple = false, FileTypeFilter = [new("JSON") { Patterns = ["intent.json"] }] });
             if (!_closing && paths.FirstOrDefault()?.TryGetLocalPath() is { } path) { await _session.InspectAsync(path); if (_session.Review is { } review) { _isolation.Text = review.IsolatedSetup; _reviewGeneration = _generation; } }
         }));
-        body.Children.Add(readings); body.Children.Add(_details); body.Children.Add(_physical); body.Children.Add(_reserved); Input("TypeTarget", _repeatTarget); body.Children.Add(_intentPath); body.Children.Add(_exit); body.Children.Add(_status);
+        body.Children.Add(readings); Input("ReviewDetails", _details); body.Children.Add(_physical); body.Children.Add(_reserved); Input("TypeTarget", _repeatTarget); Input("IntentPath", _intentPath); body.Children.Add(_exit); body.Children.Add(_status);
         var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right, ItemSpacing = 8, LineSpacing = 8 };
         var close = Button("Close", "Close", () => { Close(); return Task.CompletedTask; }); close.IsCancel = true;
         actions.Children.Add(close); actions.Children.Add(Button("Cancel", "Cancel", () => { CancelInput(); return Task.CompletedTask; }));
@@ -165,7 +165,6 @@ public sealed class IndividualAddressAssignmentWindow : Window
             foreach (var (control, key) in new[] { (_plain, "PlainConsent"), (_physical, "ConfirmPhysical"), (_reserved, "ConfirmReservation"), (_exit, "ExitAck") })
             { control.Content = new TextBlock { Text = A(key), TextWrapping = TextWrapping.Wrap }; AutomationProperties.SetName(control, A(key)); }
             AutomationProperties.SetName(_mode, SecureConnectionStrings.Get("Mode")); AutomationProperties.SetName(_selection, A("Selection"));
-            AutomationProperties.SetName(_details, SecureConnectionStrings.Get("Fingerprint")); AutomationProperties.SetName(_intentPath, A("InspectAction"));
         }
         finally { _refreshing = false; }
         RefreshState();

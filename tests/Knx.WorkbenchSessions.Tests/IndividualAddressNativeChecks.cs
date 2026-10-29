@@ -41,12 +41,18 @@ internal static class IndividualAddressNativeChecks
                     Check("address native opens offline without transport/physical defaults", Find<ComboBox>(window, "AddressTransport").SelectedIndex == -1 && Find<ComboBox>(window, "AddressSelection").SelectedIndex == -1 && f.Gateway.Transports == 0);
                     Check("address native uses common chrome and localized accessible fields", window.Classes.Contains("wb-dialog") && (!OperatingSystem.IsWindows() || window.IsExtendedIntoWindowDecorations)
                         && ControlAutomationPeer.CreatePeerForElement(Find<TextBox>(window, "AddressGateway"))?.GetName() == LiveConnectionStrings.Get("Gateway"));
+                    var namedControls = window.GetVisualDescendants().OfType<Control>().Where(control => control.Name?.StartsWith("Address", StringComparison.Ordinal) == true).ToArray();
+                    Check("address native separates planned target, review and named private paths with unique control IDs",
+                        namedControls.Select(control => control.Name).Distinct(StringComparer.Ordinal).Count() == namedControls.Length
+                        && new[] { ("AddressTarget", "Target"), ("AddressReviewDetails", "ReviewDetails"), ("AddressJournal", "JournalPath"), ("AddressIntent", "IntentPath") }
+                            .All(pair => ControlAutomationPeer.CreatePeerForElement(Find<TextBox>(window, pair.Item1))?.GetName() == AddressAssignmentStrings.Get(pair.Item2))
+                        && ControlAutomationPeer.CreatePeerForElement(Find<TextBox>(window, "AddressTarget"))?.GetName() != ControlAutomationPeer.CreatePeerForElement(Find<TextBox>(window, "AddressRepeatTarget"))?.GetName());
                     Prepare(window, f.Gateway.Root); Click(Find<Button>(window, "AddressReview")); await window.OperationCompletion.WaitAsync(TimeSpan.FromSeconds(10));
                     Check("address native readonly review binds serial old/new and complete fingerprint", f.Gateway.Writes == 0 && f.Session.Review is { Fingerprint.Length: 64 }
-                        && Find<TextBox>(window, "AddressReview").Text!.Contains(IndividualAddressGatewayFixture.DeviceSerial) && Find<TextBox>(window, "AddressReview").Text!.Contains(f.Session.Review.Fingerprint));
-                    Check("address serial review never labels its binding as an isolated programming-mode claim", Find<TextBox>(window, "AddressReview").Text!.Contains(AddressAssignmentStrings.Get("SerialMode"))
-                        && !Find<TextBox>(window, "AddressReview").Text!.Contains(AddressAssignmentStrings.Get("IsolatedMode")));
-                    Check("address native silence warning remains explicit and apply unchecked", !Find<Button>(window, "AddressApply").IsEnabled && Find<TextBox>(window, "AddressReview").Text!.Contains(AddressAssignmentStrings.Get("ConfirmReservation")));
+                        && Find<TextBox>(window, "AddressReviewDetails").Text!.Contains(IndividualAddressGatewayFixture.DeviceSerial) && Find<TextBox>(window, "AddressReviewDetails").Text!.Contains(f.Session.Review.Fingerprint));
+                    Check("address serial review never labels its binding as an isolated programming-mode claim", Find<TextBox>(window, "AddressReviewDetails").Text!.Contains(AddressAssignmentStrings.Get("SerialMode"))
+                        && !Find<TextBox>(window, "AddressReviewDetails").Text!.Contains(AddressAssignmentStrings.Get("IsolatedMode")));
+                    Check("address native silence warning remains explicit and apply unchecked", !Find<Button>(window, "AddressApply").IsEnabled && Find<TextBox>(window, "AddressReviewDetails").Text!.Contains(AddressAssignmentStrings.Get("ConfirmReservation")));
                     Find<CheckBox>(window, "AddressPhysicalConfirmed").IsChecked = true; Find<CheckBox>(window, "AddressReservationConfirmed").IsChecked = true;
                     Find<TextBox>(window, "AddressRepeatTarget").Text = "1.1.99"; Check("address native mistyped target cannot authorize write", !Find<Button>(window, "AddressApply").IsEnabled);
                     Find<TextBox>(window, "AddressRepeatTarget").Text = IndividualAddressGatewayFixture.Desired.ToString();
@@ -89,7 +95,7 @@ internal static class IndividualAddressNativeChecks
                     var window = new IndividualAddressAssignmentWindow(f.Session, new(f.Gateway.Profile)); var showing = window.ShowDialog(shell); await Until(() => window.IsVisible);
                     Prepare(window, f.Gateway.Root); Click(Find<Button>(window, "AddressReview")); await window.OperationCompletion.WaitAsync(TimeSpan.FromSeconds(10));
                     Check("address native coupler role is bound to displayed actual project hardware", f.Session.Review?.TargetRole == AddressDeviceRole.Coupler
-                        && Find<TextBox>(window, "AddressReview").Text!.Contains("native-synthetic-coupler") && Find<TextBox>(window, "AddressReview").Text!.Contains(AddressAssignmentStrings.Get("CouplerRole")));
+                        && Find<TextBox>(window, "AddressReviewDetails").Text!.Contains("native-synthetic-coupler") && Find<TextBox>(window, "AddressReviewDetails").Text!.Contains(AddressAssignmentStrings.Get("CouplerRole")));
                     Confirm(window); Find<TextBox>(window, "AddressRepeatTarget").Text = "1.1.0"; Click(Find<Button>(window, "AddressApply")); await window.OperationCompletion.WaitAsync(TimeSpan.FromSeconds(10));
                     Check("address native bound line coupler can receive verified real Adr", f.Session.AddressFlagRecorded && f.Gateway.Writes == 1);
                     window.Close(); await showing;
