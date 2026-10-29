@@ -86,6 +86,8 @@ seine Policy-Ausgabe beschreibt Quellenoptionen und die verwendeten Codecs.
 Literale Modul-/Repeat-Speicherwriter und Root-Allocator nutzen denselben Lauf
 mit vollständigen Ursprüngen, latenten Besitzern und reservierten Bereichen.
 Das begrenzte synthetische Profil erweitert keine Geräte- oder Downloadfreigabe.
+Ein begrenzter direkter bedingter Fall trennt potenzielle Geometrie von der
+einmaligen Auswahl; ungewählte Instanzen schreiben nichts und behalten ihre Werte.
 Direkte Root-RawData-Speicherfelder nutzen denselben Arbeitslauf einschließlich
 M112-Änderungsplan; [Profil und Grenzen](docs/status.md#combined-logical-working-stage).
 Ein eigener [M112-Dialog](docs/commissioning.md) verbindet Review, Gerätebestätigung

@@ -23,7 +23,7 @@ public sealed record RootImageBuildRequirement(RootImageBuildRequirementCode Cod
 public enum RootParameterDownloadBehavior { None, Background, DefaultValue }
 public enum RootParameterMaskPolicy { WholeTouchedByte, FieldBitsOnly }
 public enum RootParameterValueOrigin { Parameter, Reference, Saved }
-public enum RootParameterDisposition { NoStorage, ActiveValue, AlwaysValue, InactiveDefault, InactiveNullNone, InactiveNullBackground }
+public enum RootParameterDisposition { NoStorage, ActiveValue, AlwaysValue, InactiveDefault, InactiveNullNone, InactiveNullBackground, ModuleNotInstantiated }
 public enum RootParameterMaskEffect { None, FieldBits, WholeBytes }
 
 public sealed class RootImageBuildPolicy

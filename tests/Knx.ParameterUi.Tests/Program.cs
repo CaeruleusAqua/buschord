@@ -10,6 +10,13 @@ using Knx.App.Views;
 using Knx.Catalog;
 
 if (args.Contains("--native")) return NativeDraftChecks.Run(args.Contains("--shots"));
+if (args.Contains("--conditional-module-image"))
+{
+    var target = Path.Combine(Path.GetTempPath(), "buschord-conditional-image-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(target);
+    try { return ConditionalModuleImageChecks.Run(target); }
+    finally { Directory.Delete(target, true); }
+}
 if (args.Contains("--module-image-build"))
 {
     var target = Path.Combine(Path.GetTempPath(), "buschord-module-image-" + Guid.NewGuid().ToString("N"));
@@ -103,6 +110,7 @@ try
     failures += NativeGeneralInitializationChecks.Run(directory);
     failures += NativeGeneralImageBuildChecks.Run(directory);
     failures += NativeModuleImageBuildChecks.Run(directory);
+    failures += ConditionalModuleImageChecks.Run(directory);
     failures += NativeImageRawDataBuildChecks.Run(directory);
     failures += NativeImageBuildPublicChecks.Run(directory);
     failures += M112UnionBuildChecks.Run(directory);

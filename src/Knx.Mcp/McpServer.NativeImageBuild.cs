@@ -207,6 +207,9 @@ public sealed partial class McpServer
                     alwaysCount = population.AlwaysCount, inactiveCount = population.InactiveCount, customerExcludedCount = population.CustomerExcludedCount,
                     populationHash = population.PopulationHash, geometryHash = population.GeometryHash, maskInteractionHash = population.MaskInteractionHash,
                     moduleOriginsFingerprint = population.ModuleOriginsFingerprint,
+                    potentialModuleInstancesTotal = population.PotentialModuleInstances.Count,
+                    potentialModuleInstancesHash = NativeImageDiagnosticHash(population.PotentialModuleInstances),
+                    moduleNotInstantiatedCount = population.ModuleNotInstantiatedCount,
                     moduleOriginsHash = NativeImageDiagnosticHash(population.ModuleOrigins), moduleOriginsTotal = population.ModuleOrigins.Count,
                     moduleOriginsShown = moduleOriginTake, moduleOriginsTruncated = population.ModuleOrigins.Count > moduleOriginTake,
                     moduleOrigins = population.ModuleOrigins.Take(moduleOriginTake).Select(origin => new

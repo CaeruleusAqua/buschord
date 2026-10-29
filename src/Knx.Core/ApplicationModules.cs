@@ -25,6 +25,15 @@ internal static class ApplicationModules
     internal static XElement Expand(XElement source, IReadOnlyDictionary<string, string?>? saved = null,
         Func<XElement, IReadOnlyDictionary<string, string?>, XElement?>? selectBranch = null, bool allowCalculatedCounts = false,
         ModuleOriginCatalog? origins = null)
+        => ExpandCore(source, saved, selectBranch, allowCalculatedCounts, origins, false);
+
+    // Structural geometry only: retain every source call. This does not evaluate or assert branch activity.
+    internal static XElement ExpandPotentialImageGeometry(XElement source, ModuleOriginCatalog origins)
+        => ExpandCore(source, null, null, false, origins, true);
+
+    private static XElement ExpandCore(XElement source, IReadOnlyDictionary<string, string?>? saved,
+        Func<XElement, IReadOnlyDictionary<string, string?>, XElement?>? selectBranch, bool allowCalculatedCounts,
+        ModuleOriginCatalog? origins, bool potentialImageGeometry)
     {
         var communicationOrigins = source.Annotation<NativeCommunicationOriginCatalog>();
         if (!source.DescendantsAndSelf().Any(e => e.Name.LocalName == "Module" && !InsideDefinition(e)))
@@ -117,6 +126,11 @@ internal static class ApplicationModules
                             if (element.Descendants().Any(e => e.Name.LocalName is "Module" or "Repeat"))
                             {
                                 ModuleStructure.ProtectChoose(root, element);
+                                if (potentialImageGeometry)
+                                {
+                                    foreach (var branch in element.Elements()) Walk(branch.Elements(), counters, depth, outerArguments, order, nativeRootReference, choices);
+                                    break;
+                                }
                                 if (selectBranch is null) throw new InvalidDataException("Conditional module structure requires an activity evaluator.");
                                 var branchValues = Values();
                                 var selected = selectBranch(element, branchValues);

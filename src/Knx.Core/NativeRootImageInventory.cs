@@ -232,7 +232,7 @@ internal sealed partial class NativeRootImageInventory
         References = Array.AsReadOnly(result.ToArray());
         _saved = RootParameterWriterCommon.ReadSavedProfile(_ids, _sources, device, ApplicationId, legacy, allowRawData: true);
         SavedValuesHash = NativeGeneralHash.Of(_saved.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray());
-        CarrierHash = RootParameterWriterCommon.CaptureCarriersProfile(_ids, project, device, ApplicationId, Modules?.Instances);
+        CarrierHash = RootParameterWriterCommon.CaptureCarriersProfile(_ids, project, device, ApplicationId, Modules is {IsConditional:true} ? null : Modules?.Instances);
         _hardwareDocument = Knxproj.LoadHardwareData(project, device.Hardware2ProgramRefId!);
         if (_hardwareDocument is null) NativeGeneralHash.Fail(NativeGeneralIssueCode.SourceUnavailable);
         HardwareDefinitionHash = ValidateCapturedHardware(_hardwareDocument!, device, inputs); PrimaryProgramOnly = true;
@@ -267,7 +267,7 @@ internal sealed partial class NativeRootImageInventory
             CheckSavedBudget(device.ParameterValues); _ = RootBuildGuard.Nodes(inputs.Application, TextLimit); _ = RootBuildGuard.Nodes(inputs.Master, TextLimit);
             return inputs.Manifest.Binding.MatchesIdentity(project, device) && NativeGeneralHash.Document(inputs.Application) == ApplicationDefinitionHash
                 && NativeGeneralHash.Document(inputs.Master) == _masterHash && MatchesSaved(device.ParameterValues.ToDictionary(p => p.Key, p => (string?)p.Value, StringComparer.Ordinal))
-                && RootParameterWriterCommon.CaptureCarriersProfile(_ids, project, device, ApplicationId!, Modules?.Instances) == CarrierHash
+                && RootParameterWriterCommon.CaptureCarriersProfile(_ids, project, device, ApplicationId!, Modules is {IsConditional:true} ? null : Modules?.Instances) == CarrierHash
                 && _hardwareDocument is not null && ValidateCapturedHardware(_hardwareDocument, device, inputs) == HardwareDefinitionHash;
         }
         catch (Exception failure) when (failure is NativeGeneralRejected or RootBuildRejected or XmlException or IOException or InvalidDataException or FormatException or OverflowException or ArgumentException or InvalidOperationException) { return false; }
@@ -281,10 +281,20 @@ internal sealed partial class NativeRootImageInventory
     internal IReadOnlyList<NativeRootHydratedReference> Hydrate(NativeApplicationEvaluationContext context)
     {
         var result = new List<NativeRootHydratedReference>();
+        var selected = context.Structure?.Occurrences.Select(o=>o.Frame!.InstanceId).ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>(StringComparer.Ordinal);
         foreach (var reference in References)
         {
             var source = _sources[reference.RefId]; var current = RootParameterWriterCommon.Hydrate(reference.RefId, source.ParameterValue, source.ReferenceValue, _saved);
-            if (!context.EffectiveValues.TryGetValue(reference.RefId, out var evaluated)) NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch, reference.RefId);
+            var dormant = Modules?.IsUninstantiatedReference(reference.RefId, selected) == true;
+            var hasEvaluated = context.EffectiveValues.TryGetValue(reference.RefId, out var evaluated);
+            if (dormant)
+            {
+                if (hasEvaluated) NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch, reference.RefId);
+                // Validate retained source/saved values without claiming a value from an uninstantiated scope.
+                // The writer population emits an explicit no-write disposition for these references.
+                evaluated = current.Value;
+            }
+            else if (!hasEvaluated) NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch, reference.RefId);
             ParameterWordEncoding? word = null, fallback = null;
             ImmutablePatchBytes? bytes = null, defaultBytes = null;
             if (reference.Owner is null)

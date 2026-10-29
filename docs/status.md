@@ -363,6 +363,17 @@ candidate checks. Empty repeat branches and large root-owner populations count
 toward these budgets. Previous inspection and no-module profiles retain their
 existing contracts. The M112 union/download route does not admit these modules.
 
+A bounded direct-call case in the same stage supports up to two independently
+proved root Value-enum choices, literal global Memory offsets and no Repeat or
+allocator. It validates every potential instance and latent owner before selecting
+the instantiated subset from one shared evaluation. Uninstantiated references emit
+no write or native record; their saved values remain retained and source-bound for
+later activation. Public/MCP facts distinguish potential and selected instances.
+This case requires an absent or empty native ModuleInstances carrier and refuses
+module LegacyPatchAlways. Eighteen independent full-buffer reference comparisons,
+108 focused checks and nine nonzero-backing preservation cases cover the profile;
+they do not establish manufacturer or complete-image compatibility.
+
 Sources, initial Data/validity, working Data, desired validity and canonical bytes
 remain separate. Factory masks and Count words are not adopted. Contained and
 strictly overlapping region/code and pointer/factory contributions use an ordered
@@ -388,7 +399,8 @@ seeds after parameters, with supported initialized backing and operation-specifi
 mapping. They preserve untouched header bytes and refuse data-write collisions.
 Fresh table allocation without backing, full pointer/size adjustments, unused-tail
 invalidation, further writers, configuration and finalization remain open.
-Conditional/parameter-driven module calls, nested modules, local pools/code/types,
+Conditional calls outside that direct profile, parameter-driven repetition,
+nested modules, local pools/code/types,
 module property/Union/RawData storage, additional allocator domains, Union/aliases,
 assignment/calculation dependencies, raw/count writers,
 unsupported PDTs, unaccounted external/binary state and other native carriers

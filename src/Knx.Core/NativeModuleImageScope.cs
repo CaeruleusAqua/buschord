@@ -23,7 +23,9 @@ internal sealed class NativeModuleImageScope
     internal IReadOnlyList<NativeModuleImageAllocation> Allocations { get; }
     internal IReadOnlyList<NativeRootOwner> ReservationOwners { get; private set; } = Array.Empty<NativeRootOwner>();
     internal string Fingerprint { get; }
+    internal bool IsConditional => _plan.ConditionalWhenKeys.Count != 0;
     private readonly Dictionary<(string Instance, string Reference), string> _references = new();
+    private readonly Dictionary<string,string> _referenceInstances = new(StringComparer.Ordinal);
 
     internal static NativeModuleImageScope? Read(XElement root)
         => root.DescendantsAndSelf().Any(e => e.Name.LocalName is "Module" or "ModuleDef") ? new(root) : null;
@@ -32,9 +34,10 @@ internal sealed class NativeModuleImageScope
         var ns = root.Name.Namespace;
         var catalog = _catalog = new NativeCommunicationOriginCatalog(root, true);
         _plan = catalog.StructuralPlan;
-        // Conditional calls need conservative allocations for every unselected occurrence as well.
-        // Their activation proof alone is not a complete image-allocation proof.
-        if (_plan.ConditionalWhenKeys.Count != 0 || _plan.Expected.Count > 256)
+        if (_plan.Expected.Count > 256)
+            NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedSource);
+        if (IsConditional && catalog.Nodes.Any(n=>n.Name.LocalName is "Repeat" or "Allocator" || n.Attribute("AllocatorRefId") is not null
+            || n.Name.LocalName=="Parameter" && n.Ancestors().Any(a=>a.Name.LocalName=="ModuleDef") && (string?)n.Attribute("LegacyPatchAlways") is not (null or "false" or "0")))
             NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedSource);
         var definitions = catalog.Nodes.Where(e => e.Name == ns + "ModuleDef").ToArray();
         var definitionsContainers=_plan.Application.Elements(ns+"ModuleDefs").ToArray();
@@ -83,7 +86,8 @@ internal sealed class NativeModuleImageScope
         if (_plan.ImageModuleProfile) known.UnionWith(catalog.Nodes.Where(n=>n.Name.LocalName is "Repeat" or "Allocator" or "NumericArg"));
         SourceDeclarations = known;
         var clone = new XElement(root); catalog.Stamp(clone); clone.AddAnnotation(catalog);
-        var expanded = ApplicationModules.Expand(clone, null, origins: new ModuleOriginCatalog(root));
+        var expanded = IsConditional ? ApplicationModules.ExpandPotentialImageGeometry(clone, new ModuleOriginCatalog(root))
+            : ApplicationModules.Expand(clone, null, origins: new ModuleOriginCatalog(root));
         var manifest = expanded.Annotation<NativeCommunicationOccurrenceManifest>();
         if (manifest is null || !manifest.BelongsTo(catalog) || !OccurrencesMatch(manifest.Occurrences))
             NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch);
@@ -125,13 +129,15 @@ internal sealed class NativeModuleImageScope
                 origin.Key, NativeGeneralHash.Document(node)));
             if (node.Name.LocalName == "ParameterRef" && !_references.TryAdd((frame.InstanceId, origin.OriginalId), origin.ExpandedId))
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.AmbiguousOwnership);
+            if (node.Name.LocalName == "ParameterRef" && !_referenceInstances.TryAdd(origin.ExpandedId, frame.InstanceId))
+                NativeGeneralHash.Fail(NativeGeneralIssueCode.AmbiguousOwnership);
         }
         if (parameters.Count > 100000 || references.Count > 100000 || parameters.Select(Id).Distinct(StringComparer.Ordinal).Count() != parameters.Count
             || references.Select(Id).Distinct(StringComparer.Ordinal).Count() != references.Count)
             NativeGeneralHash.Fail(NativeGeneralIssueCode.LimitExceeded);
         Parameters = Array.AsReadOnly(parameters.ToArray()); References = Array.AsReadOnly(references.ToArray()); Members = Array.AsReadOnly(members.ToArray());
         _expandedDeclarationsHash = DeclarationsHash(expanded);
-        Fingerprint = NativeGeneralHash.Of(new { profile = _plan.ImageModuleProfile ? "LiteralRepeatRootAllocatorModuleImage1" : "FlatLiteralMemoryModules1", source = _plan.SourceHash,
+        Fingerprint = NativeGeneralHash.Of(new { profile = IsConditional ? "ConditionalDirectMemoryModules1" : _plan.ImageModuleProfile ? "LiteralRepeatRootAllocatorModuleImage1" : "FlatLiteralMemoryModules1", source = _plan.SourceHash,
             occurrences = _plan.Expected, Instances, Members, Allocations, expanded = _expandedDeclarationsHash });
     }
     private static string Id(XElement node) => (string?)node.Attribute("Id") ?? "";
@@ -146,8 +152,32 @@ internal sealed class NativeModuleImageScope
         => context.Snapshot?.Evaluation.ExpandedRoot is { } expanded && context.Catalog is { } catalog
             && catalog.CurrentHash(0) == _plan.SourceHash
             && expanded.Annotation<NativeCommunicationOccurrenceManifest>() is { } manifest && manifest.BelongsTo(catalog)
-            && OccurrencesMatch(manifest.Occurrences) && NativeGeneralHash.Of(context.Snapshot.ModuleInstances) == NativeGeneralHash.Of(Instances)
-            && DeclarationsHash(expanded) == _expandedDeclarationsHash;
+            && (IsConditional ? MatchesSelected(context, manifest, expanded) : OccurrencesMatch(manifest.Occurrences)
+                && NativeGeneralHash.Of(context.Snapshot.ModuleInstances) == NativeGeneralHash.Of(Instances)
+                && DeclarationsHash(expanded) == _expandedDeclarationsHash);
+    private bool MatchesSelected(NativeApplicationEvaluationContext context, NativeCommunicationOccurrenceManifest manifest, XElement expanded)
+    {
+        if(context.Structure is not {IsAvailable:true} structure || structure.Occurrences.Count!=manifest.Occurrences.Count
+            || !structure.Occurrences.SequenceEqual(manifest.Occurrences))return false;
+        var expected=_plan.Expected.ToDictionary(o=>o.Frame!.InstanceId,StringComparer.Ordinal);var selected=new HashSet<string>(StringComparer.Ordinal);
+        foreach(var actual in manifest.Occurrences)
+            if(actual.Frame is null || !selected.Add(actual.Frame.InstanceId) || !expected.TryGetValue(actual.Frame.InstanceId,out var candidate)
+                || NativeGeneralHash.Of(actual)!=NativeGeneralHash.Of(candidate))return false;
+        var declared=Members.ToDictionary(m=>(m.InstanceId,m.SourceKey,m.ReferenceId is not null));
+        var actualMembers=expanded.DescendantsAndSelf().Where(n=>n.Name.LocalName is "Parameter" or "ParameterRef"
+            && n.Annotation<NativeCommunicationElementOrigin>() is {Frames.Count:1}).ToArray();
+        if(actualMembers.Length!=Members.Count(m=>selected.Contains(m.InstanceId)))return false;
+        foreach(var node in actualMembers)
+        {
+            var origin=node.Annotation<NativeCommunicationElementOrigin>()!;
+            if(!declared.TryGetValue((origin.Frames[0].InstanceId,origin.Key,node.Name.LocalName=="ParameterRef"),out var member)
+                || member.DeclarationHash!=NativeGeneralHash.Document(node))return false;
+        }
+        return true;
+    }
+    internal bool IsUninstantiatedReference(string reference, IReadOnlySet<string> selected)
+        => IsConditional && _referenceInstances.TryGetValue(reference,out var instance)
+            && !selected.Contains(instance);
     internal string ResolveReference(string instanceId, string originalReference)
         => _references.TryGetValue((instanceId, originalReference), out var id) ? id
             : throw new NativeGeneralRejected(new(NativeGeneralIssueCode.ContextMismatch, originalReference));
