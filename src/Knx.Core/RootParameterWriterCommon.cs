@@ -5,12 +5,15 @@ namespace Knx;
 internal static class RootParameterWriterCommon
 {
     internal static RootImageBuildPolicy ReadPolicy(XElement app, XElement? options, string id)
+        => ReadPolicyProfile(app, options, id, false);
+    internal static RootImageBuildPolicy ReadPolicyProfile(XElement app, XElement? options, string id, bool legacyM112)
     {
         var text = (string?)app.Attribute("MinEtsVersion"); uint packed = 0;
         if (text is not null)
         {
             Version? version = null;
-            if (text.Length is < 3 or > 64 || text.Any(c => c != '.' && c is not (>= '0' and <= '9')) || !Version.TryParse(text, out version)
+            var numeric = legacyM112 && text == "3.0d" ? "3.0" : text;
+            if (numeric.Length is < 3 or > 64 || numeric.Any(c => c != '.' && c is not (>= '0' and <= '9')) || !Version.TryParse(numeric, out version)
                 || version.Major > 255 || version.Minor > 255 || version.Build > 65535 || version.Revision > 65535)
                 RootBuildGuard.Fail(RootImageBuildIssueCode.InvalidPolicy);
             packed = (uint)version!.Major << 24 | (uint)version.Minor << 16 | (uint)Math.Max(version.Build, 0);

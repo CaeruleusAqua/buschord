@@ -99,7 +99,9 @@ internal static partial class GeneratedTableCompiler
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch);
             var small = request!.Format == GeneratedTableFormat.M112;
             var context = inventory.ResourceContext;
-            if (context?.NumericMask != (small ? 0x0705 : 0x07B0)) Fail(GeneratedTableIssueCode.UnsupportedTableFormat);
+            if (context?.NumericMask != (small ? 0x0705 : 0x07B0)
+                && !(small && inventory.AdmitRootUnions && context?.NumericMask == 0x0701))
+                Fail(GeneratedTableIssueCode.UnsupportedTableFormat);
             var expected = small ? new[] { "AddressTable_Bcu1", "AssociationTable_M112", "GroupObjectTable_M112" }
                 : new[] { "AddressTable_SystemB", "AssociationTable_SystemB", "GroupObjectTable_SystemB" };
             var names = new[] { "GroupAddressTable", "GroupAssociationTable", "GroupObjectTable" };

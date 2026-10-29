@@ -1,6 +1,6 @@
 namespace Knx;
 
-internal sealed class NativeRootWriterPopulation
+internal sealed partial class NativeRootWriterPopulation
 {
     private readonly NativeRootImageInventory? _inventory;
     private readonly NativeImageVariantPreparation? _preparation;
@@ -101,6 +101,7 @@ internal sealed class NativeRootWriterPopulation
                     records.Add(new(reference.RefId, reference.ParameterId, reference.ParameterTypeId, disposition, active, count,
                         reference.Always, reference.CustomerAdjustable, value.Origin, value.CurrentHash, chosenHash, true, true, writes, excluded, claim));
                 }
+                if (_inventory!.AdmitRootUnions) CoalesceUnions(records, claims);
                 CheckValidityInteractions(claims);
             }
             var result = NativeRootVariantPopulation.Seal(this, _inventory!, _preparation!, _application!, variant,

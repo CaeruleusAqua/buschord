@@ -88,7 +88,7 @@ internal sealed class NativeGeneralImageBuildPlan
             variants = variants.Select(v => new { v.Variant.Ordinal, variant = v.Variant.Fingerprint,
                 v.IsAvailable, v.Issues, result = v.Fingerprint }).ToArray(),
             allocated, reserved, ReservedProcedurePayloadBytes, HasActualRoute, CompleteApplicationImage });
-        if (variants.Any(v => v.IsAvailable)) Binding = new(project, device, options, tables, Fingerprint);
+        if (variants.Any(v => v.IsAvailable)) Binding = new(project, device, options, tables, Fingerprint, inventory.AdmitRootUnions);
     }
     internal static NativeGeneralImageBuildPlan Unavailable(NativeGeneralIssue issue) => new(issue);
     internal static NativeGeneralImageBuildPlan Seal(Project project, DeviceInstance device, uint[] options, GeneratedTableRequest? tables,
@@ -103,11 +103,12 @@ internal sealed class NativeGeneralImageBinding
     private readonly DeviceInstance _device;
     private readonly uint[] _options;
     private readonly GeneratedTableRequest? _tables;
+    private readonly bool _admitRootUnions;
     internal string Fingerprint { get; }
-    internal NativeGeneralImageBinding(Project project, DeviceInstance device, uint[] options, GeneratedTableRequest? tables, string fingerprint)
-    { _project = project; _device = device; _options = (uint[])options.Clone(); _tables = tables is null ? null : tables with { }; Fingerprint = fingerprint; }
+    internal NativeGeneralImageBinding(Project project, DeviceInstance device, uint[] options, GeneratedTableRequest? tables, string fingerprint, bool admitRootUnions = false)
+    { _project = project; _device = device; _options = (uint[])options.Clone(); _tables = tables is null ? null : tables with { }; Fingerprint = fingerprint; _admitRootUnions = admitRootUnions; }
     internal bool IsCurrent(Project project, DeviceInstance device) => ReferenceEquals(project, _project) && ReferenceEquals(device, _device)
-        && NativeGeneralImageBuild.Build(project, device, _options, _tables) is { IsAvailable: true } current && current.Fingerprint == Fingerprint;
+        && NativeGeneralImageBuild.BuildProfile(project, device, _options, _tables, _admitRootUnions) is { IsAvailable: true } current && current.Fingerprint == Fingerprint;
 }
 
 /// <summary>One source capture and evaluation for all explicitly conditional option alternatives.</summary>
@@ -115,6 +116,10 @@ internal static class NativeGeneralImageBuild
 {
     internal static NativeGeneralImageBuildPlan Build(Project project, DeviceInstance device,
         IReadOnlyList<uint> optionAssumptions, GeneratedTableRequest? tables = null)
+        => BuildProfile(project, device, optionAssumptions, tables, false);
+
+    internal static NativeGeneralImageBuildPlan BuildProfile(Project project, DeviceInstance device,
+        IReadOnlyList<uint> optionAssumptions, GeneratedTableRequest? tables, bool admitRootUnions)
     {
         try
         {
@@ -130,14 +135,16 @@ internal static class NativeGeneralImageBuild
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.UnaccountedBinaryData);
             var request = tables is null ? null : tables with { };
             var inputs = ArchivedImageSources.ReadInputs(project!, device!);
-            var inventory = NativeRootImageInventory.Read(project!, device!, inputs);
+            if (admitRootUnions && (options.Length != 1 || options[0] != 255 || request?.Format != GeneratedTableFormat.M112))
+                NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidRequest);
+            var inventory = NativeRootImageInventory.ReadProfile(project!, device!, inputs, admitRootUnions);
             if (!inventory.IsAvailable) throw new NativeGeneralRejected(inventory.Issues.First());
             var ledger = new NativeImagePayloadLedger();
             ledger.Reserve(inventory.CodeSourcePeakPayloadBytes);
             var preparation = NativeImagePreparation.Prepare(project!, device!, inputs, inventory, options);
             if (!preparation.IsAvailable) throw new NativeGeneralRejected(preparation.Issues.First());
-            var application = NativeApplicationEvaluationContext.Create(project!, device!, inputs,
-                preparation.ControllerReferences.ToArray());
+            var application = NativeApplicationEvaluationContext.CreateProfile(project!, device!, inputs,
+                preparation.ControllerReferences.ToArray(), null, admitRootUnions);
             if (!application.IsAvailable) throw new NativeGeneralRejected(new(NativeGeneralIssueCode.ContextMismatch,
                 ActivationIssue: application.Issues.FirstOrDefault()));
             var views = NativeImageVariantViewSet.Create(project!, device!, inputs, inventory, preparation, application);

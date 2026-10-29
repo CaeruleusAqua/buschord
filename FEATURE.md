@@ -54,6 +54,11 @@ Speichervergleiche ohne Skripte auf. Ein zusätzlicher expliziter Root-Arbeitsla
 kombiniert diese Auflösung mit der vollständigen unterstützten Referenzpopulation
 und passenden Tabellen aus derselben Auswertung mit eigener Versionskennung.
 Vollständige Aktivierung, Gerätebefehle und Imagefinalisierung bleiben offen.
+Ein separater, enger M112-Konsolenpfad unterstützt Root-Speicher-Unions und das
+erneute Laden einer bereits passenden Konfiguration. Er prüft Projektquelle,
+Geräteidentität, PEI, Tabellenzeiger und persistente Bits vor dem Entladen und
+verbindet eine dauerhafte Konfigurationssicherung mit der ursprünglichen
+Ladeprozedur. [Umfang und Abnahme](docs/commissioning.md).
 Ein separater Property-Arbeitslauf initialisiert alle tatsächlich ausgewählten
 Allokationen seines festen Root-Profils und formatiert die vollständige
 Referenzpopulation aus derselben Auswertung. Initialdaten, Gültigkeit und

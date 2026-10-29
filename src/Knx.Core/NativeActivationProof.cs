@@ -39,8 +39,11 @@ internal sealed class NativeActivationProof
         => IsAvailable && ReferenceEquals(_catalog, catalog) && ReferenceEquals(_snapshot, snapshot);
     internal static NativeActivationProof Create(NativeCommunicationOriginCatalog catalog, XElement originalApplication, ApplicationSnapshot snapshot,
         IReadOnlyDictionary<string, string?> values, IReadOnlyList<string> additionalControllers)
+        => CreateProfile(catalog, originalApplication, snapshot, values, additionalControllers, false);
+    internal static NativeActivationProof CreateProfile(NativeCommunicationOriginCatalog catalog, XElement originalApplication, ApplicationSnapshot snapshot,
+        IReadOnlyDictionary<string, string?> values, IReadOnlyList<string> additionalControllers, bool admitRootUnions)
     {
-        try { return Mint(catalog, originalApplication, snapshot, values, additionalControllers); }
+        try { return Mint(catalog, originalApplication, snapshot, values, additionalControllers, admitRootUnions); }
         catch (NativeCommunicationRejected failure) { return new(failure.Issue); }
         catch (Exception failure) when (failure is InvalidDataException or FormatException or OverflowException or ArgumentException or InvalidOperationException)
         { return new(new(GeneratedTableIssueCode.IncompleteActivation)); }
@@ -63,14 +66,14 @@ internal sealed class NativeActivationProof
         internal readonly List<int> Dependents = [];
     }
     private static NativeActivationProof Mint(NativeCommunicationOriginCatalog catalog, XElement application, ApplicationSnapshot snapshot,
-        IReadOnlyDictionary<string, string?> values, IReadOnlyList<string> additional)
+        IReadOnlyDictionary<string, string?> values, IReadOnlyList<string> additional, bool admitRootUnions)
     {
         var expanded = snapshot.Evaluation.ExpandedRoot!; var ns = application.Name.Namespace;
         var elements = expanded.DescendantsAndSelf().Where(e => !e.Ancestors().Any(a => a.Name.LocalName == "ModuleDef")).Take(500001).ToArray();
         if (elements.Length > 500000) NativeCommunicationGuard.Fail(GeneratedTableIssueCode.LimitExceeded);
         var references = Index(elements, "ParameterRef"); var parameters = Index(elements, "Parameter"); var types = Index(elements, "ParameterType");
         var rows = snapshot.Instances.ToDictionary(p => p.Id, StringComparer.Ordinal);
-        var objects = Index(elements, "ComObjectRef"); var origins = new NativeCommunicationWitness.OriginProof(catalog, application, snapshot);
+        var objects = Index(elements, "ComObjectRef"); var origins = new NativeCommunicationWitness.OriginProof(catalog, application, snapshot, admitRootUnions);
         var dynamics = elements.Where(e => e.Name == ns + "Dynamic").Take(2).ToArray();
         if (dynamics.Length > 1 || dynamics.Length == 1 && (dynamics[0].Parent?.Name != application.Name || (string?)dynamics[0].Parent?.Attribute("Id") != (string?)application.Attribute("Id")))
             NativeCommunicationGuard.Fail(GeneratedTableIssueCode.IncompleteActivation);
@@ -273,6 +276,8 @@ internal sealed class NativeActivationProof
         return result;
     }
     internal static void ValidateControllerDeclarations(IReadOnlyList<XElement> elements, IReadOnlyList<string> additional)
+        => ValidateControllerDeclarationsProfile(elements, additional, false);
+    internal static void ValidateControllerDeclarationsProfile(IReadOnlyList<XElement> elements, IReadOnlyList<string> additional, bool admitRootUnions)
     {
         ValidateConditionSources(elements);
         var references = Index(elements, "ParameterRef"); var parameters = Index(elements, "Parameter"); var types = Index(elements, "ParameterType");
@@ -286,7 +291,10 @@ internal sealed class NativeActivationProof
             var type = types.GetValueOrDefault((string?)parameter?.Attribute("ParameterType") ?? "");
             if (reference is null || parameter is null || type is null || reference.Attribute("ParameterType") is not null
                 || reference.Attribute("ParameterTypeId") is not null || parameter.Attribute("ParameterTypeId") is not null
-                || parameter.Parent?.Name.LocalName != "Parameters" || type.Parent?.Name.LocalName != "ParameterTypes"
+                || !(parameter.Parent?.Name.LocalName == "Parameters" || admitRootUnions
+                    && parameter.Parent?.Name.LocalName == "Union" && parameter.Parent.Parent?.Name.LocalName == "Parameters"
+                    && parameter.Parent.Parent.Parent?.Name.LocalName == "Static" && parameter.Parent.Parent.Parent.Parent?.Name.LocalName == "ApplicationProgram")
+                || type.Parent?.Name.LocalName != "ParameterTypes"
                 || type.Parent.Parent?.Name.LocalName != "Static" || type.Parent.Parent.Parent?.Name.LocalName != "ApplicationProgram")
                 NativeCommunicationGuard.Fail(GeneratedTableIssueCode.UnknownParameterOrigin, id);
             if (checkedTypes.Add((string)type.Attribute("Id")!)) ValidateType(type, id);

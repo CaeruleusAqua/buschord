@@ -24,6 +24,7 @@ public sealed class KnxManagementClient : IAsyncDisposable
     private Exception? _fault;
     private byte _sendSequence, _receiveSequence;
     private bool _haveReceived, _connected, _disposed;
+    private volatile bool _restartPending, _restartCompleted, _restartCleanupPending;
 
     public IndividualAddress Target { get; }
     public TimeSpan ResponseTimeout { get; }
@@ -85,6 +86,48 @@ public sealed class KnxManagementClient : IAsyncDisposable
         return response[6..];
     }
 
+    /// <summary>Writes at most twelve bytes. Server verification requires the device's matching memory response.</summary>
+    /// <remarks>Without server verification only transport acknowledgement is confirmed. Writes are never retried.</remarks>
+    public async Task WriteMemoryAsync(ushort address, ReadOnlyMemory<byte> bytes, bool serverVerify,
+        CancellationToken ct = default)
+    {
+        var request = ManagementApdu.WriteMemory(address, bytes.Span);
+        await RequestAsync(request, serverVerify ? ManagementApdu.MemoryResponse : null, a =>
+        {
+            if (a.Length < 4 || a[2] != request[2] || a[3] != request[3]) return false;
+            if ((a[1] & 0x3F) == 0) throw new IOException("Device refused verification of the memory write.");
+            if ((a[1] & 0x3F) != request.Length - 4 || a.Length != request.Length
+                || !a.AsSpan(4).SequenceEqual(request.AsSpan(4)))
+                throw new IOException("Device memory write verification did not match the request.");
+            return true;
+        }, ct);
+    }
+
+    /// <summary>Writes at most ten data bytes and returns the strictly addressed property's resulting value.</summary>
+    /// <remarks>Control properties may return a state rather than echoing the command. The caller must verify the expected value and datatype-specific result length.</remarks>
+    public async Task<byte[]> WritePropertyAsync(byte objectIndex, byte propertyId, ushort start, byte count,
+        ReadOnlyMemory<byte> bytes, CancellationToken ct = default)
+    {
+        var request = ManagementApdu.WriteProperty(objectIndex, propertyId, start, count, bytes.Span);
+        var response = await RequestAsync(request, ManagementApdu.PropertyResponse, a =>
+        {
+            if (a.Length < 6 || a[2] != request[2] || a[3] != request[3] || a[5] != request[5]
+                || (a[4] & 0x0F) != (request[4] & 0x0F)) return false;
+            if ((a[4] >> 4) == 0) throw new IOException($"Device refused property write {objectIndex}/{propertyId}.");
+            var dataLength = a.Length - 6;
+            if (a[4] != request[4] || dataLength is < 1 or > 10 || dataLength % count != 0)
+                throw new IOException("Device property write response did not match the request.");
+            return true;
+        }, ct);
+        return response[6..];
+    }
+
+    /// <summary>Sends one sequenced basic restart and ends this session without waiting for a device ACK.</summary>
+    /// <remarks>Completion means only that the transport send completed. Dispose sends one best-effort disconnect;
+    /// the caller must verify boot through a fresh session.</remarks>
+    public async Task RestartAsync(CancellationToken ct = default)
+        => await RequestAsync([0x03, 0x80], null, _ => false, ct, restarting: true);
+
     public async Task<ManagementDeviceIdentity> ReadIdentityAsync(CancellationToken ct = default)
     {
         var descriptor = await ReadDescriptorAsync(ct);
@@ -97,12 +140,8 @@ public sealed class KnxManagementClient : IAsyncDisposable
             Convert.ToHexString(manufacturer), Convert.ToHexString(serial), Convert.ToHexString(application));
     }
 
-    internal async Task WriteProgrammingStatusAsync(byte value, bool serverVerify, CancellationToken ct)
-    {
-        byte[] request = [0x02, 0x81, 0, 0x60, value];
-        await RequestAsync(request, serverVerify ? ManagementApdu.MemoryResponse : null,
-            a => a.Length == 5 && (a[1] & 0x3F) == 1 && a[2] == 0 && a[3] == 0x60 && a[4] == value, ct);
-    }
+    internal Task WriteProgrammingStatusAsync(byte value, bool serverVerify, CancellationToken ct)
+        => WriteMemoryAsync(0x0060, new byte[] { value }, serverVerify, ct);
 
     private Task<byte[]> PropertyRequestAsync(byte[] request, CancellationToken ct)
         => RequestAsync(request, ManagementApdu.PropertyResponse, a => a.Length >= 6
@@ -110,9 +149,11 @@ public sealed class KnxManagementClient : IAsyncDisposable
             && (a[4] & 0x0F) == (request[4] & 0x0F)
             && (a[4] >> 4 == 0 || a[4] >> 4 == request[4] >> 4), ct);
 
-    private async Task<byte[]> RequestAsync(byte[] apdu, int? responseService, Func<byte[], bool> matches, CancellationToken ct)
+    private async Task<byte[]> RequestAsync(byte[] apdu, int? responseService, Func<byte[], bool> matches,
+        CancellationToken ct, bool restarting = false)
     {
         await _requests.WaitAsync(ct);
+        var restartSending = false;
         try
         {
             if (_disposed || !_connected || _fault is not null) throw new IOException("Management session is not connected.", _fault);
@@ -120,10 +161,20 @@ public sealed class KnxManagementClient : IAsyncDisposable
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
             deadline.CancelAfter(ResponseTimeout);
             var ack = new TaskCompletionSource<byte>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _ack = ack;
+            _ack = restarting ? null : ack;
+            _restartPending = restarting;
+            restartSending = restarting;
+            _restartCleanupPending = restarting;
             apdu = (byte[])apdu.Clone();
             apdu[0] = (byte)((apdu[0] & 3) | 0x40 | (_sendSequence << 2));
             await _transport.SendAsync(Target, apdu, deadline.Token);
+            if (restarting)
+            {
+                deadline.Token.ThrowIfCancellationRequested();
+                EndRestartSession();
+                _lifetime.Cancel();
+                return [];
+            }
             await ack.Task.WaitAsync(deadline.Token);
             _sendSequence = (byte)((_sendSequence + 1) & 15);
             _ack = null;
@@ -133,6 +184,12 @@ public sealed class KnxManagementClient : IAsyncDisposable
                 var response = await _responses.Reader.ReadAsync(deadline.Token);
                 if (ManagementApdu.Service(response) == responseService && matches(response)) return response;
             }
+        }
+        catch (Exception ex) when (restartSending)
+        {
+            _restartCompleted = true;
+            Fail(ex);
+            throw;
         }
         catch (Exception ex) when (_connected)
         {
@@ -145,7 +202,7 @@ public sealed class KnxManagementClient : IAsyncDisposable
 
     private void OnFrame(ManagementTransportFrame frame)
     {
-        if (frame.Source != Target || frame.Destination != _transport.AssignedAddress || _disposed) return;
+        if (frame.Source != Target || frame.Destination != _transport.AssignedAddress || _disposed || _restartCompleted) return;
         if (!_incoming.Writer.TryWrite(frame)) Fail(new IOException("Management receive queue overflow."));
     }
 
@@ -157,6 +214,17 @@ public sealed class KnxManagementClient : IAsyncDisposable
             {
                 var tpdu = frame.Tpdu;
                 if (tpdu.Length == 0) continue;
+                if (_restartPending)
+                {
+                    // Basic restart has no device-ACK contract. Control/data replies cannot establish boot success
+                    // or finish an outstanding transport send; disconnect may arrive while that send completes.
+                    if (tpdu.Length == 1 && tpdu[0] == 0x81)
+                    {
+                        EndRestartSession();
+                        return;
+                    }
+                    continue;
+                }
                 if (tpdu.Length == 1)
                 {
                     if (tpdu[0] == 0x81) throw new IOException("Device disconnected its management session.");
@@ -191,9 +259,20 @@ public sealed class KnxManagementClient : IAsyncDisposable
         _lifetime.Cancel();
     }
 
+    private void EndRestartSession()
+    {
+        _restartCompleted = true;
+        _connected = false;
+        _fault ??= new IOException("Management session ended after a restart request.");
+        _incoming.Writer.TryComplete();
+        _responses.Writer.TryComplete();
+    }
+
     private async Task DisconnectTransportAsync()
     {
-        if (!_connected || !_transport.IsConnected) return;
+        var restartCleanup = _restartCleanupPending;
+        _restartCleanupPending = false;
+        if ((!_connected && !restartCleanup) || !_transport.IsConnected) return;
         _connected = false;
         using var deadline = new CancellationTokenSource(ResponseTimeout);
         try { await _transport.SendAsync(Target, [0x81], deadline.Token); }

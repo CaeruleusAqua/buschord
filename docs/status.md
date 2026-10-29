@@ -742,6 +742,13 @@ has live identity, write, readback and restoration evidence for one released dev
 see [targeted commissioning](commissioning.md). Secure tunnelling, complete images,
 complete load flows and general management/Verify/commissioning remain incomplete.
 
+A separate console-only M112 profile now builds bounded root unions and an absolute
+full-load recipe for reloading an already matching configuration. Known persistent
+bits, identity, required PEI and table pointers must match before unloading.
+Durable recovery combines captured configuration bytes with the source recipe;
+unobservable allocation metadata and volatile runtime state are outside that claim.
+The [commissioning page](commissioning.md) records its exact validation and live status.
+
 General hardware acceptance remains open. Since 2026-10-29, the user has explicitly
 released one device in the existing installation for targeted programming/write tests.
 This does not authorize other targets or replace broader hardware acceptance. See the

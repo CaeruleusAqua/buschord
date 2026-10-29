@@ -229,8 +229,10 @@ internal sealed class NativeCommunicationWitness
         private readonly Dictionary<(string Kind, string Id), int> _identities;
         private readonly Dictionary<(string Id, string RefId, string Repeat), int> _instances;
         private readonly HashSet<NativeCommunicationModuleFrame> _verifiedFrames = [];
-        internal OriginProof(NativeCommunicationOriginCatalog catalog, XElement application, ApplicationSnapshot snapshot)
+        private readonly bool _admitRootUnions;
+        internal OriginProof(NativeCommunicationOriginCatalog catalog, XElement application, ApplicationSnapshot snapshot, bool admitRootUnions = false)
         {
+            _admitRootUnions = admitRootUnions;
             _catalog = catalog; _application = application;
             _identities = catalog.Nodes.Where(e => e.Name.LocalName is "Module" or "ModuleDef" or "ParameterType" or "Parameter" or "ParameterRef" or "ComObject" or "ComObjectRef")
                 .GroupBy(e => (e.Name.LocalName, Id(e))).ToDictionary(g => g.Key, g => g.Count());
@@ -312,8 +314,13 @@ internal sealed class NativeCommunicationWitness
         {
             var original = Original(element); var origin = element.Annotation<NativeCommunicationElementOrigin>()!;
             var owner = original.Parent?.Parent?.Parent;
+            if (_admitRootUnions && element.Name.LocalName == "Parameter" && original.Parent?.Name == _application.Name.Namespace + "Union")
+                owner = original.Parent.Parent?.Parent?.Parent;
             if (element.Name.LocalName == "ComObject" && owner?.Name == _application.Name.Namespace + "ModuleDef") container = "ComObjects";
-            if (!Unique(original) || owner is null || !NativePath(original, container, owner))
+            var unionPath = _admitRootUnions && element.Name.LocalName == "Parameter" && container == "Parameters"
+                && original.Parent?.Name == _application.Name.Namespace + "Union" && ReferenceEquals(owner, _application)
+                && NativePath(original.Parent, container, owner);
+            if (!Unique(original) || owner is null || !(unionPath || NativePath(original, container, owner)))
                 NativeCommunicationGuard.Fail(GeneratedTableIssueCode.InvalidObjectDeclaration, Id(element));
             if (element.Name.LocalName == "ParameterType" && !ReferenceEquals(owner, _application))
                 NativeCommunicationGuard.Fail(GeneratedTableIssueCode.InvalidObjectDeclaration, Id(element));
