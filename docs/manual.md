@@ -539,10 +539,29 @@ zunächst **Werkzeuge → Busverbindung** oder **Verbindung wählen…** öffnen
 die Verbindungsart wählen. Für UDP Gateway-IPv4, UDP-Port und angeforderte
 Tunneladresse eingeben. Für IP Secure UDP den geschützten Keyring lokal prüfen,
 Gateway-KNX-Adresse, Benutzer und Tunneladresse daraus auswählen und das Kennwort
-im maskierten Dialog eingeben. **Verbinden** stellt die gewählte Verbindung her.
+mit **Passwort eingeben und prüfen** im maskierten Dialog eingeben oder ausdrücklich
+den passenden gespeicherten Eintrag verwenden. **Verbinden** stellt die gewählte Verbindung her.
 Die Anzeige nennt den Verbindungszustand und die tatsächlich zugewiesene
 Adresse. Schließen des Dialogs erhält eine erfolgreiche Verbindung; **Trennen**
 beendet sie. Abbrechen während des Aufbaus wartet dessen Beendigung ab.
+
+Im Keyringdialog liest **Datei lesen** zunächst ungeprüfte Zuordnungskandidaten und
+den vollständigen Dateihash. Erst die Kennwort-/Signaturprüfung gibt die Auswahl
+frei. Bei einem unter vollständigem Pfad gespeicherten Projekt prüft **Ablage prüfen**
+die OS-Verfügbarkeit, ohne einen Eintrag zu lesen. **Gespeichertes Passwort verwenden**
+liest ausschließlich die genaue Projekt-/Datei-/Zuordnung und prüft den Export erneut.
+**Neu speichern…** und **Passend ersetzen…** sind getrennte ausdrückliche Aktionen
+mit eigenem maskiertem Bestätigungsdialog; vor einer Änderung müssen Signatur und
+Dateipin passen. Speichern wählt die gespeicherte Quelle nicht automatisch aus.
+**Gespeichertes Passwort löschen** betrifft nur diesen passenden OS-Eintrag.
+
+Windows nutzt die benutzergebundene Anmeldeinformationsverwaltung; Linux benötigt
+libsecret und einen konfigurierten Secret Service. Gesperrte oder fehlende Ablagen
+werden angezeigt und nicht automatisch entsperrt. Die manuelle Kennwortabfrage
+bleibt verfügbar. Nicht gespeicherte Projekte erhalten keine implizite Ablagekennung.
+Geänderte Projektpfade, Exporte oder Zuordnungen benötigen eine neue bewusste Auswahl.
+Bei unbekanntem Ausgang einer Ablageänderung wird nichts automatisch wiederholt oder
+rückgängig gemacht. [Vertrag und Grenzen](credential-vault.md).
 
 - **Starten**, **Stoppen**, **Pause**, **Fortsetzen**, **Anzeige leeren**.
 - **Monitorart**: Gruppenmonitor oder Busmonitor; der Wechsel ist nur im
@@ -913,9 +932,11 @@ belegt; belegt ist `Strg+Shift+G`.
   Discovery/Tunnel; es ändert keine System- oder Routerkonfiguration.
 - **Keine Passwortumgehung.** Verschlüsselte Projekte werden nur mit dem
   Projektpasswort gelesen und mit passendem Schutzprofil gespeichert.
-- **Keine KNX Data Security im Tunnel.** Keyring und Secure-Formate sind eine
-  Grundlage, aber nicht in den Tunnel verdrahtet; die Secure-Übersicht verwaltet
-  keine Schlüssel.
+- **Keine automatische Data-Secure-Provisionierung.** Die Bibliothek besitzt optionale
+  Gruppen- und Individual-/Tool-Prozessoren mit expliziten Schlüssel-/Zählerverträgen.
+  Die Workbench-Verbindungswahl provisioniert sie nicht automatisch; die
+  Secure-Übersicht verwaltet keine Schlüssel. Die optionale OS-Ablage speichert nur
+  das ausdrücklich gewählte Keyring-Passwort und ersetzt keine sichere Inbetriebnahme.
 - **Kein DCA-Host.** DCA/Plug-in-Code wird nicht ausgeführt; Parameter bleiben
   lesbar, Download ist gesperrt. Die Sperre greift auch über die Applikation im
   Projektarchiv, wenn der Katalog fehlt.

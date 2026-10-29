@@ -829,8 +829,21 @@ Twenty-one focused checks and full Windows/Linux Bus regressions cover its
 pre-network refusals, gateway authentication, Sync, management and recovery.
 Its default state source requires an independent anchor; a separate explicitly
 trusted unanchored source cannot detect full-file restoration. No production anchor
-or App/MCP selector is supplied. Protected OS storage, provisioning integration
-and secure first commissioning remain open.
+or App/MCP selector is supplied. Provisioning integration and secure first
+commissioning remain open.
+
+The optional [OS password controls](credential-vault.md) use the reviewed Windows
+Credential Manager/Linux Secret Service adapters. The Workbench exposes separate
+availability check, saved-password use, new save, matching replacement and delete
+actions. Public export selectors stay unverified until the full signature and exact
+source pin pass. Binding includes actual saved-project identity and canonical path,
+export bytes/path and host/user/tunnel; unsaved projects retain ephemeral input.
+There is no enumeration, automatic save, migration, unlock or password-source fallback.
+Generation/pin checks and visible unknown mutation outcomes prevent stale selection
+or automatic retry. Connections, M112 and nested prompts drain before the shared
+vault is released. Twenty synthetic adapter aggregates,34 selection/ownership cases
+and25 German/25 English native UI checks with fake stores pass; the separately
+accepted native adapter roundtrips do not attest every desktop provider or policy.
 Extended cEMI uses one NPDU length octet and the control-field frame selector;
 81 checks cover published vectors, strict lengths and the shared raw-frame API.
 
