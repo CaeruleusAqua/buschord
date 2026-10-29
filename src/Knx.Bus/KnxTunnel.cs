@@ -15,6 +15,7 @@ public sealed class BusTelegram
 
     /// <summary>Transport that delivered the telegram ("tunnel", "routing"); never a bus address.</summary>
     public required string Source { get; init; }
+    public BusDataSecurity DataSecurity { get; init; } = BusDataSecurity.Unverified;
 }
 
 /// <summary>
@@ -502,7 +503,12 @@ public sealed class KnxTunnel : IAsyncDisposable
                         catch (OperationCanceledException) { throw; }
                         catch { lock (_gate) _securityUnavailable = true; throw; }
                     }
-                    if (admitted is not null) Dispatch(admitted.ToArray());
+                    if (admitted is not null)
+                    {
+                        var provenance = _cemiSecurity is ICemiSecurityProvenance trusted
+                            ? trusted.DescribeAdmittedIncoming(cemi, admitted) : BusDataSecurity.Unverified;
+                        Dispatch(admitted.ToArray(), provenance);
+                    }
                     else Log("cEMI rejected by the configured security policy");
                 }
                 else if (sequence == (byte)(_expectedSequence - 1))
@@ -577,7 +583,7 @@ public sealed class KnxTunnel : IAsyncDisposable
         }
     }
 
-    private void Dispatch(byte[] cemi)
+    private void Dispatch(byte[] cemi, BusDataSecurity dataSecurity = BusDataSecurity.Unverified)
     {
         if (cemi.Length == 0 || State != BusConnectionState.Connected) return;
         try
@@ -594,6 +600,7 @@ public sealed class KnxTunnel : IAsyncDisposable
                     {
                         Telegram = Cemi.ParseLData(cemi),
                         Source = "tunnel",
+                        DataSecurity = dataSecurity,
                     });
                     return;
                 case (byte)CemiMessageCode.LDataCon:

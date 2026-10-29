@@ -13,7 +13,7 @@ public sealed partial class KnxConnectionFactory
         IKnxToolAccessCredentialProvider credentialProvider, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        if (connection is null || toolAccess is null || credentialProvider is null || connection.Kind != KnxTransportKind.IpSecureUdp
+        if (connection is null || toolAccess is null || credentialProvider is null || connection.GroupSecurity is not null || connection.Kind != KnxTransportKind.IpSecureUdp
             || connection.Keyring?.ExpectedSourceFingerprint is null || toolAccess.Target == connection.RequestedAddress)
             throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
         var binding = toolAccess.Bind(connection.RequestedAddress);

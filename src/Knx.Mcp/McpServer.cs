@@ -59,7 +59,10 @@ public sealed partial class McpServer : IAsyncDisposable
     private string? _projectPath;
 
     public McpServer(KnxConnectionFactory? connections = null)
+        : this(connections, null) { }
+    public McpServer(KnxConnectionFactory? connections, IKnxGroupSecurityProfileResolver? groupProfiles)
     {
+        _groupProfiles = groupProfiles;
         _connections = connections ?? new(); _bus = new(_connections);
         // The recorder ignores telegrams while stopped, so subscribing once is enough.
         _bus.TelegramReceived += _recorder.Add;

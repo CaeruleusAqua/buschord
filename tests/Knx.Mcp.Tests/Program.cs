@@ -5,6 +5,12 @@ using System.Text.Json.Nodes;
 using Knx.Mcp;
 
 if (args.Contains("--tool-cli")) return await ToolAccessCliChecks.RunAsync();
+// Self-contained child executes the actual stdio host entrypoint; Linux acceptance requires no global dotnet host.
+if (args.Length > 0 && args[0] == "--group-host-child")
+{
+    var entryResult = typeof(McpServer).Assembly.EntryPoint!.Invoke(null, new object[] { args.Skip(1).ToArray() });
+    return entryResult is Task<int> task ? await task : (int)entryResult!;
+}
 
 // In-process checks for the MCP dispatcher: protocol handshake, tool catalog and the
 // project_new -> group_address_add -> group_addresses_list round trip including undo.
@@ -31,6 +37,12 @@ if (args.Contains("--module-image-build"))
     return failures.Count == 0 ? 0 : 1;
 }
 
+if (args.Contains("--group-security"))
+{
+    await GroupSecurityMcpChecks.RunAsync(Check);
+    return failures.Count == 0 ? 0 : 1;
+}
+await GroupSecurityMcpChecks.RunAsync(Check);
 await ManagementChangeCliChecks.RunAsync(Check);
 if (args.Contains("--management-cli")) return failures.Count == 0 ? 0 : 1;
 await SecureConnectionMcpChecks.RunAsync(Check);

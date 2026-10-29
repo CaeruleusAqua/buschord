@@ -12,12 +12,13 @@ public sealed partial class McpServer
     private readonly CancellationTokenSource _connectionLifetime = new();
     private readonly AsyncLocal<CancellationToken> _requestCancellation = new();
     private readonly KnxConnectionFactory _connections;
+    private readonly IKnxGroupSecurityProfileResolver? _groupProfiles;
     private readonly object _connectionDisposeGate = new();
     private Task? _connectionDisposeTask;
     private KnxConnectionProfile? _selectedConnectionProfile;
     private bool _secureConnectionRequested;
     private static readonly string[] ConnectionFields = ["mode", "gateway", "port", "device", "own_address", "interface",
-        "keyring_path", "keyring_password_env", "keyring_project", "host_address", "user_id", "expected_keyring_sha256"];
+        "keyring_path", "keyring_password_env", "keyring_project", "host_address", "user_id", "expected_keyring_sha256", "group_security_profile"];
 
     private static bool IsConnectionTool(string name) => name is "bus_discover" or "bus_connect" or "bus_disconnect" or "bus_read" or "bus_scan" or "bus_device_info" or "bus_tool_identity_read" or "download_plan";
     private static string SafeConnectionFailure(Exception error) => "KNX connection operation failed: " + (error switch
@@ -37,6 +38,9 @@ public sealed partial class McpServer
                 || name is "confirm_current_state" or "state_trust" or "wire_tpdu_capacity" or "ordinary_p2p_key_sha256"))
                 throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
             if (name is "key" or "tool_key" or "user_key" or "device_key" or "authentication" or "authentication_code" or "device_authentication_code"
+                or "group_key" or "group_keys" or "integrity_key" or "counter_state" or "counter_path" or "counter_floor" or "counter_next"
+                || name.Contains("integrity", StringComparison.Ordinal) || name.StartsWith("counter_", StringComparison.Ordinal)
+                || name.Contains("secret", StringComparison.Ordinal) || name.EndsWith("_key", StringComparison.Ordinal) || name.EndsWith("_keys", StringComparison.Ordinal)
                 || name.Contains("password", StringComparison.Ordinal) && name != "keyring_password_env")
                 throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
         }
@@ -88,6 +92,21 @@ public sealed partial class McpServer
         if (mode == "ip_secure_udp")
         {
             var secure = ConnectionInput.Explicit(args, defaultOwn);
+            if (args.TryGetProperty("group_security_profile", out var selectedGroup))
+            {
+                if (selectedGroup.ValueKind != JsonValueKind.String || selectedGroup.GetString() is not { Length: > 0 and <= 128 } id
+                    || id.Any(value => !(char.IsAsciiLetterOrDigit(value) || value is '.' or '-' or '_'))
+                    || _groupProfiles is null || secure.Keyring?.ExpectedSourceFingerprint is null)
+                    throw new KnxConnectionException(KnxConnectionFailure.InvalidProfile);
+                try
+                {
+                    var groups = await _groupProfiles.ResolveAsync(id, secure, ct).ConfigureAwait(false);
+                    ct.ThrowIfCancellationRequested(); secure = secure.WithGroupSecurity(groups);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (KnxConnectionException) { throw; }
+                catch { throw new KnxConnectionException(KnxConnectionFailure.GroupSecurityStateUnavailable); }
+            }
             if (_bus.State != BusConnectionState.Connected) _selectedConnectionProfile = secure;
             return secure;
         }
@@ -125,9 +144,12 @@ public sealed partial class McpServer
     {
         _secureConnectionRequested = profile.RequiresAuthentication;
         if (profile.RequiresAuthentication && profile.Keyring is { } reference && security?.KeyringFingerprint is { } fingerprint)
-            _selectedConnectionProfile = KnxConnectionProfile.IpSecure(profile.Gateway,
+        {
+            var selected = KnxConnectionProfile.IpSecure(profile.Gateway,
                 new(reference.Path, reference.ExpectedProjectLabel, reference.HostAddress, reference.UserId, reference.TunnelAddress,
                     reference.PasswordEnvironmentName, fingerprint), profile.PasswordSource, profile.LocalAddress);
+            _selectedConnectionProfile = profile.GroupSecurity is { } groups ? selected.WithGroupSecurity(groups) : selected;
+        }
         else _selectedConnectionProfile = profile;
     }
 
@@ -146,6 +168,7 @@ public sealed partial class McpServer
             ("host_address", "string", "Exact gateway KNX individual address from the selected keyring interface, not its IPv4."),
             ("user_id", "integer", "Exact selected Secure tunnel user, 1..127."),
             ("expected_keyring_sha256", "string", "Optional SHA256 pin of the exact protected export bytes."),
+            ("group_security_profile", "string", "Optional explicit host-provisioned group policy reference. Requires exact source pin and existing trusted ordinary counters; no default registry, bootstrap or secret tool arguments."),
         })
             properties[name] = new JsonObject { ["type"] = type, ["description"] = description };
         return schema;
@@ -167,7 +190,7 @@ public sealed partial class McpServer
 
 internal static class ConnectionInput
 {
-    private static readonly string[] SecureFields = ["keyring_path", "keyring_password_env", "keyring_project", "host_address", "user_id", "expected_keyring_sha256"];
+    private static readonly string[] SecureFields = ["keyring_path", "keyring_password_env", "keyring_project", "host_address", "user_id", "expected_keyring_sha256", "group_security_profile"];
     internal static bool HasSecureFields(JsonElement args) => args.ValueKind == JsonValueKind.Object && SecureFields.Any(name => args.TryGetProperty(name, out _));
     private static string? Text(JsonElement args, string name)
     {

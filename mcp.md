@@ -52,6 +52,14 @@ keyring, exact host/user/tunnel selection and a password environment-variable na
 [Fields, ownership and limits](docs/secure-connections.md). Raw connection passwords
 and keys are refused; Secure failures cannot fall back to plain discovery.
 
+The optional `group_security_profile` reference selects a deliberately configured
+[Data Secure host policy](docs/group-secure-connections.md). The standard host reads
+only an explicit `--group-security-profiles=ABSFILE` registry. Missing registration,
+source pin, trusted existing counters or sender authorization cannot fall back to
+plain traffic. Current-unanchored state requires its separate startup confirmation.
+`bus_read` and live recorder results distinguish Data Secure provenance from gateway
+authentication; raw integrity/group keys and bootstrap arguments are refused.
+
 Typical session: `project_open` or `project_new` → inspect with `project_info` /
 `project_dashboard` → edit with `group_address_*`, `group_link_*`, `device_*`, `smart_link_apply`,
 `product_replace` → verify with `project_check` → `project_save`.

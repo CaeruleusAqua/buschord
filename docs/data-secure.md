@@ -1,5 +1,8 @@
 # KNX Data Secure group communication
 
+The optional [factory/monitor/MCP group connection](group-secure-connections.md)
+uses this existing-state profile; it does not provision or bootstrap an installation.
+
 Explicitly provisioned individual Tool/P2P communication and authenticated client
 synchronization have a separate [library profile](individual-secure.md). Its
 tunnel initializer must complete before management access is published. It does
