@@ -7,6 +7,9 @@ using Knx.App.Workbench;
 using Knx.Bus;
 using Knx.Workbench;
 
+if (args.Contains("--native-group-release-retry"))
+{ Environment.ExitCode = GroupReleaseRetryNativeChecks.Run(); return; }
+
 if (args.Contains("--native-connection"))
 {
     Environment.ExitCode = LiveConnectionNativeChecks.Run(args.Contains("--de") ? "de" : "en");

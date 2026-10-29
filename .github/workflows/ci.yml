@@ -200,6 +200,7 @@ jobs:
         run: |
           dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-group-selection
           dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-group-selection --de
+          dotnet run --project tests/Knx.WorkbenchSessions.Tests -c Release --no-build -- --native-group-release-retry
       - name: Recovery lifecycle regressions (Windows only)
         shell: bash
         run: |

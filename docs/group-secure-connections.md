@@ -128,6 +128,9 @@ M112 and scanning retain the group policy and require explicit plain individual
 allowlists; a group profile grants no Tool/P2P keys or programming permission.
 Project change and close join selection reads, dialogs and connection consumers
 before releasing registry integrity capabilities.
+If consumer cleanup fails, capabilities remain retained. A successful project-
+change retry joins fresh cleanup and releases the previous project's capabilities;
+repeated failure or cancellation cannot force an early release.
 
 ## Evidence and limits
 

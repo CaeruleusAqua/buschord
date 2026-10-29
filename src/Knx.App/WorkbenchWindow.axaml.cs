@@ -53,6 +53,7 @@ public partial class WorkbenchWindow : Window
     private bool _confirmingClose;
     private bool _closingSessionsForExit;
     private readonly List<Task> _pendingSessionDisposals = [];
+    private readonly HashSet<object> _closingGroupProjectLifetimes = new(ReferenceEqualityComparer.Instance);
     private readonly string? _layoutPath;
     private readonly CatalogLibrary _catalogLibrary;
     private Project? _shownProject;
@@ -520,6 +521,7 @@ public partial class WorkbenchWindow : Window
         ToolHost.Content = null;
         var sessions = _sessions;
         var previousLifetime = _sessionIdentity;
+        if (previousLifetime is not null) _closingGroupProjectLifetimes.Add(previousLifetime);
         var connection = _liveConnection;
         _liveConnection = null;
         UpdateConnectionChrome();
@@ -536,13 +538,13 @@ public partial class WorkbenchWindow : Window
         // while an old executor is still unwinding cancellation. Cancellation adds no attempt facts.
         persistence?.Dispose();
         _pendingSessionDisposals.RemoveAll(task => task.IsCompleted);
-        if (sessions is null && _closingConnections.Count == 0 && selectionClose.IsCompletedSuccessfully && !_groupSecurityOwner.HasProject(previousLifetime)) return Task.CompletedTask;
-        var disposal = CompleteSessionDisposalAsync(sessions, _closingConnections.ToArray(), previousLifetime, selectionClose, _pendingSessionDisposals.ToArray());
+        if (sessions is null && _closingConnections.Count == 0 && selectionClose.IsCompletedSuccessfully && _closingGroupProjectLifetimes.Count == 0) return Task.CompletedTask;
+        var disposal = CompleteSessionDisposalAsync(sessions, _closingConnections.ToArray(), previousLifetime, selectionClose, _pendingSessionDisposals.ToArray(), _closingGroupProjectLifetimes.ToArray());
         if (!disposal.IsCompletedSuccessfully) _pendingSessionDisposals.Add(disposal);
         return disposal;
     }
 
-    private async Task CompleteSessionDisposalAsync(WorkbenchSessions? sessions, ReadOnlyWorkbenchConnection[] connections, object? previousLifetime, Task selectionClose, Task[] previousDisposals)
+    private async Task CompleteSessionDisposalAsync(WorkbenchSessions? sessions, ReadOnlyWorkbenchConnection[] connections, object? previousLifetime, Task selectionClose, Task[] previousDisposals, object[] closingGroupProjects)
     {
         sessions?.Monitor.Stop();
         var closing = connections.Select(connection => connection.DisposeAsync().AsTask()).ToArray();
@@ -550,7 +552,9 @@ public partial class WorkbenchWindow : Window
         try
         {
             var consumersEnded = Task.WhenAll(closing.Append(sessionClose).Append(selectionClose).Concat(previousDisposals));
-            await Task.WhenAll(consumersEnded, _groupSecurityOwner.ReleaseProjectAfterAsync(previousLifetime, consumersEnded));
+            var releases = closingGroupProjects.Select(lifetime => _groupSecurityOwner.ReleaseProjectAfterAsync(lifetime, consumersEnded)).ToArray();
+            await Task.WhenAll(releases.Prepend(consumersEnded));
+            foreach (var lifetime in closingGroupProjects) _closingGroupProjectLifetimes.Remove(lifetime);
             foreach (var connection in connections) _closingConnections.Remove(connection);
         }
         catch { if (ReferenceEquals(previousLifetime, ViewModel.ProjectSessionIdentity)) ViewModel.Status = LiveConnectionStrings.Get("CleanupFailed"); throw; }
