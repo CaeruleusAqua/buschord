@@ -16,6 +16,7 @@ if (args.Contains("--performance-budget") || args.Contains("--performance-budget
 }
 if (args.Contains("--performance")) return NativePerformanceChecks.Run();
 if (args.Contains("--projection-refresh")) return WorkbenchRefreshChecks.Run();
+if (args.Contains("--bus-diagram")) return BusDiagramChecks.Run(args.Contains("--de") ? "de" : "en");
 if (args.Contains("--dialogs")) return DialogChecks.Run(args.Contains("--de") ? "de" : "en");
 if (args.Contains("--history-dialogs")) return DialogChecks.Run(args.Contains("--de") ? "de" : "en", true);
 
@@ -496,6 +497,10 @@ try
     }
     finally { Knx.Strings.Language = language; }
 
+    var diagramLanguage = Knx.Strings.Language;
+    Knx.Strings.Language = "en";
+    BusDiagramChecks.Projection(Check);
+    Knx.Strings.Language = diagramLanguage;
     AppUpdateServiceChecks.Run(Check);
     Console.WriteLine($"WORKBENCH UI STATE OK ({checks})");
 }

@@ -24,6 +24,7 @@ namespace Knx.App;
 public partial class WorkbenchWindow : Window
 {
     private readonly ParameterPane _parameters;
+    private readonly Dictionary<WorkbenchTab, BusDiagramView> _busDiagrams = [];
     private readonly ParameterEditingSession _parameterSession;
     private readonly ComboBox _parameterDevice = new() { MinWidth = 240, Margin = new(0, 0, 0, 12) };
     private readonly StackPanel _modePanel = new() { Margin = new(0, 12, 0, 0), Spacing = 8, MaxWidth = 540, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
@@ -289,7 +290,7 @@ public partial class WorkbenchWindow : Window
     private void BuildRepresentationTabs()
     {
         Representations.Children.Clear();
-        foreach (var (key, title) in new[] { ("objects", W("CommunicationObjects")), ("params", W("Parameters")), ("relations", W("Relations")), ("overview", W("Overview")) })
+        foreach (var (key, title) in new[] { ("objects", W("CommunicationObjects")), ("params", W("Parameters")), ("relations", W("Relations")), ("overview", W("Overview")), ("diagram", W("BusDiagram")) })
         {
             var view = key;
             var tab = new TabItem { Header = title, Tag = view, Margin = new Thickness(0, 0, 18, 0) };
@@ -654,7 +655,7 @@ public partial class WorkbenchWindow : Window
 
     public void SetRepresentation(string view)
     {
-        if (view is not ("objects" or "params" or "relations" or "overview")) throw new ArgumentException("Unknown representation.", nameof(view));
+        if (view is not ("objects" or "params" or "relations" or "overview" or "diagram")) throw new ArgumentException("Unknown representation.", nameof(view));
         if (Workspace.ActiveTab is not { } tab) return;
         tab.View = view;
         RefreshEditor();
@@ -697,6 +698,7 @@ public partial class WorkbenchWindow : Window
             if (p is not null && Workspace.Tabs.Count == 0) Workspace.Open(new("project", p.Id), p.Name);
             EnsureSessions();
             foreach (var tab in Workspace.Tabs.Where(t => t.Target.Kind != "tool" && WorkbenchProjection.Resolve(p, t.Target) is null).ToArray()) Workspace.Close(tab);
+            foreach (var closed in _busDiagrams.Keys.Where(t => !Workspace.Tabs.Contains(t)).ToArray()) _busDiagrams.Remove(closed);
             foreach (var tab in Workspace.Tabs) tab.Title = TargetTitle(WorkbenchProjection.Resolve(p, tab.Target), tab.Target);
             ProjectName.Text = p?.Name ?? "BusChord";
             ProjectSummary.Text = p is null ? W("OpenOrCreateProject") : W("DeviceLineSummary", ProjectQuery.DeviceList(p).Count(), WorkbenchProjection.Lines(p).Count());
@@ -847,12 +849,14 @@ public partial class WorkbenchWindow : Window
                 : tool ? W("ToolSubtitle") : ViewModel.Project is { } p
                     ? W("ScopeSummary", WorkbenchProjection.Devices(p, tab.Target).Count()) : "";
             Representations.IsVisible = tab is not null && !tool;
-            var workItem = tab is not null && !tool && tab.Target.Kind is not "project";
+            var workItem = tab is not null && !tool && tab.Target.Kind is not "project" && tab.View != "diagram";
             WatchButton.IsVisible = AddDeviceButton.IsVisible = InspectorButton.IsVisible = workItem;
             TableViewport.IsVisible = TableHost.IsVisible = tab is not null && !tool && tab.View == "objects";
             ObjectToolbar.IsVisible = TableHost.IsVisible;
+            TableFootnote.IsVisible = TableHost.IsVisible;
             ParametersHost.IsVisible = !tool && tab?.View == "params";
             RelationsHost.IsVisible = !tool && tab?.View == "relations";
+            DiagramHost.IsVisible = !tool && tab?.View == "diagram";
             ToolPageHost.IsVisible = tool || tab is null || tab.View == "overview";
             IReadOnlyList<WorkbenchRow>? rows = null;
             DeviceRow? current = null;
@@ -862,7 +866,7 @@ public partial class WorkbenchWindow : Window
                 if (ObjectSearch.Text != tab.Filter) ObjectSearch.Text = tab.Filter;
                 Unlinked.IsChecked = tab.UnlinkedOnly;
                 RelatedBox.IsChecked = tab.IncludeRelated;
-                rows = ViewModel.Project is { } project ? WorkbenchProjection.Rows(project, tab) : [];
+                rows = tab.View != "diagram" && ViewModel.Project is { } project ? WorkbenchProjection.Rows(project, tab) : [];
                 _scrollRestorePending = true;
                 var restoreVersion = ++_scrollRestoreVersion;
                 ObjectTable.ItemsSource = rows;
@@ -885,6 +889,23 @@ public partial class WorkbenchWindow : Window
                     UpdateModePreview();
                 }
                 if (RelationsHost.IsVisible) RelationsHost.Content = CreateRelationsView();
+                if (DiagramHost.IsVisible && ViewModel.Project is { } diagramProject)
+                {
+                    Subtitle.Text = W("ProjectOverview") + " · " + W("DeviceLineSummary", ProjectQuery.DeviceList(diagramProject).Count(), WorkbenchProjection.Lines(diagramProject).Count());
+                    if (!_busDiagrams.TryGetValue(tab, out var busDiagram) || busDiagram.Language != Knx.Strings.Language)
+                    {
+                        var priorDiagram = busDiagram;
+                        busDiagram = new BusDiagramView(target => OpenTarget(target, "objects"));
+                        busDiagram.SelectionChanged += (_, _) =>
+                        {
+                            if (!_refreshing && Workspace.ActiveTab == tab && tab.View == "diagram") RefreshInspector([]);
+                        };
+                        if (priorDiagram is not null) busDiagram.RestoreViewport(priorDiagram);
+                        _busDiagrams[tab] = busDiagram;
+                    }
+                    DiagramHost.Content = busDiagram;
+                    busDiagram.Refresh(diagramProject, tab.Target.Kind + ":" + tab.Target.Id);
+                }
                 if (tool && tab.Target.Id == "catalog")
                 {
                     var sameProject = ReferenceEquals(_catalogProject, ViewModel.ProjectSessionIdentity);
@@ -899,7 +920,7 @@ public partial class WorkbenchWindow : Window
                 else if (tab.View == "overview") ToolPageHost.Content = CreateProblemsView(tab.Target);
                 for (var i = 0; i < Representations.Children.Count; i++)
                 {
-                    var activeView = new[] { "objects", "params", "relations", "overview" }[i] == tab.View;
+                    var activeView = new[] { "objects", "params", "relations", "overview", "diagram" }[i] == tab.View;
                     if (Representations.Children[i] is TabItem representation) representation.IsSelected = activeView;
                     AutomationProperties.SetItemStatus(Representations.Children[i], activeView ? W("Selected") : "");
                 }
@@ -1997,6 +2018,19 @@ public partial class WorkbenchWindow : Window
             return;
         }
         var tab = Workspace.ActiveTab;
+        if (tab?.View == "diagram" && _busDiagrams.TryGetValue(tab, out var diagram))
+        {
+            InspectorBody.Children.Add(Label(W("BusDiagram")));
+            var node = diagram.Layout.Nodes.FirstOrDefault(n => n.Key == diagram.SelectedKey);
+            if (node is null) InspectorBody.Children.Add(Note(W("DiagramChoose")));
+            else
+            {
+                InspectorBody.Children.Add(Label(node.Title));
+                InspectorBody.Children.Add(Note(node.Detail));
+                if (node.Target is { } target) FooterAction(ActionButton(W("DiagramOpen"), () => OpenTarget(target, "objects")));
+            }
+            return;
+        }
         rows ??= ViewModel.Project is { } p && tab is not null ? WorkbenchProjection.Rows(p, tab) : [];
         var selected = tab is not null
             ? rows.Where(r => r.Object is not null && tab.SelectedObjectIds.Contains(r.Key)).ToList() : [];

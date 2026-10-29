@@ -120,8 +120,8 @@ Die Produktoberfläche ist eine objektbezogene Workbench:
   Darstellung, Filter, Auswahl, Aufklappzustand und Scrollposition. `+` öffnet die
   Befehlssuche, das Kreuz schließt den Tab, `Strg+Tab` wechselt zum nächsten Tab.
 - **Editor** – Breadcrumb, Titel, **Beobachten**, **+ Gerät**, **Eigenschaften**
-  und die Darstellungen **Kommunikationsobjekte**, **Parameter**, **Beziehungen**
-  und **Prüfung**.
+  und die Darstellungen **Kommunikationsobjekte**, **Parameter**, **Beziehungen**,
+  **Prüfung** und **Busdiagramm**.
 - **Inspektor** – rechts, standardmäßig ausgeblendet; Bereichswähler
   **Eigenschaften**, **Gruppen**, **Suche**, **Arbeitsbereiche**, **Vorgänge**.
   Die Fußaktionen bleiben beim Scrollen sichtbar.
@@ -135,6 +135,23 @@ Die Anzeigen **OFFLINE** und „Lokal · keine Busverbindung“ sind feste Hinwe
 keine umschaltbaren Zustände.
 
 ### 2.5 Navigation, Suche und Auswahl
+
+**Busdiagramm.** Die Darstellung **Busdiagramm** zeigt die gesamte vorhandene
+Projektstruktur: Installationen, Bereiche, Linien, Segmente und Geräte. Auch leere
+Container sowie direkt am Bereich oder an der Linie abgelegte Geräte bleiben
+sichtbar. Die Linien zeigen diese Zuordnung; sie beschreiben keine ermittelte
+Verdrahtung und keinen Live-Zustand. **Koppler** erscheint nur bei belegten
+Hersteller-Hardwaredaten. Segmentmedien erben gegebenenfalls das Linienmedium.
+
+Klicken wählt einen Knoten. **Im Editor öffnen**, Enter oder Doppelklick öffnet
+Geräte und Linien im vorhandenen Editor; Segmente öffnen ihre zugehörige Linie.
+Der Inspektor zeigt die Diagrammauswahl lesend; Bearbeiten beginnt im geöffneten Editor.
+Links/Rechts wechseln zum Eltern-/Kindknoten, Auf/Ab zum nächsten Knoten derselben
+Spalte, Pos1/Ende zum ersten/letzten Knoten. **Einpassen**, **100 %**, +/− und
+Strg+Mausrad steuern den Zoom; Ziehen am freien Hintergrund oder mit der mittleren
+Maustaste verschiebt den Ausschnitt. Große Diagramme bleiben scrollbar, statt
+beim Einpassen auf unlesbar kleine Punkte zu schrumpfen. Auswahl und Zoom bleiben
+beim Tabwechsel erhalten; Projektänderungen und Undo/Redo aktualisieren die Ansicht.
 
 - Ein Klick auf einen Knoten mit Arbeitsgegenstand (Projekt, Raum, Linie, Gerät,
   Gruppenadresse) öffnet den zugehörigen Tab. Der Pfeil links klappt Kinder auf

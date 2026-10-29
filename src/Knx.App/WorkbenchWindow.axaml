@@ -285,6 +285,7 @@
                        AutomationProperties.Name="{loc:Wb TableFootnoteName}" AutomationProperties.LiveSetting="Polite"/>
             <ContentControl x:Name="ParametersHost" Grid.RowSpan="2" IsVisible="False" Margin="24,12"/>
             <ContentControl x:Name="RelationsHost" Grid.RowSpan="2" IsVisible="False" Margin="24,12"/>
+            <ContentControl x:Name="DiagramHost" Grid.RowSpan="2" IsVisible="False" Margin="24,12"/>
             <ContentControl x:Name="ToolPageHost" Grid.RowSpan="2" IsVisible="False" Margin="24,12"/>
           </Grid>
         </Grid>
