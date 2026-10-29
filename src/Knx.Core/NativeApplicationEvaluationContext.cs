@@ -61,14 +61,18 @@ internal sealed class NativeApplicationEvaluationContext
     }
     internal static NativeApplicationEvaluationContext Create(Project project, DeviceInstance device, ArchivedImageSources.Inputs inputs,
         IReadOnlyCollection<string>? additionalControllerRefs = null, IParameterScriptRuntime? scripts = null)
+        => CreateProfile(project, device, inputs, additionalControllerRefs, scripts, false);
+
+    internal static NativeApplicationEvaluationContext CreateProfile(Project project, DeviceInstance device, ArchivedImageSources.Inputs inputs,
+        IReadOnlyCollection<string>? additionalControllerRefs, IParameterScriptRuntime? scripts, bool admitRootUnions)
     {
-        try { return Mint(project, device, inputs, additionalControllerRefs, scripts); }
+        try { return Mint(project, device, inputs, additionalControllerRefs, scripts, admitRootUnions); }
         catch (NativeCommunicationRejected failure) { return new(failure.Issue); }
         catch (Exception failure) when (failure is XmlException or InvalidDataException or FormatException or OverflowException or ArgumentException or InvalidOperationException)
         { return new(new(GeneratedTableIssueCode.InvalidApplication)); }
     }
     private static NativeApplicationEvaluationContext Mint(Project project, DeviceInstance device, ArchivedImageSources.Inputs inputs,
-        IReadOnlyCollection<string>? additionalRefs, IParameterScriptRuntime? scripts)
+        IReadOnlyCollection<string>? additionalRefs, IParameterScriptRuntime? scripts, bool admitRootUnions)
     {
         if (inputs.Manifest.Status != ArchivedImageSourceStatus.Inspected || inputs.Application is null || inputs.Manifest.Binding is null
             || !inputs.Manifest.Binding.MatchesIdentity(project, device) || inputs.Manifest.ApplicationDefinitionHash is null)
@@ -104,7 +108,7 @@ internal sealed class NativeApplicationEvaluationContext
         additional = additional.Concat(catalog.StructuralPlan.CallControllerReferences).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).Take(4097).ToArray();
         if (additional.Length > 4096 || additional.Any(id => !NativeCommunicationGuard.Safe(id))) NativeCommunicationGuard.Fail(GeneratedTableIssueCode.LimitExceeded);
         DependencyGate(sourceScopes, additional);
-        NativeActivationProof.ValidateControllerDeclarations(sourceScopes, additional);
+        NativeActivationProof.ValidateControllerDeclarationsProfile(sourceScopes, additional, admitRootUnions);
         var values = new Dictionary<string, string?>(captured.Values, StringComparer.Ordinal);
         foreach (var pair in captured.Values)
         {
@@ -127,7 +131,7 @@ internal sealed class NativeApplicationEvaluationContext
                 NativeCommunicationGuard.Fail(GeneratedTableIssueCode.LimitExceeded);
             effective.Add(pair.Key, pair.Value.Value);
         }
-        var activation = NativeActivationProof.Create(catalog, application, snapshot, effective, additional);
+        var activation = NativeActivationProof.CreateProfile(catalog, application, snapshot, effective, additional, admitRootUnions);
         if (!activation.IsAvailable) throw new NativeCommunicationRejected(activation.Issues[0]);
         var structure = NativeStructuralActivationProof.CreateResolved(catalog, snapshot, activation);
         if (!structure.IsAvailable) throw new NativeCommunicationRejected(structure.Issues[0]);

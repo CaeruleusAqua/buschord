@@ -27,17 +27,26 @@ internal sealed partial class NativeRootImageInventory
             CheckValue(raw, key); if ((text += key.Length + raw.Length) > TextLimit) NativeGeneralHash.Fail(NativeGeneralIssueCode.LimitExceeded);
         }
     }
-    private static Dictionary<string, XElement> Index(XElement? container, XName child)
+    private static Dictionary<string, XElement> Index(XElement? container, XName child, bool unicodeIds = false)
     {
         var result = new Dictionary<string, XElement>(StringComparer.Ordinal);
         if (container is null) return result;
         if (container.Attributes().Any(a => !a.IsNamespaceDeclaration) || container.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value)))
             NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration);
         foreach (var item in container.Elements())
-            if (item.Name != child || result.Count >= 100000 || !result.TryAdd(RootBuildGuard.Id(item), item)) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration);
+            if (item.Name != child || result.Count >= 100000 || !result.TryAdd(SourceId(item, "Id", unicodeIds), item)) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration);
         return result;
     }
-    private static Dictionary<string, ParameterType> ParseTypes(Dictionary<string, XElement> types, XNamespace ns)
+    private static string SourceId(XElement element, string name, bool unicode)
+    {
+        if (!unicode) return RootBuildGuard.Id(element, name);
+        var value = (string?)element.Attribute(name);
+        if (value is not { Length: > 0 and <= 256 } || value.Any(char.IsControl)) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration);
+        try { System.Xml.XmlConvert.VerifyNCName(value!); }
+        catch (System.Xml.XmlException) { NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration); }
+        return value!;
+    }
+    private static Dictionary<string, ParameterType> ParseTypes(Dictionary<string, XElement> types, XNamespace ns, bool admitNone = false)
     {
         var result = new Dictionary<string, ParameterType>(StringComparer.Ordinal); var total = 0;
         foreach (var (id, declaration) in types)
@@ -46,6 +55,13 @@ internal sealed partial class NativeRootImageInventory
             if (shapes.Length != 1 || shapes[0].Name.Namespace != ns || declaration.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value)))
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration, id);
             var shape = shapes[0];
+            if (admitNone && shape.Name.LocalName == "TypeNone")
+            {
+                RootBuildGuard.Leaf(shape);
+                if (shape.HasAttributes) NativeGeneralHash.Fail(NativeGeneralIssueCode.InvalidDeclaration, id);
+                result.Add(id, new ParameterType { Id = id, Name = id, DataType = ParameterDataType.None });
+                continue;
+            }
             if (shape.Name.LocalName is "TypeFloat" or "TypeTime")
             {
                 if (OfflineParameterPatch.PreflightWordDeclaration(shape) is { } extendedIssue)
@@ -117,12 +133,13 @@ internal sealed partial class NativeRootImageInventory
         if (pdt.Status != PropertyPdtStatus.KnownSymmetric || pdt.WriteElementBytes is not > 0) NativeGeneralHash.Fail(NativeGeneralIssueCode.UnsupportedMapping, id);
         return (new(NativeImageSpace.PropertyData, Selector: normalized), raw, pdt);
     }
-    private static void CheckOwners(List<NativeRootOwner> owners)
+    private void CheckOwners(List<NativeRootOwner> owners)
     {
         foreach (var family in owners.Where(o => o.Target.Space == NativeImageSpace.PropertyData).GroupBy(o => o.Target.Selector!.PropertyId))
             if (family.Any(o => o.Target.Selector!.Kind == PropertySourceKind.ByType) && family.Any(o => o.Target.Selector!.Kind != PropertySourceKind.ByType))
                 NativeGeneralHash.Fail(NativeGeneralIssueCode.AmbiguousMapping);
-        foreach (var group in owners.GroupBy(o => o.Target))
+        var physical = owners.Where(o => !UnionByParameter.ContainsKey(o.ParameterId)).Concat(Unions.Select(u => u.DefaultOwner));
+        foreach (var group in physical.GroupBy(o => o.Target))
         {
             ulong end = 0; var first = true;
             foreach (var owner in group.OrderBy(o => (ulong)o.ByteOffset * 8 + o.BitOffset))

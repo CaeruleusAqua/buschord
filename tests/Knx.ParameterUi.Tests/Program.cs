@@ -10,6 +10,18 @@ using Knx.App.Views;
 using Knx.Catalog;
 
 if (args.Contains("--native")) return NativeDraftChecks.Run(args.Contains("--shots"));
+if (args.Contains("--m112-download"))
+{
+    var target = Path.Combine(Path.GetTempPath(), "buschord-m112-download-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(target);
+    return await M112DownloadChecks.RunAsync(target);
+}
+if (args.Contains("--m112-unions"))
+{
+    var target = Path.Combine(Path.GetTempPath(), "buschord-m112-unions-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(target);
+    return M112UnionBuildChecks.Run(target);
+}
 
 var failures = 0;
 void Check(string name, bool ok)
@@ -78,6 +90,8 @@ try
     failures += NativeGeneralInitializationChecks.Run(directory);
     failures += NativeGeneralImageBuildChecks.Run(directory);
     failures += NativeImageBuildPublicChecks.Run(directory);
+    failures += M112UnionBuildChecks.Run(directory);
+    failures += await M112DownloadChecks.RunAsync(directory);
     failures += NativeImageCoalescingChecks.Run(directory);
     failures += NativeImageGrowthBuildChecks.Run(directory);
     failures += NativeImageScalarBuildChecks.Run(directory);

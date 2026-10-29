@@ -55,11 +55,28 @@ public static class ManagementApdu
         return [0x02, count, (byte)(address >> 8), (byte)address];
     }
 
+    public static byte[] WriteMemory(ushort address, ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length is < 1 or > 12 || address + bytes.Length > 0x10000)
+            throw new ArgumentOutOfRangeException(nameof(bytes));
+        return [0x02, (byte)(0x80 | bytes.Length), (byte)(address >> 8), (byte)address, .. bytes];
+    }
+
     public static byte[] ReadProperty(byte objectIndex, byte propertyId, ushort start = 1, byte count = 1)
     {
         if (start > 0xFFF || count is < 1 or > 15 || (start == 0 && count != 1))
             throw new ArgumentOutOfRangeException(nameof(start));
         return [0x03, 0xD5, objectIndex, propertyId, (byte)((count << 4) | (start >> 8)), (byte)start];
+    }
+
+    public static byte[] WriteProperty(byte objectIndex, byte propertyId, ushort start, byte count,
+        ReadOnlySpan<byte> bytes)
+    {
+        if (start > 0xFFF || count is < 1 or > 15 || (start == 0 && count != 1)
+            || start + count > 0x1000)
+            throw new ArgumentOutOfRangeException(nameof(start));
+        if (bytes.Length is < 1 or > 10) throw new ArgumentOutOfRangeException(nameof(bytes));
+        return [0x03, 0xD7, objectIndex, propertyId, (byte)((count << 4) | (start >> 8)), (byte)start, .. bytes];
     }
 
 }
