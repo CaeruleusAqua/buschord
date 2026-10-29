@@ -7,6 +7,7 @@ internal sealed partial class NativeRootWriterPopulation
     private readonly NativeApplicationEvaluationContext? _application;
     private readonly IReadOnlyList<NativeRootHydratedReference> _values = Array.Empty<NativeRootHydratedReference>();
     private readonly IReadOnlyDictionary<string, int> _active = new Dictionary<string, int>();
+    private readonly IReadOnlySet<string> _selectedModuleInstances = new HashSet<string>(StringComparer.Ordinal);
     internal bool IsAvailable => Fingerprint is not null && Issues.Count == 0;
     internal IReadOnlyList<NativeGeneralIssue> Issues { get; } = Array.Empty<NativeGeneralIssue>();
     internal string? Fingerprint { get; }
@@ -50,6 +51,7 @@ internal sealed partial class NativeRootWriterPopulation
             counts[id!] = checked(counts.GetValueOrDefault(id!) + 1);
         }
         _active = new System.Collections.ObjectModel.ReadOnlyDictionary<string, int>(counts);
+        _selectedModuleInstances = application.Structure!.Occurrences.Select(o=>o.Frame!.InstanceId).ToHashSet(StringComparer.Ordinal);
         _values = inventory.Hydrate(application);
         CurrentValuesHash = NativeGeneralHash.Of(_values.Select(v => new { v.Reference.RefId, v.Origin, v.CurrentHash, v.DefaultHash, v.CurrentWord, v.DefaultWord }).ToArray());
         if (_values.Any(v => v.CurrentBytes is not null)) CurrentValuesHash = NativeGeneralHash.Of(new { profile = 4, previous = CurrentValuesHash,
@@ -78,6 +80,13 @@ internal sealed partial class NativeRootWriterPopulation
                 {
                     var reference = value.Reference; var owner = reference.Owner; var count = _active.GetValueOrDefault(reference.RefId); var active = count != 0;
                     var excluded = variant.ExcludeCustomerParameters && reference.CustomerAdjustable;
+                    if (_inventory!.Modules?.IsUninstantiatedReference(reference.RefId, _selectedModuleInstances) == true)
+                    {
+                        if(active)NativeGeneralHash.Fail(NativeGeneralIssueCode.ContextMismatch,reference.RefId);
+                        records.Add(new(reference.RefId,reference.ParameterId,reference.ParameterTypeId,RootParameterDisposition.ModuleNotInstantiated,
+                            false,0,reference.Always,reference.CustomerAdjustable,value.Origin,value.CurrentHash,null,false,false,false,excluded,null));
+                        continue;
+                    }
                     if (owner is null)
                     {
                         records.Add(new(reference.RefId, reference.ParameterId, reference.ParameterTypeId, RootParameterDisposition.NoStorage,
@@ -160,7 +169,9 @@ internal sealed class NativeRootVariantPopulation
     internal IReadOnlyList<NativeRootOwner> DeclaredOwners => _inventory?.Owners ?? Array.Empty<NativeRootOwner>();
     internal IReadOnlyList<NativeModuleImageAllocation> ModuleAllocations => _inventory?.Modules?.Allocations ?? Array.Empty<NativeModuleImageAllocation>();
     internal IReadOnlyList<NativeRootOwner> ModuleReservations => _inventory?.Modules?.ReservationOwners ?? Array.Empty<NativeRootOwner>();
-    internal IReadOnlyList<ApplicationModuleInstance> ModuleInstances => _inventory?.Modules?.Instances ?? Array.Empty<ApplicationModuleInstance>();
+    internal IReadOnlyList<ApplicationModuleInstance> ModuleInstances => _inventory?.Modules is {IsConditional:true}
+        ? _application?.Snapshot?.ModuleInstances ?? Array.Empty<ApplicationModuleInstance>() : _inventory?.Modules?.Instances ?? Array.Empty<ApplicationModuleInstance>();
+    internal IReadOnlyList<ApplicationModuleInstance> PotentialModuleInstances => _inventory?.Modules?.Instances ?? Array.Empty<ApplicationModuleInstance>();
     internal NativeRootTaskDisposition ParameterTaskDisposition { get; }
     internal NativeRootCustomerPolicy CustomerPolicy { get; }
     internal string? Fingerprint { get; }

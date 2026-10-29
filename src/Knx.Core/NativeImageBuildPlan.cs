@@ -79,6 +79,7 @@ public sealed class NativeImageBuildPopulation
     public IReadOnlyList<NativeImageBuildModuleAllocation> ModuleAllocations { get; }
     public IReadOnlyList<NativeImageBuildModuleReservation> ModuleReservations { get; }
     public IReadOnlyList<ApplicationModuleInstance> ModuleInstances { get; }
+    public IReadOnlyList<ApplicationModuleInstance> PotentialModuleInstances { get; }
     public bool ParameterTaskScheduled { get; }
     public bool CompleteAdmittedRootPopulation => ParameterTaskScheduled;
     public string CustomerPolicy { get; }
@@ -86,6 +87,7 @@ public sealed class NativeImageBuildPopulation
     public int OwnerCount { get; }
     public int PhysicalRecordCount => Records.Count(r => r.NativeRecordEmitted);
     public int NoStorageCount => Records.Count(r => r.Disposition == RootParameterDisposition.NoStorage);
+    public int ModuleNotInstantiatedCount => Records.Count(r => r.Disposition == RootParameterDisposition.ModuleNotInstantiated);
     public int ActiveCount => Records.Count(r => r.Active);
     public int AlwaysCount => Records.Count(r => r.Disposition == RootParameterDisposition.AlwaysValue);
     public int InactiveCount => Records.Count(r => r.NativeRecordEmitted && !r.Active && !r.LegacyPatchAlways);
@@ -98,6 +100,8 @@ public sealed class NativeImageBuildPopulation
     {
         ModuleOriginsFingerprint = population.ModuleOriginsFingerprint;
         ModuleInstances = Array.AsReadOnly(population.ModuleInstances.Select(i=>new ApplicationModuleInstance(i.Id,i.RefId,i.RepeatIndex,
+            Array.AsReadOnly(i.Arguments.Select(a=>new ApplicationModuleArgument(a.RefId,a.Value)).ToArray()))).ToArray());
+        PotentialModuleInstances = Array.AsReadOnly(population.PotentialModuleInstances.Select(i=>new ApplicationModuleInstance(i.Id,i.RefId,i.RepeatIndex,
             Array.AsReadOnly(i.Arguments.Select(a=>new ApplicationModuleArgument(a.RefId,a.Value)).ToArray()))).ToArray());
         ModuleAllocations = Array.AsReadOnly(population.ModuleAllocations.Select(a=>new NativeImageBuildModuleAllocation(a.InstanceId,
             a.ArgumentId,a.AllocatorId,a.Value,a.Allocates,a.Alignment,a.PoolStart,a.PoolMaximumInclusive,a.Usage)).ToArray());

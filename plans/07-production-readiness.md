@@ -31,7 +31,9 @@ Einzelgeräteversuche ersetzen diese Endabnahme nicht.
 
 - Der gemeinsame logische Imagepfad enthält ein begrenztes synthetisch geprüftes
   Modul-/Repeat-/Root-Allocator-Speicherprofil mit vollständigen Ursprüngen,
-  latenten Besitzern und Reservierungen. Bedingte/verschachtelte Module, weitere
+  latenten Besitzern und Reservierungen. Ein begrenzter direkter bedingter Fall
+  erhält alle potenziellen Besitzer und gespeicherten Werte; ungewählte Instanzen
+  schreiben nichts. Weitere bedingte/verschachtelte Module, weitere
   Speicherträger und Hersteller-Imagebelege bleiben offen; die vollständige
   Image-/Ausführungs-/Downloadfreigabe ist davon unberührt.
 - Ausgangspunkt: `415a2db`. Der gebundene M112-Änderungspfad hat 32 gezielte

@@ -433,6 +433,11 @@ fields, including latent owners; allocations expose alignment and inclusive pool
 bounds. Instance arguments expose only count and hash. These are synthetic logical
 image facts; actual options, complete-image, execution and download flags remain false.
 
+The bounded conditional direct-module case additionally reports
+`potentialModuleInstancesTotal`, its complete hash and `moduleNotInstantiatedCount`.
+Uninstantiated references have no native record or writes; retained saved values
+remain part of the source binding. See the same profile limits in the status document.
+
 The same native logical pipeline also accepts direct byte-aligned root Memory
 RawData: strict Base64, declared `MaxSize + 4` capacity, a program-byte-order
 32-bit length prefix and opaque payload. The writer touches only the actual frame;
