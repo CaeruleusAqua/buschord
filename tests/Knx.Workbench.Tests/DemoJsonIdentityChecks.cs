@@ -18,8 +18,15 @@ internal static class DemoJsonIdentityChecks
         var legacyNode = JsonNode.Parse(legacyJson)!.AsObject();
         Check("null GUID keeps schema1 and original project shape", legacy.Guid is null && legacyNode["version"]!.GetValue<int>() == 4
             && legacyNode["data"]!["schemaVersion"]!.GetValue<int>() == 1 && !legacyNode["data"]!["project"]!.AsObject().ContainsKey("guid"));
-        Check("legacy profile1 output is byte unchanged", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(legacyJson)))
-            == "DDB879A9C8F24B64575D2F3FC6BCA5012F24707D84EC267410561183DDFDDF5E");
+        var (legacySize, legacyHash) = Environment.NewLine switch
+        {
+            "\r\n" => (22823, "DDB879A9C8F24B64575D2F3FC6BCA5012F24707D84EC267410561183DDFDDF5E"),
+            "\n" => (21881, "D497C8160D7C5690CACB1C6AAEB71E23CBEC80A4ACC2E0A5013E4ACBCF93BA91"),
+            _ => throw new InvalidOperationException("Unsupported platform newline.")
+        };
+        var legacyBytes = Encoding.UTF8.GetBytes(legacyJson);
+        Check("legacy profile1 output is byte unchanged on this platform", legacyBytes.Length == legacySize
+            && Convert.ToHexString(SHA256.HashData(legacyBytes)) == legacyHash);
         Check("legacy profile1 import/export stays exact", WorkbenchJson.Export(WorkbenchJson.Import(legacyJson)) == legacyJson);
         Check("legacy nullable room fields remain present", legacyNode["data"]!["gas"]!.AsArray().Any(group => group!.AsObject().ContainsKey("room") && group["room"] is null));
         const string spelling = "{AbCdEf01-2345-6789-aBCD-eF0123456789}";
