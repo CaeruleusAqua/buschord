@@ -723,10 +723,13 @@ manual input or acoustic screenreader acceptance.
 
 KNXnet/IP discovery, tunnel/routing and management foundations have synthetic and
 loopback checks, with a bounded read-only connection path. Workbench monitor, scan
-and programming sessions are labelled simulations. Device writes and real downloads
-remain disabled. Secure tunnelling, complete images, complete load flows and real
-management/Verify/commissioning remain incomplete.
+and programming sessions are labelled simulations. General device writes and application
+downloads remain disabled. An explicit console-only MDT M112 programming-mode test
+has live identity, write, readback and restoration evidence for one released device;
+see [targeted commissioning](commissioning.md). Secure tunnelling, complete images,
+complete load flows and general management/Verify/commissioning remain incomplete.
 
-Hardware acceptance is deferred by user decision because no isolated rig is
-available. Live write tests require a separate explicit test scope. See the
-[implementation plan](../plans/00-gesamtplan.md).
+General hardware acceptance remains open. Since 2026-10-29, the user has explicitly
+released one device in the existing installation for targeted programming/write tests.
+This does not authorize other targets or replace broader hardware acceptance. See the
+[targeted test plan](../plans/06-commissioning.md).

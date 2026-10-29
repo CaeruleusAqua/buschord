@@ -19,6 +19,10 @@ foreach (var argument in args)
         return CatalogImport.Run(argument["--import-catalogs=".Length..]);
 
 foreach (var argument in args)
+    if (argument.StartsWith("--management-probe=", StringComparison.OrdinalIgnoreCase))
+        return await ManagementProbe.RunAsync(argument["--management-probe=".Length..], args);
+
+foreach (var argument in args)
     if (argument.StartsWith("--bus-probe=", StringComparison.OrdinalIgnoreCase))
         return await BusProbe.RunAsync(argument["--bus-probe=".Length..]);
 

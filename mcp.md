@@ -19,6 +19,11 @@ dotnet run --project src/Knx.Mcp -- --import-catalogs=<folder> # copy them into 
 Use `--no-build` for clients: a `dotnet run` that builds writes MSBuild output to stdout and
 corrupts the protocol stream. After one build the compiled entry point can also be used directly:
 `src/Knx.Mcp/bin/Debug/net10.0/buschord-mcp.dll`.
+
+A separate `--management-probe=<gateway-ip>` console mode provides explicit single-device
+diagnostics and a bounded MDT M112 programming-mode cycle. This is outside the stdio
+tool set; normal MCP write/download restrictions remain in place. See
+[targeted commissioning](docs/commissioning.md) for required arguments and limits.
 The MCP client's `command` must resolve to a .NET 10 host. For a side-by-side
 installation outside `PATH`, configure the full path to that installation's
 `dotnet` executable.

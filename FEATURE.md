@@ -76,8 +76,9 @@ Import- und Parameterprofile sowie die verbleibenden Plug-in-, Dateiformat- und
 Inbetriebnahmeaufgaben stehen im Status und in den Teilplänen.
 
 Die Oberfläche bietet acht Sprachen und Light/Dark. Die vollständige manuelle
-Accessibility-/Plattformabnahme läuft; echte Hardwaretests und die hörbare
-Narrator-Prüfung sind auf Nutzerwunsch vorerst zurückgestellt.
+Accessibility-/Plattformabnahme läuft; ein [gezielter Geräteversuch](plans/06-commissioning.md)
+ist seit 2026-10-29 freigegeben. Die allgemeine Hardware-Abnahme und die hörbare
+Narrator-Prüfung bleiben offen.
 Fokussierte Suchtreffer öffnen per Enter; die Options-Schaltflächen sind bei
 echten 200 % ohne Maximieren erreichbar. Im Projektassistenten sind alle fünf
 Felder einschließlich der fokussierten Zahleneditoren zugänglich benannt.

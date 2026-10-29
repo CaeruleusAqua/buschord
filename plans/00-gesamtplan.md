@@ -25,7 +25,7 @@
 - [x] Windows-Referenzbudget mit 144 Rohmessungen innerhalb aller Latenz- und Speichergrenzen prüfen.
 - [ ] Verbleibende Hersteller-, Speicher- und Dateiformatprofile schließen.
 - [ ] Manuelle UI-, Accessibility- und Plattformabnahme abschließen.
-- [ ] Reale Inbetriebnahme prüfen — auf Nutzerwunsch zurückgestellt; kein isolierter Testaufbau.
+- [ ] Reale Inbetriebnahme prüfen — gezielter Tastertest freigegeben, siehe [Einzelgeräteplan](06-commissioning.md).
 - [x] Geprüften .NET-10-Stand in `development` integrieren.
 - [ ] Veröffentlichung nach verbleibender Abnahme freigeben.
 

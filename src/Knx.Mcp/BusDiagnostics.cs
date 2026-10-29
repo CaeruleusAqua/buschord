@@ -8,7 +8,6 @@ namespace Knx.Mcp;
 /// Short-lived read-only tunnel behind bus_scan / bus_device_info. KnxBus exposes no
 /// management-frame send, so these tools open their own KNXnet/IP tunnelling connection,
 /// send only IndividualAddressRead/DeviceDescriptorRead and close it again.
-/// unverified live: the frames follow the spec but have not been validated against a gateway.
 /// </summary>
 internal static class BusDiagnostics
 {
@@ -36,6 +35,7 @@ internal static class BusDiagnostics
         return devices.FirstOrDefault(d =>
                    d.Name.Contains(gateway, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(d.KnxAddress, gateway, StringComparison.OrdinalIgnoreCase)
+                   || (IPAddress.TryParse(gateway, out var address) && d.ControlEndpoint.Address.Equals(address))
                    || string.Equals(d.ControlEndpoint.ToString(), gateway, StringComparison.OrdinalIgnoreCase))
                ?? throw new InvalidOperationException(
                    $"no gateway matched '{gateway}'; found: " +

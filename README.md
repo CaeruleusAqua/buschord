@@ -33,7 +33,7 @@ review; the badges track `development`.
 | Local history | Opt-in telegram recording with time/filter/context queries, export, backup and retention; optional model/undo checkpoints, independent audit and explicit recovery review. See [workflows](docs/workflows.md) and [recovery](docs/recovery.md). |
 | Native UI | Object-centred tabs, project portfolio, inspector, catalogue and independent tools; keyboard command search, high contrast, light/dark themes and eight UI languages. |
 | MCP | 57 stdio tools, protected open/save, reviewed mass linking, explicit script capability, migration and a bounded Jung SP8 KSP import. |
-| Network | KNXnet/IP discovery, tunnel and routing foundations; device writes and real downloads remain disabled. |
+| Network | KNXnet/IP discovery, tunnel/routing and addressed management; an explicit [MDT M112 programming-mode console test](docs/commissioning.md) with restoration. General device writes and application downloads remain disabled. |
 
 The [status document](docs/status.md) defines exact format, manufacturer, codec,
 script and commissioning boundaries. Supported partial profiles are not a complete
