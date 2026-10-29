@@ -8,6 +8,19 @@ using Knx.Workbench;
 
 internal static class ProgrammingPersistenceHostChecks
 {
+    private static async Task CloseTestHostAsync(WorkbenchWindow? window)
+    {
+        if (window is null || !window.IsVisible) return;
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnClosed(object? sender, EventArgs args) => closed.TrySetResult();
+        window.Closed += OnClosed;
+        try
+        {
+            window.RequestShutdown(); window.Close();
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        finally { window.Closed -= OnClosed; }
+    }
     private static ProgrammingSession Session(WorkbenchWindow window) => ((WorkbenchSessions)typeof(WorkbenchWindow)
         .GetField("_sessions", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!).Programming;
 
@@ -33,7 +46,7 @@ internal static class ProgrammingPersistenceHostChecks
                 && File.Exists(store.PathFor(ProgrammingStateBinding.Create(vm.Project!, path)!))
                 && session.Downloaded.Single().Origin == SessionOrigin.Demo && File.ReadAllBytes(path).SequenceEqual(source));
             var success = session.Downloaded.Single();
-            first.Close(); await Task.Delay(100);
+            await CloseTestHostAsync(first);
             var reopened = new MainWindowViewModel(catalogue); reopened.CreateProject(Knxproj.Load(path), path);
             second = new(reopened, new WorkbenchWorkspace(), Path.Combine(root, "layout.json"), catalogue, store);
             second.Show();
@@ -50,13 +63,14 @@ internal static class ProgrammingPersistenceHostChecks
             reopened.CreateProject(WorkbenchJson.CreateDemo(), null); second.RefreshWorkspace();
             Check("a fresh unsaved project with equal id receives a fresh comparison session", !ReferenceEquals(restored, Session(second))
                 && Session(second).Downloaded.Count == 0);
-            second.Close(); await Task.Delay(100);
+            await CloseTestHostAsync(second);
+            Check("test hosts are closed before the next floating-window scenario", !first.IsVisible && !second.IsVisible);
             Check("closing session hosts leaves no temporary state files", Directory.GetFiles(root, "*.tmp", SearchOption.AllDirectories).Length == 0);
             await CheckOverlappingReplacement(root, catalogue, Check);
         }
         finally
         {
-            first?.Close(); second?.Close();
+            await CloseTestHostAsync(first); await CloseTestHostAsync(second);
             await Task.Delay(100);
             Directory.Delete(root, true);
         }
@@ -103,7 +117,7 @@ internal static class ProgrammingPersistenceHostChecks
         finally
         {
             release.TrySetResult(); if (closing is not null) await closing;
-            window.Close(); await Task.Delay(100);
+            await CloseTestHostAsync(window);
         }
     }
 }

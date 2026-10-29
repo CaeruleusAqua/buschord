@@ -20,7 +20,7 @@ public sealed partial class FileTelegramHistoryStore
             long nextLength = 0;
             try
             {
-                using (var target = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (var target = TelegramHistoryStorage.Create(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 using (var source = OpenReader())
                 {
                     TelegramHistoryFormat.WriteHeader(target, nextHeader);
@@ -83,7 +83,7 @@ public sealed partial class FileTelegramHistoryStore
                 try
                 {
                     using (var source = OpenReader())
-                    using (var target = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    using (var target = TelegramHistoryStorage.Create(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                     {
                         CopyBounded(source, target, _validLength, cancellationToken);
                         target.Flush(true);

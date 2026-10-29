@@ -21,6 +21,7 @@ internal static class DialogChecks
 {
     private static int failures;
     private static int checks;
+    private static bool historyOnly;
     private static string W(string key) => WorkbenchStrings.Get(key);
     private static object? Invoke(object target, string method, params object[] args) => target.GetType()
         .GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(target, args);
@@ -41,8 +42,9 @@ internal static class DialogChecks
     }
 
     [STAThread]
-    public static int Run(string language)
+    public static int Run(string language, bool onlyHistory = false)
     {
+        historyOnly = onlyHistory;
         var root = Path.Combine(Path.GetTempPath(), "opencode", "buschord-dialogs-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         var settings = Path.Combine(root, "settings.json");
@@ -75,9 +77,16 @@ internal static class DialogChecks
         shell.ViewModel.CreateProject(Knx.Workbench.WorkbenchJson.CreateDemo(), null);
         shell.RefreshWorkspace();
         await Task.Delay(200);
+        if(historyOnly)
+        {
+            foreach(var theme in new[]{"light","dark"})
+            { SettingsWindow.ApplyTheme(theme);await TelegramHistoryDialogChecks.Run(shell,theme,Check); }
+            return;
+        }
         foreach (var theme in new[] { "light", "dark" })
         {
             SettingsWindow.ApplyTheme(theme);
+            await TelegramHistoryDialogChecks.Run(shell,theme,Check);
             var contrast = HighContrastChecks.Run(shell);
             checks += contrast.Checks; failures += contrast.Failures;
             var migration = await MigrationDialogChecks.Run(shell);

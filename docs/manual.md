@@ -535,6 +535,11 @@ trägt den Hinweis „DEMO-Simulation · keine reale Busaufzeichnung“.
 
 Ohne Projekt meldet der Monitor „Zuerst ein Projekt öffnen“.
 
+**Telegrammhistorie** im Werkzeugmenü öffnet dauerhaft erfasste lokale Daten auch
+ohne Projekt. Zeit-/Mehrwertfilter, Kontext, Aufnahmeabdeckung, Export und
+Löschgrenzen sind im [Historienablauf](workflows.md#dauerhafte-telegrammhistorie)
+beschrieben. Dauerhafte Aufnahme wird ausdrücklich eingeschaltet.
+
 ### 7.2 Programmierung
 
 Die Programmierwarteschlange ist eine **Simulation**: „SIMULATION · kein realer
@@ -646,10 +651,14 @@ beibehalten.
 
 - **Rückgängig** (`Strg+Z`) und **Wiederherstellen** (`Strg+Shift+Z` oder
   `Strg+Y`) arbeiten auf Projekt-Snapshots; die Oberfläche hält bis zu **60**
-  Schritte, der MCP-Server 100. Ein neues oder neu geladenes Projekt setzt die
+  Zustände, der MCP-Server 100. Ein neues oder neu geladenes Projekt setzt die
   Historie zurück.
 - Speichern selbst erzeugt keinen zusätzlichen Undo-Schritt.
 - Die Zuletzt-Liste führt maximal zehn Projekte; fehlende Dateien erscheinen nicht.
+
+Optionale [lokale Checkpoints](recovery.md) können eine geprüfte Projektsitzung
+einschließlich Undo/Redo nach einem Neustart wiederherstellen. Private Entwürfe
+und Fensterlayout gehören nicht zu diesem Format.
 
 ### 8.6 Demo-Projekt als JSON
 
@@ -657,6 +666,9 @@ beibehalten.
 Austauschformat `knx-studio-demo`. Der Export verweigert native oder nicht
 darstellbare Herstellerdaten, statt sie zu verwerfen. **Demo-Projekt · JSON
 importieren …** validiert die Datei vollständig vor dem Laden.
+Der Umschlag bleibt Version 4. Das bisherige Datenprofil `schemaVersion: 1`
+bleibt für Projekte ohne GUID erhalten. Das neue Profil 2 erhält `project.guid`
+einschließlich seiner Schreibweise; ältere Reader nur für Profil 1 lehnen es ab.
 **Demo zurücksetzen …** verwirft den aktuellen Demo-Stand nach Bestätigung.
 
 ### 8.7 Projektstände und Revisionen
@@ -671,11 +683,11 @@ aber weder neu berechnet noch geprüft.
 
 Der Projektbericht zeigt den letzten Stand und, wenn Einträge vorhanden sind, die
 vollständige Revisionstabelle. Das Übergabepaket schreibt die Liste als
-`15_projektverlauf.csv`; seine README nennt fehlende Revisionen ausdrücklich. **Die
-Workbench und der MCP-Server legen in dieser Fassung keine Revision an**; es gibt
-keinen Menübefehl und kein MCP-Werkzeug dafür. Ohne einen Aufrufer, der
-`ProjectRevisions.Capture` verwendet, bleibt die Liste leer. Der Dateizähler im
-Projektportfolio (Abschnitt 2.1) ist davon unabhängig.
+`15_projektverlauf.csv`; seine README nennt fehlende Revisionen ausdrücklich.
+Die Workbench erfasst vor dem normalen Speichern eine Revision im Projektarchiv.
+Der MCP-Server ergänzt beim Speichern keine automatische Revision. Dateirevisionen,
+der Dateizähler im Projektportfolio (Abschnitt 2.1) und die separate lokale
+[Sitzungswiederherstellung](recovery.md) haben jeweils einen eigenen Umfang.
 
 ## 9. Prüfen, Exporte, Berichte, Vergleich
 

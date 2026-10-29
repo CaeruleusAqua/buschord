@@ -13,6 +13,7 @@ internal static class LinkAtomicityChecks
         void Check(string name, bool ok) { Console.WriteLine((ok ? "PASS " : "FAIL ") + "Link transaction: " + name); if (!ok) failures++; }
         var vm = new MainWindowViewModel(new CatalogLibrary(new CatalogStore(Path.Combine(directory, "atomic-empty"))));
         var project = Fixture(); vm.CreateProject(project, null);
+        var baselineDirty = vm.IsDirty;
         var baseline = Knxproj.ToXml(project).ToString();
         var objects = ProjectQuery.DeviceList(project).Single().ComObjectRefs;
         var lists = objects.Select(o => o.Links).ToArray(); var values = objects.Select(o => o.Links.ToArray()).ToArray();
@@ -21,7 +22,7 @@ internal static class LinkAtomicityChecks
             new(new("D", "O1"), "GA2"), new(new("D", "O2"), "GA2") };
         var rejected = false;
         try { vm.ApplyLinkPairs("Synthetic batch transaction", requests); } catch (InvalidDataException) { rejected = true; }
-        Check("host batch boundary rolls back a failed native undo snapshot", rejected && !vm.CanUndo && !vm.CanRedo && !vm.IsDirty
+        Check("host batch boundary rolls back a failed native undo snapshot", rejected && !vm.CanUndo && !vm.CanRedo && vm.IsDirty == baselineDirty
             && notifications == 0 && ReferenceEquals(vm.Project, project) && Knxproj.ToXml(project).ToString() == baseline);
         Check("rollback retains original live lists, duplicate values and ordering", objects.Select((o, n) => ReferenceEquals(o.Links, lists[n]) && o.Links.SequenceEqual(values[n])).All(ok => ok));
         var review = vm.PreviewSmartLinks();

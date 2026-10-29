@@ -40,11 +40,11 @@ public sealed partial class FileTelegramHistoryStore : ITelegramHistoryStore
             var damagedSuffix = false;
             if (!readOnly)
             {
-                Directory.CreateDirectory(root);
-                _writerLease = new(Path.Combine(root, "writer.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                TelegramHistoryStorage.CreateDirectory(root);
+                _writerLease = TelegramHistoryStorage.Create(Path.Combine(root, "writer.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
                 if (!File.Exists(FilePath))
                 {
-                    using var created = new FileStream(FilePath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+                    using var created = TelegramHistoryStorage.Create(FilePath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
                     TelegramHistoryFormat.WriteHeader(created, new(Guid.NewGuid(), 1, null));
                     created.Flush(true);
                 }
@@ -220,7 +220,7 @@ public sealed partial class FileTelegramHistoryStore : ITelegramHistoryStore
         // Preserve the complete original before replacement. Failure leaves it untouched and refuses writable startup.
         var damagedCopy = Path.Combine(directory, $"history-damaged-{Guid.NewGuid():N}.bch");
         using (var source = OpenReader())
-        using (var preserved = new FileStream(damagedCopy, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        using (var preserved = TelegramHistoryStorage.Create(damagedCopy, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
             CopyBounded(source, preserved, source.Length, default);
             preserved.Flush(true);
@@ -230,7 +230,7 @@ public sealed partial class FileTelegramHistoryStore : ITelegramHistoryStore
         try
         {
             using (var source = OpenReader())
-            using (var target = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var target = TelegramHistoryStorage.Create(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 TelegramHistoryFormat.WriteHeader(target, nextHeader);
                 source.Position = TelegramHistoryFormat.HeaderSize;

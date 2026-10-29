@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Knx;
+using Knx.App.Localization;
 
 namespace Knx.App.Services;
 
@@ -47,6 +48,7 @@ public partial class MainWindowViewModel
         {
             _catalogPrograms.Clear(); _archiveBlocks.Clear();
             _undo.Push(project); NotifyEditState(); Refresh();
+            NotifyProjectEdit(WorkbenchStrings.Get("ReplaceProduct"));
         }
         return results;
     }

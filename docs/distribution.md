@@ -202,7 +202,7 @@ anchor. No installer or feed was published and no package was installed on the h
 
 Windows update regressions pass 54 checks. The independent Linux run passes 59;
 APT source/transaction fixtures pass with Python optimization levels 0, 1 and 2.
-Native dialogs pass 828 checks each in German and English, including update
+Native dialogs pass 854 checks each in German and English, including update
 preferences and asynchronous session shutdown before releasing the application
 lease. Full desktop-platform, installed APT-service and power-loss acceptance
 remain release work.

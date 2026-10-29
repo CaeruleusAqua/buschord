@@ -23,6 +23,12 @@ automatisch importieren. Verzeichnisabruf, Fortschritt, Abbruch, Konflikterhalt
 und lokale Berichte sind integriert; [Ablauf und Grenzen](docs/catalog-downloads.md).
 App-eigene modale Dialoge verwenden unter Windows eine gemeinsame Kopfzeile.
 
+Eine ausdrücklich aktivierte [Telegrammhistorie](docs/workflows.md) ergänzt
+Zeit-/Mehrwertfilter, Kontext, Export und sichtbare Aufnahmeabdeckung.
+Optionale [lokale Checkpoints](docs/recovery.md) erhalten übernommenes Modell und
+Undo/Redo mit getrenntem Änderungsnachweis und bewusster Quellenprüfung.
+Private Parameter-/DEMO-Entwürfe und Fensterlayout sind davon ausgenommen.
+
 Explizite Byte-Vorschauen unterstützen begrenzte Zahlen-, Auswahl-, Single- und
 Zeitprofile. Die optionale Ressourcen-Vorschau erhält vollständige vorhandene
 Data-/Mask-Puffer für begrenzte absolute und Root-Relative-Teilmengen.

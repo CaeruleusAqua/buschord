@@ -7,7 +7,7 @@ namespace Knx;
 /// Snapshot-based undo/redo serializes the whole project XML per step,
 /// at the cost of memory (see <see cref="Capacity"/>).
 /// </summary>
-public sealed class UndoStack
+public sealed partial class UndoStack
 {
     private readonly List<(string Xml, ArchiveState? Archive, Dictionary<string, CatalogHardware> Hardware,
         Dictionary<Workbench.ObjectKey, ObjectTextDefinition> Texts)> _snapshots = [];
@@ -46,7 +46,7 @@ public sealed class UndoStack
     public void Push(Project project)
     {
         var xml = Knxproj.ToXml(project).ToString(SaveOptions.DisableFormatting);
-        if (Index >= 0 && _snapshots[Index].Xml == xml) return;
+        if (Index >= 0 && RecoverySnapshotEquals(project, xml)) return;
 
         if (Index < _snapshots.Count - 1)
         {
@@ -63,6 +63,7 @@ public sealed class UndoStack
             if (_savedIndex >= 0) _savedIndex--;
         }
         Index = _snapshots.Count - 1;
+        RecordRecoverySnapshot(project);
     }
 
     public Project? Undo()
@@ -82,11 +83,13 @@ public sealed class UndoStack
     private Project Restore()
     {
         var snapshot = _snapshots[Index];
-        var project = Knxproj.FromXml(XDocument.Parse(snapshot.Xml, LoadOptions.PreserveWhitespace));
+        var document = XDocument.Parse(snapshot.Xml, LoadOptions.PreserveWhitespace);
+        var project = Knxproj.FromXml(document);
         project.ArchiveState = snapshot.Archive;
         foreach (var (id, fact) in snapshot.Hardware) project.Hardware[id] = fact;
         foreach (var (id, definition) in snapshot.Texts) project.ObjectTextDefinitions[id] = definition;
         foreach (var device in ProjectQuery.DeviceList(project)) ApplicationTexts.RefreshObjects(project, device);
+        Recovery.RecoverySnapshotCodec.RestoreWorkbenchSnapshot(project, document, bounded: false);
         return project;
     }
 }

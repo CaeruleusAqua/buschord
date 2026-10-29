@@ -35,6 +35,30 @@ public partial class SettingsWindow : Window
     {
         _settings = settings;
         InitializeComponent();
+        var recoveryPolicy = Services.AppProjectRecoveryService.Current;
+        var relabelingRecovery = false;
+        void RelabelRecovery()
+        {
+            relabelingRecovery = true;
+            LocalRecoveryBox.Content = Localization.RecoveryUiStrings.Get("Enable");
+            Avalonia.Automation.AutomationProperties.SetName(LocalRecoveryBox, Localization.RecoveryUiStrings.Get("Enable"));
+            // Separate immediate policy; the main options Save/Cancel transaction does not revert it.
+            LocalRecoveryDisclosure.Text = Localization.RecoveryUiStrings.Get("Privacy") + "\n" + Localization.RecoveryUiStrings.Get("PolicyImmediate") + "\n" + Localization.RecoveryUiStrings.Get("ReopenRequired");
+            LocalRecoveryBox.IsChecked = recoveryPolicy?.Enabled == true; LocalRecoveryBox.IsEnabled = recoveryPolicy is not null;
+            relabelingRecovery = false;
+        }
+        RelabelRecovery();
+        LocalRecoveryBox.IsCheckedChanged += async (_, _) =>
+        {
+            if (relabelingRecovery || recoveryPolicy is null) return;
+            LocalRecoveryBox.IsEnabled = false;
+            try { await recoveryPolicy.SetEnabledAsync(LocalRecoveryBox.IsChecked == true); }
+            catch (Exception error) when (IsSettingsError(error)) { SettingsErrorText.Text = Localization.RecoveryUiStrings.Get("Failed"); }
+            finally { RelabelRecovery(); }
+        };
+        void RecoveryLanguageChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => Dispatcher.UIThread.Post(RelabelRecovery);
+        Strings.Instance.PropertyChanged += RecoveryLanguageChanged;
+        Closed += (_, _) => Strings.Instance.PropertyChanged -= RecoveryLanguageChanged;
         WorkbenchDialogChrome.Apply(this);
         _minimumWidth = MinWidth;
         _minimumHeight = MinHeight;

@@ -60,6 +60,7 @@ dotnet run --project tests/Knx.WorkbenchPerformance.Tests
 dotnet run --project tests/Knx.WorkbenchSessions.Tests
 dotnet run --project tests/Knx.WorkbenchTheme.Tests
 dotnet run --project tests/Knx.WorkbenchUiState.Tests
+dotnet run --project tests/Knx.RecoveryApp.Tests
 dotnet run --project tests/Knx.Localization.Tests
 dotnet run --project tests/Knx.Updates.Tests
 dotnet run --project src/Knx.App.Tests
@@ -76,6 +77,8 @@ dotnet run --project src/Knx.App -- --workbench-selftest --theme=light --lang=de
 dotnet run --project src/Knx.App -- --workbench-selftest --theme=dark --lang=en
 dotnet run --project src/Knx.App -- --screenshot-selftest
 dotnet run --project tests/Knx.ParameterUi.Tests -- --native
+dotnet run --project tests/Knx.RecoveryApp.Tests -- --native
+dotnet run --project tests/Knx.RecoveryApp.Tests -- --native --de
 dotnet run --project tests/Knx.Docking.Tests
 dotnet run --project tests/Knx.Shell.Tests
 

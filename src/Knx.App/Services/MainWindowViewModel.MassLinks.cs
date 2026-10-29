@@ -34,7 +34,7 @@ public sealed partial class MainWindowViewModel
         {
             NotifyEditState(); Refresh();
             Status = WorkbenchStrings.Get("SmartApplied", result.Changed);
-            ProjectEdited?.Invoke(this, Status);
+            NotifyProjectEdit(Status);
         }
         return result.Changed;
     }

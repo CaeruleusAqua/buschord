@@ -47,6 +47,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private void OnCatalogChanged(object? sender, EventArgs e)
     {
+        Interlocked.Increment(ref _recoveryCatalogGeneration);
         if (_awaitingCatalog) CatalogLoaded?.Invoke(this, EventArgs.Empty);
     }
 
@@ -134,7 +135,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     partial void OnProjectChanged(Project? value)
     {
         ClearArchiveMaskProfiles();
-        if (!_restoringHistory) ProjectSessionIdentity = new();
+        if (!_restoringHistory) { ProjectSessionIdentity = new(); RecoverySessionReplaced?.Invoke(this, EventArgs.Empty); }
         StartDismissed = false;
         OnPropertyChanged(nameof(HasProject));
         OnPropertyChanged(nameof(ProjectLabel));
@@ -254,6 +255,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public void AdoptProject(Project project, string path)
     {
         var undo = new UndoStack();
+        undo.SetRecoveryDependencyRecorder(RecoveryDependencyRecorder);
         undo.Reset(project);
         RememberProject(path);
         ProjectSessionIdentity = new();
@@ -269,7 +271,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public void CreateProject(Project project, string? path)
     {
         var undo = new UndoStack();
-        undo.Reset(project);
+        undo.SetRecoveryDependencyRecorder(RecoveryDependencyRecorder);
+        if (path is null) { project.Guid ??= System.Guid.NewGuid().ToString("D"); undo.ResetUnsaved(project); }
+        else undo.Reset(project);
         if (path is not null)
         {
             Knxproj.Save(project, path);
@@ -311,6 +315,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _undo.MarkSaved();
         NotifyEditState();
         Status = Strings.Get("StatusProjectSaved");
+        NotifyProjectEdit(Status, Knx.Recovery.RecoveryOperationKind.Save);
     }
 
     public void SaveProjectAs(string path, string? password = null)
@@ -324,6 +329,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _undo.MarkSaved();
         NotifyEditState();
         Status = Strings.Get("StatusProjectSaved");
+        NotifyProjectEdit(Status, Knx.Recovery.RecoveryOperationKind.SaveAs);
     }
 
     // ---------- editing with undo ----------
@@ -345,7 +351,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         NotifyEditState();
         Refresh();
         Status = description;
-        ProjectEdited?.Invoke(this, description);
+        NotifyProjectEdit(description);
     }
 
     /// <summary>Runs a validated project operation and records undo only when it succeeded.</summary>
@@ -362,7 +368,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         NotifyEditState();
         Refresh();
         Status = description;
-        ProjectEdited?.Invoke(this, description);
+        NotifyProjectEdit(description);
         return true;
     }
 
@@ -376,7 +382,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Refresh();
         var description = Strings.Get("MenuEditUndo");
         Status = description;
-        ProjectEdited?.Invoke(this, description);
+        NotifyProjectEdit(description, Knx.Recovery.RecoveryOperationKind.Undo);
     }
 
     [RelayCommand]
@@ -389,7 +395,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Refresh();
         var description = Strings.Get("MenuEditRedo");
         Status = description;
-        ProjectEdited?.Invoke(this, description);
+        NotifyProjectEdit(description, Knx.Recovery.RecoveryOperationKind.Redo);
     }
 
     private void RestoreHistory(Project project)
@@ -633,6 +639,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         NotifyEditState();
         Refresh();
         Status = Strings.Get(remove ? "LinkRemoved" : "LinkAdded");
+        NotifyProjectEdit(Status);
         return true;
     }
 
@@ -948,6 +955,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
             NotifyEditState();
             Refresh();
             Status = Strings.Get("ParameterSaved");
+            NotifyProjectEdit(Status);
         }
         foreach (var instance in instances) baseline[instance.Id] = instance.Value;
         return changed;

@@ -67,7 +67,8 @@ internal static class SmartLinkDialogChecks
         }
         finally
         {
-            if (dialog?.IsVisible == true) dialog.Close(); if (shell.IsVisible) shell.Close();
+            if (dialog?.IsVisible == true) dialog.Close();
+            await NativeWindowCleanup.CloseAsync(shell);
             Directory.Delete(root, true);
         }
         return (checks, failures);

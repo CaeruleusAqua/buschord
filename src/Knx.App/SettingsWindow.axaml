@@ -36,6 +36,8 @@
         <Border Classes="settings-card">
           <StackPanel>
             <TextBlock Text="{loc:Tr OptionsAppearance}" Classes="settings-heading" />
+            <CheckBox x:Name="LocalRecoveryBox" Margin="0,0,0,8" />
+            <TextBlock x:Name="LocalRecoveryDisclosure" TextWrapping="Wrap" Classes="wb-muted" Margin="0,0,0,12" />
             <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Tr OptionsTheme}" Classes="settings-label" />
               <ComboBox Grid.Row="0" Grid.Column="1" x:Name="ThemeBox" Classes="wb-field" Width="240" HorizontalAlignment="Left" AutomationProperties.Name="{loc:Tr OptionsTheme}">
