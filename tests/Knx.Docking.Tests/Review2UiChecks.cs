@@ -145,9 +145,11 @@ internal static class Review2UiChecks
         Call(main, "OnFloatTool", null, new RoutedEventArgs());
         var programmingFloat = Field<List<Window>>(main, "_toolWindows").Single();
         await Task.Delay(100);
-        programmingFloat.GetLogicalDescendants().OfType<ComboBox>().Single().SelectedIndex = 1;
-        var chosenDevice = ((Knx.App.Services.DeviceRow)programmingFloat.GetLogicalDescendants().OfType<ComboBox>().Single().SelectedItem!).Device.Id;
-        programmingFloat.GetLogicalDescendants().OfType<ListBox>().Single().SelectedItem = jobs[2];
+        Control Simulation() => (Control)((TabControl)programmingFloat.Content!).SelectedContent!;
+        Check("D6 floated programming defaults to the labelled simulation mode", programmingFloat.Content is TabControl { Name: "ProgrammingModes", SelectedIndex: 0 });
+        Simulation().GetLogicalDescendants().OfType<ComboBox>().Single().SelectedIndex = 1;
+        var chosenDevice = ((Knx.App.Services.DeviceRow)Simulation().GetLogicalDescendants().OfType<ComboBox>().Single().SelectedItem!).Device.Id;
+        Simulation().GetLogicalDescendants().OfType<ListBox>().Single().SelectedItem = jobs[2];
         foreach (var language in new[] { "de", "en", "fr", "it", "es", "nl", "zh-CN", "pl" })
         {
             Strings.Language = language;
@@ -158,11 +160,19 @@ internal static class Review2UiChecks
                 && Enum.GetValues<ProgrammingJobType>().All(type => text.Contains(W($"ProgrammingOperation{type}")))
                 && !text.Contains("full") && !text.Contains("QUEUED"));
             Check("D4 " + language + " keeps programming device and job selection",
-                programmingFloat.GetLogicalDescendants().OfType<ComboBox>().Single().SelectedItem is Knx.App.Services.DeviceRow selectedDevice
+                Simulation().GetLogicalDescendants().OfType<ComboBox>().Single().SelectedItem is Knx.App.Services.DeviceRow selectedDevice
                 && selectedDevice.Device.Id == chosenDevice
-                && ReferenceEquals(programmingFloat.GetLogicalDescendants().OfType<ListBox>().Single().SelectedItem, jobs[2]));
+                && ReferenceEquals(Simulation().GetLogicalDescendants().OfType<ListBox>().Single().SelectedItem, jobs[2]));
         }
         Check("D6 UI localization preserves technical model values", jobs.Select(j => j.Operation).SequenceEqual(operations));
+        ((TabControl)programmingFloat.Content!).SelectedIndex = 1;
+        Strings.Language = "en";
+        await Task.Delay(120);
+        Check("D4 language preserves the explicit real mode without opening a connection", programmingFloat.Content is TabControl { SelectedIndex: 1 }
+            && Field<RealProgrammingQueueWindow?>(main, "_realProgrammingWindow") is null);
+        ((TabControl)programmingFloat.Content!).SelectedIndex = 0;
+        Check("D4 returning from real mode preserves simulation device and job", Simulation().GetLogicalDescendants().OfType<ComboBox>().Single().SelectedItem is Knx.App.Services.DeviceRow retainedDevice
+            && retainedDevice.Device.Id == chosenDevice && ReferenceEquals(Simulation().GetLogicalDescendants().OfType<ListBox>().Single().SelectedItem, jobs[2]));
         programmingFloat.Close();
         main.ShowTool("search");
         Call(main, "OnFloatTool", null, new RoutedEventArgs());

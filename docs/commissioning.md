@@ -3,8 +3,9 @@
 The dedicated Workbench M112 dialog supports reviewed configuration changes and
 captured-configuration recovery for mask `0x0701`. The separate console probe also
 supports a programming-mode test and same-configuration reload. The general
-programming queue remains simulated; these profiles do not enable address
-assignment, factory reset or group-value writes.
+programming panel keeps a labelled simulation mode and adds an explicit
+[reviewed real M112 queue](real-programming-queue.md). These profiles do not enable
+address assignment, factory reset or group-value writes.
 
 ## Guided Workbench operation
 

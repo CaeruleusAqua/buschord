@@ -9,6 +9,21 @@ using Knx.App.Services;
 using Knx.App.Views;
 using Knx.Catalog;
 
+if (args.Contains("--native-queue-archive-binding")) return RealProgrammingArchiveBindingChecks.RunNative();
+if (args.Contains("--queue-archive-binding"))
+{
+    var target = Path.Combine(Path.GetTempPath(), "buschord-queue-archive-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(target);
+    try { return await RealProgrammingArchiveBindingChecks.RunAsync(target); }
+    finally { Directory.Delete(target, true); }
+}
+
+if (args.Contains("--real-programming-queue"))
+{
+    var target = Path.Combine(Path.GetTempPath(), "buschord-real-queue-core-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(target);
+    try { return await RealProgrammingQueueCoreChecks.RunAsync(target); }
+    finally { Directory.Delete(target, true); }
+}
+
 if (args.Contains("--native")) return NativeDraftChecks.Run(args.Contains("--shots"));
 if (args.Contains("--binary-module-controller"))
 {
@@ -126,6 +141,8 @@ try
     failures += M112UnionBuildChecks.Run(directory);
     failures += await M112DownloadChecks.RunAsync(directory);
     failures += await M112WorkbenchFlowChecks.RunAsync(directory);
+    failures += await RealProgrammingQueueCoreChecks.RunAsync(directory);
+    failures += await RealProgrammingArchiveBindingChecks.RunAsync(Path.Combine(directory, "queue-archive-binding"));
     failures += NativeImageCoalescingChecks.Run(directory);
     failures += NativeImageGrowthBuildChecks.Run(directory);
     failures += NativeImageScalarBuildChecks.Run(directory);

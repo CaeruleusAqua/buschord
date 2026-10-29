@@ -102,7 +102,7 @@ public partial class WorkbenchWindow : Window
         _m112BackendFactory = m112BackendFactory;
         _credentialVaultOwner = credentialVaultOwner ?? new();
         ViewModel.WorkbenchMonitorOwnsCapture = true;
-        ViewModel.HistoryBlocked = () => _sessions?.Programming.IsRunning == true || M112Busy;
+        ViewModel.HistoryBlocked = () => _sessions?.Programming.IsRunning == true || M112Busy || RealProgrammingBusy;
         Workspace = workspace;
         _layoutPath = layoutPath;
         _programmingStateStore = programmingStateStore ?? new ProgrammingStateStore(Path.Combine(
@@ -396,10 +396,14 @@ public partial class WorkbenchWindow : Window
     {
         // Search owns a query and a reviewed replacement plan; its XAML labels already bind live.
         if (previous is SearchPane search) { search.RefreshLanguage(); return search; }
-        var selections = previous.GetLogicalDescendants().OfType<SelectingItemsControl>()
+        // The programming mode host has template selectors of its own. Transfer the
+        // simulation's model selections inside its content, independently of tab mode.
+        static Control SelectionRoot(Control view) => view is TabControl { Name: "ProgrammingModes" } modes
+            ? (Control)((TabItem)modes.Items[0]!).Content! : view;
+        var selections = SelectionRoot(previous).GetLogicalDescendants().OfType<SelectingItemsControl>()
             .Select(control => (control.SelectedItem, control.SelectedIndex)).ToArray();
         var next = CreateToolView(tool);
-        var selectors = next.GetLogicalDescendants().OfType<SelectingItemsControl>().ToArray();
+        var selectors = SelectionRoot(next).GetLogicalDescendants().OfType<SelectingItemsControl>().ToArray();
         for (var i = 0; i < Math.Min(selections.Length, selectors.Length); i++)
         {
             var (item, index) = selections[i];
@@ -408,6 +412,8 @@ public partial class WorkbenchWindow : Window
             else
                 selectors[i].SelectedIndex = item is string && index < selectors[i].ItemCount ? index : -1;
         }
+        if (previous is TabControl { Name: "ProgrammingModes" } oldModes && next is TabControl { Name: "ProgrammingModes" } newModes)
+            newModes.SelectedIndex = oldModes.SelectedIndex;
         return next;
     }
 
@@ -514,6 +520,7 @@ public partial class WorkbenchWindow : Window
 
     private Task DisposeSessionsAsync()
     {
+        TrackRealProgrammingDisposal();
         TrackM112Disposal();
         TrackGroupInputDisposal();
         // Detach every observer before cancellation publishes the final job state.
@@ -2530,7 +2537,7 @@ public partial class WorkbenchWindow : Window
         return panel;
     }
 
-    private Control CreateProgrammingView()
+    private Control CreateSimulatedProgrammingView()
     {
         static string StatusText(ProgrammingJobStatus status) => status switch
         {

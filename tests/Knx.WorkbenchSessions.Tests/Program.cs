@@ -10,6 +10,22 @@ using Knx.Workbench;
 if (args.Contains("--native-group-release-retry"))
 { Environment.ExitCode = GroupReleaseRetryNativeChecks.Run(); return; }
 
+if (args.Contains("--native-real-m112-queue"))
+{ Environment.ExitCode = RealProgrammingQueueNativeChecks.Run(args.Contains("--de") ? "de" : "en"); return; }
+
+if (args.Contains("--real-m112-queue"))
+{
+    var failed = 0;
+    await RealM112ProgrammingQueueChecks.Run((name, ok) => { Console.WriteLine((ok ? "PASS " : "FAIL ") + name); if (!ok) failed++; });
+    Environment.ExitCode = failed; return;
+}
+if (args.Contains("--m112-receipts"))
+{
+    var failed = 0;
+    await VerifiedM112ReceiptChecks.Run((name, ok) => { Console.WriteLine((ok ? "PASS " : "FAIL ") + name); if (!ok) failed++; });
+    Environment.ExitCode = failed; return;
+}
+
 if (args.Contains("--native-connection"))
 {
     Environment.ExitCode = LiveConnectionNativeChecks.Run(args.Contains("--de") ? "de" : "en");
@@ -694,6 +710,8 @@ await ProgrammingPersistenceChecks.Run(Check);
 await MonitorHistoryCaptureChecks.Run(Check);
 await LiveConnectionChecks.Run(Check);
 await M112CommissioningChecks.Run(Check);
+await RealM112ProgrammingQueueChecks.Run(Check);
+await VerifiedM112ReceiptChecks.Run(Check);
 await SecureConnectionChecks.Run(Check);
 Check("configuration location identity checks", ConfigurationLocationChecks.Run() == 0);
 Console.WriteLine($"{checks} checks passed.");

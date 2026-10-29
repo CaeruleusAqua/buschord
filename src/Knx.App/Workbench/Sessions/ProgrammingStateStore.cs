@@ -25,6 +25,7 @@ public sealed class ProgrammingStateStore(string directory)
     public const int MaximumDevices = 10_000;
     private const string Kind = "BusChord.DemoProgrammingComparison";
     private readonly string _directory = Path.GetFullPath(directory);
+    internal string DirectoryPath => _directory;
     private sealed record Envelope(int Version, string Kind, string ProjectId, string? ProjectGuid, string ProjectPath, JsonElement States);
 
     public string PathFor(ProgrammingStateBinding binding)
