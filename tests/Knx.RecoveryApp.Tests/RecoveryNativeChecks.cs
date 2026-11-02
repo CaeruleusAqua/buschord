@@ -64,6 +64,7 @@ internal static class RecoveryNativeChecks
                     await Dialog(shell, controller, store, theme.ToString());
                 }
                 await Lifecycle(shell, controller, service, stamps, root);
+                await ResponsiveOpen(shell, root, service, stamps);
             }
             catch (Exception ex) { Console.WriteLine(ex); _failures++; }
             finally
@@ -80,6 +81,181 @@ internal static class RecoveryNativeChecks
     private static void Check(string name, bool ok) { _checks++; if (!ok) _failures++; Console.WriteLine((ok ? "PASS " : "FAIL ") + "lifecycle recovery " + name); }
     private static async Task Until(Func<bool> condition)
     { using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15)); while (!condition()) await Task.Delay(20, timeout.Token); }
+    private static async Task ResponsiveOpen(WorkbenchWindow owner, string root, AppProjectRecoveryService service, FailingStamps stamps)
+    {
+        var field = typeof(WorkbenchWindow).GetField("_projectLoader", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var originalLoader = field.GetValue(owner)!; using var gate = new ManualResetEventSlim();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ranOnUi = true; var previous = owner.ViewModel.Project;
+        var replacement = new Project { Id = "responsive-test", Name = "responsive synthetic project" };
+        var path = Path.Combine(root, "responsive.knxproj"); Knxproj.Save(replacement, path);
+        field.SetValue(owner, (Func<string, string?, Project>)((_, _) =>
+        { ranOnUi = Dispatcher.UIThread.CheckAccess(); entered.TrySetResult(); gate.Wait(TimeSpan.FromSeconds(8)); return replacement; }));
+        var release = Task.Run(async () => { if (await Task.WhenAny(completed.Task, Task.Delay(5000)) != completed.Task) gate.Set(); });
+        try
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var opened = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [path])!;
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)); await Task.Delay(40);
+            Check("open yields the UI while the archive loader is held", !ranOnUi && !opened.IsCompleted && watch.ElapsedMilliseconds < 4000 && ReferenceEquals(owner.ViewModel.Project, previous));
+            var desktop = (IClassicDesktopStyleApplicationLifetime)Application.Current!.ApplicationLifetime!;
+            Check("held load displays an accessible indeterminate progress dialog", desktop.Windows.Any(window => window.IsVisible
+                && window.GetVisualDescendants().OfType<ProgressBar>().Any(bar => bar.Name == "ProjectOpenProgress" && bar.IsIndeterminate)));
+            var duplicate = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [path])!;
+            Check("a second open cannot race the pending replacement", !await duplicate);
+            gate.Set(); completed.TrySetResult(); Check("held load adopts only after completion", await opened && ReferenceEquals(owner.ViewModel.Project, replacement));
+            await release; gate.Reset(); entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            var previousStatus = owner.ViewModel.Status = "synthetic status before password prompt";
+            var cancelledLoad = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [path])!;
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var progressDialog = desktop.Windows.Single(window => window.IsVisible && window.GetVisualDescendants().OfType<Button>().Any(button => button.Name == "ProjectOpenCancel"));
+            progressDialog.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "ProjectOpenCancel").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Task.Delay(40); Check("cancel waits for the active read without adopting its result", !cancelledLoad.IsCompleted && ReferenceEquals(owner.ViewModel.Project, replacement));
+            gate.Set(); Check("cancelled read restores the previous project, status and editor", !await cancelledLoad && ReferenceEquals(owner.ViewModel.Project, replacement)
+                && owner.ViewModel.Status == previousStatus && owner.IsEnabled);
+            field.SetValue(owner, (Func<string, string?, Project>)((_, _) => throw new InvalidDataException(
+                "This project is password-protected. Reading it requires the project password; BusChord does not guess passwords.")));
+            var cancelled = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [path])!;
+            Window? prompt = null;
+            await Until(() => (prompt = desktop.Windows.FirstOrDefault(window => !ReferenceEquals(window, owner)
+                && window.GetVisualDescendants().OfType<TextBox>().Any(box => box.PasswordChar == '●'))) is not null);
+            prompt!.GetVisualDescendants().OfType<Button>().Single(button => button.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check("password cancellation restores the previous project, status and editor", !await cancelled && ReferenceEquals(owner.ViewModel.Project, replacement)
+                && owner.ViewModel.Status == previousStatus && owner.IsEnabled);
+            var authenticated = new Project { Id = "password-test", Name = "password synthetic project" };
+            var authenticatedPath = Path.Combine(root, "password-retry.knxproj"); Knxproj.Save(authenticated, authenticatedPath);
+            field.SetValue(owner, (Func<string, string?, Project>)((_, password) => password == "synthetic-password" ? authenticated : throw new InvalidDataException(
+                password is null ? "This project is password-protected. Reading it requires the project password; BusChord does not guess passwords."
+                    : "Wrong project password or archive protection settings (AES authentication failed). The archive may also be damaged.")));
+            var passwordOpen = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [authenticatedPath])!;
+            Window? firstPrompt = null;
+            await Until(() => (firstPrompt = desktop.Windows.FirstOrDefault(window => window.IsVisible && !ReferenceEquals(window, owner)
+                && window.GetVisualDescendants().OfType<TextBox>().Any(box => box.PasswordChar == '●'))) is not null);
+            firstPrompt!.GetVisualDescendants().OfType<TextBox>().Single(box => box.PasswordChar == '●').Text = "wrong";
+            firstPrompt.GetVisualDescendants().OfType<Button>().Single(button => button.IsDefault).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Window? retryPrompt = null;
+            await Until(() => (retryPrompt = desktop.Windows.FirstOrDefault(window => window.IsVisible && !ReferenceEquals(window, firstPrompt)
+                && window.GetVisualDescendants().OfType<TextBox>().Any(box => box.PasswordChar == '●'))) is not null);
+            retryPrompt!.GetVisualDescendants().OfType<TextBox>().Single(box => box.PasswordChar == '●').Text = "synthetic-password";
+            retryPrompt.GetVisualDescendants().OfType<Button>().Single(button => button.IsDefault).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check("wrong password retries and the correct password adopts the loaded project", await passwordOpen && ReferenceEquals(owner.ViewModel.Project, authenticated) && owner.IsEnabled);
+            var driftPath = Path.Combine(root, "changed-during-open.knxproj"); Knxproj.Save(new Project { Id = "drift", Name = "drift" }, driftPath);
+            field.SetValue(owner, (Func<string, string?, Project>)((sourcePath, _) => { File.AppendAllText(sourcePath, "changed"); return new Project { Id = "drift", Name = "stale" }; }));
+            var drift = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [driftPath])!;
+            Check("a verified source change refuses adoption and keeps the previous project", !await drift && ReferenceEquals(owner.ViewModel.Project, authenticated)
+                && owner.ViewModel.Status == RecoveryUiStrings.Get("SourceChanged") && owner.IsEnabled);
+            await OwnerCloseDuringOpen(owner, root);
+            await OwnerCloseDuringPrompt(owner, root, false);
+            await OwnerCloseDuringPrompt(owner, root, true);
+            await OwnerCloseDuringPrompt(owner, root, false, error: true);
+            await OwnerCloseDuringSaveError(owner, root);
+            await OwnerCloseBeforeLoader(owner, root, service, stamps);
+        }
+        finally { gate.Set(); completed.TrySetResult(); await release; field.SetValue(owner, originalLoader); }
+    }
+    private static async Task OwnerCloseDuringOpen(Window owner, string root)
+    {
+        var catalog = new CatalogLibrary(new CatalogStore(Path.Combine(root, "opening-close-catalog")));
+        var vm = new MainWindowViewModel(catalog); var source = Knx.Workbench.WorkbenchJson.CreateDemo();
+        var path = Path.Combine(root, "opening-close.knxproj"); vm.CreateProject(source, path);
+        var window = new WorkbenchWindow(vm, new WorkbenchWorkspace(), Path.Combine(root, "opening-close-layout.json"), catalog,
+            new ProgrammingStateStore(Path.Combine(root, "opening-close-programming")));
+        window.Show(owner); using var gate = new ManualResetEventSlim();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var watchdogDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var watchdog = Task.Run(async () => { if (await Task.WhenAny(watchdogDone.Task, Task.Delay(5000)) != watchdogDone.Task) gate.Set(); });
+        typeof(WorkbenchWindow).GetField("_projectLoader", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window,
+            (Func<string, string?, Project>)((_, _) => { entered.TrySetResult(); gate.Wait(TimeSpan.FromSeconds(8)); return new Project { Id = "late", Name = "late" }; }));
+        Task<bool>? opening = null;
+        try
+        {
+            opening = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [path])!;
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)); window.RequestShutdown(); window.Close(); await Task.Delay(40);
+            Check("owner close waits for the active archive read", window.IsVisible && !opening.IsCompleted && ReferenceEquals(vm.Project, source));
+            gate.Set(); watchdogDone.TrySetResult();
+            Check("owner close discards the late result", !await opening && ReferenceEquals(vm.Project, source));
+            await Until(() => !window.IsVisible); await window.ConnectionCloseCompletion;
+            Check("owner closes after the archive read and dialog drain", !window.IsVisible);
+        }
+        finally { gate.Set(); watchdogDone.TrySetResult(); await watchdog; if (window.IsVisible) { window.RequestShutdown(); window.Close(); } }
+    }
+    private static async Task OwnerCloseDuringPrompt(Window owner, string root, bool unsaved, bool error = false)
+    {
+        var id = unsaved ? "unsaved" : error ? "error" : "password";
+        var catalog = new CatalogLibrary(new CatalogStore(Path.Combine(root, id + "-close-catalog")));
+        var vm = new MainWindowViewModel(catalog); var source = Knx.Workbench.WorkbenchJson.CreateDemo();
+        var path = Path.Combine(root, id + "-close.knxproj"); vm.CreateProject(source, path);
+        if (unsaved) vm.Edit("synthetic unsaved change", project => project.Name = "unsaved synthetic change");
+        var window = new WorkbenchWindow(vm, new WorkbenchWorkspace(), Path.Combine(root, id + "-close-layout.json"), catalog,
+            new ProgrammingStateStore(Path.Combine(root, id + "-close-programming")));
+        window.Show(owner); var calls = 0;
+        typeof(WorkbenchWindow).GetField("_projectLoader", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window,
+            (Func<string, string?, Project>)((_, _) => { Interlocked.Increment(ref calls); if (error) throw new IOException("synthetic read failure");
+                throw new InvalidDataException("This project is password-protected. Reading it requires the project password; BusChord does not guess passwords."); }));
+        try
+        {
+            var opening = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [path])!;
+            var desktop = (IClassicDesktopStyleApplicationLifetime)Application.Current!.ApplicationLifetime!; Window? prompt = null;
+            await Until(() => (prompt = desktop.Windows.FirstOrDefault(candidate => candidate.IsVisible && !ReferenceEquals(candidate, window)
+                && (unsaved || error ? candidate is ConfirmDialog : candidate.GetVisualDescendants().OfType<TextBox>().Any(box => box.PasswordChar == '●')))) is not null);
+            window.RequestShutdown(); window.Close();
+            Check("owner close cancels the " + id + " prompt without adopting a project", !await opening && ReferenceEquals(vm.Project, source));
+            await Until(() => !window.IsVisible);
+            Check("owner close drains the " + id + " prompt", !prompt!.IsVisible && (!unsaved || calls == 0));
+        }
+        finally { if (window.IsVisible) { window.RequestShutdown(); window.Close(); } }
+    }
+    private static async Task OwnerCloseBeforeLoader(Window owner, string root, AppProjectRecoveryService service, FailingStamps stamps)
+    {
+        var catalog = new CatalogLibrary(new CatalogStore(Path.Combine(root, "preload-close-catalog")));
+        var vm = new MainWindowViewModel(catalog); var source = Knx.Workbench.WorkbenchJson.CreateDemo();
+        var path = Path.Combine(root, "preload-close.knxproj"); vm.CreateProject(source, path);
+        var window = new WorkbenchWindow(vm, new WorkbenchWorkspace(), Path.Combine(root, "preload-close-layout.json"), catalog,
+            new ProgrammingStateStore(Path.Combine(root, "preload-close-programming")));
+        window.Show(owner); service.Attach(window); var calls = 0;
+        stamps.Entered = new(TaskCreationOptions.RunContinuationsAsynchronously); stamps.Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        typeof(WorkbenchWindow).GetField("_projectLoader", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window,
+            (Func<string, string?, Project>)((_, _) => { Interlocked.Increment(ref calls); return new Project { Id = "late", Name = "late" }; }));
+        try
+        {
+            var opening = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [path])!;
+            await stamps.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5)); window.RequestShutdown(); window.Close();
+            Check("owner close joins a pending source stamp", window.IsVisible && !opening.IsCompleted);
+            stamps.Release.TrySetResult();
+            Check("owner close before loading never starts the loader", !await opening && calls == 0 && ReferenceEquals(vm.Project, source));
+            await Until(() => !window.IsVisible);
+            Check("owner closes after source-stamp cleanup", !window.IsVisible);
+        }
+        finally { stamps.Release?.TrySetResult(); stamps.Entered = stamps.Release = null; if (window.IsVisible) { window.RequestShutdown(); window.Close(); } }
+    }
+    private static async Task OwnerCloseDuringSaveError(Window owner, string root)
+    {
+        var catalog = new CatalogLibrary(new CatalogStore(Path.Combine(root, "save-error-catalog")));
+        var vm = new MainWindowViewModel(catalog); var source = Knx.Workbench.WorkbenchJson.CreateDemo();
+        var path = Path.Combine(root, "save-error.knxproj"); vm.CreateProject(source, path);
+        vm.Edit("synthetic unsaved change", project => project.Name = "unsaved synthetic change"); vm.ProjectPath = root;
+        var window = new WorkbenchWindow(vm, new WorkbenchWorkspace(), Path.Combine(root, "save-error-layout.json"), catalog,
+            new ProgrammingStateStore(Path.Combine(root, "save-error-programming")));
+        window.Show(owner); var calls = 0;
+        typeof(WorkbenchWindow).GetField("_projectLoader", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window,
+            (Func<string, string?, Project>)((_, _) => { Interlocked.Increment(ref calls); return source; }));
+        try
+        {
+            var opening = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [path])!;
+            var desktop = (IClassicDesktopStyleApplicationLifetime)Application.Current!.ApplicationLifetime!; ConfirmDialog? question = null;
+            await Until(() => (question = desktop.Windows.OfType<ConfirmDialog>().FirstOrDefault(candidate => candidate.IsVisible
+                && candidate.Title == WorkbenchStrings.Get("AskUnsavedTitle"))) is not null);
+            question!.GetVisualDescendants().OfType<Button>().Single(button => button.IsDefault).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            ConfirmDialog? error = null;
+            await Until(() => (error = desktop.Windows.OfType<ConfirmDialog>().FirstOrDefault(candidate => candidate.IsVisible
+                && candidate.Title == WorkbenchStrings.Get("SaveFailed"))) is not null);
+            window.RequestShutdown(); window.Close();
+            Check("owner close cancels the save failure dialog without starting the loader", !await opening && calls == 0 && ReferenceEquals(vm.Project, source));
+            await Until(() => !window.IsVisible); Check("owner close drains the save failure dialog", !error!.IsVisible);
+        }
+        finally { if (window.IsVisible) { window.RequestShutdown(); window.Close(); } }
+    }
     private static async Task PolicyToggle(WorkbenchWindow owner, ProjectRecoveryController controller, WorkbenchRecoveryStore store, string root)
     {
         var dispatcher = new GatedPolicyDispatcher();
@@ -156,9 +332,13 @@ internal static class RecoveryNativeChecks
     private sealed class FailingStamps : IRecoverySourceStampReader
     {
         public bool Fail;
-        public Task<RecoverySourceStamp> ReadAsync(string path) => Fail
-            ? Task.FromException<RecoverySourceStamp>(new RecoveryRejectedException(RecoveryFailure.LimitExceeded, "Recovery.LimitExceeded"))
-            : RecoverySourceStamp.ReadAsync(path);
+        public TaskCompletionSource? Entered, Release;
+        public async Task<RecoverySourceStamp> ReadAsync(string path)
+        {
+            if (Entered is { } entered && Release is { } release) { entered.TrySetResult(); await release.Task; }
+            if (Fail) throw new RecoveryRejectedException(RecoveryFailure.LimitExceeded, "Recovery.LimitExceeded");
+            return await RecoverySourceStamp.ReadAsync(path);
+        }
     }
     private static async Task Dialog(WorkbenchWindow owner, ProjectRecoveryController controller, WorkbenchRecoveryStore store, string theme)
     {

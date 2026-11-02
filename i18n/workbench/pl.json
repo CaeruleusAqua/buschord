@@ -481,6 +481,8 @@
   "ProjectLoadFailed": "Nie można wczytać projektu",
   "ProjectLoadFailedStatus": "Nie można wczytać projektu: {0}",
   "ProjectLoaded": "Wczytano projekt: {0}",
+  "ProjectOpening": "Otwieranie projektu…",
+  "ProjectCancelPending": "Zażądano anulowania. Trwa kończenie odczytu…",
   "ProjectOverview": "Przegląd projektu",
   "ProjectProperties": "Właściwości projektu",
   "ProjectTools": "Narzędzia projektu",

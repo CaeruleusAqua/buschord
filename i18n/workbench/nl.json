@@ -481,6 +481,8 @@
   "ProjectLoadFailed": "Project kan niet worden geladen",
   "ProjectLoadFailedStatus": "Project kan niet worden geladen: {0}",
   "ProjectLoaded": "Project geladen: {0}",
+  "ProjectOpening": "Project wordt geopend…",
+  "ProjectCancelPending": "Annulering aangevraagd. Bezig met afronden van het lezen…",
   "ProjectOverview": "Projectoverzicht",
   "ProjectProperties": "Projecteigenschappen",
   "ProjectTools": "Projecthulpmiddelen",
