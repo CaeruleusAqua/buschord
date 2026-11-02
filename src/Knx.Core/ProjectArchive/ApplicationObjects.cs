@@ -11,7 +11,7 @@ internal static class ApplicationObjects
         var programId = (string?)application.Descendants().FirstOrDefault(e => e.Name.LocalName == "ApplicationProgram")?.Attribute("Id");
         foreach (var device in devices)
         {
-            _ = Ksxml.Parse(application, out var evaluation,
+            var evaluation = Ksxml.EvaluateObjects(application,
                 device.ParameterValues.ToDictionary(p => p.Key, p => (string?)p.Value, StringComparer.Ordinal), scripts);
             if (evaluation.StructureFailed || !evaluation.Converged || evaluation.DepthLimitReached || evaluation.ScriptFailures > 0 || evaluation.InvalidAssignments.Count > 0) continue;
             var root = evaluation.ExpandedRoot ?? throw new InvalidDataException("empty application");
