@@ -69,6 +69,9 @@ Gruppenmonitor und Linienscan. Projektwechsel und Schließen warten den tatsäch
 Verbindungsabbau ab; allgemeine Programmieraufträge bleiben simuliert.
 Eine separate [echte M112-Warteschlange](docs/real-programming-queue.md) verbindet
 gebundene Einzelaufträge, Bestätigung, dauerhafte Belege und gejointe Wiederherstellung.
+Die separate [Adressvergabe](docs/individual-addressing.md) verbindet physische
+Zielbindung, bestätigten Einzelversuch und dauerhafte Aufträge mit lesendem
+Kalt-Abgleich in Workbench, Bibliothek und MCP. Ihre Hardwareabnahme bleibt offen.
 Ein separater Property-Arbeitslauf initialisiert alle tatsächlich ausgewählten
 Allokationen seines festen Root-Profils und formatiert die vollständige
 Referenzpopulation aus derselben Auswertung. Initialdaten, Gültigkeit und

@@ -1,7 +1,7 @@
 # buschord-mcp – MCP server for BusChord
 
 Headless [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the
-`Knx.Core`, `Knx.Bus`, `Knx.Reports` and `Knx.ProjectCompare` functionality as 58 MCP tools.
+`Knx.Core`, `Knx.Bus`, `Knx.Reports` and `Knx.ProjectCompare` functionality as 64 MCP tools.
 It is a .NET 10 console app; JSON-RPC 2.0 runs over stdio,
 one JSON message per line. stdout carries protocol messages only, all logging goes to stderr.
 
@@ -11,7 +11,7 @@ one JSON message per line. stdout carries protocol messages only, all logging go
 dotnet build
 dotnet run --project src/Knx.Mcp --no-build              # stdio server (for MCP clients)
 dotnet run --project src/Knx.Mcp -- --selftest           # end-to-end check, exit 0/1
-dotnet run --project src/Knx.Mcp -- --list-tools         # 58 tool names only
+dotnet run --project src/Knx.Mcp -- --list-tools         # 64 tool names only
 dotnet run --project src/Knx.Mcp -- --scan-catalogs=<folder>   # parse .knxprod files, read-only
 dotnet run --project src/Knx.Mcp -- --import-catalogs=<folder> # copy them into the local library
 ```
@@ -89,8 +89,11 @@ one undo step and retains required manufacturer data for later export.
 ## State model
 
 - One open project per server process. `project_open` replaces it and resets history.
-- Mutating tools change only the in-memory project and push an undo snapshot (100 steps).
+- Project-editing tools change the in-memory project and push an undo snapshot (100 steps).
   `undo`/`redo` move through that history across tool calls.
+- The separate individual-address workflow can write one explicitly confirmed physical
+  device address. Its private intent/outcome is independent of project undo; cold
+  reconciliation never writes. Project replacement joins and releases its owner.
 - The `.knxproj` on disk changes only when `project_save` is called.
 - Results come back as a text block (compact JSON) plus `structuredContent`; expected failures
   are `isError: true` results with a readable message, never JSON-RPC errors.
@@ -99,7 +102,7 @@ one undo step and retains required manufacturer data for later export.
 
 ## Tools
 
-The server exposes 58 tools in the groups below.
+The server exposes 64 tools in the groups below.
 
 ### Manufacturer metadata and Jung SP8 import
 
@@ -240,9 +243,22 @@ and only load an application model when a tool needs it.
 `bus_disconnect`, `bus_read(group_address)`, `bus_write(group_address, value, datapoint_type?)`,
 `bus_status`, `recorder_start`, `recorder_stop`, `recorder_save(path, format)`
 
-`bus_write` is listed for protocol compatibility but always returns `isError`: this build is
-read-only and refuses group value writes by policy. `bus_read` is the only group-value tool; its
+`bus_write` is listed for protocol compatibility but always returns `isError`:
+group-value writes are refused by policy. `bus_read` is the only enabled group-value tool; its
 wire behaviour is not verified against real hardware (see "Bus behaviour" below).
+
+**Individual addressing** – `address_assignment_review`, `address_assignment_apply`,
+`address_assignment_status`, `address_assignment_cancel`, `address_assignment_inspect`,
+`address_assignment_reconcile`.
+
+This separate plain-device workflow requires exact serial binding or a named,
+continuously isolated single device, an independent target reservation and explicit
+confirmation of the exact reviewed target. Review/apply/reconcile return accepted
+operation IDs so status/cancel remain reachable through the sequential stdio host.
+A private durable intent and exclusive attempt precede one address-specific request;
+cancellation and cold recovery use fresh reads without resending. Known Secure
+targets are refused. Group writes and application downloads remain disabled.
+See [arguments, ownership, coupler roles and recovery limits](docs/individual-addressing.md).
 
 **Bus diagnostics (read-only)** – `bus_scan(target?, gateway?, timeout_ms?, response_timeout_ms?)`,
 `bus_device_info(address, gateway?, timeout_ms?, response_timeout_ms?)`,
