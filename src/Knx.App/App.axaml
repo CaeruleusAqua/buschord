@@ -443,6 +443,12 @@
       <Setter Property="MinHeight" Value="{StaticResource ControlHeight}" />
       <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
     </Style>
+    <Style Selector="TextBox[AcceptsReturn=False]">
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox[AcceptsReturn=True]">
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+    </Style>
     <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
       <Setter Property="BorderThickness" Value="{StaticResource FocusRing}" />
@@ -460,6 +466,7 @@
       <Setter Property="MinHeight" Value="{StaticResource ControlHeight}" />
       <Setter Property="CornerRadius" Value="{StaticResource ControlRadius}" />
       <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="ComboBox:focus-visible /template/ Border#HighlightBackground">
       <Setter Property="BorderBrush" Value="{DynamicResource EtsAccent}" />
