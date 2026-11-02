@@ -283,6 +283,8 @@ public sealed class WorkbenchStrings : INotifyPropertyChanged
         ["ProjectTools"] = ("Projektwerkzeuge", "Project tools"),
         ["ProjectCreated"] = ("Neues Projekt '{0}' angelegt", "New project '{0}' created"),
         ["ProjectLoaded"] = ("Projekt geladen: {0}", "Project loaded: {0}"),
+        ["ProjectOpening"] = ("Projekt wird geöffnet …", "Opening project …"),
+        ["ProjectCancelPending"] = ("Abbruch angefordert. Der laufende Lesevorgang wird noch beendet …", "Cancellation requested. Finishing the current read …"),
         ["PerspectiveBuilding"] = ("Gebäude", "Building"),
         ["PerspectiveTopology"] = ("Topologie", "Topology"),
         ["PerspectiveGroups"] = ("Gruppen", "Groups"),

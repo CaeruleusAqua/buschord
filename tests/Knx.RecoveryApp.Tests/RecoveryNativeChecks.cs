@@ -64,6 +64,7 @@ internal static class RecoveryNativeChecks
                     await Dialog(shell, controller, store, theme.ToString());
                 }
                 await Lifecycle(shell, controller, service, stamps, root);
+                await ResponsiveOpen(shell, root);
             }
             catch (Exception ex) { Console.WriteLine(ex); _failures++; }
             finally
@@ -80,6 +81,51 @@ internal static class RecoveryNativeChecks
     private static void Check(string name, bool ok) { _checks++; if (!ok) _failures++; Console.WriteLine((ok ? "PASS " : "FAIL ") + "lifecycle recovery " + name); }
     private static async Task Until(Func<bool> condition)
     { using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15)); while (!condition()) await Task.Delay(20, timeout.Token); }
+    private static async Task ResponsiveOpen(WorkbenchWindow owner, string root)
+    {
+        var field = typeof(WorkbenchWindow).GetField("_projectLoader", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var originalLoader = field.GetValue(owner)!; using var gate = new ManualResetEventSlim();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ranOnUi = true; var previous = owner.ViewModel.Project;
+        var replacement = new Project { Id = "responsive-test", Name = "responsive synthetic project" };
+        var path = Path.Combine(root, "responsive.knxproj"); Knxproj.Save(replacement, path);
+        field.SetValue(owner, (Func<string, string?, Project>)((_, _) =>
+        { ranOnUi = Dispatcher.UIThread.CheckAccess(); entered.TrySetResult(); gate.Wait(TimeSpan.FromSeconds(8)); return replacement; }));
+        var release = Task.Run(async () => { if (await Task.WhenAny(completed.Task, Task.Delay(5000)) != completed.Task) gate.Set(); });
+        try
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var opened = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [path])!;
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)); await Task.Delay(40);
+            Check("open yields the UI while the archive loader is held", !ranOnUi && !opened.IsCompleted && watch.ElapsedMilliseconds < 4000 && ReferenceEquals(owner.ViewModel.Project, previous));
+            var desktop = (IClassicDesktopStyleApplicationLifetime)Application.Current!.ApplicationLifetime!;
+            Check("held load displays an accessible indeterminate progress dialog", desktop.Windows.Any(window => window.IsVisible
+                && window.GetVisualDescendants().OfType<ProgressBar>().Any(bar => bar.Name == "ProjectOpenProgress" && bar.IsIndeterminate)));
+            var duplicate = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [path])!;
+            Check("a second open cannot race the pending replacement", !await duplicate);
+            gate.Set(); completed.TrySetResult(); Check("held load adopts only after completion", await opened && ReferenceEquals(owner.ViewModel.Project, replacement));
+            await release; gate.Reset(); entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            var previousStatus = owner.ViewModel.Status = "synthetic status before password prompt";
+            var cancelledLoad = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [path])!;
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var progressDialog = desktop.Windows.Single(window => window.IsVisible && window.GetVisualDescendants().OfType<Button>().Any(button => button.Name == "ProjectOpenCancel"));
+            progressDialog.GetVisualDescendants().OfType<Button>().Single(button => button.Name == "ProjectOpenCancel").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Task.Delay(40); Check("cancel waits for the active read without adopting its result", !cancelledLoad.IsCompleted && ReferenceEquals(owner.ViewModel.Project, replacement));
+            gate.Set(); Check("cancelled read restores the previous project, status and editor", !await cancelledLoad && ReferenceEquals(owner.ViewModel.Project, replacement)
+                && owner.ViewModel.Status == previousStatus && owner.IsEnabled);
+            field.SetValue(owner, (Func<string, string?, Project>)((_, _) => throw new InvalidDataException(
+                "This project is password-protected. Reading it requires the project password; BusChord does not guess passwords.")));
+            var cancelled = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [path])!;
+            Window? prompt = null;
+            await Until(() => (prompt = desktop.Windows.FirstOrDefault(window => !ReferenceEquals(window, owner)
+                && window.GetVisualDescendants().OfType<TextBox>().Any(box => box.PasswordChar == '●'))) is not null);
+            prompt!.GetVisualDescendants().OfType<Button>().Single(button => button.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check("password cancellation restores the previous project, status and editor", !await cancelled && ReferenceEquals(owner.ViewModel.Project, replacement)
+                && owner.ViewModel.Status == previousStatus && owner.IsEnabled);
+        }
+        finally { gate.Set(); completed.TrySetResult(); await release; field.SetValue(owner, originalLoader); }
+    }
     private static async Task PolicyToggle(WorkbenchWindow owner, ProjectRecoveryController controller, WorkbenchRecoveryStore store, string root)
     {
         var dispatcher = new GatedPolicyDispatcher();

@@ -21,6 +21,9 @@ namespace Knx.App;
 public partial class WorkbenchWindow
 {
     private HelpWindow? _helpWindow;
+    private sealed class ProjectOpenCancelledException : Exception { }
+    private bool _projectOpenInProgress;
+    private Func<string, string?, Project> _projectLoader = (path, password) => Knxproj.Load(path, password, Knx.Scripting.IsolatedScriptRuntime.Shared);
     private void BuildMenus()
     {
         MenuItem Item(string title, Action action) { var item = new MenuItem { Header = title }; item.Click += (_, _) => action(); return item; }
@@ -189,8 +192,18 @@ public partial class WorkbenchWindow
 
     private async Task<bool> OpenPathAsync(string path)
     {
+        if (_projectOpenInProgress) return false;
+        _projectOpenInProgress = true;
+        try { return await OpenPathCoreAsync(path); }
+        finally { _projectOpenInProgress = false; }
+    }
+
+    private async Task<bool> OpenPathCoreAsync(string path)
+    {
         if (!await ConfirmDiscardAsync()) return false;
         var replacementSession = ViewModel.ProjectSessionIdentity; var replacementRevision = _recovery?.CommitRevision;
+        var previousStatus = ViewModel.Status; var openingStatus = W("ProjectOpening");
+        ViewModel.Status = openingStatus;
         using var frozenEditors = FreezeReplacementEditors();
         try
         {
@@ -202,11 +215,12 @@ public partial class WorkbenchWindow
             {
                 try
                 {
-                    loaded = Knxproj.Load(path, password, Knx.Scripting.IsolatedScriptRuntime.Shared);
+                    loaded = await LoadProjectWithProgressAsync(path, password);
                     break;
                 }
                 catch (InvalidDataException ex) when (Knxproj.IsPasswordError(ex))
                 {
+                    if (_shuttingDown || _closingSessionsForExit) return false;
                     password = await PromptPasswordAsync(ex.Message);
                     if (password is null) return false;
                 }
@@ -218,7 +232,7 @@ public partial class WorkbenchWindow
                 try { await recovery.Stamp.VerifyAsync(); }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException) { recovery = (null, "Recovery.SourceChanged"); }
             }
-            if (!ReferenceEquals(replacementSession, ViewModel.ProjectSessionIdentity) || replacementRevision != _recovery?.CommitRevision) return false;
+            if (_shuttingDown || _closingSessionsForExit || !ReferenceEquals(replacementSession, ViewModel.ProjectSessionIdentity) || replacementRevision != _recovery?.CommitRevision) return false;
             ViewModel.AdoptProject(loaded, path);
             await BindRecoveryCurrentProjectAsync(recovery.Stamp, recovery.Reason);
             _parameters.DiscardDrafts();
@@ -227,12 +241,52 @@ public partial class WorkbenchWindow
             RefreshWorkspace();
             return true;
         }
+        catch (ProjectOpenCancelledException) { return false; }
         catch (Exception ex)
         {
+            if (_shuttingDown || _closingSessionsForExit) return false;
             ViewModel.Status = W("ProjectLoadFailedStatus", ex.Message);
             await ConfirmDialog.ShowMessageAsync(this, W("ProjectLoadFailed"), ex.Message);
             RefreshWorkspace();
             return false;
+        }
+        finally
+        {
+            if (!_shuttingDown && ViewModel.Status == openingStatus) ViewModel.Status = previousStatus;
+        }
+    }
+
+    private async Task<Project> LoadProjectWithProgressAsync(string path, string? password)
+    {
+        var dialog = CreateDialog(W("ProjectOpening"), 480, 210);
+        var panel = new StackPanel { Margin = new(22, 18, 22, 12), Spacing = 10 };
+        var message = Note(W("ProjectOpening")); panel.Children.Add(message);
+        var progress = new ProgressBar { Name = "ProjectOpenProgress", IsIndeterminate = true, Height = 8 };
+        AutomationProperties.SetName(progress, W("ProjectOpening")); panel.Children.Add(progress);
+        var cancelled = false; var allowClose = false;
+        var cancel = ActionButton(W("Cancel"), () => dialog.Close(), "quiet"); cancel.Name = "ProjectOpenCancel"; cancel.IsCancel = true;
+        dialog.Closing += (_, args) =>
+        {
+            if (allowClose) return;
+            args.Cancel = true; cancelled = true; cancel.IsEnabled = false;
+            message.Text = W("ProjectCancelPending");
+        };
+        dialog.Content = DialogLayout(panel, DialogActions(cancel));
+        var shown = dialog.ShowDialog(this);
+        try
+        {
+            var loader = _projectLoader;
+            Project loaded;
+            try { loaded = await Task.Run(() => loader(path, password)); }
+            catch when (cancelled) { throw new ProjectOpenCancelledException(); }
+            if (cancelled) throw new ProjectOpenCancelledException();
+            return loaded;
+        }
+        finally
+        {
+            allowClose = true; dialog.Close(); await shown;
+            // The replacement owns the editor freeze until adoption/password handling finishes.
+            if (!_shuttingDown) IsEnabled = false;
         }
     }
 

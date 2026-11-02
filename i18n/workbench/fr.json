@@ -481,6 +481,8 @@
   "ProjectLoadFailed": "Projet impossible à charger",
   "ProjectLoadFailedStatus": "Projet impossible à charger : {0}",
   "ProjectLoaded": "Projet chargé : {0}",
+  "ProjectOpening": "Ouverture du projet…",
+  "ProjectCancelPending": "Annulation demandée. Fin de la lecture en cours…",
   "ProjectOverview": "Vue d'ensemble du projet",
   "ProjectProperties": "Propriétés du projet",
   "ProjectTools": "Outils du projet",

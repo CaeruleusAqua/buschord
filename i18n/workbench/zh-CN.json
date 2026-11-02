@@ -481,6 +481,8 @@
   "ProjectLoadFailed": "无法加载项目",
   "ProjectLoadFailedStatus": "无法加载项目：{0}",
   "ProjectLoaded": "已加载项目：{0}",
+  "ProjectOpening": "正在打开项目…",
+  "ProjectCancelPending": "已请求取消。正在完成当前读取…",
   "ProjectOverview": "项目概览",
   "ProjectProperties": "项目属性",
   "ProjectTools": "项目工具",
