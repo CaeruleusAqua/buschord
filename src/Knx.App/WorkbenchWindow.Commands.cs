@@ -23,7 +23,15 @@ public partial class WorkbenchWindow
     private HelpWindow? _helpWindow;
     private sealed class ProjectOpenCancelledException : Exception { }
     private bool _projectOpenInProgress;
-    private Func<string, string?, Project> _projectLoader = (path, password) => Knxproj.Load(path, password, Knx.Scripting.IsolatedScriptRuntime.Shared);
+    private bool _projectOpenClosePending, _projectOpenCloseRequested;
+    private TaskCompletionSource? _projectOpenCompletion;
+    private Action? _cancelProjectOpen;
+    private Func<string, string?, Project> _projectLoader = (path, password) =>
+    {
+        // A loading worker must not hold the script runtime used by UI parameter views.
+        using var runtime = new Knx.Scripting.IsolatedScriptRuntime();
+        return Knxproj.Load(path, password, runtime);
+    };
     private void BuildMenus()
     {
         MenuItem Item(string title, Action action) { var item = new MenuItem { Header = title }; item.Click += (_, _) => action(); return item; }
@@ -193,14 +201,16 @@ public partial class WorkbenchWindow
     private async Task<bool> OpenPathAsync(string path)
     {
         if (_projectOpenInProgress) return false;
+        var completion = _projectOpenCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         _projectOpenInProgress = true;
         try { return await OpenPathCoreAsync(path); }
-        finally { _projectOpenInProgress = false; }
+        finally { _projectOpenInProgress = false; _projectOpenCompletion = null; completion.TrySetResult(); }
     }
 
     private async Task<bool> OpenPathCoreAsync(string path)
     {
         if (!await ConfirmDiscardAsync()) return false;
+        if (_projectOpenCloseRequested || _shuttingDown || _closingSessionsForExit) return false;
         var replacementSession = ViewModel.ProjectSessionIdentity; var replacementRevision = _recovery?.CommitRevision;
         var previousStatus = ViewModel.Status; var openingStatus = W("ProjectOpening");
         ViewModel.Status = openingStatus;
@@ -230,9 +240,10 @@ public partial class WorkbenchWindow
             if (recovery.Stamp is not null)
             {
                 try { await recovery.Stamp.VerifyAsync(); }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { recovery = (null, "Recovery.SourceChanged"); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                { ViewModel.Status = RecoveryUiStrings.Get("SourceChanged"); return false; }
             }
-            if (_shuttingDown || _closingSessionsForExit || !ReferenceEquals(replacementSession, ViewModel.ProjectSessionIdentity) || replacementRevision != _recovery?.CommitRevision) return false;
+            if (_projectOpenCloseRequested || _shuttingDown || _closingSessionsForExit || !ReferenceEquals(replacementSession, ViewModel.ProjectSessionIdentity) || replacementRevision != _recovery?.CommitRevision) return false;
             ViewModel.AdoptProject(loaded, path);
             await BindRecoveryCurrentProjectAsync(recovery.Stamp, recovery.Reason);
             _parameters.DiscardDrafts();
@@ -273,6 +284,8 @@ public partial class WorkbenchWindow
         };
         dialog.Content = DialogLayout(panel, DialogActions(cancel));
         var shown = dialog.ShowDialog(this);
+        _cancelProjectOpen = () => { if (!cancelled) dialog.Close(); };
+        if (_projectOpenCloseRequested) _cancelProjectOpen();
         try
         {
             var loader = _projectLoader;
@@ -284,6 +297,7 @@ public partial class WorkbenchWindow
         }
         finally
         {
+            _cancelProjectOpen = null;
             allowClose = true; dialog.Close(); await shown;
             // The replacement owns the editor freeze until adoption/password handling finishes.
             if (!_shuttingDown) IsEnabled = false;
@@ -419,6 +433,15 @@ public partial class WorkbenchWindow
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
+        if (_projectOpenInProgress)
+        {
+            e.Cancel = true;
+            if (_projectOpenClosePending) return;
+            _projectOpenClosePending = _projectOpenCloseRequested = true;
+            _cancelProjectOpen?.Invoke();
+            _ = CloseAfterProjectOpenAsync(_projectOpenCompletion!.Task);
+            return;
+        }
         if (e.CloseReason == WindowCloseReason.OSShutdown && AppUpdateService.Current is { } updates)
             updates.SuppressApply = true;
         if (JoinRealProgrammingBeforeOwnerClose(e)) return;
@@ -485,6 +508,12 @@ public partial class WorkbenchWindow
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ViewModel.Status = W("LayoutSaveFailed", ex.Message); }
         }
         _shuttingDown = true;
+    }
+
+    private async Task CloseAfterProjectOpenAsync(Task pending)
+    {
+        try { await pending; }
+        finally { _projectOpenCloseRequested = _projectOpenClosePending = false; Close(); }
     }
 
     private async Task ExportAsync(string fileName, Func<Project, string> render)
