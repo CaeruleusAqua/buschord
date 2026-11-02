@@ -141,17 +141,23 @@ public sealed class ConfirmDialog : Window
         Close();
     }
 
-    private static async Task<ConfirmChoice> ShowAsync(Window owner, string title, string message,
+    private static Task<ConfirmChoice> ShowAsync(Window owner, string title, string message,
+        params (string Text, ConfirmChoice Choice, ButtonKind Kind)[] buttons)
+        => ShowTrackedAsync(owner, title, message, null, buttons);
+
+    private static async Task<ConfirmChoice> ShowTrackedAsync(Window owner, string title, string message, Action<Window>? onShown,
         params (string Text, ConfirmChoice Choice, ButtonKind Kind)[] buttons)
     {
         var dialog = new ConfirmDialog(title, message, buttons);
-        await dialog.ShowDialog(owner);
+        var shown = dialog.ShowDialog(owner); onShown?.Invoke(dialog); await shown;
         return dialog._chosen ?? ConfirmChoice.Cancel;
     }
 
     /// <summary>Save / Discard / Cancel before the current project is replaced or the app quits.</summary>
     public static Task<ConfirmChoice> AskUnsavedAsync(Window owner, string project)
-        => ShowAsync(owner, Wb("AskUnsavedTitle"), Wb("AskUnsavedText", project),
+        => AskUnsavedAsync(owner, project, null);
+    internal static Task<ConfirmChoice> AskUnsavedAsync(Window owner, string project, Action<Window>? onShown)
+        => ShowTrackedAsync(owner, Wb("AskUnsavedTitle"), Wb("AskUnsavedText", project), onShown,
             (Wb("DoNotSave"), ConfirmChoice.Discard, ButtonKind.Danger),
             (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, ButtonKind.Quiet),
             (Wb("Save"), ConfirmChoice.Save, ButtonKind.Primary));
@@ -170,7 +176,9 @@ public sealed class ConfirmDialog : Window
 
     /// <summary>Draft consent is separate from project Save and never applies the editor.</summary>
     public static async Task<bool> AskDiscardDraftsAsync(Window owner)
-        => await ShowAsync(owner, Wb("AskDiscardTitle"), Wb("AskDiscardText"),
+        => await AskDiscardDraftsAsync(owner, null);
+    internal static async Task<bool> AskDiscardDraftsAsync(Window owner, Action<Window>? onShown)
+        => await ShowTrackedAsync(owner, Wb("AskDiscardTitle"), Wb("AskDiscardText"), onShown,
             (Strings.Get("BtnCancel"), ConfirmChoice.Cancel, ButtonKind.Quiet),
             (Wb("DiscardDrafts"), ConfirmChoice.Discard, ButtonKind.Danger)) == ConfirmChoice.Discard;
 
@@ -185,4 +193,6 @@ public sealed class ConfirmDialog : Window
     /// <summary>Single-button message dialog for errors that must not disappear with the status line.</summary>
     public static Task ShowMessageAsync(Window owner, string title, string message)
         => ShowAsync(owner, title, message, (Strings.Get("BtnClose"), ConfirmChoice.Yes, ButtonKind.Primary));
+    internal static Task ShowMessageAsync(Window owner, string title, string message, Action<Window>? onShown)
+        => ShowTrackedAsync(owner, title, message, onShown, (Strings.Get("BtnClose"), ConfirmChoice.Yes, ButtonKind.Primary));
 }

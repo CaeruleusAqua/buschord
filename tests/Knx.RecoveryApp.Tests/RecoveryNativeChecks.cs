@@ -64,7 +64,7 @@ internal static class RecoveryNativeChecks
                     await Dialog(shell, controller, store, theme.ToString());
                 }
                 await Lifecycle(shell, controller, service, stamps, root);
-                await ResponsiveOpen(shell, root);
+                await ResponsiveOpen(shell, root, service, stamps);
             }
             catch (Exception ex) { Console.WriteLine(ex); _failures++; }
             finally
@@ -81,7 +81,7 @@ internal static class RecoveryNativeChecks
     private static void Check(string name, bool ok) { _checks++; if (!ok) _failures++; Console.WriteLine((ok ? "PASS " : "FAIL ") + "lifecycle recovery " + name); }
     private static async Task Until(Func<bool> condition)
     { using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15)); while (!condition()) await Task.Delay(20, timeout.Token); }
-    private static async Task ResponsiveOpen(WorkbenchWindow owner, string root)
+    private static async Task ResponsiveOpen(WorkbenchWindow owner, string root, AppProjectRecoveryService service, FailingStamps stamps)
     {
         var field = typeof(WorkbenchWindow).GetField("_projectLoader", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var originalLoader = field.GetValue(owner)!; using var gate = new ManualResetEventSlim();
@@ -146,6 +146,11 @@ internal static class RecoveryNativeChecks
             Check("a verified source change refuses adoption and keeps the previous project", !await drift && ReferenceEquals(owner.ViewModel.Project, authenticated)
                 && owner.ViewModel.Status == RecoveryUiStrings.Get("SourceChanged") && owner.IsEnabled);
             await OwnerCloseDuringOpen(owner, root);
+            await OwnerCloseDuringPrompt(owner, root, false);
+            await OwnerCloseDuringPrompt(owner, root, true);
+            await OwnerCloseDuringPrompt(owner, root, false, error: true);
+            await OwnerCloseDuringSaveError(owner, root);
+            await OwnerCloseBeforeLoader(owner, root, service, stamps);
         }
         finally { gate.Set(); completed.TrySetResult(); await release; field.SetValue(owner, originalLoader); }
     }
@@ -174,6 +179,82 @@ internal static class RecoveryNativeChecks
             Check("owner closes after the archive read and dialog drain", !window.IsVisible);
         }
         finally { gate.Set(); watchdogDone.TrySetResult(); await watchdog; if (window.IsVisible) { window.RequestShutdown(); window.Close(); } }
+    }
+    private static async Task OwnerCloseDuringPrompt(Window owner, string root, bool unsaved, bool error = false)
+    {
+        var id = unsaved ? "unsaved" : error ? "error" : "password";
+        var catalog = new CatalogLibrary(new CatalogStore(Path.Combine(root, id + "-close-catalog")));
+        var vm = new MainWindowViewModel(catalog); var source = Knx.Workbench.WorkbenchJson.CreateDemo();
+        var path = Path.Combine(root, id + "-close.knxproj"); vm.CreateProject(source, path);
+        if (unsaved) vm.Edit("synthetic unsaved change", project => project.Name = "unsaved synthetic change");
+        var window = new WorkbenchWindow(vm, new WorkbenchWorkspace(), Path.Combine(root, id + "-close-layout.json"), catalog,
+            new ProgrammingStateStore(Path.Combine(root, id + "-close-programming")));
+        window.Show(owner); var calls = 0;
+        typeof(WorkbenchWindow).GetField("_projectLoader", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window,
+            (Func<string, string?, Project>)((_, _) => { Interlocked.Increment(ref calls); if (error) throw new IOException("synthetic read failure");
+                throw new InvalidDataException("This project is password-protected. Reading it requires the project password; BusChord does not guess passwords."); }));
+        try
+        {
+            var opening = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [path])!;
+            var desktop = (IClassicDesktopStyleApplicationLifetime)Application.Current!.ApplicationLifetime!; Window? prompt = null;
+            await Until(() => (prompt = desktop.Windows.FirstOrDefault(candidate => candidate.IsVisible && !ReferenceEquals(candidate, window)
+                && (unsaved || error ? candidate is ConfirmDialog : candidate.GetVisualDescendants().OfType<TextBox>().Any(box => box.PasswordChar == '●')))) is not null);
+            window.RequestShutdown(); window.Close();
+            Check("owner close cancels the " + id + " prompt without adopting a project", !await opening && ReferenceEquals(vm.Project, source));
+            await Until(() => !window.IsVisible);
+            Check("owner close drains the " + id + " prompt", !prompt!.IsVisible && (!unsaved || calls == 0));
+        }
+        finally { if (window.IsVisible) { window.RequestShutdown(); window.Close(); } }
+    }
+    private static async Task OwnerCloseBeforeLoader(Window owner, string root, AppProjectRecoveryService service, FailingStamps stamps)
+    {
+        var catalog = new CatalogLibrary(new CatalogStore(Path.Combine(root, "preload-close-catalog")));
+        var vm = new MainWindowViewModel(catalog); var source = Knx.Workbench.WorkbenchJson.CreateDemo();
+        var path = Path.Combine(root, "preload-close.knxproj"); vm.CreateProject(source, path);
+        var window = new WorkbenchWindow(vm, new WorkbenchWorkspace(), Path.Combine(root, "preload-close-layout.json"), catalog,
+            new ProgrammingStateStore(Path.Combine(root, "preload-close-programming")));
+        window.Show(owner); service.Attach(window); var calls = 0;
+        stamps.Entered = new(TaskCreationOptions.RunContinuationsAsynchronously); stamps.Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        typeof(WorkbenchWindow).GetField("_projectLoader", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window,
+            (Func<string, string?, Project>)((_, _) => { Interlocked.Increment(ref calls); return new Project { Id = "late", Name = "late" }; }));
+        try
+        {
+            var opening = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [path])!;
+            await stamps.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5)); window.RequestShutdown(); window.Close();
+            Check("owner close joins a pending source stamp", window.IsVisible && !opening.IsCompleted);
+            stamps.Release.TrySetResult();
+            Check("owner close before loading never starts the loader", !await opening && calls == 0 && ReferenceEquals(vm.Project, source));
+            await Until(() => !window.IsVisible);
+            Check("owner closes after source-stamp cleanup", !window.IsVisible);
+        }
+        finally { stamps.Release?.TrySetResult(); stamps.Entered = stamps.Release = null; if (window.IsVisible) { window.RequestShutdown(); window.Close(); } }
+    }
+    private static async Task OwnerCloseDuringSaveError(Window owner, string root)
+    {
+        var catalog = new CatalogLibrary(new CatalogStore(Path.Combine(root, "save-error-catalog")));
+        var vm = new MainWindowViewModel(catalog); var source = Knx.Workbench.WorkbenchJson.CreateDemo();
+        var path = Path.Combine(root, "save-error.knxproj"); vm.CreateProject(source, path);
+        vm.Edit("synthetic unsaved change", project => project.Name = "unsaved synthetic change"); vm.ProjectPath = root;
+        var window = new WorkbenchWindow(vm, new WorkbenchWorkspace(), Path.Combine(root, "save-error-layout.json"), catalog,
+            new ProgrammingStateStore(Path.Combine(root, "save-error-programming")));
+        window.Show(owner); var calls = 0;
+        typeof(WorkbenchWindow).GetField("_projectLoader", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window,
+            (Func<string, string?, Project>)((_, _) => { Interlocked.Increment(ref calls); return source; }));
+        try
+        {
+            var opening = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [path])!;
+            var desktop = (IClassicDesktopStyleApplicationLifetime)Application.Current!.ApplicationLifetime!; ConfirmDialog? question = null;
+            await Until(() => (question = desktop.Windows.OfType<ConfirmDialog>().FirstOrDefault(candidate => candidate.IsVisible
+                && candidate.Title == WorkbenchStrings.Get("AskUnsavedTitle"))) is not null);
+            question!.GetVisualDescendants().OfType<Button>().Single(button => button.IsDefault).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            ConfirmDialog? error = null;
+            await Until(() => (error = desktop.Windows.OfType<ConfirmDialog>().FirstOrDefault(candidate => candidate.IsVisible
+                && candidate.Title == WorkbenchStrings.Get("SaveFailed"))) is not null);
+            window.RequestShutdown(); window.Close();
+            Check("owner close cancels the save failure dialog without starting the loader", !await opening && calls == 0 && ReferenceEquals(vm.Project, source));
+            await Until(() => !window.IsVisible); Check("owner close drains the save failure dialog", !error!.IsVisible);
+        }
+        finally { if (window.IsVisible) { window.RequestShutdown(); window.Close(); } }
     }
     private static async Task PolicyToggle(WorkbenchWindow owner, ProjectRecoveryController controller, WorkbenchRecoveryStore store, string root)
     {
@@ -251,9 +332,13 @@ internal static class RecoveryNativeChecks
     private sealed class FailingStamps : IRecoverySourceStampReader
     {
         public bool Fail;
-        public Task<RecoverySourceStamp> ReadAsync(string path) => Fail
-            ? Task.FromException<RecoverySourceStamp>(new RecoveryRejectedException(RecoveryFailure.LimitExceeded, "Recovery.LimitExceeded"))
-            : RecoverySourceStamp.ReadAsync(path);
+        public TaskCompletionSource? Entered, Release;
+        public async Task<RecoverySourceStamp> ReadAsync(string path)
+        {
+            if (Entered is { } entered && Release is { } release) { entered.TrySetResult(); await release.Task; }
+            if (Fail) throw new RecoveryRejectedException(RecoveryFailure.LimitExceeded, "Recovery.LimitExceeded");
+            return await RecoverySourceStamp.ReadAsync(path);
+        }
     }
     private static async Task Dialog(WorkbenchWindow owner, ProjectRecoveryController controller, WorkbenchRecoveryStore store, string theme)
     {

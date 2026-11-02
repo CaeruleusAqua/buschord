@@ -26,6 +26,7 @@ public partial class WorkbenchWindow
     private bool _projectOpenClosePending, _projectOpenCloseRequested;
     private TaskCompletionSource? _projectOpenCompletion;
     private Action? _cancelProjectOpen;
+    private bool ProjectOpenInterrupted => _projectOpenInProgress && (_projectOpenCloseRequested || _shuttingDown || _closingSessionsForExit);
     private Func<string, string?, Project> _projectLoader = (path, password) =>
     {
         // A loading worker must not hold the script runtime used by UI parameter views.
@@ -200,7 +201,7 @@ public partial class WorkbenchWindow
 
     private async Task<bool> OpenPathAsync(string path)
     {
-        if (_projectOpenInProgress) return false;
+        if (_projectOpenInProgress || _projectOpenClosePending) return false;
         var completion = _projectOpenCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         _projectOpenInProgress = true;
         try { return await OpenPathCoreAsync(path); }
@@ -209,7 +210,7 @@ public partial class WorkbenchWindow
 
     private async Task<bool> OpenPathCoreAsync(string path)
     {
-        if (!await ConfirmDiscardAsync()) return false;
+        if (!await ConfirmDiscardAsync(projectOpen: true)) return false;
         if (_projectOpenCloseRequested || _shuttingDown || _closingSessionsForExit) return false;
         var replacementSession = ViewModel.ProjectSessionIdentity; var replacementRevision = _recovery?.CommitRevision;
         var previousStatus = ViewModel.Status; var openingStatus = W("ProjectOpening");
@@ -218,7 +219,9 @@ public partial class WorkbenchWindow
         try
         {
             await DrainRecoveryBeforeReplacementAsync();
+            if (_projectOpenCloseRequested || _shuttingDown || _closingSessionsForExit) return false;
             var recovery = await TryRecoverySourceStampAsync(path);
+            if (_projectOpenCloseRequested || _shuttingDown || _closingSessionsForExit) return false;
             Project loaded;
             string? password = null;
             while (true)
@@ -230,7 +233,7 @@ public partial class WorkbenchWindow
                 }
                 catch (InvalidDataException ex) when (Knxproj.IsPasswordError(ex))
                 {
-                    if (_shuttingDown || _closingSessionsForExit) return false;
+                    if (_projectOpenCloseRequested || _shuttingDown || _closingSessionsForExit) return false;
                     password = await PromptPasswordAsync(ex.Message);
                     if (password is null) return false;
                 }
@@ -257,7 +260,8 @@ public partial class WorkbenchWindow
         {
             if (_shuttingDown || _closingSessionsForExit) return false;
             ViewModel.Status = W("ProjectLoadFailedStatus", ex.Message);
-            await ConfirmDialog.ShowMessageAsync(this, W("ProjectLoadFailed"), ex.Message);
+            await ConfirmDialog.ShowMessageAsync(this, W("ProjectLoadFailed"), ex.Message, TrackProjectOpenDialog);
+            if (_projectOpenCloseRequested || _shuttingDown || _closingSessionsForExit) return false;
             RefreshWorkspace();
             return false;
         }
@@ -288,6 +292,7 @@ public partial class WorkbenchWindow
         if (_projectOpenCloseRequested) _cancelProjectOpen();
         try
         {
+            if (cancelled) throw new ProjectOpenCancelledException();
             var loader = _projectLoader;
             Project loaded;
             try { loaded = await Task.Run(() => loader(path, password)); }
@@ -318,9 +323,17 @@ public partial class WorkbenchWindow
             ActionButton(W(saving ? "MenuSave" : "Open"), () => { result = box.Text; dialog.Close(); }, "primary", isDefault: true));
         dialog.Content = DialogLayout(panel, actions);
         dialog.Opened += (_, _) => box.Focus();
-        await dialog.ShowDialog(owner ?? this);
-        box.Text = "";
-        return result;
+        var shown = dialog.ShowDialog(owner ?? this);
+        if (_projectOpenInProgress && (owner is null || ReferenceEquals(owner, this))) TrackProjectOpenDialog(dialog);
+        try { await shown; return result; }
+        finally { box.Text = ""; }
+    }
+
+    private void TrackProjectOpenDialog(Window dialog)
+    {
+        Action cancel = () => dialog.Close(); _cancelProjectOpen = cancel;
+        dialog.Closed += (_, _) => { if (ReferenceEquals(_cancelProjectOpen, cancel)) _cancelProjectOpen = null; };
+        if (_projectOpenCloseRequested) cancel();
     }
 
     private async Task NewProjectAsync()
@@ -353,6 +366,7 @@ public partial class WorkbenchWindow
             try { await _recovery.DrainAsync(); }
             catch (IOException) { ViewModel.Status = RecoveryUiStrings.Get("Failed"); }
         }
+        if (ProjectOpenInterrupted) return false;
         string? backupWarning = null;
         void TryBackup(string path)
         {
@@ -365,6 +379,7 @@ public partial class WorkbenchWindow
             if (saveAs || ViewModel.ProjectPath.Length == 0)
             {
                 var file = await StorageProvider.SaveFilePickerAsync(new() { SuggestedFileName = project.Name + ".knxproj", DefaultExtension = "knxproj" });
+                if (ProjectOpenInterrupted) return false;
                 if (file?.TryGetLocalPath() is not { } chosen) return false;
                 path = chosen;
                 if (File.Exists(path)) TryBackup(path);
@@ -386,6 +401,7 @@ public partial class WorkbenchWindow
             {
                 try
                 {
+                    if (ProjectOpenInterrupted) return false;
                     if (!ReferenceEquals(ViewModel.Project, project)) return false;
                     var revision = ProjectRevisions.Capture(project, path);
                     try
@@ -407,6 +423,7 @@ public partial class WorkbenchWindow
                 }
                 catch (InvalidDataException ex) when (Knxproj.IsPasswordError(ex))
                 {
+                    if (ProjectOpenInterrupted) return false;
                     password = await PromptPasswordAsync(ex.Message, saving: true);
                     if (password is null) return false;
                 }
@@ -415,17 +432,28 @@ public partial class WorkbenchWindow
             else if (HasParameterDrafts) ViewModel.Status = W("SavedWithDrafts");
             return true;
         }
-        catch (Exception ex) { ViewModel.Status = W("SaveFailedStatus", ex.Message); await ConfirmDialog.ShowMessageAsync(this, W("SaveFailed"), ex.Message); return false; }
+        catch (Exception ex)
+        {
+            if (ProjectOpenInterrupted) return false;
+            ViewModel.Status = W("SaveFailedStatus", ex.Message);
+            await ConfirmDialog.ShowMessageAsync(this, W("SaveFailed"), ex.Message, _projectOpenInProgress ? TrackProjectOpenDialog : null);
+            return false;
+        }
     }
 
-    private async Task<bool> ConfirmDiscardAsync()
+    private Task<bool> ConfirmDiscardAsync() => ConfirmDiscardAsync(projectOpen: false);
+    private async Task<bool> ConfirmDiscardAsync(bool projectOpen)
     {
         await DrainRealProgrammingBeforeReplacementAsync();
         await DrainAddressAssignmentBeforeReplacementAsync();
         await DrainM112BeforeReplacementAsync();
-        if (HasParameterDrafts && !await ConfirmDialog.AskDiscardDraftsAsync(this)) return false;
+        if (projectOpen && (_projectOpenCloseRequested || _shuttingDown || _closingSessionsForExit)) return false;
+        if (HasParameterDrafts && !await ConfirmDialog.AskDiscardDraftsAsync(this, projectOpen ? TrackProjectOpenDialog : null)) return false;
+        if (projectOpen && (_projectOpenCloseRequested || _shuttingDown || _closingSessionsForExit)) return false;
         if (!ViewModel.IsDirty) return true;
-        return await ConfirmDialog.AskUnsavedAsync(this, ViewModel.Project?.Name ?? "") switch
+        var choice = await ConfirmDialog.AskUnsavedAsync(this, ViewModel.Project?.Name ?? "", projectOpen ? TrackProjectOpenDialog : null);
+        if (projectOpen && (_projectOpenCloseRequested || _shuttingDown || _closingSessionsForExit)) return false;
+        return choice switch
         {
             ConfirmChoice.Discard => true, ConfirmChoice.Save => await SaveAsync(), _ => false
         };
@@ -433,17 +461,18 @@ public partial class WorkbenchWindow
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
+        if (e.CloseReason == WindowCloseReason.OSShutdown && AppUpdateService.Current is { } updates)
+            updates.SuppressApply = true;
         if (_projectOpenInProgress)
         {
             e.Cancel = true;
             if (_projectOpenClosePending) return;
             _projectOpenClosePending = _projectOpenCloseRequested = true;
+            var pending = _projectOpenCompletion!.Task;
             _cancelProjectOpen?.Invoke();
-            _ = CloseAfterProjectOpenAsync(_projectOpenCompletion!.Task);
+            Dispatcher.UIThread.Post(async () => await CloseAfterProjectOpenAsync(pending));
             return;
         }
-        if (e.CloseReason == WindowCloseReason.OSShutdown && AppUpdateService.Current is { } updates)
-            updates.SuppressApply = true;
         if (JoinRealProgrammingBeforeOwnerClose(e)) return;
         if (JoinAddressAssignmentBeforeOwnerClose(e)) return;
         if (JoinM112BeforeOwnerClose(e)) return;

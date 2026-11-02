@@ -83,6 +83,8 @@ angelegt. BusChord schreibt das neue Projekt sofort als natives Archiv.
 - Größere Projekte werden im Hintergrund geladen; ein Fortschrittsdialog bleibt
   bedienbar. Bei **Abbrechen** beendet BusChord zuerst den laufenden Lesevorgang
   und verwirft anschließend das Ergebnis. Das bisherige Projekt bleibt erhalten.
+  Eine zuvor geöffnete native Speichern-unter-Auswahl muss beim Schließen erst
+  beendet werden.
 - Beim Laden wird das Projekt in die Zuletzt-Liste übernommen.
 - **Projekt → Speichern** (`Strg+S`) speichert unter dem bekannten Pfad. Hat das
   Projekt noch keinen Pfad, öffnet der Menüpunkt den Speicherdialog.
