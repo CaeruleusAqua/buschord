@@ -88,6 +88,39 @@ public static class Ksxml
 
     public static List<ParameterInstance> ParseDeviceParameters(string path) => Parse(XDocument.Load(path)).Instances;
 
+    // Project loading needs the dynamic object state, but not editor rows for every parameter.
+    // Construct only assigned rows: Apply uses those rows to reject invalid derived values.
+    internal static DynamicEvaluation EvaluateObjects(XDocument doc, IReadOnlyDictionary<string, string?>? userValues,
+        IParameterScriptRuntime? scripts)
+    {
+        var root = StructureExpansion.Expand(doc.Root ?? throw new InvalidDataException("empty XML"), userValues, scripts);
+        var evaluation = DynamicParameters.Evaluate(root, userValues, scripts);
+        if (evaluation.AssignedParameters.Count == 0) return evaluation;
+
+        var types = Elements(root, "ParameterType").Select(ParseParameterType).OfType<ParameterType>()
+            .GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First());
+        var parameters = root.DescendantsAndSelf().Where(e => e.Name.LocalName is "Parameter" or "ParameterInstance")
+            .Where(e => !e.Ancestors().Any(a => a.Name.LocalName == "ModuleDef"));
+        var refs = Elements(root, "ParameterRef").Where(e => !e.Ancestors().Any(a => a.Name.LocalName == "ModuleDef"))
+            .ToLookup(e => Attr(e, "RefId") ?? "", StringComparer.Ordinal);
+        var storage = new ParameterStorageReader(root, null);
+        var assigned = new List<ParameterInstance>();
+        foreach (var parameter in parameters)
+        {
+            var references = refs[Attr(parameter, "Id") ?? ""].ToList();
+            if (references.Count == 0)
+            {
+                if (evaluation.AssignedParameters.Contains(Attr(parameter, "Id") ?? ""))
+                    assigned.Add(ReadInstance(parameter, null, types, storage));
+            }
+            else foreach (var reference in references)
+                if (evaluation.AssignedParameters.Contains(Attr(reference, "Id") ?? Attr(parameter, "Id") ?? ""))
+                    assigned.Add(ReadInstance(parameter, reference, types, storage));
+        }
+        DynamicParameters.Apply(evaluation, assigned);
+        return evaluation;
+    }
+
     public static ParameterType? ParseParameterType(XElement el)
     {
         if (el.Name.LocalName != "ParameterType") return null;

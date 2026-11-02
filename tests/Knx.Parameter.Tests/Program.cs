@@ -151,6 +151,30 @@ var invalidRows = Ksxml.Parse(new XDocument(XElement.Parse("""
 Check(invalidRows.Instances.Single(i => i.Id == "R").Value == "3"
     && invalidEval.InvalidAssignments.SequenceEqual(["R"]), "invalid assignment rejected and reported");
 
+// The project loader's reduced evaluation must preserve the full editor's decisions.
+foreach (var assignedValue in new string?[] { null, "9", "999" })
+{
+    var assignment = assignedValue is null ? "" : $"<Assign TargetParamRefRef=\"R\" Value=\"{assignedValue}\"/>";
+    var input = XDocument.Parse($"""
+<ApplicationProgram><Static><ParameterTypes>
+<ParameterType Id="n"><TypeNumber Type="unsignedInt" SizeInBit="8" minInclusive="0" maxInclusive="255"/></ParameterType>
+</ParameterTypes><Parameters><Parameter Id="P" ParameterType="n" Value="3"/></Parameters>
+<ParameterRefs><ParameterRef Id="R" RefId="P"/></ParameterRefs></Static>
+<Dynamic><ParameterBlock Id="B">{assignment}</ParameterBlock></Dynamic></ApplicationProgram>
+""");
+    var values = new Dictionary<string, string?> { ["R"] = "4" };
+    _ = Ksxml.Parse(input, out var full, values);
+    var method = typeof(Ksxml).GetMethod("EvaluateObjects", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+    var reduced = (DynamicEvaluation)method.Invoke(null, [input, values, null])!;
+    Check(reduced.InvalidAssignments.SequenceEqual(full.InvalidAssignments)
+        && reduced.Converged == full.Converged && reduced.StructureFailed == full.StructureFailed
+        && reduced.Parameters.Count == full.Parameters.Count
+        && reduced.Parameters.All(pair => full.Parameters.TryGetValue(pair.Key, out var state)
+            && state.Value == pair.Value.Value && state.IsVisible == pair.Value.IsVisible && state.IsEnabled == pair.Value.IsEnabled)
+        && reduced.ActiveObjectReferences.SetEquals(full.ActiveObjectReferences),
+        "project object evaluation matches full validation for assignment " + (assignedValue ?? "none"));
+}
+
 string ConditionProgram(string test, string value)
 {
     var escaped = test.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
