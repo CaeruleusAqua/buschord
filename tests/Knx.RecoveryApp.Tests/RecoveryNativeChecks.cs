@@ -123,6 +123,23 @@ internal static class RecoveryNativeChecks
             prompt!.GetVisualDescendants().OfType<Button>().Single(button => button.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check("password cancellation restores the previous project, status and editor", !await cancelled && ReferenceEquals(owner.ViewModel.Project, replacement)
                 && owner.ViewModel.Status == previousStatus && owner.IsEnabled);
+            var authenticated = new Project { Id = "password-test", Name = "password synthetic project" };
+            var authenticatedPath = Path.Combine(root, "password-retry.knxproj"); Knxproj.Save(authenticated, authenticatedPath);
+            field.SetValue(owner, (Func<string, string?, Project>)((_, password) => password == "synthetic-password" ? authenticated : throw new InvalidDataException(
+                password is null ? "This project is password-protected. Reading it requires the project password; BusChord does not guess passwords."
+                    : "Wrong project password or archive protection settings (AES authentication failed). The archive may also be damaged.")));
+            var passwordOpen = (Task<bool>)typeof(WorkbenchWindow).GetMethod("OpenStartupProjectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [authenticatedPath])!;
+            Window? firstPrompt = null;
+            await Until(() => (firstPrompt = desktop.Windows.FirstOrDefault(window => window.IsVisible && !ReferenceEquals(window, owner)
+                && window.GetVisualDescendants().OfType<TextBox>().Any(box => box.PasswordChar == '●'))) is not null);
+            firstPrompt!.GetVisualDescendants().OfType<TextBox>().Single(box => box.PasswordChar == '●').Text = "wrong";
+            firstPrompt.GetVisualDescendants().OfType<Button>().Single(button => button.IsDefault).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Window? retryPrompt = null;
+            await Until(() => (retryPrompt = desktop.Windows.FirstOrDefault(window => window.IsVisible && !ReferenceEquals(window, firstPrompt)
+                && window.GetVisualDescendants().OfType<TextBox>().Any(box => box.PasswordChar == '●'))) is not null);
+            retryPrompt!.GetVisualDescendants().OfType<TextBox>().Single(box => box.PasswordChar == '●').Text = "synthetic-password";
+            retryPrompt.GetVisualDescendants().OfType<Button>().Single(button => button.IsDefault).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check("wrong password retries and the correct password adopts the loaded project", await passwordOpen && ReferenceEquals(owner.ViewModel.Project, authenticated) && owner.IsEnabled);
         }
         finally { gate.Set(); completed.TrySetResult(); await release; field.SetValue(owner, originalLoader); }
     }
